@@ -45,6 +45,8 @@ NTSTATUS NTAPI IopBusNumberInitialize(VOID);
 
 extern PPHYSICAL_MEMORY_DESCRIPTOR MmPhysicalMemoryBlock;
 
+KSPIN_LOCK IopPnPSpinLock;
+
 /* FUNCTIONS ******************************************************************/
 
 VOID
@@ -613,6 +615,7 @@ IopInitializePlugPlayServices(
     }
 
     /* Initialize locks and such */
+    KeInitializeSpinLock(&IopPnPSpinLock);
     KeInitializeSpinLock(&IopDeviceTreeLock);
     KeInitializeSpinLock(&IopDeviceActionLock);
     InitializeListHead(&IopDeviceActionRequestList);
