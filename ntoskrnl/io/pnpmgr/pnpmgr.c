@@ -3974,8 +3974,7 @@ NTAPI
 PiFreeGenericTableEntry(IN PRTL_AVL_TABLE Table,
                         IN PVOID Buffer)
 {
-    /* FIXME: TODO */
-    ASSERT(FALSE);
+    ExFreePoolWithTag(Buffer, 'uspP');
 }
 
 VOID
