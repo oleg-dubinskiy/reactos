@@ -1190,6 +1190,8 @@ PnpRootPnpControl(
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
 
+    PAGED_CODE();
+
     DeviceExtension = DeviceObject->DeviceExtension;
     Status = Irp->IoStatus.Status;
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
