@@ -675,6 +675,7 @@ IopGetRootDevices(
     Buffer = ExAllocatePoolWithTag(PagedPool, PAGE_SIZE, 'ddpP');
     if (!Buffer)
     {
+        DPRINT1("IopGetRootDevices: return STATUS_INSUFFICIENT_RESOURCES\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -684,6 +685,7 @@ IopGetRootDevices(
     if (!RelationContext.Objects)
     {
         ExFreePoolWithTag(Buffer, 'ddpP');
+        DPRINT1("IopGetRootDevices: return STATUS_INSUFFICIENT_RESOURCES\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -701,6 +703,7 @@ IopGetRootDevices(
                                     NULL);
     if (!NT_SUCCESS(Status))
     {
+        DPRINT1("IopGetRootDevices: Status - %X\n", Status);
         ASSERT(FALSE);
         goto Exit;
     }
@@ -723,23 +726,18 @@ IopGetRootDevices(
                               IopInitializeDeviceKey,
                               &RelationContext);
     ZwClose(Handle);
-
     Status = RelationContext.Status;
-    if (!NT_SUCCESS(Status))
-    {
-        if (!RelationContext.Count)
-        {
-            Status = STATUS_UNSUCCESSFUL;
-        }
-        goto ErrorExit;
-    }
-
-    DPRINT("IopGetRootDevices: RelationContext.Count - %p, Status - %X\n",
-           RelationContext.Count, Status);
+    DPRINT("IopGetRootDevices: RelationContext.Count - %p, Status - %X\n", RelationContext.Count, Status);
 
     if (!RelationContext.Count)
     {
+        DPRINT1("IopGetRootDevices: Status - STATUS_UNSUCCESSFUL\n");
         Status = STATUS_UNSUCCESSFUL;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopGetRootDevices: Status - %X\n", Status);
         goto ErrorExit;
     }
 
@@ -749,6 +747,7 @@ IopGetRootDevices(
     Relations = ExAllocatePoolWithTag(PagedPool, RelationsSize, 'ddpP');
     if (!Relations)
     {
+        DPRINT1("IopGetRootDevices: Status - STATUS_INSUFFICIENT_RESOURCES\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto ErrorExit;
     }
