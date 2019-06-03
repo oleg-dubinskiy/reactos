@@ -1110,6 +1110,15 @@ IopFindMountableDevice(
     return MountableDevice;
 }
 
+ULONG
+NTAPI
+IopIncrementDeviceObjectHandleCount(
+    _Inout_ PDEVICE_OBJECT FileDeviceObject)
+{
+    return IopInterlockedIncrementUlong(LockQueueIoDatabaseLock,
+                                        &FileDeviceObject->ReferenceCount);
+}
+
 PDEVICE_OBJECT
 NTAPI
 IopLockMountedDeviceForRemove(
