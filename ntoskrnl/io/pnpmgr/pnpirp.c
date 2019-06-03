@@ -1074,4 +1074,25 @@ PpPagePathAssign(
     return PiPagePathSetState(FileObject, TRUE);
 }
 
+PDEVICE_OBJECT
+NTAPI
+IopFindMountableDevice(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PDEVICE_OBJECT MountableDevice;
+
+    for (MountableDevice = DeviceObject;
+         MountableDevice != NULL;
+         MountableDevice = MountableDevice->AttachedDevice)
+    {
+        if ((MountableDevice->Flags & DO_DEVICE_HAS_NAME) != 0 &&
+            MountableDevice->Vpb)
+        {
+            break;
+        }
+    }
+
+    return MountableDevice;
+}
+
 /* EOF */
