@@ -8,6 +8,18 @@
 #include <kmt_test.h>
 #include "../ntos_se/se.h"
 
+// FIXME
+NTSYSAPI
+NTSTATUS
+NTAPI
+ZwQueryInformationProcess(
+    _In_ HANDLE ProcessHandle,
+    _In_ PROCESSINFOCLASS ProcessInformationClass,
+    _Out_ PVOID ProcessInformation,
+    _In_ ULONG ProcessInformationLength,
+    _Out_opt_ PULONG ReturnLength
+);
+
 #define CheckDirectorySecurityWithOwnerAndGroup(name, Owner, Group, AceCount, ...) CheckDirectorySecurity_(name, Owner, Group, AceCount, __FILE__, __LINE__, ##__VA_ARGS__)
 #define CheckDirectorySecurity(name, AceCount, ...) CheckDirectorySecurity_(name, SeExports->SeAliasAdminsSid, SeExports->SeLocalSystemSid, AceCount, __FILE__, __LINE__, ##__VA_ARGS__)
 #define CheckDirectorySecurity_(name, Owner, Group, AceCount, file, line, ...) CheckDirectorySecurity__(name, Owner, Group, AceCount, file ":" KMT_STRINGIZE(line), ##__VA_ARGS__)
@@ -124,18 +136,52 @@ CheckDirectorySecurity__(
 
 START_TEST(ObSecurity)
 {
+    NTSTATUS Status;
+    /* Assume yes, that's the default on W2K3 */
+    ULONG LUIDMappingsEnabled = 1, ReturnLength;
+
 #define DIRECTORY_GENERIC_READ      STANDARD_RIGHTS_READ | DIRECTORY_TRAVERSE | DIRECTORY_QUERY
 #define DIRECTORY_GENERIC_WRITE     STANDARD_RIGHTS_WRITE | DIRECTORY_CREATE_SUBDIRECTORY | DIRECTORY_CREATE_OBJECT
 
-    CheckDirectorySecurityWithOwnerAndGroup(L"\\??", SeExports->SeAliasAdminsSid, NULL, // Group is "Domain Users"
-                           4, ACCESS_ALLOWED_ACE_TYPE, CONTAINER_INHERIT_ACE |
-                                                       OBJECT_INHERIT_ACE,      SeExports->SeLocalSystemSid, DIRECTORY_ALL_ACCESS,
-                              ACCESS_ALLOWED_ACE_TYPE, CONTAINER_INHERIT_ACE |
-                                                       OBJECT_INHERIT_ACE,      SeExports->SeAliasAdminsSid, DIRECTORY_ALL_ACCESS,
-                              ACCESS_ALLOWED_ACE_TYPE, 0,                       SeExports->SeAliasAdminsSid, DIRECTORY_ALL_ACCESS,
-                              ACCESS_ALLOWED_ACE_TYPE, INHERIT_ONLY_ACE |
-                                                       CONTAINER_INHERIT_ACE |
-                                                       OBJECT_INHERIT_ACE,      SeExports->SeCreatorOwnerSid,GENERIC_ALL);
+    /* Check if LUID device maps are enabled */
+    Status = ZwQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessLUIDDeviceMapsEnabled,
+                                       &LUIDMappingsEnabled,
+                                       sizeof(LUIDMappingsEnabled),
+                                       &ReturnLength);
+    ok(NT_SUCCESS(Status), "NtQueryInformationProcess failed: 0x%x\n", Status);
+
+    trace("LUID mappings are enabled: %d\n", LUIDMappingsEnabled);
+    if (LUIDMappingsEnabled != 0)
+    {
+        CheckDirectorySecurityWithOwnerAndGroup(L"\\??", SeExports->SeAliasAdminsSid, NULL, // Group is "Domain Users"
+                               4, ACCESS_ALLOWED_ACE_TYPE, CONTAINER_INHERIT_ACE |
+                                                           OBJECT_INHERIT_ACE,      SeExports->SeLocalSystemSid, DIRECTORY_ALL_ACCESS,
+                                  ACCESS_ALLOWED_ACE_TYPE, CONTAINER_INHERIT_ACE |
+                                                           OBJECT_INHERIT_ACE,      SeExports->SeAliasAdminsSid, DIRECTORY_ALL_ACCESS,
+                                  ACCESS_ALLOWED_ACE_TYPE, 0,                       SeExports->SeAliasAdminsSid, DIRECTORY_ALL_ACCESS,
+                                  ACCESS_ALLOWED_ACE_TYPE, INHERIT_ONLY_ACE |
+                                                           CONTAINER_INHERIT_ACE |
+                                                           OBJECT_INHERIT_ACE,      SeExports->SeCreatorOwnerSid,GENERIC_ALL);
+    }
+    else
+    {
+        CheckDirectorySecurityWithOwnerAndGroup(L"\\??", SeExports->SeAliasAdminsSid, NULL, // Group is "Domain Users"
+                               6, ACCESS_ALLOWED_ACE_TYPE, 0, SeExports->SeWorldSid, READ_CONTROL | DIRECTORY_TRAVERSE | DIRECTORY_QUERY,
+                                  ACCESS_ALLOWED_ACE_TYPE, 0, SeExports->SeLocalSystemSid, DIRECTORY_ALL_ACCESS,
+                                  ACCESS_ALLOWED_ACE_TYPE, INHERIT_ONLY_ACE |
+                                                           CONTAINER_INHERIT_ACE |
+                                                           OBJECT_INHERIT_ACE,      SeExports->SeWorldSid, GENERIC_EXECUTE,
+                                  ACCESS_ALLOWED_ACE_TYPE, INHERIT_ONLY_ACE |
+                                                           CONTAINER_INHERIT_ACE |
+                                                           OBJECT_INHERIT_ACE,      SeExports->SeAliasAdminsSid,GENERIC_ALL,
+                                  ACCESS_ALLOWED_ACE_TYPE, INHERIT_ONLY_ACE |
+                                                           CONTAINER_INHERIT_ACE |
+                                                           OBJECT_INHERIT_ACE,      SeExports->SeLocalSystemSid,GENERIC_ALL,
+                                  ACCESS_ALLOWED_ACE_TYPE, INHERIT_ONLY_ACE |
+                                                           CONTAINER_INHERIT_ACE |
+                                                           OBJECT_INHERIT_ACE,      SeExports->SeCreatorOwnerSid,GENERIC_ALL);
+    }
 
     CheckDirectorySecurity(L"\\",
                            4, ACCESS_ALLOWED_ACE_TYPE, 0, SeExports->SeWorldSid,       DIRECTORY_GENERIC_READ,
