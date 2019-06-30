@@ -1246,10 +1246,11 @@ static HRESULT WINAPI VMR7FilterConfig_GetRenderingPrefs(IVMRFilterConfig *iface
 
 static HRESULT WINAPI VMR7FilterConfig_SetRenderingMode(IVMRFilterConfig *iface, DWORD mode)
 {
-    struct quartz_vmr *This = impl_from_IVMRFilterConfig(iface);
+    struct quartz_vmr *filter = impl_from_IVMRFilterConfig(iface);
 
-    FIXME("(%p/%p)->(%u) stub\n", iface, This, mode);
-    return E_NOTIMPL;
+    TRACE("iface %p, mode %#x.\n", iface, mode);
+
+    return IVMRFilterConfig9_SetRenderingMode(&filter->IVMRFilterConfig9_iface, mode);
 }
 
 static HRESULT WINAPI VMR7FilterConfig_GetRenderingMode(IVMRFilterConfig *iface, DWORD *mode)
@@ -1589,11 +1590,11 @@ static HRESULT WINAPI VMR9FilterConfig_SetImageCompositor(IVMRFilterConfig9 *ifa
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI VMR9FilterConfig_SetNumberOfStreams(IVMRFilterConfig9 *iface, DWORD max)
+static HRESULT WINAPI VMR9FilterConfig_SetNumberOfStreams(IVMRFilterConfig9 *iface, DWORD count)
 {
-    struct quartz_vmr *This = impl_from_IVMRFilterConfig9(iface);
-
-    FIXME("(%p/%p)->(%u) stub\n", iface, This, max);
+    FIXME("iface %p, count %u, stub!\n", iface, count);
+    if (count == 1)
+        return S_OK;
     return E_NOTIMPL;
 }
 
@@ -1824,13 +1825,13 @@ static HRESULT WINAPI VMR7WindowlessControl_SetAspectRatioMode(IVMRWindowlessCon
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI VMR7WindowlessControl_SetVideoClippingWindow(IVMRWindowlessControl *iface,
-                                                                   HWND hwnd)
+static HRESULT WINAPI VMR7WindowlessControl_SetVideoClippingWindow(IVMRWindowlessControl *iface, HWND window)
 {
-    struct quartz_vmr *This = impl_from_IVMRWindowlessControl(iface);
+    struct quartz_vmr *filter = impl_from_IVMRWindowlessControl(iface);
 
-    FIXME("(%p/%p)->(...) stub\n", iface, This);
-    return E_NOTIMPL;
+    TRACE("iface %p, window %p.\n", iface, window);
+
+    return IVMRWindowlessControl9_SetVideoClippingWindow(&filter->IVMRWindowlessControl9_iface, window);
 }
 
 static HRESULT WINAPI VMR7WindowlessControl_RepaintVideo(IVMRWindowlessControl *iface,
