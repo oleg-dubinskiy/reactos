@@ -62,8 +62,6 @@ Main_DDrawSurface_QueryInterface(LPDDRAWI_DDRAWSURFACE_INT This, REFIID riid, LP
     HRESULT retVal = DD_OK;
     *ppObj = NULL;
 
-    DX_WINDBG_trace();
-
     _SEH2_TRY
     {
         if (IsEqualGUID(&IID_IDirectDrawSurface7, riid))
@@ -421,8 +419,6 @@ Main_DDrawSurface_Lock (LPDDRAWI_DDRAWSURFACE_INT ThisDest, LPRECT prect,
     DDHAL_LOCKDATA mdLock;
 
     DX_WINDBG_trace();
-
-    DX_WINDBG_trace_res( (DWORD)ThisDest->lpLcl->lpGbl->wWidth, (DWORD)ThisDest->lpLcl->lpGbl->wHeight, (DWORD)ThisDest->lpLcl->lpGbl->lPitch, (DWORD) 0);
 
      /* Zero out members in DDHAL_LOCKDATA */
     ZeroMemory(&mdLock, sizeof(DDHAL_LOCKDATA));

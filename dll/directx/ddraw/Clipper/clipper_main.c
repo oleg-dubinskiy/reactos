@@ -54,10 +54,11 @@ ULONG WINAPI
 DirectDrawClipper_Release(LPDIRECTDRAWCLIPPER iface)
 {
     LPDDRAWI_DDRAWCLIPPER_INT This = (LPDDRAWI_DDRAWCLIPPER_INT)iface;
+    
+    DX_WINDBG_trace();
+    
     if(!This)
         return DDERR_INVALIDOBJECT;
-
-    DX_WINDBG_trace();
 
     if (iface!=NULL)
     {
@@ -75,10 +76,11 @@ ULONG WINAPI
 DirectDrawClipper_AddRef (LPDIRECTDRAWCLIPPER iface)
 {
     LPDDRAWI_DDRAWCLIPPER_INT This = (LPDDRAWI_DDRAWCLIPPER_INT)iface;
+    
+    DX_WINDBG_trace();
+    
     if(!This)
         return DDERR_INVALIDOBJECT;
-
-    DX_WINDBG_trace();
 
     if (iface!=NULL)
     {

@@ -213,8 +213,8 @@ DirectDrawEnumerateExA(LPDDENUMCALLBACKEXA lpCallback,
     DWORD cbData = 0;
     DWORD Value = 0;
     LONG rc;
-    BOOL  EnumerateAttachedSecondaries = FALSE;
-    DWORD privateDWFlags = 0;
+    //BOOL  EnumerateAttachedSecondaries = FALSE;
+    //DWORD privateDWFlags = 0;
     CHAR strMsg[RC_STRING_MAX_SIZE];
     HRESULT retVal = DDERR_INVALIDPARAMS;
 
@@ -233,14 +233,14 @@ DirectDrawEnumerateExA(LPDDENUMCALLBACKEXA lpCallback,
             /* Enumerate Attached Secondaries */
             cbData = sizeof(DWORD);
             rc = RegQueryValueExA(hKey, "EnumerateAttachedSecondaries", NULL, NULL, (LPBYTE)&Value, &cbData);
-            if (rc == ERROR_SUCCESS)
-            {
-                if (Value != 0)
-                {
-                    EnumerateAttachedSecondaries = TRUE;
-                    privateDWFlags = DDENUM_ATTACHEDSECONDARYDEVICES;
-                }
-            }
+            //if (rc == ERROR_SUCCESS)
+            //{
+            //    if (Value != 0)
+            //    {
+            //        EnumerateAttachedSecondaries = TRUE;
+            //        privateDWFlags = DDENUM_ATTACHEDSECONDARYDEVICES;
+            //    }
+            //}
             RegCloseKey(hKey);
         }
 
@@ -430,9 +430,9 @@ BOOL APIENTRY
 DllMain( HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved )
 {
 
-    hDllModule = hModule;
-
     DX_WINDBG_trace();
+
+    hDllModule = hModule;
 
 
   switch(ul_reason_for_call)

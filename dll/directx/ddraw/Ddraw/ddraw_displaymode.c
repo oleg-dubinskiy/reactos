@@ -218,6 +218,7 @@ HRESULT WINAPI
 Main_DirectDraw_SetDisplayMode2 (LPDDRAWI_DIRECTDRAW_INT This, DWORD dwWidth, DWORD dwHeight,
                                  DWORD dwBPP, DWORD dwRefreshRate, DWORD dwFlags)
 {
+    BOOL ModeChanged;
     HRESULT ret = DD_OK;
     DX_WINDBG_trace();
 
@@ -261,8 +262,6 @@ Main_DirectDraw_SetDisplayMode2 (LPDDRAWI_DIRECTDRAW_INT This, DWORD dwWidth, DW
                 DevMode.dmBitsPerPel = dwBPP;
                 DevMode.dmDisplayFrequency = dwRefreshRate;
 
-                DX_WINDBG_trace_res(dwWidth, dwHeight,dwBPP, dwRefreshRate);
-
                 retval = ChangeDisplaySettings(&DevMode, CDS_FULLSCREEN);
                 /* FIXME: Are we supposed to set CDS_SET_PRIMARY as well ? */
 
@@ -274,7 +273,6 @@ Main_DirectDraw_SetDisplayMode2 (LPDDRAWI_DIRECTDRAW_INT This, DWORD dwWidth, DW
                     DX_STUB_str("Warning ChangeDisplaySettings return DISP_CHANGE_BADMODE, but ddraw.dll ignore it\n");
 
                     //ret = DDERR_UNSUPPORTED;
-                    BOOL ModeChanged;
                     This->lpLcl->lpGbl->hDD = This->lpLcl->hDD;
                     DdReenableDirectDrawObject(This->lpLcl->lpGbl, &ModeChanged);
                     StartDirectDraw((LPDIRECTDRAW)This, 0, TRUE);
@@ -286,7 +284,6 @@ Main_DirectDraw_SetDisplayMode2 (LPDDRAWI_DIRECTDRAW_INT This, DWORD dwWidth, DW
                 else
                 {
                     // Update Interals
-                    BOOL ModeChanged;
                     This->lpLcl->lpGbl->hDD = This->lpLcl->hDD;
                     DdReenableDirectDrawObject(This->lpLcl->lpGbl, &ModeChanged);
                     StartDirectDraw((LPDIRECTDRAW)This, 0, TRUE);

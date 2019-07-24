@@ -21,9 +21,9 @@ Create_DirectDraw (LPGUID pGUID, LPDIRECTDRAW* pIface,
                    REFIID id, BOOL reenable)
 {
     LPDDRAWI_DIRECTDRAW_INT This;
+    BOOL linking = FALSE;
 
     DX_WINDBG_trace();
-    BOOL linking = FALSE;
 
     if (pIface == NULL)
     {
