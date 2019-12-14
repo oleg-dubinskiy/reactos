@@ -55,6 +55,23 @@ FltObjectDereference(_Inout_ PVOID Object)
     FltpExReleaseRundownProtection(&((PFLT_OBJECT)Object)->RundownRef);
 }
 
+NTSTATUS
+FLTAPI
+FltQuerySecurityObject(_In_ PFLT_INSTANCE Instance,
+                       _In_ PFILE_OBJECT FileObject,
+                       _In_ SECURITY_INFORMATION SecurityInformation,
+                       _Inout_updates_bytes_opt_(Length) PSECURITY_DESCRIPTOR SecurityDescriptor,
+                       _In_ ULONG Length,
+                       _Out_opt_ PULONG LengthNeeded)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(FileObject);
+    UNREFERENCED_PARAMETER(SecurityInformation);
+    UNREFERENCED_PARAMETER(Length);
+    SecurityDescriptor = NULL;
+    LengthNeeded = NULL;
+    return 0;
+}
 
 _Acquires_lock_(_Global_critical_region_)
 _IRQL_requires_max_(APC_LEVEL)
