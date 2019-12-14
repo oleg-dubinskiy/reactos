@@ -162,6 +162,15 @@ FltWriteFile(
     return 0;
 }
 
+BOOLEAN
+FLTAPI
+FltIsCallbackDataDirty(
+    _In_ PFLT_CALLBACK_DATA Data)
+{
+    UNREFERENCED_PARAMETER(Data);
+    return TRUE;
+}
+
 VOID
 FLTAPI
 FltSetCallbackDataDirty(
