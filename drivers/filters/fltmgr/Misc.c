@@ -140,6 +140,31 @@ FltSetInformationFile(
 
 NTSTATUS
 FLTAPI
+FltReadFile(
+    _In_ PFLT_INSTANCE InitiatingInstance,
+    _In_ PFILE_OBJECT FileObject,
+    _In_opt_ PLARGE_INTEGER ByteOffset,
+    _In_ ULONG Length,
+    _Out_writes_bytes_to_(Length,*BytesRead) PVOID Buffer,
+    _In_ FLT_IO_OPERATION_FLAGS Flags,
+    _Out_opt_ PULONG BytesRead,
+    _In_opt_ PFLT_COMPLETED_ASYNC_IO_CALLBACK CallbackRoutine,
+    _In_opt_ PVOID CallbackContext)
+{
+    UNREFERENCED_PARAMETER(InitiatingInstance);
+    UNREFERENCED_PARAMETER(FileObject);
+    UNREFERENCED_PARAMETER(ByteOffset);
+    UNREFERENCED_PARAMETER(Length);
+    UNREFERENCED_PARAMETER(Buffer);
+    UNREFERENCED_PARAMETER(Flags);
+    BytesRead = NULL;
+    CallbackRoutine = NULL;
+    CallbackContext = NULL;
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltWriteFile(
     _In_ PFLT_INSTANCE InitiatingInstance,
     _In_ PFILE_OBJECT FileObject,
