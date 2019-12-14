@@ -25,4 +25,5 @@
  @ stdcall FltGetDestinationFileNameInformation(ptr ptr ptr ptr long long ptr)
  @ stdcall FltParseFileNameInformation(ptr)
  @ stdcall FltReleaseFileNameInformation(ptr)
+ @ stdcall FltSetCallbackDataDirty(ptr)
 

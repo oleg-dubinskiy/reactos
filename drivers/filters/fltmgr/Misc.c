@@ -120,3 +120,12 @@ FltReleaseFileNameInformation(
 {
     UNREFERENCED_PARAMETER(FileNameInformation);
 }
+
+VOID
+FLTAPI
+FltSetCallbackDataDirty(
+    _Inout_ PFLT_CALLBACK_DATA Data)
+{
+    UNREFERENCED_PARAMETER(Data);
+}
+
