@@ -123,6 +123,23 @@ FltReleaseFileNameInformation(
 
 NTSTATUS
 FLTAPI
+FltSetInformationFile(
+    _In_ PFLT_INSTANCE Instance,
+    _In_ PFILE_OBJECT FileObject,
+    _In_reads_bytes_(Length) PVOID FileInformation,
+    _In_ ULONG Length,
+    _In_ FILE_INFORMATION_CLASS FileInformationClass)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(FileObject);
+    UNREFERENCED_PARAMETER(FileInformation);
+    UNREFERENCED_PARAMETER(Length);
+    UNREFERENCED_PARAMETER(FileInformationClass);
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltWriteFile(
     _In_ PFLT_INSTANCE InitiatingInstance,
     _In_ PFILE_OBJECT FileObject,
