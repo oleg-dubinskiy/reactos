@@ -14,6 +14,7 @@
  @ stdcall FltClose(ptr)
  @ stdcall FltCreateFileEx(ptr ptr ptr ptr long ptr ptr ptr long long long long ptr long long)
  @ stdcall FltCreateFile(ptr ptr ptr long ptr ptr ptr long long long long ptr long long)
+ @ stdcall FltWriteFile(ptr ptr ptr long ptr long ptr ptr ptr)
  @ stdcall FltDetachVolume(ptr ptr ptr)
  @ stdcall FltGetVolumeName(ptr ptr ptr)
  @ stdcall FltQueryVolumeInformationFile(ptr ptr ptr long ptr long)

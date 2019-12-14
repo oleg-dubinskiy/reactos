@@ -121,6 +121,30 @@ FltReleaseFileNameInformation(
     UNREFERENCED_PARAMETER(FileNameInformation);
 }
 
+NTSTATUS
+FLTAPI
+FltWriteFile(
+    _In_ PFLT_INSTANCE InitiatingInstance,
+    _In_ PFILE_OBJECT FileObject,
+    _In_opt_ PLARGE_INTEGER ByteOffset,
+    _In_ ULONG Length,
+    _In_reads_bytes_(Length) PVOID Buffer,
+    _In_ FLT_IO_OPERATION_FLAGS Flags,
+    _Out_opt_ PULONG BytesWritten,
+    _In_opt_ PFLT_COMPLETED_ASYNC_IO_CALLBACK CallbackRoutine,
+    _In_opt_ PVOID CallbackContext)
+{
+    UNREFERENCED_PARAMETER(InitiatingInstance);
+    UNREFERENCED_PARAMETER(FileObject);
+    UNREFERENCED_PARAMETER(ByteOffset);
+    UNREFERENCED_PARAMETER(Length);
+    UNREFERENCED_PARAMETER(Buffer);
+    BytesWritten = NULL;
+    CallbackRoutine = NULL;
+    CallbackContext = NULL;
+    return 0;
+}
+
 VOID
 FLTAPI
 FltSetCallbackDataDirty(
