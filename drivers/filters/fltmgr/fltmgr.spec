@@ -20,6 +20,7 @@
  @ stdcall FltQuerySecurityObject(ptr ptr long ptr long long)
  @ stdcall FltGetFileNameInformation(ptr long ptr)
  @ stdcall FltGetStreamHandleContext(ptr ptr ptr)
+ @ stdcall FltSupportsStreamHandleContexts(ptr)
  @ stdcall FltCreateCommunicationPort(ptr ptr ptr ptr ptr ptr ptr long)
  @ stdcall FltCloseCommunicationPort(ptr)
  @ stdcall FltAttachVolume(ptr ptr ptr ptr)

@@ -45,6 +45,14 @@ FltGetStreamHandleContext(_In_ PFLT_INSTANCE Instance,
     return 0;
 }
 
+BOOLEAN
+FLTAPI
+FltSupportsStreamHandleContexts(_In_ PFILE_OBJECT FileObject)
+{
+    UNREFERENCED_PARAMETER(FileObject);
+    return TRUE;
+}
+
 /* INTERNAL FUNCTIONS ******************************************************/
 
 
