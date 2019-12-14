@@ -104,6 +104,15 @@ FltGetDestinationFileNameInformation(
     return 0;
 }
 
+NTSTATUS
+FLTAPI
+FltParseFileNameInformation(
+    _Inout_ PFLT_FILE_NAME_INFORMATION FileNameInformation)
+{
+    UNREFERENCED_PARAMETER(FileNameInformation);
+    return 0;
+}
+
 VOID
 FLTAPI
 FltReleaseFileNameInformation(
