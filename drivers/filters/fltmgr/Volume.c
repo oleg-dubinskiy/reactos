@@ -247,5 +247,23 @@ FltGetVolumeName(
     return Status;
 }
 
+NTSTATUS
+FLTAPI
+FltQueryVolumeInformationFile(
+    _In_ PFLT_INSTANCE Instance,
+    _In_ PFILE_OBJECT FileObject,
+    _Out_writes_bytes_to_(Length,*LengthReturned) PVOID FsInformation,
+    _In_ ULONG Length,
+    _In_ FS_INFORMATION_CLASS FsInformationClass,
+    _Out_opt_ PULONG LengthReturned)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(FileObject);
+    UNREFERENCED_PARAMETER(FsInformation);
+    UNREFERENCED_PARAMETER(Length);
+    UNREFERENCED_PARAMETER(FsInformationClass);
+    LengthReturned = NULL;
+    return 0;
+}
 
 /* INTERNAL FUNCTIONS ******************************************************/
