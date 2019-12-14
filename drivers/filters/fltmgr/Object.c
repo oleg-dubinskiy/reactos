@@ -82,6 +82,20 @@ FltQuerySecurityObject(_In_ PFLT_INSTANCE Instance,
     return 0;
 }
 
+NTSTATUS
+FLTAPI
+FltSetSecurityObject(_In_ PFLT_INSTANCE Instance,
+                     _In_ PFILE_OBJECT FileObject,
+                     _In_ SECURITY_INFORMATION SecurityInformation,
+                     _In_ PSECURITY_DESCRIPTOR SecurityDescriptor)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(FileObject);
+    UNREFERENCED_PARAMETER(SecurityInformation);
+    UNREFERENCED_PARAMETER(SecurityDescriptor);
+    return 0;
+}
+
 _Acquires_lock_(_Global_critical_region_)
 _IRQL_requires_max_(APC_LEVEL)
 VOID

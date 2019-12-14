@@ -20,6 +20,7 @@
  @ stdcall FltGetVolumeName(ptr ptr ptr)
  @ stdcall FltQueryVolumeInformationFile(ptr ptr ptr long ptr long)
  @ stdcall FltQuerySecurityObject(ptr ptr long ptr long long)
+ @ stdcall FltSetSecurityObject(ptr ptr ptr ptr)
  @ stdcall FltGetFileNameInformation(ptr long ptr)
  @ stdcall FltGetStreamHandleContext(ptr ptr ptr)
  @ stdcall FltSupportsStreamHandleContexts(ptr)
