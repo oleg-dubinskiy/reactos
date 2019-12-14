@@ -249,6 +249,19 @@ FltGetVolumeName(
 
 NTSTATUS
 FLTAPI
+FltGetVolumeFromName(
+    _In_ PFLT_FILTER Filter,
+    _In_ PCUNICODE_STRING VolumeName,
+    _Outptr_ PFLT_VOLUME *RetVolume)
+{
+    UNREFERENCED_PARAMETER(Filter);
+    UNREFERENCED_PARAMETER(VolumeName);
+    UNREFERENCED_PARAMETER(*RetVolume);
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltQueryVolumeInformationFile(
     _In_ PFLT_INSTANCE Instance,
     _In_ PFILE_OBJECT FileObject,
