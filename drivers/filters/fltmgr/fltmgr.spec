@@ -4,6 +4,7 @@
  @ stdcall FltStartFiltering(ptr)
  @ stdcall FltBuildDefaultSecurityDescriptor(ptr long)
  @ stdcall FltFreeSecurityDescriptor(ptr)
+ @ stdcall FltGetDeviceObject(ptr ptr)
  @ stdcall FltGetDiskDeviceObject(ptr ptr)
  @ stdcall FltGetVolumeProperties(ptr ptr long ptr)
  @ stdcall FltObjectDereference(ptr)

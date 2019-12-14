@@ -35,6 +35,15 @@
 
 /* EXPORTED FUNCTIONS ******************************************************/
 
+NTSTATUS
+FLTAPI
+FltGetDeviceObject(_In_ PFLT_VOLUME Volume,
+                   _Outptr_ PDEVICE_OBJECT *DeviceObject)
+{
+    UNREFERENCED_PARAMETER(Volume);
+    UNREFERENCED_PARAMETER(*DeviceObject);
+    return 0;
+}
 
 NTSTATUS
 FLTAPI
