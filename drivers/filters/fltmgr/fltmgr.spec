@@ -11,6 +11,7 @@
  @ stdcall FltSendMessage(ptr ptr ptr long ptr ptr ptr)
  @ stdcall FltEnumerateVolumes(ptr ptr long ptr)
  @ stdcall FltGetFileNameInformationUnsafe(ptr ptr long ptr)
+ @ stdcall FltQueryInformationFile(ptr ptr ptr long long long)
  @ stdcall FltSetInformationFile(ptr ptr ptr long ptr)
  @ stdcall FltCloseClientPort(ptr ptr)
  @ stdcall FltClose(ptr)
