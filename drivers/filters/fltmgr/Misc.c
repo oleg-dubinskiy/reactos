@@ -206,6 +206,15 @@ FltWriteFile(
     return 0;
 }
 
+PVOID
+FLTAPI
+FltGetRoutineAddress(
+    _In_ PCSTR FltMgrRoutineName)
+{
+    UNREFERENCED_PARAMETER(FltMgrRoutineName);
+    return NULL;
+}
+
 NTSTATUS
 FLTAPI
 FltGetTopInstance(

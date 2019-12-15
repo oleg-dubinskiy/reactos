@@ -35,6 +35,7 @@
  @ stdcall FltGetDestinationFileNameInformation(ptr ptr ptr ptr long long ptr)
  @ stdcall FltParseFileNameInformation(ptr)
  @ stdcall FltReleaseFileNameInformation(ptr)
+ @ stdcall FltGetRoutineAddress(str)
  @ stdcall FltGetTopInstance(ptr ptr)
  @ stdcall FltIsCallbackDataDirty(ptr)
  @ stdcall FltSetCallbackDataDirty(ptr)
