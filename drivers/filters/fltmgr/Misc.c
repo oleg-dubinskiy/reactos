@@ -187,6 +187,17 @@ FltWriteFile(
     return 0;
 }
 
+NTSTATUS
+FLTAPI
+FltGetTopInstance(
+    _In_ PFLT_VOLUME Volume,
+    _Outptr_ PFLT_INSTANCE *Instance)
+{
+    UNREFERENCED_PARAMETER(Volume);
+    UNREFERENCED_PARAMETER(*Instance);
+    return 0;
+}
+
 BOOLEAN
 FLTAPI
 FltIsCallbackDataDirty(
