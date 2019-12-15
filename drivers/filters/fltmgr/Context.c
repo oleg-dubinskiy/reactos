@@ -42,6 +42,18 @@ FltReleaseContext(_In_ PFLT_CONTEXT Context)
 
 NTSTATUS
 FLTAPI
+FltGetStreamContext(_In_ PFLT_INSTANCE Instance,
+                    _In_ PFILE_OBJECT FileObject,
+                    _Outptr_ PFLT_CONTEXT *Context)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(FileObject);
+    UNREFERENCED_PARAMETER(*Context);
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltGetStreamHandleContext(_In_ PFLT_INSTANCE Instance,
                           _In_ PFILE_OBJECT FileObject,
                           _Outptr_ PFLT_CONTEXT *Context)
