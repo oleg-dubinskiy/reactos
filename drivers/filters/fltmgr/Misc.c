@@ -206,6 +206,29 @@ FltWriteFile(
     return 0;
 }
 
+NTSTATUS
+FLTAPI
+FltFsControlFile(
+    _In_ PFLT_INSTANCE Instance,
+    _In_  PFILE_OBJECT FileObject,
+    _In_ ULONG FsControlCode,
+    _In_reads_bytes_opt_(InputBufferLength) PVOID InputBuffer,
+    _In_ ULONG InputBufferLength,
+    _Out_writes_bytes_to_opt_(OutputBufferLength,*LengthReturned) PVOID OutputBuffer,
+    _In_ ULONG OutputBufferLength,
+    _Out_opt_ PULONG LengthReturned)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(FileObject);
+    UNREFERENCED_PARAMETER(FsControlCode);
+    UNREFERENCED_PARAMETER(InputBufferLength);
+    UNREFERENCED_PARAMETER(OutputBufferLength);
+    InputBuffer = NULL;
+    OutputBuffer = NULL;
+    LengthReturned = NULL;
+    return 0;
+}
+
 PVOID
 FLTAPI
 FltGetRoutineAddress(
