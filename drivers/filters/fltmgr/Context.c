@@ -33,6 +33,13 @@ SetupContextHeader(
 
 /* EXPORTED FUNCTIONS ******************************************************/
 
+VOID
+FLTAPI
+FltReleaseContext(_In_ PFLT_CONTEXT Context)
+{
+    UNREFERENCED_PARAMETER(Context);
+}
+
 NTSTATUS
 FLTAPI
 FltGetStreamHandleContext(_In_ PFLT_INSTANCE Instance,

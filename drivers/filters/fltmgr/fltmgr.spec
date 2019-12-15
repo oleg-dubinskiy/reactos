@@ -28,6 +28,7 @@
  @ stdcall FltQuerySecurityObject(ptr ptr long ptr long long)
  @ stdcall FltSetSecurityObject(ptr ptr ptr ptr)
  @ stdcall FltGetFileNameInformation(ptr long ptr)
+ @ stdcall FltReleaseContext(ptr)
  @ stdcall FltGetStreamHandleContext(ptr ptr ptr)
  @ stdcall FltSupportsStreamHandleContexts(ptr)
  @ stdcall FltCreateCommunicationPort(ptr ptr ptr ptr ptr ptr ptr long)
