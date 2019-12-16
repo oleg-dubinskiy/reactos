@@ -24,6 +24,7 @@
  @ stdcall FltGetVolumeName(ptr ptr ptr)
  @ stdcall FltGetVolumeFromName(ptr ptr ptr)
  @ stdcall FltGetVolumeFromFileObject(ptr ptr ptr)
+ @ stdcall FltGetVolumeContext(ptr ptr ptr)
  @ stdcall FltQueryVolumeInformationFile(ptr ptr ptr long ptr long)
  @ stdcall FltQuerySecurityObject(ptr ptr long ptr long long)
  @ stdcall FltSetSecurityObject(ptr ptr ptr ptr)

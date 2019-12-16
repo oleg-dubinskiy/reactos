@@ -275,6 +275,19 @@ FltGetVolumeFromFileObject(
 
 NTSTATUS
 FLTAPI
+FltGetVolumeContext(
+    _In_ PFLT_FILTER Filter,
+    _In_ PFLT_VOLUME Volume,
+    _Outptr_ PFLT_CONTEXT *Context)
+{
+    UNREFERENCED_PARAMETER(Filter);
+    UNREFERENCED_PARAMETER(Volume);
+    UNREFERENCED_PARAMETER(*Context);
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltQueryVolumeInformationFile(
     _In_ PFLT_INSTANCE Instance,
     _In_ PFILE_OBJECT FileObject,
