@@ -115,6 +115,14 @@ FltParseFileNameInformation(
 
 VOID
 FLTAPI
+FltReferenceFileNameInformation(
+    _In_ PFLT_FILE_NAME_INFORMATION FileNameInformation)
+{
+    UNREFERENCED_PARAMETER(FileNameInformation);
+}
+
+VOID
+FLTAPI
 FltReleaseFileNameInformation(
     _In_ PFLT_FILE_NAME_INFORMATION FileNameInformation)
 {

@@ -40,6 +40,7 @@
  @ stdcall FltAttachVolume(ptr ptr ptr ptr)
  @ stdcall FltGetDestinationFileNameInformation(ptr ptr ptr ptr long long ptr)
  @ stdcall FltParseFileNameInformation(ptr)
+ @ stdcall FltReferenceFileNameInformation(ptr)
  @ stdcall FltReleaseFileNameInformation(ptr)
  @ stdcall FltGetRoutineAddress(str)
  @ stdcall FltGetTopInstance(ptr ptr)
