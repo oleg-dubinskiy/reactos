@@ -35,6 +35,13 @@ SetupContextHeader(
 
 VOID
 FLTAPI
+FltReferenceContext(_In_ PFLT_CONTEXT Context)
+{
+    UNREFERENCED_PARAMETER(Context);
+}
+
+VOID
+FLTAPI
 FltReleaseContext(_In_ PFLT_CONTEXT Context)
 {
     UNREFERENCED_PARAMETER(Context);

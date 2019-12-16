@@ -30,6 +30,7 @@
  @ stdcall FltQuerySecurityObject(ptr ptr long ptr long long)
  @ stdcall FltSetSecurityObject(ptr ptr ptr ptr)
  @ stdcall FltGetFileNameInformation(ptr long ptr)
+ @ stdcall FltReferenceContext(ptr)
  @ stdcall FltReleaseContext(ptr)
  @ stdcall FltGetStreamContext(ptr ptr ptr)
  @ stdcall FltGetStreamHandleContext(ptr ptr ptr)
