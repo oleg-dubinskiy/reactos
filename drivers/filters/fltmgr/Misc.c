@@ -284,3 +284,11 @@ FltSetCallbackDataDirty(
     UNREFERENCED_PARAMETER(Data);
 }
 
+VOID
+FLTAPI
+FltPerformSynchronousIo(
+    _Inout_ PFLT_CALLBACK_DATA CallbackData)
+{
+    UNREFERENCED_PARAMETER(CallbackData);
+}
+
