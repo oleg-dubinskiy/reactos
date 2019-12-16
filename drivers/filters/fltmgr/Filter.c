@@ -409,6 +409,15 @@ FltGetFilterFromName(_In_ PCUNICODE_STRING FilterName,
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+FLTAPI
+FltGetFilterFromInstance(_In_ PFLT_INSTANCE Instance,
+                         _Outptr_ PFLT_FILTER *RetFilter)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(*RetFilter);
+    return 0;
+}
 
 /* INTERNAL FUNCTIONS ******************************************************/
 

@@ -2,6 +2,7 @@
  @ stdcall FltRegisterFilter(ptr ptr ptr)
  @ stdcall FltUnregisterFilter(ptr)
  @ stdcall FltStartFiltering(ptr)
+ @ stdcall FltGetFilterFromInstance(ptr ptr)
  @ stdcall FltBuildDefaultSecurityDescriptor(ptr long)
  @ stdcall FltFreeSecurityDescriptor(ptr)
  @ stdcall FltGetDeviceObject(ptr ptr)
