@@ -229,6 +229,16 @@ FltFsControlFile(
     return 0;
 }
 
+VOID
+FLTAPI
+FltCancelFileOpen(
+    _In_ PFLT_INSTANCE Instance,
+    _In_ PFILE_OBJECT FileObject)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(FileObject);
+}
+
 PVOID
 FLTAPI
 FltGetRoutineAddress(
