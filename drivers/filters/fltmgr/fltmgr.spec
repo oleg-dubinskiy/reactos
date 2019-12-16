@@ -24,6 +24,7 @@
  @ stdcall FltCancelFileOpen(ptr ptr)
  @ stdcall FltDetachVolume(ptr ptr ptr)
  @ stdcall FltGetVolumeName(ptr ptr ptr)
+ @ stdcall FltGetVolumeGuidName(ptr ptr ptr)
  @ stdcall FltGetVolumeFromName(ptr ptr ptr)
  @ stdcall FltGetVolumeFromFileObject(ptr ptr ptr)
  @ stdcall FltGetVolumeFromInstance(ptr ptr)

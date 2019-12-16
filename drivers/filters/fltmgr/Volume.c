@@ -262,6 +262,19 @@ FltGetVolumeFromName(
 
 NTSTATUS
 FLTAPI
+FltGetVolumeGuidName(
+    _In_ PFLT_VOLUME Volume,
+    _Out_ PUNICODE_STRING VolumeGuidName,
+    _Out_opt_ PULONG BufferSizeNeeded)
+{
+    UNREFERENCED_PARAMETER(Volume);
+    UNREFERENCED_PARAMETER(VolumeGuidName);
+    BufferSizeNeeded = NULL;
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltGetVolumeFromFileObject(
     _In_ PFLT_FILTER Filter,
     _In_ PFILE_OBJECT FileObject,
