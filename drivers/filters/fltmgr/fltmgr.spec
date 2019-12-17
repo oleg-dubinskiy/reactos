@@ -39,6 +39,7 @@
  @ stdcall FltReferenceContext(ptr)
  @ stdcall FltReleaseContext(ptr)
  @ stdcall FltGetInstanceContext(ptr ptr)
+ @ stdcall FltSetInstanceContext(ptr long ptr ptr)
  @ stdcall FltGetStreamContext(ptr ptr ptr)
  @ stdcall FltGetStreamHandleContext(ptr ptr ptr)
  @ stdcall FltSupportsStreamHandleContexts(ptr)

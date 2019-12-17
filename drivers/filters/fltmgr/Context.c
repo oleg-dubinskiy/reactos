@@ -59,6 +59,20 @@ FltGetInstanceContext(_In_ PFLT_INSTANCE Instance,
 
 NTSTATUS
 FLTAPI
+FltSetInstanceContext(_In_ PFLT_INSTANCE Instance,
+                      _In_ FLT_SET_CONTEXT_OPERATION Operation,
+                      _In_ PFLT_CONTEXT NewContext,
+                      _Outptr_opt_result_maybenull_ PFLT_CONTEXT *OldContext)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(Operation);
+    UNREFERENCED_PARAMETER(NewContext);
+    *OldContext = NULL;
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltGetStreamContext(_In_ PFLT_INSTANCE Instance,
                     _In_ PFILE_OBJECT FileObject,
                     _Outptr_ PFLT_CONTEXT *Context)
