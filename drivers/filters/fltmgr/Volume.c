@@ -312,6 +312,17 @@ FltGetVolumeContext(
 
 NTSTATUS
 FLTAPI
+FltIsVolumeWritable(
+    _In_ PVOID FltObject,
+    _Out_ PBOOLEAN IsWritable)
+{
+    UNREFERENCED_PARAMETER(FltObject);
+    UNREFERENCED_PARAMETER(IsWritable);
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltQueryVolumeInformationFile(
     _In_ PFLT_INSTANCE Instance,
     _In_ PFILE_OBJECT FileObject,
