@@ -57,4 +57,5 @@
  @ stdcall FltLockUserBuffer(ptr)
  @ stdcall FltPerformSynchronousIo(ptr)
  @ stdcall FltGetRequestorProcess(ptr)
+ @ stdcall FltGetRequestorProcessId(ptr)
 

@@ -343,3 +343,12 @@ FltGetRequestorProcess(
     return NULL;
 }
 
+ULONG
+FLTAPI
+FltGetRequestorProcessId(
+    _In_ PFLT_CALLBACK_DATA CallbackData)
+{
+    UNREFERENCED_PARAMETER(CallbackData);
+    return 0;
+}
+
