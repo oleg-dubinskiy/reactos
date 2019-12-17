@@ -29,6 +29,7 @@
  @ stdcall FltGetVolumeFromFileObject(ptr ptr ptr)
  @ stdcall FltGetVolumeFromInstance(ptr ptr)
  @ stdcall FltGetVolumeContext(ptr ptr ptr)
+ @ stdcall FltSetVolumeContext(ptr long ptr ptr)
  @ stdcall FltIsVolumeWritable(ptr ptr)
  @ stdcall FltCreateSystemVolumeInformationFolder(ptr)
  @ stdcall FltQueryVolumeInformationFile(ptr ptr ptr long ptr long)

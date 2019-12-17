@@ -312,6 +312,21 @@ FltGetVolumeContext(
 
 NTSTATUS
 FLTAPI
+FltSetVolumeContext(
+    _In_ PFLT_VOLUME Volume,
+    _In_ FLT_SET_CONTEXT_OPERATION Operation,
+    _In_ PFLT_CONTEXT NewContext,
+    _Outptr_opt_result_maybenull_ PFLT_CONTEXT *OldContext)
+{
+    UNREFERENCED_PARAMETER(Volume);
+    UNREFERENCED_PARAMETER(Operation);
+    UNREFERENCED_PARAMETER(NewContext);
+    *OldContext = NULL;
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltIsVolumeWritable(
     _In_ PVOID FltObject,
     _Out_ PBOOLEAN IsWritable)
