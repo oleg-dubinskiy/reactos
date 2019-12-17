@@ -323,6 +323,15 @@ FltIsVolumeWritable(
 
 NTSTATUS
 FLTAPI
+FltCreateSystemVolumeInformationFolder(
+    _In_ PFLT_INSTANCE Instance)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltQueryVolumeInformationFile(
     _In_ PFLT_INSTANCE Instance,
     _In_ PFILE_OBJECT FileObject,
