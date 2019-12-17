@@ -334,3 +334,12 @@ FltPerformSynchronousIo(
     UNREFERENCED_PARAMETER(CallbackData);
 }
 
+PEPROCESS
+FLTAPI
+FltGetRequestorProcess(
+    _In_ PFLT_CALLBACK_DATA CallbackData)
+{
+    UNREFERENCED_PARAMETER(CallbackData);
+    return NULL;
+}
+

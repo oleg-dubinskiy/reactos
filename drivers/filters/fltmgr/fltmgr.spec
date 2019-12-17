@@ -56,4 +56,5 @@
  @ stdcall FltInitializePushLock(ptr)
  @ stdcall FltLockUserBuffer(ptr)
  @ stdcall FltPerformSynchronousIo(ptr)
+ @ stdcall FltGetRequestorProcess(ptr)
 
