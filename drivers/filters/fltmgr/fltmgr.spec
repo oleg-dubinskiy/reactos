@@ -43,6 +43,7 @@
  @ stdcall FltGetStreamContext(ptr ptr ptr)
  @ stdcall FltSetStreamContext(ptr ptr long ptr ptr)
  @ stdcall FltGetStreamHandleContext(ptr ptr ptr)
+ @ stdcall FltSetStreamHandleContext(ptr ptr long ptr ptr)
  @ stdcall FltSupportsStreamHandleContexts(ptr)
  @ stdcall FltCreateCommunicationPort(ptr ptr ptr ptr ptr ptr ptr long)
  @ stdcall FltCloseCommunicationPort(ptr)
