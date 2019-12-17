@@ -317,6 +317,15 @@ FltInitializePushLock(
     UNREFERENCED_PARAMETER(PushLock);
 }
 
+NTSTATUS
+FLTAPI
+FltLockUserBuffer(
+    _In_ PFLT_CALLBACK_DATA CallbackData)
+{
+    UNREFERENCED_PARAMETER(CallbackData);
+    return 0;
+}
+
 VOID
 FLTAPI
 FltPerformSynchronousIo(
