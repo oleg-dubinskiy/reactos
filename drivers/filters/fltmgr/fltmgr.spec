@@ -31,6 +31,7 @@
  @ stdcall FltGetVolumeContext(ptr ptr ptr)
  @ stdcall FltQueryVolumeInformationFile(ptr ptr ptr long ptr long)
  @ stdcall FltQuerySecurityObject(ptr ptr long ptr long long)
+ @ stdcall FltQueueGenericWorkItem(ptr ptr ptr ptr ptr)
  @ stdcall FltSetSecurityObject(ptr ptr ptr ptr)
  @ stdcall FltGetFileNameInformation(ptr long ptr)
  @ stdcall FltReferenceContext(ptr)

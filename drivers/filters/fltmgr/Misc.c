@@ -150,6 +150,23 @@ FltQueryInformationFile(
 
 NTSTATUS
 FLTAPI
+FltQueueGenericWorkItem(
+    _In_ PFLT_GENERIC_WORKITEM FltWorkItem,
+    _In_ PVOID FltObject,
+    _In_ PFLT_GENERIC_WORKITEM_ROUTINE WorkerRoutine,
+    _In_ WORK_QUEUE_TYPE QueueType,
+    _In_opt_ PVOID Context)
+{
+    UNREFERENCED_PARAMETER(FltWorkItem);
+    UNREFERENCED_PARAMETER(FltObject);
+    UNREFERENCED_PARAMETER(WorkerRoutine);
+    UNREFERENCED_PARAMETER(QueueType);
+    Context = NULL;
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltSetInformationFile(
     _In_ PFLT_INSTANCE Instance,
     _In_ PFILE_OBJECT FileObject,
