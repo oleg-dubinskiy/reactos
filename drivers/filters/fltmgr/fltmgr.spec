@@ -41,6 +41,7 @@
  @ stdcall FltGetInstanceContext(ptr ptr)
  @ stdcall FltSetInstanceContext(ptr long ptr ptr)
  @ stdcall FltGetStreamContext(ptr ptr ptr)
+ @ stdcall FltSetStreamContext(ptr ptr long ptr ptr)
  @ stdcall FltGetStreamHandleContext(ptr ptr ptr)
  @ stdcall FltSupportsStreamHandleContexts(ptr)
  @ stdcall FltCreateCommunicationPort(ptr ptr ptr ptr ptr ptr ptr long)
