@@ -311,6 +311,14 @@ FltSetCallbackDataDirty(
 
 VOID
 FLTAPI
+FltInitializePushLock(
+    _Out_ PEX_PUSH_LOCK PushLock)
+{
+    UNREFERENCED_PARAMETER(PushLock);
+}
+
+VOID
+FLTAPI
 FltPerformSynchronousIo(
     _Inout_ PFLT_CALLBACK_DATA CallbackData)
 {

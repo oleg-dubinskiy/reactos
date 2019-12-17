@@ -53,5 +53,6 @@
  @ stdcall FltIsCallbackDataDirty(ptr)
  @ stdcall FltClearCallbackDataDirty(ptr)
  @ stdcall FltSetCallbackDataDirty(ptr)
+ @ stdcall FltInitializePushLock(ptr)
  @ stdcall FltPerformSynchronousIo(ptr)
 
