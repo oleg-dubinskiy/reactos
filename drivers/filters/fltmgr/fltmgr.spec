@@ -35,6 +35,7 @@
  @ stdcall FltGetFileNameInformation(ptr long ptr)
  @ stdcall FltReferenceContext(ptr)
  @ stdcall FltReleaseContext(ptr)
+ @ stdcall FltGetInstanceContext(ptr ptr)
  @ stdcall FltGetStreamContext(ptr ptr ptr)
  @ stdcall FltGetStreamHandleContext(ptr ptr ptr)
  @ stdcall FltSupportsStreamHandleContexts(ptr)
