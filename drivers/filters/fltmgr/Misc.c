@@ -284,6 +284,19 @@ FltGetTopInstance(
     return 0;
 }
 
+NTSTATUS
+FLTAPI
+FltAllocateCallbackData(
+    _In_ PFLT_INSTANCE Instance,
+    _In_opt_ PFILE_OBJECT FileObject,
+    _Outptr_ PFLT_CALLBACK_DATA *RetNewCallbackData)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(*RetNewCallbackData);
+    FileObject = NULL;
+    return 0;
+}
+
 BOOLEAN
 FLTAPI
 FltIsCallbackDataDirty(
