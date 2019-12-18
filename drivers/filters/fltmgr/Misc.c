@@ -284,6 +284,23 @@ FltGetTopInstance(
     return 0;
 }
 
+NTSTATUS
+FLTAPI
+FltEnumerateInstances(
+    _In_opt_ PFLT_VOLUME Volume,
+    _In_opt_ PFLT_FILTER Filter,
+    _Out_writes_to_opt_(InstanceListSize,*NumberInstancesReturned) PFLT_INSTANCE *InstanceList,
+    _In_ ULONG InstanceListSize,
+    _Out_ PULONG NumberInstancesReturned)
+{
+    UNREFERENCED_PARAMETER(*InstanceList);
+    UNREFERENCED_PARAMETER(InstanceListSize);
+    UNREFERENCED_PARAMETER(NumberInstancesReturned);
+    Volume = NULL;
+    Filter = NULL;
+    return 0;
+}
+
 PFLT_GENERIC_WORKITEM
 FLTAPI
 FltAllocateGenericWorkItem(VOID)

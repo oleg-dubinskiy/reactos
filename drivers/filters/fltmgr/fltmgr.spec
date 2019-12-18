@@ -56,6 +56,7 @@
  @ stdcall FltReleaseFileNameInformation(ptr)
  @ stdcall FltGetRoutineAddress(str)
  @ stdcall FltGetTopInstance(ptr ptr)
+ @ stdcall FltEnumerateInstances(ptr ptr ptr long long)
  @ stdcall FltAllocateGenericWorkItem()
  @ stdcall FltAllocatePoolAlignedWithTag(ptr long long long)
  @ stdcall FltAllocateCallbackData(ptr ptr ptr)
