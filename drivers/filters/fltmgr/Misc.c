@@ -291,6 +291,21 @@ FltAllocateGenericWorkItem(VOID)
     return NULL;
 }
 
+PVOID
+FLTAPI
+FltAllocatePoolAlignedWithTag(
+    _In_ PFLT_INSTANCE Instance,
+    _In_ POOL_TYPE PoolType,
+    _In_ SIZE_T NumberOfBytes,
+    _In_ ULONG Tag)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(PoolType);
+    UNREFERENCED_PARAMETER(Tag);
+    NumberOfBytes = 0;
+    return NULL;
+}
+
 NTSTATUS
 FLTAPI
 FltAllocateCallbackData(
