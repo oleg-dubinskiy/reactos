@@ -37,6 +37,7 @@
  @ stdcall FltQueueGenericWorkItem(ptr ptr ptr ptr ptr)
  @ stdcall FltSetSecurityObject(ptr ptr ptr ptr)
  @ stdcall FltGetFileNameInformation(ptr long ptr)
+ @ stdcall FltAllocateContext(ptr long long long ptr)
  @ stdcall FltReferenceContext(ptr)
  @ stdcall FltReleaseContext(ptr)
  @ stdcall FltGetInstanceContext(ptr ptr)

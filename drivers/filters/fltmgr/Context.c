@@ -33,6 +33,23 @@ SetupContextHeader(
 
 /* EXPORTED FUNCTIONS ******************************************************/
 
+NTSTATUS
+FLTAPI
+FltAllocateContext(
+    _In_ PFLT_FILTER Filter,
+    _In_ FLT_CONTEXT_TYPE ContextType,
+    _In_ SIZE_T ContextSize,
+    _In_ POOL_TYPE PoolType,
+    _Outptr_result_bytebuffer_(ContextSize) PFLT_CONTEXT *ReturnedContext)
+{
+    UNREFERENCED_PARAMETER(Filter);
+    UNREFERENCED_PARAMETER(ContextType);
+    UNREFERENCED_PARAMETER(ContextSize);
+    UNREFERENCED_PARAMETER(PoolType);
+    UNREFERENCED_PARAMETER(*ReturnedContext);
+    return 0;
+}
+
 VOID
 FLTAPI
 FltReferenceContext(_In_ PFLT_CONTEXT Context)
