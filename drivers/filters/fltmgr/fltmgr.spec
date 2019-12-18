@@ -56,6 +56,7 @@
  @ stdcall FltReleaseFileNameInformation(ptr)
  @ stdcall FltGetRoutineAddress(str)
  @ stdcall FltGetTopInstance(ptr ptr)
+ @ stdcall FltAllocateGenericWorkItem()
  @ stdcall FltAllocateCallbackData(ptr ptr ptr)
  @ stdcall FltIsCallbackDataDirty(ptr)
  @ stdcall FltClearCallbackDataDirty(ptr)

@@ -284,6 +284,13 @@ FltGetTopInstance(
     return 0;
 }
 
+PFLT_GENERIC_WORKITEM
+FLTAPI
+FltAllocateGenericWorkItem(VOID)
+{
+    return NULL;
+}
+
 NTSTATUS
 FLTAPI
 FltAllocateCallbackData(
