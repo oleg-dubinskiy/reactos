@@ -174,6 +174,13 @@ FltReleasePushLock(_Inout_ _Requires_lock_held_(*_Curr_) _Releases_lock_(*_Curr_
     KeLeaveCriticalRegion();
 }
 
+VOID
+FLTAPI
+FltDeletePushLock(_In_ PEX_PUSH_LOCK PushLock)
+{
+    UNREFERENCED_PARAMETER(PushLock);
+}
+
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS
 FLTAPI
