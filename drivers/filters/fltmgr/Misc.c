@@ -378,6 +378,17 @@ FltLockUserBuffer(
     return 0;
 }
 
+NTSTATUS
+FLTAPI
+FltFlushBuffers(
+    _In_ PFLT_INSTANCE Instance,
+    _In_ PFILE_OBJECT FileObject)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(FileObject);
+    return 0;
+}
+
 VOID
 FLTAPI
 FltPerformSynchronousIo(

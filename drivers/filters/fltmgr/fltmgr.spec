@@ -66,6 +66,7 @@
  @ stdcall FltSetCallbackDataDirty(ptr)
  @ stdcall FltInitializePushLock(ptr)
  @ stdcall FltLockUserBuffer(ptr)
+ @ stdcall FltFlushBuffers(ptr ptr)
  @ stdcall FltPerformSynchronousIo(ptr)
  @ stdcall FltGetRequestorProcess(ptr)
  @ stdcall FltGetRequestorProcessId(ptr)
