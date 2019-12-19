@@ -32,6 +32,7 @@
  @ stdcall FltSetVolumeContext(ptr long ptr ptr)
  @ stdcall FltIsVolumeWritable(ptr ptr)
  @ stdcall FltCreateSystemVolumeInformationFolder(ptr)
+ @ stdcall FltEnumerateVolumeInformation(ptr long long ptr long long)
  @ stdcall FltQueryVolumeInformationFile(ptr ptr ptr long ptr long)
  @ stdcall FltQuerySecurityObject(ptr ptr long ptr long long)
  @ stdcall FltQueueGenericWorkItem(ptr ptr ptr ptr ptr)

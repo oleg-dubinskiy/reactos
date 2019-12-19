@@ -347,6 +347,25 @@ FltCreateSystemVolumeInformationFolder(
 
 NTSTATUS
 FLTAPI
+FltEnumerateVolumeInformation(
+    _In_ PFLT_FILTER Filter,
+    _In_ ULONG Index,
+    _In_ FILTER_VOLUME_INFORMATION_CLASS InformationClass,
+    _Out_writes_bytes_to_opt_(BufferSize,*BytesReturned) PVOID Buffer,
+    _In_ ULONG BufferSize,
+    _Out_ PULONG BytesReturned)
+{
+    UNREFERENCED_PARAMETER(Filter);
+    UNREFERENCED_PARAMETER(Index);
+    UNREFERENCED_PARAMETER(InformationClass);
+    UNREFERENCED_PARAMETER(Buffer);
+    UNREFERENCED_PARAMETER(BufferSize);
+    UNREFERENCED_PARAMETER(BytesReturned);
+    return 0;
+}
+
+NTSTATUS
+FLTAPI
 FltQueryVolumeInformationFile(
     _In_ PFLT_INSTANCE Instance,
     _In_ PFILE_OBJECT FileObject,
