@@ -59,6 +59,7 @@
  @ stdcall FltGetTopInstance(ptr ptr)
  @ stdcall FltEnumerateInstances(ptr ptr ptr long long)
  @ stdcall FltAllocateGenericWorkItem()
+ @ stdcall FltFreeGenericWorkItem(ptr)
  @ stdcall FltAllocatePoolAlignedWithTag(ptr long long long)
  @ stdcall FltAllocateCallbackData(ptr ptr ptr)
  @ stdcall FltFreeCallbackData(ptr)

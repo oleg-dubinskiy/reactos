@@ -308,6 +308,14 @@ FltAllocateGenericWorkItem(VOID)
     return NULL;
 }
 
+VOID
+FLTAPI
+FltFreeGenericWorkItem(
+    _In_ PFLT_GENERIC_WORKITEM FltWorkItem)
+{
+    UNREFERENCED_PARAMETER(FltWorkItem);
+}
+
 PVOID
 FLTAPI
 FltAllocatePoolAlignedWithTag(
