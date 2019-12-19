@@ -336,6 +336,14 @@ FltAllocateCallbackData(
     return 0;
 }
 
+VOID
+FLTAPI
+FltFreeCallbackData(
+    _In_ PFLT_CALLBACK_DATA CallbackData)
+{
+    UNREFERENCED_PARAMETER(CallbackData);
+}
+
 BOOLEAN
 FLTAPI
 FltIsCallbackDataDirty(
