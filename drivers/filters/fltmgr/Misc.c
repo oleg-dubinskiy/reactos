@@ -331,6 +331,18 @@ FltAllocatePoolAlignedWithTag(
     return NULL;
 }
 
+VOID
+FLTAPI
+FltFreePoolAlignedWithTag(
+    _In_ PFLT_INSTANCE Instance,
+    _In_ PVOID Buffer,
+    _In_ ULONG Tag)
+{
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(Buffer);
+    UNREFERENCED_PARAMETER(Tag);
+}
+
 NTSTATUS
 FLTAPI
 FltAllocateCallbackData(

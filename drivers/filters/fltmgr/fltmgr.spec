@@ -61,6 +61,7 @@
  @ stdcall FltAllocateGenericWorkItem()
  @ stdcall FltFreeGenericWorkItem(ptr)
  @ stdcall FltAllocatePoolAlignedWithTag(ptr long long long)
+ @ stdcall FltFreePoolAlignedWithTag(ptr ptr long)
  @ stdcall FltAllocateCallbackData(ptr ptr ptr)
  @ stdcall FltFreeCallbackData(ptr)
  @ stdcall FltIsCallbackDataDirty(ptr)
