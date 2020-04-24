@@ -326,7 +326,7 @@ PlayLogonSoundThread(
        Note: We can't use HKCU here, because Winlogon is owned by SYSTEM user */
     if (FAILED(StringCbCopyW(wszBuffer + SidString.Length/sizeof(WCHAR),
                              sizeof(wszBuffer) - SidString.Length,
-                             L"\\AppEvents\\Schemes\\Apps\\.Default\\WindowsLogon\\.Current")))
+                             L"\\AppEvents\\Schemes\\Apps\\.Default\\SystemStart\\.Current")))
     {
         /* SID is too long. Should not happen. */
         ERR("StringCbCopyW failed!\n");
