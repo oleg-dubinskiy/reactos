@@ -45,6 +45,162 @@ typedef struct
 static EVENT_LABEL_ITEM EventLabels[] =
 {
     {
+        L".Default",
+        L"Default sound",
+        IDS_DEFAULT,
+        L"ReactOS_Default.wav"
+    },
+    {
+        L"AppGPFault",
+        L"Program Error",
+        IDS_APP_GP_FAULT,
+        L"ReactOS_Error.wav"
+    },
+    {
+        L"Close",
+        L"Close Program",
+        IDS_CLOSE,
+        L""
+    },
+    {
+        L"CriticalBatteryAlarm",
+        L"Battery Critical",
+        IDS_CRITICAL_BATTERY_ALARM,
+        L"ReactOS_Battery_Critical.wav"
+    },
+    {
+        L"DeviceConnect",
+        L"Hardware Insert",
+        IDS_DEVICE_CONNECT,
+        L"ReactOS_Hardware_Insert.wav"
+    },
+    {
+        L"DeviceDisconnect",
+        L"Hardware Remove",
+        IDS_DEVICE_DISCONNECT,
+        L"ReactOS_Hardware_Remove.wav"
+    },
+    {
+        L"DeviceFail",
+        L"Hardware Fail",
+        IDS_DEVICE_FAIL,
+        L"ReactOS_Hardware_Fail.wav"
+    },
+    {
+        L"EmptyRecycleBin",
+        L"Emply Recycle Bin",
+        IDS_EMPTY_RECYCLE_BIN,
+        L"ReactOS_Recycle.wav"
+    },
+    {
+        L"LowBatteryAlarm",
+        L"Battery Low",
+        IDS_LOW_BATTERY_ALARM,
+        L"ReactOS_Battery_Low.wav"
+    },
+    {
+        L"MailBeep",
+        L"Mail Notification",
+        IDS_MAIL_BEEP,
+        L"ReactOS_Notify.wav"
+    },
+    {
+        L"Maximize",
+        L"Maximize",
+        IDS_MAXIMIZE,
+        L"ReactOS_Restore.wav"
+    },
+    {
+        L"MenuCommand",
+        L"Menu Command",
+        IDS_MENU_COMMAND,
+        L"ReactOS_Menu_Command.wav"
+    },
+    {
+        L"MenuPopup",
+        L"Open menu",
+        IDS_MENU_POPUP,
+        L""
+    },
+    {
+        L"Minimize",
+        L"Minimize",
+        IDS_MINIMIZE,
+        L"ReactOS_Minimize.wav"
+    },
+    {
+        L"Navigating",
+        L"Start Navigation",
+        IDS_NAVIGATING,
+        L"ReactOS_Navigation_Start.wav"
+    },
+    {
+        L"Open",
+        L"Opening a program",
+        IDS_OPEN,
+        L""
+    },
+    {
+        L"PrintComplete",
+        L"Print Complete",
+        IDS_PRINT_COMPLETE,
+        L"ReactOS_Print_Complete.wav"
+    },
+    {
+        L"RestoreDown",
+        L"Restore window from fullscreen",
+        IDS_RESTORE_DOWN,
+        L"ReactOS_Restore.wav"
+    },
+    {
+        L"RestoreUp",
+        L"Restore window from icon",
+        IDS_RESTORE_UP,
+        L"ReactOS_Restore.wav"
+    },
+    {
+        L"SystemAsterisk",
+        L"Asterisk",
+        IDS_SYSTEM_ASTERISK,
+        L"ReactOS_Ding.wav"
+    },
+    {
+        L"SystemExclamation",
+        L"Exclamation",
+        IDS_SYSTEM_EXCLAMATION,
+        L"ReactOS_Exclamation.wav"
+    },
+    {
+        L"SystemExit",
+        L"ReactOS Shutdown",
+        IDS_SYSTEM_EXIT,
+        L"ReactOS_Shutdown.wav"
+    },
+    {
+        L"SystemHand",
+        L"Critical Stop",
+        IDS_SYSTEM_HAND,
+        L"ReactOS_Critical_Stop.wav"
+    },
+    {
+        L"SystemNotification",
+        L"System Notification",
+        IDS_SYSTEM_NOTIFICATION,
+        L"ReactOS_Balloon.wav"
+    },
+    {
+        L"SystemQuestion",
+        L"Question",
+        IDS_SYSTEM_QUESTION,
+        L"ReactOS_Ding.wav"
+    },
+    {
+        L"SystemStart",
+        L"ReactOS Startup",
+        IDS_SYSTEM_START,
+        L"ReactOS_Startup.wav"
+    },
+    {
         L"WindowsLogon",
         L"ReactOS Logon",
         IDS_REACTOS_LOGON,
