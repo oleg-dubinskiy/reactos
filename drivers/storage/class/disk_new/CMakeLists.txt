@@ -28,3 +28,4 @@ add_importlibs(disk_new classpnp ntoskrnl hal)
 #disable pch to prevent redefinition of _WIN32_WINNT, DiskReadDriveCapacity and DiskGetDetectInfo in Release-Config
 #add_pch(disk_new disk.h SOURCE)
 add_cd_file(TARGET disk_new DESTINATION reactos/system32/drivers NO_CAB FOR all)
+#add_driver_inf(disk_new diskdev.inf)
