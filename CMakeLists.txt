@@ -251,7 +251,7 @@ else()
     endif()
 
     # For MSVC builds, this puts all debug symbols file in the same directory.
-    if (MSVC)
+    if(MSVC)
         set(CMAKE_PDB_OUTPUT_DIRECTORY "${REACTOS_BINARY_DIR}/msvc_pdb")
     elseif(SEPARATE_DBG)
         set(CMAKE_PDB_OUTPUT_DIRECTORY "${REACTOS_BINARY_DIR}/symbols")

@@ -52,12 +52,12 @@ endif()
 # default for older compilers. See CORE-6507
 if(MSVC_VERSION GREATER 1699 AND ARCH STREQUAL "i386")
     add_compile_flags("/arch:IA32")
-endif ()
+endif()
 
 # VS 12+ requires /FS when used in parallel compilations
 if(MSVC_VERSION GREATER 1799 AND NOT MSVC_IDE)
     add_compile_flags("/FS")
-endif ()
+endif()
 
 # VS14+ tries to use thread-safe initialization
 if(MSVC_VERSION GREATER 1899)
@@ -69,7 +69,7 @@ endif ()
 if(ARCH STREQUAL "amd64" AND MSVC_VERSION GREATER 1922)
     add_compile_flags("/d2FH4-")
     add_link_options("/d2:-FH4-")
-endif ()
+endif()
 
 # Generate Warnings Level 3
 add_compile_flags("/W3")
@@ -440,7 +440,7 @@ function(spec2def _dllname _spec_file)
         message(FATAL_ERROR "spec2def only takes spec files as input.")
     endif()
 
-    if (__spec2def_WITH_RELAY)
+    if(__spec2def_WITH_RELAY)
         set(__with_relay_arg "--with-tracing")
     endif()
 
