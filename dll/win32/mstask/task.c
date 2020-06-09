@@ -32,6 +32,7 @@ typedef struct
     LPWSTR comment;
     DWORD maxRunTime;
     LPWSTR accountName;
+    DWORD trigger_count;
 } TaskImpl;
 
 static inline TaskImpl *impl_from_ITask(ITask *iface)
@@ -124,12 +125,14 @@ static HRESULT WINAPI MSTASK_ITask_DeleteTrigger(
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI MSTASK_ITask_GetTriggerCount(
-        ITask* iface,
-        WORD *plCount)
+static HRESULT WINAPI MSTASK_ITask_GetTriggerCount(ITask *iface, WORD *count)
 {
-    FIXME("(%p, %p): stub\n", iface, plCount);
-    return E_NOTIMPL;
+    TaskImpl *This = impl_from_ITask(iface);
+
+    TRACE("(%p, %p)\n", iface, count);
+
+    *count = This->trigger_count;
+    return S_OK;
 }
 
 static HRESULT WINAPI MSTASK_ITask_GetTrigger(
@@ -779,6 +782,7 @@ HRESULT TaskConstructor(LPCWSTR pwszTaskName, LPVOID *ppObj)
     This->parameters = NULL;
     This->comment = NULL;
     This->accountName = NULL;
+    This->trigger_count = 0;
 
     /* Default time is 3 days = 259200000 ms */
     This->maxRunTime = 259200000;
