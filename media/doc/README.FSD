@@ -18,9 +18,10 @@ reactos/drivers/filesystems/reiserfs        # Synced to 0.26
 
 The following FSD are shared with: https://github.com/Microsoft/Windows-driver-samples
 
-reactos/drivers/filesystems/fastfat_new     # Synced to 2817004
-reactos/drivers/filesystems/cdfs            # Synced to f73e552
-reactos/drivers/storage/floppy_new          # Synced to 8fb512a
+drivers/filesystems/cdfs            # Synced to f73e552
+drivers/filesystems/fastfat_new     # Synced to 16022c5
+drivers/storage/class/disk_new      # Forked. (Imported on 2012.01.26 (r55211, from Windows XP DDK), merged to trunk on 2012.02.12 (r55555).)
+drivers/storage/floppy_new          # Synced to 8fb512a
 
 The following FS libs are shared with: https://github.com/dosfstools/dosfstools
 reactos/sdk/lib/fslib/vfatlib/check         # Synced to 4.1
