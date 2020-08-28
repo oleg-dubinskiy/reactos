@@ -2332,23 +2332,26 @@ IoSetShareAccessEx(
   _Out_ PSHARE_ACCESS ShareAccess,
   _In_ PBOOLEAN WritePermission);
 
+NTKERNELAPI
 ULONG
 NTAPI
 IoSizeofWorkItem(VOID);
 
+NTKERNELAPI
 VOID
 NTAPI
 IoInitializeWorkItem(
   _In_ PVOID IoObject,
   _Out_ PIO_WORKITEM IoWorkItem);
 
+NTKERNELAPI
 VOID
 NTAPI
 IoUninitializeWorkItem(
   _Inout_ PIO_WORKITEM IoWorkItem);
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
-NTKRNLVISTAAPI
+NTKERNELAPI
 VOID
 NTAPI
 IoQueueWorkItemEx(
@@ -2357,18 +2360,20 @@ IoQueueWorkItemEx(
   _In_ WORK_QUEUE_TYPE QueueType,
   _In_opt_ __drv_aliasesMem PVOID Context);
 
-NTKRNLVISTAAPI
+NTKERNELAPI
 IO_PRIORITY_HINT
 NTAPI
 IoGetIoPriorityHint(
   _In_ PIRP Irp);
 
+NTKERNELAPI
 NTSTATUS
 NTAPI
 IoSetIoPriorityHint(
   _In_ PIRP Irp,
   _In_ IO_PRIORITY_HINT PriorityHint);
 
+NTKERNELAPI
 NTSTATUS
 NTAPI
 IoAllocateSfioStreamIdentifier(
@@ -2383,6 +2388,7 @@ IoGetSfioStreamIdentifier(
   _In_ PFILE_OBJECT FileObject,
   _In_ PVOID Signature);
 
+NTKERNELAPI
 NTSTATUS
 NTAPI
 IoFreeSfioStreamIdentifier(
@@ -2402,7 +2408,7 @@ IoRequestDeviceEjectEx(
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
-NTKRNLVISTAAPI
+NTKERNELAPI
 NTSTATUS
 NTAPI
 IoSetDevicePropertyData(
@@ -2416,7 +2422,7 @@ IoSetDevicePropertyData(
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
-NTKRNLVISTAAPI
+NTKERNELAPI
 NTSTATUS
 NTAPI
 IoGetDevicePropertyData(
@@ -2439,6 +2445,7 @@ IoUpdateDiskGeometry(
   _In_ struct _DISK_GEOMETRY_EX* OldDiskGeometry,
   _In_ struct _DISK_GEOMETRY_EX* NewDiskGeometry);
 
+NTKERNELAPI
 PTXN_PARAMETER_BLOCK
 NTAPI
 IoGetTransactionParameterBlock(
@@ -2464,24 +2471,27 @@ IoCreateFileEx(
   _In_ ULONG Options,
   _In_opt_ PIO_DRIVER_CREATE_CONTEXT DriverContext);
 
+NTKERNELAPI
 NTSTATUS
 NTAPI
 IoSetIrpExtraCreateParameter(
   _Inout_ PIRP Irp,
   _In_ struct _ECP_LIST *ExtraCreateParameter);
 
+NTKERNELAPI
 VOID
 NTAPI
 IoClearIrpExtraCreateParameter(
   _Inout_ PIRP Irp);
 
-NTKRNLVISTAAPI
+NTKERNELAPI
 NTSTATUS
 NTAPI
 IoGetIrpExtraCreateParameter(
   _In_ PIRP Irp,
   _Outptr_result_maybenull_ struct _ECP_LIST **ExtraCreateParameter);
 
+NTKERNELAPI
 BOOLEAN
 NTAPI
 IoIsFileObjectIgnoringSharing(
@@ -2598,11 +2608,9 @@ $endif (_NTIFS_)
 #endif /* (NTDDI_VERSION >= NTDDI_WIN7) */
 
 #if (NTDDI_VERSION >= NTDDI_WIN8)
-
-$if (_WDMDDK_)
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
-NTKRNLVISTAAPI
+NTKERNELAPI
 NTSTATUS
 IoSetDeviceInterfacePropertyData(
   _In_ PUNICODE_STRING SymbolicLinkName,
@@ -2626,16 +2634,6 @@ IoGetDeviceInterfacePropertyData (
   _Out_writes_bytes_to_(Size, *RequiredSize) PVOID Data,
   _Out_ PULONG RequiredSize,
   _Out_ PDEVPROPTYPE Type);
-$endif (_WDMDDK_)
-$if (_NTDDK_)
-
-NTKRNLVISTAAPI
-VOID
-IoSetMasterIrpStatus(
-  _Inout_ PIRP MasterIrp,
-  _In_ NTSTATUS Status);
-$endif (_NTDDK_)
-
 #endif /* (NTDDI_VERSION >= NTDDI_WIN8) */
 
 $if (_WDMDDK_)
