@@ -2348,7 +2348,7 @@ IoUninitializeWorkItem(
   _Inout_ PIO_WORKITEM IoWorkItem);
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
-NTKERNELAPI
+NTKRNLVISTAAPI
 VOID
 NTAPI
 IoQueueWorkItemEx(
@@ -2357,17 +2357,12 @@ IoQueueWorkItemEx(
   _In_ WORK_QUEUE_TYPE QueueType,
   _In_opt_ __drv_aliasesMem PVOID Context);
 
-// NTKERNELAPI // HACK: ntoskrnl_vista functions are statically linked thus don't need DECLSPEC_IMPORT
+NTKRNLVISTAAPI
 IO_PRIORITY_HINT
 NTAPI
 IoGetIoPriorityHint(
   _In_ PIRP Irp);
 
-<<<<<<< .mine
-NTKERNELAPI
-=======
-
->>>>>>> .theirs
 NTSTATUS
 NTAPI
 IoSetIoPriorityHint(
@@ -2421,7 +2416,7 @@ IoSetDevicePropertyData(
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
-NTKERNELAPI
+NTKRNLVISTAAPI
 NTSTATUS
 NTAPI
 IoGetDevicePropertyData(
@@ -2480,7 +2475,7 @@ NTAPI
 IoClearIrpExtraCreateParameter(
   _Inout_ PIRP Irp);
 
-NTKERNELAPI
+NTKRNLVISTAAPI
 NTSTATUS
 NTAPI
 IoGetIrpExtraCreateParameter(
@@ -2607,7 +2602,7 @@ $endif (_NTIFS_)
 $if (_WDMDDK_)
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
-NTKERNELAPI
+NTKRNLVISTAAPI
 NTSTATUS
 IoSetDeviceInterfacePropertyData(
   _In_ PUNICODE_STRING SymbolicLinkName,
@@ -2634,7 +2629,7 @@ IoGetDeviceInterfacePropertyData (
 $endif (_WDMDDK_)
 $if (_NTDDK_)
 
-// NTKERNELAPI // HACK: ntoskrnl_vista functions are statically linked thus don't need DECLSPEC_IMPORT
+NTKRNLVISTAAPI
 VOID
 IoSetMasterIrpStatus(
   _Inout_ PIRP MasterIrp,
