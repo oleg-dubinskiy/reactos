@@ -2667,10 +2667,6 @@ buffer, use the table in the buffer annotations section.
 #define __out                                                    _SAL1_Source_(__out, (), _Out_)
 #endif // !PAL_STDCPP_COMPAT
 
-#define __in_xcount(size)                                        _SAL1_Source_(__in_xcount, (size), __in _Pre_ __inexpressible_readableTo(size))
-#define __in_xcount_opt(size)                                    _SAL1_Source_(__in_xcount_opt, (size), __in_xcount(size) __exceptthat __maybenull)
-#define __out_xcount(size)                                       _SAL1_Source_(__out_xcount, (size), __xcount(size) _Post_ __valid __refparam)
-
 #define __ecount(size)                                           _SAL1_Source_(__ecount, (size), __notnull __elem_writableTo(size))
 #define __bcount(size)                                           _SAL1_Source_(__bcount, (size), __notnull __byte_writableTo(size))
 #define __in_ecount(size)                                        _SAL1_Source_(__in_ecount, (size), _In_reads_(size))
