@@ -35,9 +35,11 @@ Title: Mesa3D glu libary
 Used Version: 9.0.1
 Website: https://gitlab.freedesktop.org/mesa/glu | ftp://ftp.freedesktop.org/pub/mesa/glu/
 
-Title: GNU adns
-Used Version: 1.0 REV 5
-Website: http://www.gnu.org/software/adns/ | http://adns.jgaa.com
+Title: ACPICA
+Path: drivers/bus/acpi/acpica
+Used Version: 20201113
+License: GPL-2.0 (https://spdx.org/licenses/GPL-2.0.html)
+URL: https://acpica.org/
 
 Title: LibXML
 Used Version: 2.9.10
