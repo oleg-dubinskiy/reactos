@@ -482,31 +482,35 @@ RtlpAddRange(
     return STATUS_SUCCESS;
 }
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlAddRange
+/**
+ * @name RtlAddRange
  *
- * DESCRIPTION
- *	Adds a range to a range list.
+ * Adds a range to a range list.
  *
- * ARGUMENTS
- *	RangeList		Range list.
- *	Start
- *	End
- *	Attributes
- *	Flags
- *	UserData
- *	Owner
+ * @param RangeList
+ * Pointer to the source range list.
  *
- * RETURN VALUE
- *	Status
+ * @param Start
+ * Start of the range to be added.
  *
- * TODO:
- *   - Support shared ranges.
+ * @param End
+ * End of the range to be added.
  *
- * @implemented
+ * @param Attributes
+ * Attributes to be copied to "Attributes" field in the new Entry.
+ *
+ * @param Flags
+ * Flags describing the control the behavior of lists.
+ *
+ * @param UserData
+ * Pointer to the user data of the ranges to be added.
+ *
+ * @param Owner
+ * Pointer to the owner of the ranges to be added.
+ *
+ * @return
+ * Returns NTSTATUS.
  */
-NTSYSAPI
 NTSTATUS
 NTAPI
 RtlAddRange(
@@ -558,23 +562,20 @@ RtlAddRange(
     return Status;
 }
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlCopyRangeList
+/**
+ * @name RtlCopyRangeList
  *
- * DESCRIPTION
- *	Copy a range list.
+ * Copy a range list.
  *
- * ARGUMENTS
- *	CopyRangeList	Pointer to the destination range list.
- *	RangeList	Pointer to the source range list.
+ * @param CopyRangeList
+ * Pointer to the destination range list.
  *
- * RETURN VALUE
- *	Status
+ * @param RangeList
+ * Pointer to the source range list.
  *
- * @implemented
+ * @return
+ * Returns NTSTATUS.
  */
-NTSYSAPI
 NTSTATUS
 NTAPI
 RtlCopyRangeList(
@@ -620,23 +621,6 @@ RtlCopyRangeList(
     return STATUS_SUCCESS;
 }
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlDeleteOwnersRanges
- *
- * DESCRIPTION
- *	Delete all ranges that belong to the given owner.
- *
- * ARGUMENTS
- *	RangeList	Pointer to the range list.
- *	Owner		User supplied value that identifies the owner
- *			of the ranges to be deleted.
- *
- * RETURN VALUE
- *	Status
- *
- * @implemented
- */
 NTSTATUS
 NTAPI
 RtlpDeleteFromMergedRange(
@@ -729,6 +713,20 @@ RtlpDeleteFromMergedRange(
     return STATUS_SUCCESS;
 }
 
+/**
+ * @name RtlDeleteOwnersRanges
+ *
+ * Delete all ranges that belong to the given owner.
+ *
+ * @param RangeList
+ * Pointer to the range list.
+ *
+ * @param Owner
+ * User supplied value that identifies the owner of the ranges to be deleted.
+ *
+ * @return
+ * Returns NTSTATUS.
+ */
 NTSTATUS
 NTAPI
 RtlDeleteOwnersRanges(
@@ -804,25 +802,26 @@ START:
     return Status;
 }
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlDeleteRange
+/**
+ * @name RtlDeleteRange
  *
- * DESCRIPTION
- *	Deletes a given range.
+ * Adds a range to a range list.
  *
- * ARGUMENTS
- *	RangeList	Pointer to the range list.
- *	Start		Start of the range to be deleted.
- *	End		End of the range to be deleted.
- *	Owner		Owner of the ranges to be deleted.
+ * @param RangeList
+ * Pointer to the range list.
  *
- * RETURN VALUE
- *	Status
+ * @param Start
+ * Start of the range to be deleted.
  *
- * @implemented
+ * @param End
+ * End of the range to be deleted.
+ *
+ * @param Owner
+ * Owner of the ranges to be deleted.
+ *
+ * @return
+ * Returns NTSTATUS.
  */
-NTSYSAPI
 NTSTATUS
 NTAPI
 RtlDeleteRange(
@@ -900,25 +899,23 @@ Exit:
     return Status;
 }
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlGetNextRange
+/**
+ * @name RtlGetNextRange
  *
- * DESCRIPTION
- *	Retrieves the next (or previous) range of a range list.
+ * Retrieves the next (or previous) range of a range list.
  *
- * ARGUMENTS
- *	Iterator	Pointer to a user supplied list state buffer.
- *	Range		Pointer to the first range.
- *	MoveForwards	TRUE, get next range
- *			FALSE, get previous range
+ * @param Iterator
+ * Pointer to a user supplied list state buffer.
  *
- * RETURN VALUE
- *	Status
+ * @param Range
+ * Address of pointer to the first range.
  *
- * @implemented
+ * @param MoveForwards
+ * TRUE - get next range, FALSE - get previous range.
+ *
+ * @return
+ * Returns NTSTATUS.
  */
-NTSYSAPI
 NTSTATUS
 NTAPI
 RtlGetNextRange(
@@ -1109,7 +1106,23 @@ RtlpIsRangeAvailable(
     return TRUE;
 }
 
-NTSYSAPI
+/**
+ * @name RtlGetLastRange
+ *
+ * Retrieves the last range of a range list.
+ *
+ * @param RangeList
+ * Pointer to the range list.
+ *
+ * @param Iterator
+ * Pointer to a user supplied list state buffer.
+ *
+ * @param Range
+ * Address of pointer to the last range.
+ *
+ * @return
+ * Returns NTSTATUS.
+ */
 NTSTATUS
 NTAPI
 RtlGetLastRange(
@@ -1162,34 +1175,44 @@ RtlGetLastRange(
     return STATUS_SUCCESS;
 }
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlFindRange
+/**
+ * @name RtlFindRange
  *
- * DESCRIPTION
- *	Searches for an unused range.
+ * Searches for an unused range.
  *
- * ARGUMENTS
- *	RangeList		Pointer to the range list.
- *	Minimum
- *	Maximum
- *	Length
- *	Alignment
- *	Flags
- *	AttributeAvailableMask
- *	Context
- *	Callback
- *	Start
+ * @param RangeList
+ * Pointer to the range list.
  *
- * RETURN VALUE
- *	Status
+ * @param Minimum
+ * Minimal value for search.
  *
- * TODO
- *	Support shared ranges and callback.
+ * @param Maximum
+ * Maximumal value for search.
  *
- * @implemented
+ * @param Length
+ * Length of the range.
+ *
+ * @param Alignment
+ * Alignment value.
+ *
+ * @param Flags
+ * Flags describing the control the behavior of lists.
+ *
+ * @param AttributeAvailableMask
+ * Mask for Attributes from range entry.
+ *
+ * @param Context
+ * Context for Callback.
+ *
+ * @param Callback
+ * Pointer to a callback to call in case of a conflict.
+ *
+ * @param Start
+ * Pointer where the found value for the start of the range will be stored.
+ *
+ * @return
+ * Returns NTSTATUS.
  */
-NTSYSAPI
 NTSTATUS
 NTAPI
 RtlFindRange(
@@ -1277,22 +1300,17 @@ RtlFindRange(
     return STATUS_UNSUCCESSFUL;
 }
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlFreeRangeList
+/**
+ * @name RtlFreeRangeList
  *
- * DESCRIPTION
- *	Deletes all ranges in a range list.
+ * Deletes all ranges in a range list.
  *
- * ARGUMENTS
- *	RangeList	Pointer to the range list.
+ * @param RangeList
+ * Pointer to the range list.
  *
- * RETURN VALUE
- *	None
- *
- * @implemented
+ * @return
+ * None.
  */
-NTSYSAPI
 VOID
 NTAPI
 RtlFreeRangeList(
@@ -1322,24 +1340,23 @@ RtlFreeRangeList(
     }
 }
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlGetFirstRange
+/**
+ * @name RtlGetFirstRange
  *
- * DESCRIPTION
- *	Retrieves the first range of a range list.
+ * Retrieves the first range of a range list.
  *
- * ARGUMENTS
- *	RangeList	Pointer to the range list.
- *	Iterator	Pointer to a user supplied list state buffer.
- *	Range		Pointer to the first range.
+ * @param RangeList
+ * Pointer to the range list.
  *
- * RETURN VALUE
- *	Status
+ * @param Iterator
+ * Pointer to a user supplied list state buffer.
  *
- * @implemented
+ * @param Range
+ * Pointer to the first range.
+ *
+ * @return
+ * Returns NTSTATUS.
  */
-NTSYSAPI
 NTSTATUS
 NTAPI
 RtlGetFirstRange(
@@ -1387,32 +1404,38 @@ RtlGetFirstRange(
     return STATUS_SUCCESS;
 }
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlIsRangeAvailable
+/**
+ * @name RtlIsRangeAvailable
  *
- * DESCRIPTION
- *	Checks whether a range is available or not.
+ * Checks whether a range is available or not.
  *
- * ARGUMENTS
- *	RangeList		Pointer to the range list.
- *	Start
- *	End
- *	Flags
- *	AttributeAvailableMask
- *	Context
- *	Callback
- *	Available
+ * @param RangeList
+ * Pointer to the range list.
  *
- * RETURN VALUE
- *	Status
+ * @param Start
+ * Start of the range to be tested.
  *
- * TODO:
- *   - honor Flags and AttributeAvailableMask.
+ * @param End
+ * Start of the range to be tested.
  *
- * @implemented
+ * @param Flags
+ * Flags describing the control the behavior of lists.
+ *
+ * @param AttributeAvailableMask
+ * Mask for Attributes from range entry.
+ *
+ * @param Context
+ * Context for Callback.
+ *
+ * @param Callback
+ * Pointer to a callback to call in case of a conflict.
+ *
+ * @param Available
+ * Pointer to the variable for returned value.
+ *
+ * @return
+ * Returns NTSTATUS.
  */
-NTSYSAPI
 NTSTATUS
 NTAPI
 RtlIsRangeAvailable(
@@ -1461,22 +1484,17 @@ RtlIsRangeAvailable(
     return STATUS_SUCCESS;
 }
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlInitializeRangeList
+/**
+ * @name RtlInitializeRangeList
  *
- * DESCRIPTION
- *	Initializes a range list.
+ * Initializes a range list.
  *
- * ARGUMENTS
- *	RangeList	Pointer to a user supplied range list.
+ * @param RangeList
+ * Pointer to a user supplied range list.
  *
- * RETURN VALUE
- *	None
- *
- * @implemented
+ * @return
+ * None.
  */
-NTSYSAPI
 VOID
 NTAPI
 RtlInitializeRangeList(
@@ -1502,21 +1520,19 @@ typedef struct _RTL_RANGE_ENTRY {
     UCHAR       _PADDING0_[0x4];
 } RTL_RANGE_ENTRY, *PRTL_RANGE_ENTRY;
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlInvertRangeList
+/**
+ * @name RtlInvertRangeList
  *
- * DESCRIPTION
- *	Inverts a range list.
+ * Inverts a range list.
  *
- * ARGUMENTS
- *	InvertedRangeList	Inverted range list.
- *	RangeList		Range list.
+ * @param InvertedRangeList
+ * Pointer to inverted range list.
  *
- * RETURN VALUE
- *	Status
+ * @param RangeList
+ * Pointer to the source range list.
  *
- * @implemented
+ * @return
+ * Returns NTSTATUS.
  */
 NTSTATUS
 NTAPI
@@ -1602,23 +1618,25 @@ ASSERT(FALSE);
 
 // !!! FIXME
 
-/**********************************************************************
- * NAME							EXPORTED
- * 	RtlMergeRangeList
+/**
+ * @name RtlMergeRangeList
  *
- * DESCRIPTION
- *	Merges two range lists.
+ * Merges two range lists.
  *
- * ARGUMENTS
- *	MergedRangeList	Resulting range list.
- *	RangeList1	First range list.
- *	RangeList2	Second range list
- *	Flags
+ * @param MergedRangeList
+ * Pointer to the resulting range list.
  *
- * RETURN VALUE
- *	Status
+ * @param RangeList1
+ * Pointer to the first range list.
  *
- * @implemented
+ * @param RangeList2
+ * Pointer to the second range list.
+ *
+ * @param Flags
+ * Flags for RtlAddRange().
+ *
+ * @return
+ * Returns NTSTATUS.
  */
 NTSTATUS
 NTAPI
