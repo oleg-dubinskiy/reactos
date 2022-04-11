@@ -1036,16 +1036,17 @@ RtlpIsRangeAvailable(
     _In_ ULONGLONG Start,
     _In_ ULONGLONG End,
     _In_ UCHAR AttributeAvailableMask,
-    _In_ BOOLEAN Flag1,
-    _In_ BOOLEAN Flag2,
+    _In_ BOOLEAN SharedFlag,
+    _In_ BOOLEAN NullConflictFlag,
     _In_ BOOLEAN MoveForwards,
     _In_ PVOID Context,
     _In_ PRTL_CONFLICT_RANGE_CALLBACK Callback)
 {
     PRTL_RANGE RtlRange;
+    RTLP_RANGE_LIST_ENTRY Entry;
 
     PAGED_CODE_RTL();
-    DPRINT("RtlpIsRangeAvailable: %p [%I64X-%I64X], %X, %X, Forwards %X, %p\n", Iterator, Start, End, Flag1, Flag2, MoveForwards, Callback);
+    DPRINT("RtlpIsRangeAvailable: %p [%I64X-%I64X], %X, %X, Forwards %X, %p\n", Iterator, Start, End, SharedFlag, NullConflictFlag, MoveForwards, Callback);
 
     ASSERT(Iterator);
 
@@ -1056,58 +1057,44 @@ RtlpIsRangeAvailable(
         if (MoveForwards)
         {
             if (!Iterator->MergedHead && End < RtlRange->Start)
-            {
                 return TRUE;
-            }
         }
         else if (!Iterator->MergedHead && Start > RtlRange->End)
         {
             return TRUE;
         }
 
-        if ((RtlRange->Start > Start && RtlRange->Start > End) ||
-            (RtlRange->Start < Start && RtlRange->End < Start))
-        {
+        Entry.Start = Start;
+        Entry.End = End;
+
+        if (!IsRangesIntersection((PRTLP_RANGE_LIST_ENTRY)RtlRange, &Entry))
             continue;
-        }
 
         DPRINT("RtlpIsRangeAvailable: Intersection [%I64X-%I64X] and [%I64X-%I64X]\n", Start, End, RtlRange->Start, RtlRange->End);
 
-        if (Flag1 && (RtlRange->Flags & 1)) // FIXME
-        {
+        if (SharedFlag && (RtlRange->Flags & RTL_RANGE_SHARED))
             continue;
-        }
 
         if ((AttributeAvailableMask & RtlRange->Attributes))
-        {
             continue;
-        }
 
-        if (Flag2 == 0)
+        if (!NullConflictFlag)
         {
             if (!Callback)
-            {
                 return FALSE;
-            }
 
             if (Callback(Context, NULL) == FALSE)
-            {
                 return FALSE;
-            }
 
             DPRINT("RtlpIsRangeAvailable: conflict [%I64X-%I64X] and [%I64X-%I64X]\n", Start, End, RtlRange->Start, RtlRange->End);
         }
         else if (RtlRange->Owner)
         {
             if (!Callback)
-            {
                 return FALSE;
-            }
 
             if (Callback(Context, RtlRange) == FALSE)
-            {
                 return FALSE;
-            }
 
             DPRINT("RtlpIsRangeAvailable: conflict [%I64X-%I64X] and [%I64X-%I64X]\n", Start, End, RtlRange->Start, RtlRange->End);
         }
