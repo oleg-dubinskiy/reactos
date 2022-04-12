@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Kernel&Driver SDK
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     Hardware Resources Arbiter Library
- * COPYRIGHT:   Copyright 2020 Vadim Galyant <vgal@rambler.ru>
+ * COPYRIGHT:   Copyright 2020-2022 Vadim Galyant <vgal@rambler.ru>
  */
 
 /* INCLUDES *******************************************************************/
@@ -226,10 +226,25 @@ NTAPI
 ArbInitializeOrderingList(
     _Out_ PARBITER_ORDERING_LIST OrderList)
 {
-    PAGED_CODE();
+    ULONG Size;
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PAGED_CODE();
+    ASSERT(OrderList);
+
+    OrderList->Count = 0;
+    Size = (ARB_ORDERING_LIST_DEFAULT_COUNT * sizeof(ARBITER_ORDERING));
+
+    OrderList->Orderings = ExAllocatePoolWithTag(PagedPool, Size, TAG_ARB_ORDERING);
+    if (!OrderList->Orderings)
+    {
+        DPRINT1("ArbInitializeOrderingList: STATUS_INSUFFICIENT_RESOURCES\n");
+        OrderList->Maximum = 0;
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    OrderList->Maximum = ARB_ORDERING_LIST_DEFAULT_COUNT;
+
+    return STATUS_SUCCESS;
 }
 
 VOID
@@ -239,7 +254,15 @@ ArbFreeOrderingList(
 {
     PAGED_CODE();
 
-    UNIMPLEMENTED;
+    if (OrderList->Orderings)
+    {
+        ASSERT(OrderList->Maximum);
+        ExFreePoolWithTag(OrderList->Orderings, TAG_ARB_ORDERING);
+    }
+
+    OrderList->Count = 0;
+    OrderList->Maximum = 0;
+    OrderList->Orderings = NULL;
 }
 
 NTSTATUS
