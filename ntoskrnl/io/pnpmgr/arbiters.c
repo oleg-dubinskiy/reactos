@@ -192,10 +192,47 @@ IopIrqTranslateOrdering(
     _Out_ PIO_RESOURCE_DESCRIPTOR OutIoDescriptor,
     _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor)
 {
+    ULONG InterruptVector;
+    KAFFINITY Affinity;
+    KIRQL Irql;
+
     PAGED_CODE();
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("IopIrqTranslateOrdering: IoDesc %p\n", IoDescriptor);
+
+    RtlCopyMemory(OutIoDescriptor, IoDescriptor, sizeof(IO_RESOURCE_DESCRIPTOR));
+
+    if (IoDescriptor->Type != CmResourceTypeInterrupt)
+        return STATUS_SUCCESS;
+
+    InterruptVector = HalGetInterruptVector(Isa,
+                                            0,
+                                            IoDescriptor->u.Interrupt.MinimumVector,
+                                            IoDescriptor->u.Interrupt.MinimumVector,
+                                            &Irql,
+                                            &Affinity);
+
+    OutIoDescriptor->u.Interrupt.MinimumVector = InterruptVector;
+
+    if (!Affinity)
+    {
+        RtlCopyMemory(OutIoDescriptor, IoDescriptor, sizeof(IO_RESOURCE_DESCRIPTOR));
+        return STATUS_SUCCESS;
+    }
+
+    InterruptVector = HalGetInterruptVector(Isa,
+                                            0,
+                                            IoDescriptor->u.Interrupt.MaximumVector,
+                                            IoDescriptor->u.Interrupt.MaximumVector,
+                                            &Irql,
+                                            &Affinity);
+
+    OutIoDescriptor->u.Interrupt.MaximumVector = InterruptVector;
+
+    if (!Affinity)
+        RtlCopyMemory(OutIoDescriptor, IoDescriptor, sizeof(IO_RESOURCE_DESCRIPTOR));
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -406,16 +443,115 @@ IopGenericScoreRequirement(
     return 0;
 }
 
+static
+NTSTATUS
+IopTranslateBusAddress(
+    _In_ PHYSICAL_ADDRESS BusAddress,
+    _In_ CM_RESOURCE_TYPE Type,
+    _Inout_ PPHYSICAL_ADDRESS TranslatedAddress,
+    _Out_ CM_RESOURCE_TYPE * OutType)
+{
+    ULONG AddressSpace;
+
+    PAGED_CODE();
+    DPRINT("IopTranslateBusAddress: %I64X, %X, %I64X\n", BusAddress, Type, TranslatedAddress->QuadPart);
+
+    if (Type == CmResourceTypeMemory)
+    {
+        AddressSpace = 0;
+    }
+    else if (Type == CmResourceTypePort)
+    {
+        AddressSpace = 1;
+    }
+    else
+    {
+        DPRINT("IopTranslateBusAddress: STATUS_INVALID_PARAMETER. Type %X\n", Type);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!HalTranslateBusAddress(Isa,
+                                0,
+                                BusAddress,
+                                &AddressSpace,
+                                TranslatedAddress))
+    {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    if (AddressSpace == 0)
+    {
+        *OutType = CmResourceTypeMemory;
+    }
+    else if (AddressSpace == 1)
+    {
+        *OutType = CmResourceTypePort;
+    }
+    else
+    {
+        DPRINT("IopTranslateBusAddress: STATUS_INVALID_PARAMETER. AddressSpace %X\n", AddressSpace);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS
 NTAPI
 IopGenericTranslateOrdering(
     _Out_ PIO_RESOURCE_DESCRIPTOR OutIoDescriptor,
     _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor)
 {
+    CM_RESOURCE_TYPE ResourceTypeMinAddr;
+    CM_RESOURCE_TYPE ResourceTypeMaxAddr;
+    NTSTATUS Status;
+
     PAGED_CODE();
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    RtlCopyMemory(OutIoDescriptor, IoDescriptor, sizeof(IO_RESOURCE_DESCRIPTOR));
+
+    if (IoDescriptor->Type != CmResourceTypeMemory &&
+        IoDescriptor->Type != CmResourceTypePort)
+    {
+        DPRINT("IopGenericTranslateOrdering: Exit. Type %X\n", IoDescriptor->Type);
+        return STATUS_SUCCESS;
+    }
+    else
+    {
+        DPRINT("GenericTranslateOrdering: [%p] Type %X\n", IoDescriptor, IoDescriptor->Type);
+    }
+
+    DPRINT("IopGenericTranslateOrdering: %I64X - %I64X\n",
+           IoDescriptor->u.Generic.MinimumAddress, IoDescriptor->u.Generic.MaximumAddress);
+
+    Status = IopTranslateBusAddress(IoDescriptor->u.Generic.MinimumAddress,
+                                    IoDescriptor->Type,
+                                    &OutIoDescriptor->u.Generic.MinimumAddress,
+                                    &ResourceTypeMinAddr);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("IopGenericTranslateOrdering: Status %X\n", Status);
+        OutIoDescriptor->Type = CmResourceTypeNull;
+        return STATUS_SUCCESS;
+    }
+
+    Status = IopTranslateBusAddress(IoDescriptor->u.Generic.MaximumAddress,
+                                    IoDescriptor->Type,
+                                    &OutIoDescriptor->u.Generic.MaximumAddress,
+                                    &ResourceTypeMaxAddr);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("IopGenericTranslateOrdering: Status %X\n", Status);
+        OutIoDescriptor->Type = CmResourceTypeNull;
+        return STATUS_SUCCESS;
+    }
+
+    ASSERT(ResourceTypeMinAddr == ResourceTypeMaxAddr);
+    OutIoDescriptor->Type = ResourceTypeMinAddr;
+
+    return STATUS_SUCCESS;
 }
 
 /* Memory arbiter */
