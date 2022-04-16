@@ -10,7 +10,10 @@ spec2def(halacpi.dll halacpi.spec ADD_IMPORTLIB)
 
 # The components generic
 list(APPEND HAL_SOURCE
+    acpi/halacpi.c
+    bus/pcibus.c
     generic/halinit.c
+    generic/memory.c
 )
 
 add_library(halacpi MODULE

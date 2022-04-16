@@ -52,5 +52,6 @@
 
 /* Internal HAL Headers */
 #include "halp.h"
+#include "halacpi.h"
 
 #endif /* _HAL_PCH_ */
