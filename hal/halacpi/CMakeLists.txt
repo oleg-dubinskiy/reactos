@@ -16,6 +16,7 @@ list(APPEND HAL_SOURCE
     generic/halinit.c
     generic/memory.c
     generic/misc.c
+    pic/pic.c
 )
 
 add_library(halacpi MODULE
