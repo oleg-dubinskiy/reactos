@@ -17,22 +17,6 @@ KAFFINITY HalpDefaultInterruptAffinity;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
-VOID
-NTAPI
-HalpRegisterKdSupportFunctions(VOID)
-{
-    /* Register PCI Device Functions */
-    KdSetupPciDeviceForDebugging = HalpSetupPciDeviceForDebugging;
-    KdReleasePciDeviceforDebugging = HalpReleasePciDeviceForDebugging;
-
-    /* Register ACPI stub */
-    KdGetAcpiTablePhase0 = HalAcpiGetTable;
-    KdCheckPowerButton = HalpCheckPowerButton;
-
-    /* Register memory functions */
-    KdMapPhysicalMemory64 = HalpMapPhysicalMemory64;
-    KdUnmapVirtualAddress = HalpUnmapVirtualAddress;
-}
 
 /* FUNCTIONS *****************************************************************/
 
@@ -54,7 +38,18 @@ HalInitializeProcessor(
     InterlockedBitTestAndSet((PLONG)&HalpDefaultInterruptAffinity, ProcessorNumber);
 
     /* Register routines for KDCOM */
-    HalpRegisterKdSupportFunctions();
+
+    /* Register PCI Device Functions */
+    KdSetupPciDeviceForDebugging = HalpSetupPciDeviceForDebugging;
+    KdReleasePciDeviceforDebugging = HalpReleasePciDeviceForDebugging;
+
+    /* Register ACPI stub */
+    KdGetAcpiTablePhase0 = HalAcpiGetTable;
+    KdCheckPowerButton = HalpCheckPowerButton;
+
+    /* Register memory functions */
+    KdMapPhysicalMemory64 = HalpMapPhysicalMemory64;
+    KdUnmapVirtualAddress = HalpUnmapVirtualAddress;
 }
 
 INIT_FUNCTION
