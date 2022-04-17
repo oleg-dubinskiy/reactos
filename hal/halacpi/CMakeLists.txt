@@ -12,8 +12,10 @@ spec2def(halacpi.dll halacpi.spec ADD_IMPORTLIB)
 list(APPEND HAL_SOURCE
     acpi/halacpi.c
     bus/pcibus.c
+    generic/display.c
     generic/halinit.c
     generic/memory.c
+    generic/misc.c
 )
 
 add_library(halacpi MODULE
