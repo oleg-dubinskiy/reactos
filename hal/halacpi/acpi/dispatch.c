@@ -90,6 +90,16 @@ HaliAcpiTimerInit(_In_ PULONG TimerPort,
     HalaAcpiTimerInit(TimerPort, TimerValExt);
 }
 
+NTSTATUS
+NTAPI
+HalacpiInitPowerManagement(
+    _In_ PPM_DISPATCH_TABLE PmDriverDispatchTable,
+    _Out_ PPM_DISPATCH_TABLE * PmHalDispatchTable)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
 
 /* PM DISPATCH FUNCTIONS *****************************************************/
 

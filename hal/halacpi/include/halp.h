@@ -43,6 +43,15 @@ HalpInitializeCmos(
     VOID
 );
 
+/* dma.c */
+PDMA_ADAPTER
+NTAPI
+HalpGetDmaAdapter(
+    IN PVOID Context,
+    IN PDEVICE_DESCRIPTION DeviceDescriptor,
+    OUT PULONG NumberOfMapRegisters
+);
+
 /* halinit.c */
 INIT_FUNCTION
 VOID
@@ -58,6 +67,13 @@ NTAPI
 HalInitSystem(
     IN ULONG BootPhase,
     IN PLOADER_PARAMETER_BLOCK LoaderBlock
+);
+
+/* halpnpdd.c */
+NTSTATUS
+NTAPI
+HaliInitPnpDriver(
+    VOID
 );
 
 /* memory.c */
@@ -135,6 +151,24 @@ HaliPciInterfaceWriteConfig(
     IN PVOID Buffer,
     IN ULONG Offset,
     IN ULONG Length
+);
+
+/* sysinfo.c */
+NTSTATUS
+NTAPI
+HaliQuerySystemInformation(
+    IN HAL_QUERY_INFORMATION_CLASS InformationClass,
+    IN ULONG BufferSize,
+    IN OUT PVOID Buffer,
+    OUT PULONG ReturnedLength
+);
+
+NTSTATUS
+NTAPI
+HaliSetSystemInformation(
+    IN HAL_SET_INFORMATION_CLASS InformationClass,
+    IN ULONG BufferSize,
+    IN OUT PVOID Buffer
 );
 
 /* EOF */

@@ -194,6 +194,14 @@ HalInitSystem(IN ULONG BootPhase,
         /* Initialize CMOS */
         HalpInitializeCmos();
 
+        /* Fill out HalDispatchTable */
+        HalQuerySystemInformation = HaliQuerySystemInformation;
+        HalSetSystemInformation = HaliSetSystemInformation;
+        HalInitPnpDriver = HaliInitPnpDriver;
+        HalGetDmaAdapter = HalpGetDmaAdapter; // HaliGetDmaAdapter
+        HalGetInterruptTranslator = HalacpiGetInterruptTranslator;
+        HalInitPowerManagement = HalacpiInitPowerManagement;
+
         DPRINT1("HalInitSystem: FIXME! HalDispatchTable ...\n");
         ASSERT(0);// HalpDbgBreakPointEx();
 
