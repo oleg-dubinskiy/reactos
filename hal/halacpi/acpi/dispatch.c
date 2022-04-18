@@ -2,7 +2,7 @@
 /* INCLUDES ******************************************************************/
 
 #include <hal.h>
-#include "timer.h"
+#include "dispatch.h"
 
 //#define NDEBUG
 #include <debug.h>
