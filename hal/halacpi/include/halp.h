@@ -100,5 +100,26 @@ HalpReleasePciDeviceForDebugging(
     IN OUT PDEBUG_DEVICE_DESCRIPTOR PciDevice
 );
 
+ULONG
+NTAPI
+HaliPciInterfaceReadConfig(
+    IN IN PVOID Context,
+    IN ULONG BusNumber,
+    IN ULONG SlotNumber,
+    IN PVOID Buffer,
+    IN ULONG Offset,
+    IN ULONG Length
+);
+
+ULONG
+NTAPI
+HaliPciInterfaceWriteConfig(
+    IN IN PVOID Context,
+    IN ULONG BusNumber,
+    IN ULONG SlotNumber,
+    IN PVOID Buffer,
+    IN ULONG Offset,
+    IN ULONG Length
+);
 
 /* EOF */

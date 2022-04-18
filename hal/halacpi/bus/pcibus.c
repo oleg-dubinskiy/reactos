@@ -13,7 +13,7 @@
 /* GLOBALS *******************************************************************/
 
 
-/* HAL PCI CALLBACKS *********************************************************/
+/* HAL PCI FOR DEBUGGING *****************************************************/
 
 INIT_FUNCTION
 NTSTATUS
@@ -32,6 +32,39 @@ HalpReleasePciDeviceForDebugging(IN OUT PDEBUG_DEVICE_DESCRIPTOR PciDevice)
 {
     UNIMPLEMENTED;
     return STATUS_NOT_IMPLEMENTED;
+}
+
+/* PCI CONFIGURATION SPACE ***************************************************/
+
+
+/* HAL PCI CALLBACKS *********************************************************/
+
+ULONG
+NTAPI
+HaliPciInterfaceReadConfig(_In_ PVOID Context,
+                           _In_ ULONG BusNumber,
+                           _In_ ULONG SlotNumber,
+                           _In_ PVOID Buffer,
+                           _In_ ULONG Offset,
+                           _In_ ULONG Length)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);// HalpDbgBreakPointEx();
+    return 0;
+}
+
+ULONG
+NTAPI
+HaliPciInterfaceWriteConfig(_In_ PVOID Context,
+                            _In_ ULONG BusNumber,
+                            _In_ ULONG SlotNumber,
+                            _In_ PVOID Buffer,
+                            _In_ ULONG Offset,
+                            _In_ ULONG Length)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);// HalpDbgBreakPointEx();
+    return 0;
 }
 
 /* EOF */

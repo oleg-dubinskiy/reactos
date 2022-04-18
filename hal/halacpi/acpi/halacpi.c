@@ -471,9 +471,7 @@ HalpSetupAcpiPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     }
 
     /* Setup the ACPI timer */
-    DPRINT1("HalpSetupAcpiPhase0: FIXME HaliAcpiTimerInit()\n");
-    //HaliAcpiTimerInit(NULL, FALSE);
-    ASSERT(0);// HalpDbgBreakPointEx();
+    HaliAcpiTimerInit(NULL, FALSE);
 
     /* Do we have a low stub address yet? */
     if (!HalpLowStubPhysicalAddress.QuadPart)

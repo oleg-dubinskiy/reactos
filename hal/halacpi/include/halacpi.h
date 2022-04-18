@@ -33,4 +33,11 @@ HalpSetupAcpiPhase0(
     IN PLOADER_PARAMETER_BLOCK LoaderBlock
 );
 
+VOID
+NTAPI
+HaliAcpiTimerInit(
+    _In_ PULONG TimerPort,
+    _In_ BOOLEAN TimerValExt
+);
+
 /* EOF */
