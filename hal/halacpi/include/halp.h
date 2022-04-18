@@ -35,6 +35,13 @@ typedef struct _HalAddressUsage
     } Element[];
 } ADDRESS_USAGE, *PADDRESS_USAGE;
 
+/* bios.c */
+BOOLEAN
+NTAPI
+HalpBiosDisplayReset(
+    VOID
+);
+
 /* cmos.c */
 INIT_FUNCTION
 VOID
@@ -50,6 +57,21 @@ HalpGetDmaAdapter(
     IN PVOID Context,
     IN PDEVICE_DESCRIPTION DeviceDescriptor,
     OUT PULONG NumberOfMapRegisters
+);
+
+NTSTATUS
+NTAPI
+HalpAllocateMapRegisters(
+    _In_ PADAPTER_OBJECT AdapterObject,
+    _In_ ULONG Unknown,
+    _In_ ULONG Unknown2,
+    PMAP_REGISTER_ENTRY Registers
+);
+
+VOID
+NTAPI
+HaliLocateHiberRanges(
+    _In_ PVOID MemoryMap
 );
 
 /* halinit.c */

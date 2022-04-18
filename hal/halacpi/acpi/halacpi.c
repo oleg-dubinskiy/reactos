@@ -541,6 +541,7 @@ HalAcpiGetTable(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
                 IN ULONG Signature)
 {
     UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
     return NULL;
 }
 
@@ -550,6 +551,15 @@ NTAPI
 HalpCheckPowerButton(VOID)
 {
     UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+}
+
+VOID
+NTAPI
+HaliHaltSystem(VOID)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
 }
 
 /* EOF */

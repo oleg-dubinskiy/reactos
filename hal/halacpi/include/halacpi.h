@@ -59,4 +59,10 @@ HalacpiInitPowerManagement(
     _Out_ PPM_DISPATCH_TABLE * PmHalDispatchTable
 );
 
+VOID
+NTAPI
+HaliHaltSystem(
+    VOID
+);
+
 /* EOF */

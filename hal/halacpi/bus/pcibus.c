@@ -2,6 +2,8 @@
 /* INCLUDES ******************************************************************/
 
 #include <hal.h>
+//#include "pcibus.h"
+
 //#define NDEBUG
 #include <debug.h>
 

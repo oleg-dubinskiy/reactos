@@ -202,6 +202,12 @@ HalInitSystem(IN ULONG BootPhase,
         HalGetInterruptTranslator = HalacpiGetInterruptTranslator;
         HalInitPowerManagement = HalacpiInitPowerManagement;
 
+        /* Fill out HalPrivateDispatchTable */
+        HalResetDisplay = HalpBiosDisplayReset;
+        HalAllocateMapRegisters = HalpAllocateMapRegisters;
+        HalLocateHiberRanges = HaliLocateHiberRanges;
+        HalHaltSystem = HaliHaltSystem;
+
         DPRINT1("HalInitSystem: FIXME! HalDispatchTable ...\n");
         ASSERT(0);// HalpDbgBreakPointEx();
 
