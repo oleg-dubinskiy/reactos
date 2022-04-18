@@ -35,6 +35,14 @@ typedef struct _HalAddressUsage
     } Element[];
 } ADDRESS_USAGE, *PADDRESS_USAGE;
 
+/* cmos.c */
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializeCmos(
+    VOID
+);
+
 /* halinit.c */
 INIT_FUNCTION
 VOID

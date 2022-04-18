@@ -191,7 +191,10 @@ HalInitSystem(IN ULONG BootPhase,
         /* Initialize CMOS lock */
         KeInitializeSpinLock(&HalpSystemHardwareLock);
 
-        DPRINT1("HalInitSystem: FIXME! HalpInitializeCmos() ...\n");
+        /* Initialize CMOS */
+        HalpInitializeCmos();
+
+        DPRINT1("HalInitSystem: FIXME! HalDispatchTable ...\n");
         ASSERT(0);// HalpDbgBreakPointEx();
 
 

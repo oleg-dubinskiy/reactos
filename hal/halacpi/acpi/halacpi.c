@@ -27,7 +27,6 @@ PVOID HalpVirtAddrForFlush;
 PVOID HalpLowStub;
 ULONG HalpWAETDeviceFlags = 0;
 //ULONG HalpShutdownContext = 0;
-//UCHAR HalpCmosCenturyOffset = 0;
 BOOLEAN HalpProcessedACPIPhase0;
 
 extern BOOLEAN LessThan16Mb;
