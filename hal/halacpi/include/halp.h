@@ -84,7 +84,14 @@ HalpFlushTLB(
     VOID
 );
 
-/*  pcibus.c */
+/* pic.c */
+VOID
+NTAPI
+HalpInitializePICs(
+    IN BOOLEAN EnableInterrupts
+);
+
+/* pcibus.c */
 INIT_FUNCTION
 NTSTATUS
 NTAPI

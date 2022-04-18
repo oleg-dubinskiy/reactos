@@ -136,6 +136,7 @@ HalInitSystem(IN ULONG BootPhase,
               IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     PKPRCB Prcb = KeGetCurrentPrcb();
+    KIRQL OldIrql;
 
     DPRINT1("HalInitSystem: Phase - %X, Processor - %X\n", BootPhase, Prcb->Number);
 
@@ -181,7 +182,16 @@ HalInitSystem(IN ULONG BootPhase,
         /* Initialize ACPI */
         HalpSetupAcpiPhase0(LoaderBlock);
 
-        DPRINT1("HalInitSystem: FIXME! HalpInitializePICs() ...\n");
+        /* Initialize the PICs */
+        HalpInitializePICs(TRUE);
+
+        OldIrql = KeGetCurrentIrql();
+        KfRaiseIrql(OldIrql);
+
+        /* Initialize CMOS lock */
+        KeInitializeSpinLock(&HalpSystemHardwareLock);
+
+        DPRINT1("HalInitSystem: FIXME! HalpInitializeCmos() ...\n");
         ASSERT(0);// HalpDbgBreakPointEx();
 
 
