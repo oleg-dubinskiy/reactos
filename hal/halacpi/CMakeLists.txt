@@ -27,6 +27,7 @@ list(APPEND HAL_SOURCE
     generic/sysinfo.c
     generic/usage.c
     pic/pic.c
+    pic/profil.c
     pic/timer.c
 )
 

@@ -233,6 +233,10 @@ HalInitSystem(IN ULONG BootPhase,
         DPRINT1("HalInitSystem: Initialize the clock\n");
         HalpInitializeClock();
 
+        /* We could be rebooting with a pending profile interrupt, so clear it here before interrupts are enabled */
+        DPRINT1("HalInitSystem: clear profile interrupt\n");
+        HalStopProfileInterrupt(ProfileTime);
+
         DPRINT1("HalInitSystem: FIXME! HalpInitializeClock ...\n");
         ASSERT(0);// HalpDbgBreakPointEx();
 
