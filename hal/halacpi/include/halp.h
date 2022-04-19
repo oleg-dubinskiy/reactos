@@ -193,4 +193,15 @@ HaliSetSystemInformation(
     IN OUT PVOID Buffer
 );
 
+/* usage.c */
+INIT_FUNCTION
+VOID
+NTAPI
+HalpRegisterVector(
+    IN UCHAR Flags,
+    IN ULONG BusVector,
+    IN ULONG SystemVector,
+    IN KIRQL Irql
+);
+
 /* EOF */

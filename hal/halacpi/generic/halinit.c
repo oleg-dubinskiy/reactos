@@ -208,7 +208,18 @@ HalInitSystem(IN ULONG BootPhase,
         HalLocateHiberRanges = HaliLocateHiberRanges;
         HalHaltSystem = HaliHaltSystem;
 
-        DPRINT1("HalInitSystem: FIXME! HalDispatchTable ...\n");
+        /* Register IRQ 2 */
+        HalpRegisterVector(IDT_INTERNAL,
+                           (PRIMARY_VECTOR_BASE + 2),
+                           (PRIMARY_VECTOR_BASE + 2),
+                           HIGH_LEVEL);
+
+        if (HalpBusType == MACHINE_TYPE_EISA) {
+            DPRINT1("HalInitSystem: FIXME HalpBusType == MACHINE_TYPE_EISA\n");
+            ASSERT(FALSE);// HalpDbgBreakPointEx();
+        }
+
+        DPRINT1("HalInitSystem: FIXME! HalpInitializeClock ...\n");
         ASSERT(0);// HalpDbgBreakPointEx();
 
 

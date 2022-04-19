@@ -24,6 +24,7 @@ list(APPEND HAL_SOURCE
     generic/memory.c
     generic/misc.c
     generic/sysinfo.c
+    generic/usage.c
     pic/pic.c
 )
 
