@@ -18,7 +18,6 @@ HALP_DMA_MASTER_ADAPTER MasterAdapter24;
 HALP_DMA_MASTER_ADAPTER MasterAdapter32;
 LIST_ENTRY HalpDmaAdapterList;
 KSPIN_LOCK HalpDmaAdapterListLock;
-KSPIN_LOCK HalpSystemHardwareLock;
 ULONG HalpBusType;
 
 ADDRESS_USAGE HalpDefaultIoSpace =
@@ -62,6 +61,8 @@ PADDRESS_USAGE HalpAddressUsageList;
 BOOLEAN HalpPciLockSettings;
 BOOLEAN LessThan16Mb = TRUE;
 BOOLEAN HalpPhysicalMemoryMayAppearAbove4GB = FALSE;
+
+extern KSPIN_LOCK HalpSystemHardwareLock;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -135,7 +136,10 @@ NTAPI
 HalInitSystem(IN ULONG BootPhase,
               IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
+    PMEMORY_ALLOCATION_DESCRIPTOR MemDescriptor;
     PKPRCB Prcb = KeGetCurrentPrcb();
+    PLIST_ENTRY Entry;
+    ULONG PhysicalAddress;
     KIRQL OldIrql;
 
     DPRINT1("HalInitSystem: Phase - %X, Processor - %X\n", BootPhase, Prcb->Number);
@@ -237,10 +241,59 @@ HalInitSystem(IN ULONG BootPhase,
         DPRINT1("HalInitSystem: clear profile interrupt\n");
         HalStopProfileInterrupt(ProfileTime);
 
-        DPRINT1("HalInitSystem: FIXME! HalpInitializeClock ...\n");
-        ASSERT(0);// HalpDbgBreakPointEx();
+        KeInitializeSpinLock(&HalpDmaAdapterListLock);
+        InitializeListHead(&HalpDmaAdapterList);
+        //KeInitializeEvent(&HalpNewAdapter, SynchronizationEvent, TRUE);
 
+        for (Entry = LoaderBlock->MemoryDescriptorListHead.Flink;
+             Entry != &LoaderBlock->MemoryDescriptorListHead;
+             Entry = Entry->Flink)
+        {
+            MemDescriptor = CONTAINING_RECORD(Entry, MEMORY_ALLOCATION_DESCRIPTOR, ListEntry);
 
+            if (MemDescriptor->MemoryType != LoaderFirmwarePermanent &&
+                MemDescriptor->MemoryType != LoaderSpecialMemory)
+            {
+                if (MemDescriptor->BasePage + MemDescriptor->PageCount > 0x1000) // 16 Mb
+                    LessThan16Mb = FALSE;
+
+                if (MemDescriptor->BasePage + MemDescriptor->PageCount > 0x100000) { // 4 Gb
+                    HalpPhysicalMemoryMayAppearAbove4GB = TRUE;
+                    break;
+                }
+            }
+        }
+
+        if (LessThan16Mb) {
+            DPRINT1("HalInitSystem: LessThan16Mb - TRUE\n");
+        }
+        if (HalpPhysicalMemoryMayAppearAbove4GB) {
+            DPRINT1("HalInitSystem: HalpPhysicalMemoryMayAppearAbove4GB - TRUE\n");
+        }
+
+        PhysicalAddress = HalpAllocPhysicalMemory(LoaderBlock, 0x1000000, 0x10, TRUE);
+
+        if (!PhysicalAddress)
+            MasterAdapter24.MapBufferSize = 0;
+        else
+            MasterAdapter24.MapBufferSize = (0x10 * PAGE_SIZE);
+
+        MasterAdapter24.MapBufferPhysicalAddress.QuadPart = PhysicalAddress;
+        MasterAdapter24.MapBufferMaxPages = 0x40;
+
+        MasterAdapter32.MapBufferMaxPages = 0x4000;
+
+        if (HalpPhysicalMemoryMayAppearAbove4GB)
+        {
+            PhysicalAddress = HalpAllocPhysicalMemory(LoaderBlock, MAXULONG, 0x30, TRUE);
+
+            if (PhysicalAddress == 0)
+                MasterAdapter32.MapBufferSize = 0;
+            else
+                MasterAdapter32.MapBufferSize = (0x30 * PAGE_SIZE);
+
+            MasterAdapter32.MapBufferPhysicalAddress.QuadPart = PhysicalAddress;
+        }
     }
     else if (BootPhase == 1)
     {
