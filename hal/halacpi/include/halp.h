@@ -193,6 +193,14 @@ HaliSetSystemInformation(
     IN OUT PVOID Buffer
 );
 
+/* timer.c */
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializeClock(
+    VOID
+);
+
 /* usage.c */
 INIT_FUNCTION
 VOID

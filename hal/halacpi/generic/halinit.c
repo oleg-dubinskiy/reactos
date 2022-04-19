@@ -219,6 +219,20 @@ HalInitSystem(IN ULONG BootPhase,
             ASSERT(FALSE);// HalpDbgBreakPointEx();
         }
 
+        /* Setup I/O space */
+        HalpDefaultIoSpace.Next = HalpAddressUsageList; // HalpDefaultPcIoSpace
+        HalpAddressUsageList = &HalpDefaultIoSpace;
+
+        if (HalpBusType == MACHINE_TYPE_EISA) {
+            DPRINT1("HalInitSystem: HalpBusType == MACHINE_TYPE_EISA\n");
+            HalpEisaIoSpace.Next = &HalpDefaultIoSpace;
+            HalpAddressUsageList = &HalpEisaIoSpace;
+        } 
+
+        /* Initialize the clock */
+        DPRINT1("HalInitSystem: Initialize the clock\n");
+        HalpInitializeClock();
+
         DPRINT1("HalInitSystem: FIXME! HalpInitializeClock ...\n");
         ASSERT(0);// HalpDbgBreakPointEx();
 
