@@ -130,6 +130,18 @@ HalInitializeProcessor(
     KdUnmapVirtualAddress = HalpUnmapVirtualAddress;
 }
 
+VOID
+NTAPI
+HalpInitNonBusHandler(VOID)
+{
+    DPRINT("HalpInitNonBusHandler()\n");
+
+    /* These (HalPrivateDispatchTable) should be written by the PCI driver later, but we give defaults */
+    HalPciTranslateBusAddress = HalpTranslateBusAddress;
+    HalPciAssignSlotResources = HalpAssignSlotResources;
+    HalFindBusAddressTranslation = HalpFindBusAddressTranslation;
+}
+
 INIT_FUNCTION
 BOOLEAN
 NTAPI
@@ -307,7 +319,10 @@ HalInitSystem(IN ULONG BootPhase,
 
         //HalpInitReservedPages();
 
-        DPRINT1("HalInitSystem: FIXME! HalpInitBusHandlers()\n");
+        /* Initialize bus handlers */
+        HalpInitNonBusHandler();
+
+        DPRINT1("HalInitSystem: FIXME! HalpGetFeatureBits()\n");
         ASSERT(0);// HalpDbgBreakPointEx();
 
     }
