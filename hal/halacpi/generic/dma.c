@@ -1,9 +1,16 @@
 
-/* INCLUDES *****************************************************************/
+/* INCLUDES ******************************************************************/
 
 #include <hal.h>
 //#define NDEBUG
 #include <debug.h>
+
+/* GLOBALS *******************************************************************/
+
+static BOOLEAN HalpEisaDma = FALSE;
+static KEVENT HalpDmaLock; // NT use HalpNewAdapter?
+
+extern ULONG HalpBusType;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -44,6 +51,29 @@ HaliLocateHiberRanges(_In_ PVOID MemoryMap)
 {
     UNIMPLEMENTED;
     ASSERT(0);//HalpDbgBreakPointEx();
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitDma(VOID)
+{
+    DPRINT("HalpInitDma()\n");
+
+    if (HalpBusType == MACHINE_TYPE_EISA)
+    {
+        /* Check if Extended DMA is available. We're just going to do a random read and write. */
+        WRITE_PORT_UCHAR(UlongToPtr(FIELD_OFFSET(EISA_CONTROL, DmaController2Pages.Channel2)), 0x2A);
+        if (READ_PORT_UCHAR(UlongToPtr(FIELD_OFFSET(EISA_CONTROL, DmaController2Pages.Channel2))) == 0x2A)
+        {
+            DPRINT1("Machine supports EISA DMA. Bus type: %lu\n", HalpBusType);
+            HalpEisaDma = TRUE;
+        }
+    }
+
+    /* Intialize all the global variables and allocate master adapter with first map buffers. */
+    //InitializeListHead(&HalpDmaAdapterList);
+    KeInitializeEvent(&HalpDmaLock, NotificationEvent, TRUE);
 }
 
 /* EOF */

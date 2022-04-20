@@ -99,6 +99,13 @@ HaliLocateHiberRanges(
     _In_ PVOID MemoryMap
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitDma(
+    VOID
+);
+
 /* halinit.c */
 INIT_FUNCTION
 VOID

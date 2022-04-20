@@ -297,9 +297,23 @@ HalInitSystem(IN ULONG BootPhase,
     }
     else if (BootPhase == 1)
     {
-        DPRINT1("HalInitSystem: FIXME! BootPhase %X, Processor %X\n", BootPhase, Prcb->Number);
-        UNIMPLEMENTED;
+        if (Prcb->Number != 0) {
+            DPRINT1("HalInitSystem: Prcb->Number %X\n", Prcb->Number);
+            return TRUE;
+        }
+
+        /* Initialize DMA. NT does this in Phase 0 */
+        HalpInitDma();
+
+        //HalpInitReservedPages();
+
+        DPRINT1("HalInitSystem: FIXME! HalpInitBusHandlers()\n");
         ASSERT(0);// HalpDbgBreakPointEx();
+
+    }
+    else
+    {
+        DPRINT1("HalInitSystem: Unknown BootPhase %X\n", BootPhase);
     }
 
     /* All done, return */
