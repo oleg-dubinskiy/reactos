@@ -29,7 +29,7 @@ list(APPEND HAL_SOURCE
     pic/pic.c
     pic/profil.c
     pic/timer.c
-)
+    up/processor.c)
 
 add_library(halacpi MODULE
     ${HAL_SOURCE}
