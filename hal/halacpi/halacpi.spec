@@ -2,6 +2,7 @@
 @ stdcall HalDisplayString(str)
 @ stdcall HalInitSystem(long ptr)
 @ stdcall HalInitializeProcessor(long ptr)
+@ stdcall HalProcessorIdle()
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall KeGetCurrentIrql()
 @ fastcall KfRaiseIrql(long)

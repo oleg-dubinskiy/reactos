@@ -41,5 +41,13 @@ HalStartNextProcessor(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
     return FALSE;
 }
 
+VOID
+NTAPI
+HalProcessorIdle(VOID)
+{
+    /* Enable interrupts and halt the processor */
+    _enable();
+    __halt();
+}
 
 /* EOF */
