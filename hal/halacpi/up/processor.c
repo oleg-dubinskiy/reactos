@@ -32,5 +32,14 @@ HalAllProcessorsStarted(VOID)
     return TRUE;
 }
 
+BOOLEAN
+NTAPI
+HalStartNextProcessor(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
+                      IN PKPROCESSOR_STATE ProcessorState)
+{
+    /* Ready to start */
+    return FALSE;
+}
+
 
 /* EOF */
