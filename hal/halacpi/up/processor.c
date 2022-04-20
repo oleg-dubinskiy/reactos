@@ -50,4 +50,12 @@ HalProcessorIdle(VOID)
     __halt();
 }
 
+VOID
+NTAPI
+HalRequestIpi(KAFFINITY TargetProcessors)
+{
+    /* Not implemented on UP */
+    __debugbreak();
+}
+
 /* EOF */

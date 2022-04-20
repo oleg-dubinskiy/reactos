@@ -3,6 +3,7 @@
 @ stdcall HalInitSystem(long ptr)
 @ stdcall HalInitializeProcessor(long ptr)
 @ stdcall HalProcessorIdle()
+@ stdcall HalRequestIpi(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall KeGetCurrentIrql()
 @ fastcall KfRaiseIrql(long)
