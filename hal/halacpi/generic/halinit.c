@@ -63,6 +63,7 @@ BOOLEAN LessThan16Mb = TRUE;
 BOOLEAN HalpPhysicalMemoryMayAppearAbove4GB = FALSE;
 
 extern KSPIN_LOCK HalpSystemHardwareLock;
+extern ULONG HalpFeatureBits;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -322,7 +323,13 @@ HalInitSystem(IN ULONG BootPhase,
         /* Initialize bus handlers */
         HalpInitNonBusHandler();
 
-        DPRINT1("HalInitSystem: FIXME! HalpGetFeatureBits()\n");
+        HalpFeatureBits = HalpGetFeatureBits();
+        if (HalpFeatureBits & 0x20) {
+            DPRINT1("FIXME HalpMovntiCopyBuffer\n");
+            ASSERT(0);//HalpDbgBreakPointEx();
+        }
+
+        DPRINT1("HalInitSystem: FIXME! HalpEnableInterruptHandler()\n");
         ASSERT(0);// HalpDbgBreakPointEx();
 
     }

@@ -162,13 +162,6 @@ HalpFlushTLB(
     VOID
 );
 
-/* pic.c */
-VOID
-NTAPI
-HalpInitializePICs(
-    IN BOOLEAN EnableInterrupts
-);
-
 /* pcibus.c */
 INIT_FUNCTION
 NTSTATUS
@@ -205,6 +198,20 @@ HaliPciInterfaceWriteConfig(
     IN PVOID Buffer,
     IN ULONG Offset,
     IN ULONG Length
+);
+
+/* pic.c */
+VOID
+NTAPI
+HalpInitializePICs(
+    IN BOOLEAN EnableInterrupts
+);
+
+/* processor.c */
+ULONG
+NTAPI
+HalpGetFeatureBits(
+    VOID
 );
 
 /* spinlock.c */
