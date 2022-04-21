@@ -58,4 +58,11 @@ HalRequestIpi(KAFFINITY TargetProcessors)
     __debugbreak();
 }
 
+VOID
+NTAPI
+KeFlushWriteBuffer(VOID)
+{
+    return;
+}
+
 /* EOF */
