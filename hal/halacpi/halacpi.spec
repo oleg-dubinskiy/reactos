@@ -8,6 +8,7 @@
 @ fastcall HalClearSoftwareInterrupt(long)
 @ stdcall HalDisableSystemInterrupt(long long)
 @ stdcall HalDisplayString(str)
+@ stdcall HalEnableSystemInterrupt(long long long)
 @ stdcall HalGetEnvironmentVariable(str long str)
 @ stdcall HalInitSystem(long ptr)
 @ stdcall HalInitializeProcessor(long ptr)

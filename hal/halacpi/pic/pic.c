@@ -185,4 +185,15 @@ HalDisableSystemInterrupt(IN ULONG Vector,
     ASSERT(0);//HalpDbgBreakPointEx();
 }
 
+BOOLEAN
+NTAPI
+HalEnableSystemInterrupt(IN ULONG Vector,
+                         IN KIRQL Irql,
+                         IN KINTERRUPT_MODE InterruptMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return FALSE;
+}
+
 /* EOF */
