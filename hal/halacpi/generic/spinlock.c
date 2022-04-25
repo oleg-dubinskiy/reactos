@@ -64,6 +64,16 @@ KfAcquireSpinLock(PKSPIN_LOCK SpinLock)
     return OldIrql;
 }
 
+VOID
+FASTCALL
+KfReleaseSpinLock(PKSPIN_LOCK SpinLock,
+                  KIRQL OldIrql)
+{
+    /* Release the lock and lower IRQL back */
+    KxReleaseSpinLock(SpinLock);
+    KeLowerIrql(OldIrql);
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 VOID
@@ -188,6 +198,16 @@ KeRaiseIrql(KIRQL NewIrql,
 {
     /* Call the fastcall function */
     *OldIrql = KfRaiseIrql(NewIrql);
+}
+
+#undef KeReleaseSpinLock
+VOID
+NTAPI
+KeReleaseSpinLock(PKSPIN_LOCK SpinLock,
+                  KIRQL NewIrql)
+{
+    /* Call the fastcall function */
+    KfReleaseSpinLock(SpinLock, NewIrql);
 }
 
 /* EOF */
