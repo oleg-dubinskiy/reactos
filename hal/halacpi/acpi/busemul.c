@@ -146,4 +146,21 @@ HalGetBusDataByOffset(IN BUS_DATA_TYPE BusDataType,
     return 0;
 }
 
+ULONG
+NTAPI
+HalGetBusData(IN BUS_DATA_TYPE BusDataType,
+              IN ULONG BusNumber,
+              IN ULONG SlotNumber,
+              IN PVOID Buffer,
+              IN ULONG Length)
+{
+    /* Call the extended function */
+    return HalGetBusDataByOffset(BusDataType,
+                                 BusNumber,
+                                 SlotNumber,
+                                 Buffer,
+                                 0,
+                                 Length);
+}
+
 /* EOF */
