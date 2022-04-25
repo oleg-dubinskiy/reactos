@@ -23,6 +23,7 @@ list(APPEND HAL_SOURCE
     generic/halinit.c
     generic/memory.c
     generic/misc.c
+    generic/reboot.c
     generic/spinlock.c
     generic/sysinfo.c
     generic/usage.c
