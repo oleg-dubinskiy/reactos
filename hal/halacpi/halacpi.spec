@@ -44,6 +44,7 @@
 @ stdcall KeRaiseIrql(long ptr)
 @ stdcall KeRaiseIrqlToDpcLevel()
 @ stdcall KeRaiseIrqlToSynchLevel()
+@ fastcall KeReleaseInStackQueuedSpinLock(ptr)
 @ fastcall KfLowerIrql(long)
 @ fastcall KfRaiseIrql(long)
 @ stdcall READ_PORT_BUFFER_UCHAR(ptr ptr long)

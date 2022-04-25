@@ -140,6 +140,15 @@ KeAcquireSpinLockRaiseToSynch(PKSPIN_LOCK SpinLock)
     return OldIrql;
 }
 
+VOID
+FASTCALL
+KeReleaseInStackQueuedSpinLock(IN PKLOCK_QUEUE_HANDLE LockHandle)
+{
+    /* Simply lower IRQL back */
+    KxReleaseSpinLock(LockHandle->LockQueue.Lock); // HACK
+    KeLowerIrql(LockHandle->OldIrql);
+}
+
 #undef KeAcquireSpinLock
 VOID
 NTAPI
