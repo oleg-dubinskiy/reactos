@@ -39,6 +39,8 @@
 @ fastcall KeAcquireSpinLockRaiseToSynch(ptr)
 @ stdcall KeGetCurrentIrql()
 @ stdcall KeFlushWriteBuffer()
+@ stdcall KeLowerIrql(long)
+@ fastcall KfLowerIrql(long)
 @ fastcall KfRaiseIrql(long)
 @ stdcall READ_PORT_BUFFER_UCHAR(ptr ptr long)
 @ stdcall READ_PORT_BUFFER_ULONG(ptr ptr long)

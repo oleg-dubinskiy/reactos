@@ -150,4 +150,13 @@ KeAcquireSpinLock(PKSPIN_LOCK SpinLock,
     *OldIrql = KfAcquireSpinLock(SpinLock);
 }
 
+#undef KeLowerIrql
+VOID
+NTAPI
+KeLowerIrql(KIRQL NewIrql)
+{
+    /* Call the fastcall function */
+    KfLowerIrql(NewIrql);
+}
+
 /* EOF */

@@ -48,7 +48,6 @@ KfRaiseIrql(IN KIRQL NewIrql)
     return CurrentIrql;
 }
 
-
 /* FUNCTIONS ******************************************************************/
 
 VOID
@@ -209,6 +208,14 @@ HalEndSystemInterrupt(_In_ KIRQL Irql,
 VOID
 FASTCALL
 HalRequestSoftwareInterrupt(IN KIRQL Irql)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+}
+
+VOID
+FASTCALL
+KfLowerIrql(IN KIRQL OldIrql)
 {
     UNIMPLEMENTED;
     ASSERT(0);//HalpDbgBreakPointEx();
