@@ -106,4 +106,30 @@ HalGetInterruptVector(IN INTERFACE_TYPE InterfaceType,
     return 0;
 }
 
+BOOLEAN
+NTAPI
+HalTranslateBusAddress(IN INTERFACE_TYPE InterfaceType,
+                       IN ULONG BusNumber,
+                       IN PHYSICAL_ADDRESS BusAddress,
+                       IN OUT PULONG AddressSpace,
+                       OUT PPHYSICAL_ADDRESS TranslatedAddress)
+{
+    /* Look as the bus type */
+    if (InterfaceType == PCIBus)
+    {
+        /* Call the PCI registered function */
+        return HalPciTranslateBusAddress(PCIBus,
+                                         BusNumber,
+                                         BusAddress,
+                                         AddressSpace,
+                                         TranslatedAddress);
+    }
+    else
+    {
+        /* Translation is easy */
+        TranslatedAddress->QuadPart = BusAddress.QuadPart;
+        return TRUE;
+    }
+}
+
 /* EOF */
