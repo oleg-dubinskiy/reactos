@@ -132,4 +132,18 @@ HalTranslateBusAddress(IN INTERFACE_TYPE InterfaceType,
     }
 }
 
+ULONG
+NTAPI
+HalGetBusDataByOffset(IN BUS_DATA_TYPE BusDataType,
+                      IN ULONG BusNumber,
+                      IN ULONG SlotNumber,
+                      IN PVOID Buffer,
+                      IN ULONG Offset,
+                      IN ULONG Length)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return 0;
+}
+
 /* EOF */
