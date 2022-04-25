@@ -52,6 +52,18 @@ HalpReleaseCmosSpinLock(VOID)
     __writeeflags(Flags);
 }
 
+KIRQL
+FASTCALL
+KfAcquireSpinLock(PKSPIN_LOCK SpinLock)
+{
+    KIRQL OldIrql;
+
+    /* Raise to dispatch and acquire the lock */
+    KeRaiseIrql(DISPATCH_LEVEL, &OldIrql);
+    KxAcquireSpinLock(SpinLock);
+    return OldIrql;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 VOID
@@ -112,6 +124,16 @@ KeAcquireQueuedSpinLockRaiseToSynch(IN KSPIN_LOCK_QUEUE_NUMBER LockNumber)
     /* Acquire the lock */
     KxAcquireSpinLock(KeGetCurrentPrcb()->LockQueue[LockNumber].Lock); // HACK
     return OldIrql;
+}
+
+#undef KeAcquireSpinLock
+VOID
+NTAPI
+KeAcquireSpinLock(PKSPIN_LOCK SpinLock,
+                  PKIRQL OldIrql)
+{
+    /* Call the fastcall function */
+    *OldIrql = KfAcquireSpinLock(SpinLock);
 }
 
 /* EOF */
