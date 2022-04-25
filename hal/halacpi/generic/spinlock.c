@@ -52,4 +52,22 @@ HalpReleaseCmosSpinLock(VOID)
     __writeeflags(Flags);
 }
 
+/* PUBLIC FUNCTIONS **********************************************************/
+
+VOID
+FASTCALL
+KeAcquireInStackQueuedSpinLock(IN PKSPIN_LOCK SpinLock,
+                               IN PKLOCK_QUEUE_HANDLE LockHandle)
+{
+    /* Set up the lock */
+    LockHandle->LockQueue.Next = NULL;
+    LockHandle->LockQueue.Lock = SpinLock;
+
+    /* Raise to dispatch */
+    KeRaiseIrql(DISPATCH_LEVEL, &LockHandle->OldIrql);
+
+    /* Acquire the lock */
+    KxAcquireSpinLock(LockHandle->LockQueue.Lock); // HACK
+}
+
 /* EOF */
