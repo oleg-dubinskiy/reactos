@@ -168,4 +168,12 @@ HalBeginSystemInterrupt(IN KIRQL Irql,
     return FALSE;
 }
 
+VOID
+FASTCALL
+HalClearSoftwareInterrupt(IN KIRQL Irql)
+{
+    /* Mask out the requested bit */
+    KeGetPcr()->IRR &= ~(1 << Irql);
+}
+
 /* EOF */
