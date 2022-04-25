@@ -54,7 +54,18 @@ HalpFlushTLB(VOID)
     __writeeflags(Flags);
 }
 
-/* FUNCTIONS *****************************************************************/
+/* PUBLIC FUNCTIONS **********************************************************/
+
+VOID
+NTAPI
+HalHandleNMI(IN PVOID NmiInfo)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+
+    /* Freeze the system */
+    while (TRUE);
+}
 
 
 /* EOF */
