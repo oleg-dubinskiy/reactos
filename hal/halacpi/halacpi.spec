@@ -6,6 +6,7 @@
 @ stdcall HalProcessorIdle()
 @ stdcall HalRequestIpi(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
+@ fastcall HalSystemVectorDispatchEntry(long long long)
 @ stdcall KeGetCurrentIrql()
 @ stdcall KeFlushWriteBuffer()
 @ fastcall KfRaiseIrql(long)

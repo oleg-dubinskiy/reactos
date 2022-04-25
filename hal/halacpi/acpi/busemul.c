@@ -82,4 +82,14 @@ HalAdjustResourceList(IN OUT PIO_RESOURCE_REQUIREMENTS_LIST * pRequirementsList)
     return STATUS_SUCCESS;
 }
 
+UCHAR
+FASTCALL
+HalSystemVectorDispatchEntry(IN ULONG Vector,
+                             OUT PKINTERRUPT_ROUTINE **FlatDispatch,
+                             OUT PKINTERRUPT_ROUTINE *NoConnection)
+{
+    /* Not implemented on x86 */
+    return 0;
+}
+
 /* EOF */
