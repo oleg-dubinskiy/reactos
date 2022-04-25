@@ -77,4 +77,13 @@ HalGetEnvironmentVariable(IN PCH Name,
     return ESUCCESS;
 }
 
+BOOLEAN
+NTAPI
+HalQueryRealTimeClock(OUT PTIME_FIELDS Time)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return FALSE;
+}
+
 /* EOF */

@@ -16,6 +16,7 @@
 @ stdcall HalInitSystem(long ptr)
 @ stdcall HalInitializeProcessor(long ptr)
 @ stdcall HalProcessorIdle()
+@ stdcall HalQueryRealTimeClock(ptr)
 @ stdcall HalRequestIpi(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ fastcall HalSystemVectorDispatchEntry(long long long)
