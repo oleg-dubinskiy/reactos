@@ -176,4 +176,13 @@ HalClearSoftwareInterrupt(IN KIRQL Irql)
     KeGetPcr()->IRR &= ~(1 << Irql);
 }
 
+VOID
+NTAPI
+HalDisableSystemInterrupt(IN ULONG Vector,
+                          IN KIRQL Irql)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+}
+
 /* EOF */
