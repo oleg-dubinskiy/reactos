@@ -51,6 +51,7 @@
 @ fastcall KfAcquireSpinLock(ptr)
 @ fastcall KfLowerIrql(long)
 @ fastcall KfRaiseIrql(long)
+@ fastcall KfReleaseSpinLock(ptr long)
 @ stdcall READ_PORT_BUFFER_UCHAR(ptr ptr long)
 @ stdcall READ_PORT_BUFFER_ULONG(ptr ptr long)
 @ stdcall READ_PORT_BUFFER_USHORT(ptr ptr long)
