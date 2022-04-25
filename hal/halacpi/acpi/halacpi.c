@@ -572,4 +572,13 @@ HalReportResourceUsage(VOID)
     ASSERT(0);//HalpDbgBreakPointEx();
 }
 
+ULONG
+NTAPI
+HalSetTimeIncrement(IN ULONG Increment)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return 0;
+}
+
 /* EOF */
