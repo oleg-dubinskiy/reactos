@@ -23,6 +23,7 @@
 @ stdcall HalReturnToFirmware(long)
 @ stdcall HalSetEnvironmentVariable(str str)
 @ stdcall HalStartNextProcessor(ptr ptr)
+@ stdcall HalStartProfileInterrupt(long)
 @ fastcall HalSystemVectorDispatchEntry(long long long)
 @ stdcall KeGetCurrentIrql()
 @ stdcall KeFlushWriteBuffer()

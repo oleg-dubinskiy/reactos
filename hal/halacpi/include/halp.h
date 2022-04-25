@@ -38,8 +38,8 @@ typedef struct _HalAddressUsage
 /* CMOS Registers and Ports */
 #define CMOS_CONTROL_PORT       (PUCHAR)0x0070
 #define CMOS_DATA_PORT          (PUCHAR)0x0071
-//#define RTC_REGISTER_A          0x0A
-//#define RTC_REG_A_UIP           0x80
+#define RTC_REGISTER_A          0x0A
+#define RTC_REG_A_UIP           0x80
 #define RTC_REGISTER_B          0x0B
 #define RTC_REG_B_PI            0x40
 //#define RTC_REGISTER_C          0x0C
