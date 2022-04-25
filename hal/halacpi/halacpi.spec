@@ -1,3 +1,4 @@
+@ stdcall HalAdjustResourceList(ptr)
 @ stdcall HalAllProcessorsStarted()
 @ stdcall HalDisplayString(str)
 @ stdcall HalInitSystem(long ptr)
