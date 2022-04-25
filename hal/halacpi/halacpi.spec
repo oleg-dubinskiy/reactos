@@ -48,6 +48,7 @@
 @ fastcall KeReleaseQueuedSpinLock(ptr long)
 @ stdcall KeReleaseSpinLock(ptr long)
 @ stdcall KeStallExecutionProcessor(long)
+@ fastcall KeTryToAcquireQueuedSpinLock(long ptr)
 @ fastcall KfAcquireSpinLock(ptr)
 @ fastcall KfLowerIrql(long)
 @ fastcall KfRaiseIrql(long)
