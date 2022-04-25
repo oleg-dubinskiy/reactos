@@ -30,6 +30,7 @@
 @ stdcall HalStopProfileInterrupt(long)
 @ fastcall HalSystemVectorDispatchEntry(long long long)
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
+@ extern KdComPortInUse
 @ stdcall KeGetCurrentIrql()
 @ stdcall KeFlushWriteBuffer()
 @ fastcall KfRaiseIrql(long)

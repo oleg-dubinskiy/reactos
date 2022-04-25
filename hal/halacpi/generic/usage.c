@@ -11,6 +11,8 @@
 
 /* GLOBALS ********************************************************************/
 
+PUCHAR KdComPortInUse;
+
 IDTUsageFlags HalpIDTUsageFlags[MAXIMUM_IDTVECTOR + 1];
 IDTUsage HalpIDTUsage[MAXIMUM_IDTVECTOR + 1];
 
