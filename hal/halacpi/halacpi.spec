@@ -19,6 +19,7 @@
 @ stdcall HalQueryRealTimeClock(ptr)
 @ stdcall HalReportResourceUsage()
 @ stdcall HalRequestIpi(long)
+@ fastcall HalRequestSoftwareInterrupt(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ fastcall HalSystemVectorDispatchEntry(long long long)
 @ stdcall KeGetCurrentIrql()

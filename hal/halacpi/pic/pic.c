@@ -206,4 +206,12 @@ HalEndSystemInterrupt(_In_ KIRQL Irql,
     ASSERT(0);//HalpDbgBreakPointEx();
 }
 
+VOID
+FASTCALL
+HalRequestSoftwareInterrupt(IN KIRQL Irql)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+}
+
 /* EOF */
