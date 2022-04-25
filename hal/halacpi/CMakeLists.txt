@@ -32,8 +32,12 @@ list(APPEND HAL_SOURCE
     pic/timer.c
     up/processor.c)
 
+list(APPEND HAL_ASM_SOURCE
+    pic/systimer.S)
+	
 add_library(halacpi MODULE
     ${HAL_SOURCE}
+    ${HAL_ASM_SOURCE}
     version/halacpi.rc
     ${CMAKE_CURRENT_BINARY_DIR}/halacpi.def)
 
