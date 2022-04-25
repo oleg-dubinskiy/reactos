@@ -110,5 +110,14 @@ HalpInitializeClock(VOID)
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 
+LARGE_INTEGER
+NTAPI
+KeQueryPerformanceCounter(PLARGE_INTEGER PerformanceFrequency)
+{
+    LARGE_INTEGER CurrentPerfCounter = {{0,0}};
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return CurrentPerfCounter;
+}
 
 /* EOF */
