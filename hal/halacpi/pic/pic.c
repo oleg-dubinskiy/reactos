@@ -155,4 +155,17 @@ HalpInitializePICs(IN BOOLEAN EnableInterrupts)
     __writeeflags(EFlags);
 }
 
+/* PUBLIC FUNCTIONS **********************************************************/
+
+BOOLEAN
+NTAPI
+HalBeginSystemInterrupt(IN KIRQL Irql,
+                        IN ULONG Vector,
+                        OUT PKIRQL OldIrql)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return FALSE;
+}
+
 /* EOF */

@@ -4,6 +4,7 @@
 @ stdcall HalAdjustResourceList(ptr)
 @ stdcall HalAllProcessorsStarted()
 @ stdcall HalAllocateAdapterChannel(ptr ptr long ptr)
+@ stdcall HalBeginSystemInterrupt(long long ptr)
 @ stdcall HalDisplayString(str)
 @ stdcall HalInitSystem(long ptr)
 @ stdcall HalInitializeProcessor(long ptr)
