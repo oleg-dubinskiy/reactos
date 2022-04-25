@@ -100,4 +100,18 @@ KeAcquireQueuedSpinLock(IN KSPIN_LOCK_QUEUE_NUMBER LockNumber)
     return OldIrql;
 }
 
+KIRQL
+FASTCALL
+KeAcquireQueuedSpinLockRaiseToSynch(IN KSPIN_LOCK_QUEUE_NUMBER LockNumber)
+{
+    KIRQL OldIrql;
+
+    /* Raise to synch */
+    KeRaiseIrql(SYNCH_LEVEL, &OldIrql);
+
+    /* Acquire the lock */
+    KxAcquireSpinLock(KeGetCurrentPrcb()->LockQueue[LockNumber].Lock); // HACK
+    return OldIrql;
+}
+
 /* EOF */
