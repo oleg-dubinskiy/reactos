@@ -196,4 +196,14 @@ HalEnableSystemInterrupt(IN ULONG Vector,
     return FALSE;
 }
 
+/* NT use nonstandard parameters calling */
+VOID
+NTAPI
+HalEndSystemInterrupt(_In_ KIRQL Irql,
+                      _In_ PKTRAP_FRAME TrapFrame)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+}
+
 /* EOF */
