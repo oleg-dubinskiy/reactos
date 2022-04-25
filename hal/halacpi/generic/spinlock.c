@@ -126,6 +126,20 @@ KeAcquireQueuedSpinLockRaiseToSynch(IN KSPIN_LOCK_QUEUE_NUMBER LockNumber)
     return OldIrql;
 }
 
+KIRQL
+FASTCALL
+KeAcquireSpinLockRaiseToSynch(PKSPIN_LOCK SpinLock)
+{
+    KIRQL OldIrql;
+
+    /* Raise to sync */
+    KeRaiseIrql(SYNCH_LEVEL, &OldIrql);
+
+    /* Acquire the lock and return */
+    KxAcquireSpinLock(SpinLock);
+    return OldIrql;
+}
+
 #undef KeAcquireSpinLock
 VOID
 NTAPI

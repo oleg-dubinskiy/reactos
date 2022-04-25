@@ -36,6 +36,7 @@
 @ fastcall KeAcquireQueuedSpinLock(ptr)
 @ fastcall KeAcquireQueuedSpinLockRaiseToSynch(ptr)
 @ stdcall KeAcquireSpinLock(ptr ptr)
+@ fastcall KeAcquireSpinLockRaiseToSynch(ptr)
 @ stdcall KeGetCurrentIrql()
 @ stdcall KeFlushWriteBuffer()
 @ fastcall KfRaiseIrql(long)
