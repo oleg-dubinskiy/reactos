@@ -33,6 +33,7 @@
 @ extern KdComPortInUse
 @ fastcall KeAcquireInStackQueuedSpinLock(ptr ptr)
 @ fastcall KeAcquireInStackQueuedSpinLockRaiseToSynch(ptr ptr)
+@ fastcall KeAcquireQueuedSpinLock(ptr)
 @ stdcall KeGetCurrentIrql()
 @ stdcall KeFlushWriteBuffer()
 @ fastcall KfRaiseIrql(long)
