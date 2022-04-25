@@ -242,4 +242,32 @@ KeRaiseIrqlToDpcLevel(VOID)
     return CurrentIrql;
 }
 
+KIRQL
+NTAPI
+KeRaiseIrqlToSynchLevel(VOID)
+{
+    PKPCR Pcr = KeGetPcr();
+    KIRQL CurrentIrql;
+
+    /* Save and update IRQL */
+    CurrentIrql = Pcr->Irql;
+    Pcr->Irql = SYNCH_LEVEL;
+
+#if DBG
+    /* Validate correct raise */
+    if (CurrentIrql > SYNCH_LEVEL)
+    {
+        /* Crash system */
+        KeBugCheckEx(IRQL_NOT_GREATER_OR_EQUAL,
+                     CurrentIrql,
+                     SYNCH_LEVEL,
+                     0,
+                     1);
+    }
+#endif
+
+    /* Return the previous value */
+    return CurrentIrql;
+}
+
 /* EOF */

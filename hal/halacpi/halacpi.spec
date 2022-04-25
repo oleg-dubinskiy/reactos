@@ -43,6 +43,7 @@
 @ stdcall KeQueryPerformanceCounter(ptr)
 @ stdcall KeRaiseIrql(long ptr)
 @ stdcall KeRaiseIrqlToDpcLevel()
+@ stdcall KeRaiseIrqlToSynchLevel()
 @ fastcall KfLowerIrql(long)
 @ fastcall KfRaiseIrql(long)
 @ stdcall READ_PORT_BUFFER_UCHAR(ptr ptr long)
