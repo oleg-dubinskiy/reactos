@@ -221,4 +221,25 @@ KfLowerIrql(IN KIRQL OldIrql)
     ASSERT(0);//HalpDbgBreakPointEx();
 }
 
+KIRQL
+NTAPI
+KeRaiseIrqlToDpcLevel(VOID)
+{
+    PKPCR Pcr = KeGetPcr();
+    KIRQL CurrentIrql;
+
+    /* Save and update IRQL */
+    CurrentIrql = Pcr->Irql;
+    Pcr->Irql = DISPATCH_LEVEL;
+
+#if DBG
+    /* Validate correct raise */
+    if (CurrentIrql > DISPATCH_LEVEL)
+        KeBugCheck(IRQL_NOT_GREATER_OR_EQUAL);
+#endif
+
+    /* Return the previous value */
+    return CurrentIrql;
+}
+
 /* EOF */
