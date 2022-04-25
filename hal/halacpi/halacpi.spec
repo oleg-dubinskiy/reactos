@@ -25,6 +25,7 @@
 @ stdcall HalSetProfileInterval(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall HalStartProfileInterrupt(long)
+@ stdcall HalStopProfileInterrupt(long)
 @ fastcall HalSystemVectorDispatchEntry(long long long)
 @ stdcall KeGetCurrentIrql()
 @ stdcall KeFlushWriteBuffer()
