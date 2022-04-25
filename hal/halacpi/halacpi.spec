@@ -23,6 +23,7 @@
 @ stdcall HalReturnToFirmware(long)
 @ stdcall HalSetEnvironmentVariable(str str)
 @ stdcall HalSetProfileInterval(long)
+@ stdcall HalSetRealTimeClock(ptr)
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall HalStartProfileInterrupt(long)
 @ stdcall HalStopProfileInterrupt(long)

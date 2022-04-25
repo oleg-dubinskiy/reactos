@@ -5,6 +5,10 @@
 //#define NDEBUG
 #include <debug.h>
 
+/* Conversion functions */
+#define BCD_INT(bcd)  (((bcd & 0xF0) >> 4) * 10 + (bcd & 0x0F))
+#define INT_BCD(int)  (UCHAR)(((int / 10) << 4) + (int % 10))
+
 /* GLOBALS *******************************************************************/
 
 UCHAR HalpCmosCenturyOffset = 0;
@@ -126,6 +130,34 @@ HalSetEnvironmentVariable(IN PCH Name,
     /* Release the lock and return success */
     HalpReleaseCmosSpinLock();
     return ESUCCESS;
+}
+
+BOOLEAN
+NTAPI
+HalSetRealTimeClock(IN PTIME_FIELDS Time)
+{
+    /* Acquire CMOS Lock */
+    HalpAcquireCmosSpinLock();
+
+    /* Loop while update is in progress */
+    while ((HalpReadCmos(RTC_REGISTER_A)) & RTC_REG_A_UIP);
+
+    /* Write time fields to CMOS RTC */
+    HalpWriteCmos(0, INT_BCD(Time->Second));
+    HalpWriteCmos(2, INT_BCD(Time->Minute));
+    HalpWriteCmos(4, INT_BCD(Time->Hour));
+    HalpWriteCmos(6, INT_BCD(Time->Weekday));
+    HalpWriteCmos(7, INT_BCD(Time->Day));
+    HalpWriteCmos(8, INT_BCD(Time->Month));
+    HalpWriteCmos(9, INT_BCD(Time->Year % 100));
+
+    /* FIXME: Set the century byte */
+
+    /* Release CMOS lock */
+    HalpReleaseCmosSpinLock();
+
+    /* Always return TRUE */
+    return TRUE;
 }
 
 /* EOF */
