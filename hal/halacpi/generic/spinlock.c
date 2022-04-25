@@ -149,6 +149,18 @@ KeReleaseInStackQueuedSpinLock(IN PKLOCK_QUEUE_HANDLE LockHandle)
     KeLowerIrql(LockHandle->OldIrql);
 }
 
+VOID
+FASTCALL
+KeReleaseQueuedSpinLock(IN KSPIN_LOCK_QUEUE_NUMBER LockNumber,
+                        IN KIRQL OldIrql)
+{
+    /* Release the lock */
+    KxReleaseSpinLock(KeGetCurrentPrcb()->LockQueue[LockNumber].Lock); // HACK
+
+    /* Lower IRQL back */
+    KeLowerIrql(OldIrql);
+}
+
 #undef KeAcquireSpinLock
 VOID
 NTAPI
