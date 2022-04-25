@@ -193,6 +193,27 @@ KeTryToAcquireQueuedSpinLock(IN KSPIN_LOCK_QUEUE_NUMBER LockNumber,
     return TRUE;
 }
 
+BOOLEAN
+FASTCALL
+KeTryToAcquireQueuedSpinLockRaiseToSynch(IN KSPIN_LOCK_QUEUE_NUMBER LockNumber,
+                                         IN PKIRQL OldIrql)
+{
+#ifdef CONFIG_SMP
+    ERROR_DBGBREAK("FIXME: Unused\n"); // FIXME: Unused
+    return FALSE;
+#endif
+
+    /* Simply raise to synch */
+    KeRaiseIrql(SYNCH_LEVEL, OldIrql);
+
+    /* Add an explicit memory barrier to prevent the compiler from reordering
+       memory accesses across the borders of spinlocks */
+    KeMemoryBarrierWithoutFence();
+
+    /* Always return true on UP Machines */
+    return TRUE;
+}
+
 #undef KeAcquireSpinLock
 VOID
 NTAPI
