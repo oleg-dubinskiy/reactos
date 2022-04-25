@@ -562,4 +562,14 @@ HaliHaltSystem(VOID)
     ASSERT(0);//HalpDbgBreakPointEx();
 }
 
+/* PUBLIC FUNCTIONS **********************************************************/
+
+VOID
+NTAPI
+HalReportResourceUsage(VOID)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+}
+
 /* EOF */
