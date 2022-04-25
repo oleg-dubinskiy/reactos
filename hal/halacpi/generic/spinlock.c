@@ -159,4 +159,14 @@ KeLowerIrql(KIRQL NewIrql)
     KfLowerIrql(NewIrql);
 }
 
+#undef KeRaiseIrql
+VOID
+NTAPI
+KeRaiseIrql(KIRQL NewIrql,
+            PKIRQL OldIrql)
+{
+    /* Call the fastcall function */
+    *OldIrql = KfRaiseIrql(NewIrql);
+}
+
 /* EOF */

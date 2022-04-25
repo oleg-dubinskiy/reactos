@@ -41,6 +41,7 @@
 @ stdcall KeFlushWriteBuffer()
 @ stdcall KeLowerIrql(long)
 @ stdcall KeQueryPerformanceCounter(ptr)
+@ stdcall KeRaiseIrql(long ptr)
 @ fastcall KfLowerIrql(long)
 @ fastcall KfRaiseIrql(long)
 @ stdcall READ_PORT_BUFFER_UCHAR(ptr ptr long)
