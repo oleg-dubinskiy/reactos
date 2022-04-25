@@ -12,6 +12,41 @@ UCHAR HalpProfileRate = 8;
 
 /* PUBLIC FUNCTIONS **********************************************************/
 
+ULONG_PTR
+NTAPI
+HalSetProfileInterval(IN ULONG_PTR Interval)
+{
+    ULONG_PTR CurrentValue, NextValue;
+    UCHAR i;
+
+    /* Normalize interval. 122100 ns is the smallest supported */
+    Interval &= ~(1 << 31);
+
+    if (Interval < 1221)
+        Interval = 1221;
+
+    /* Highest rate value of 15 means 500 ms */
+    CurrentValue = 5000000;
+
+    for (i = 15; ; i--)
+    {
+        NextValue = (CurrentValue + 1) / 2;
+        if (Interval > (CurrentValue - NextValue / 2))
+            break;
+
+        CurrentValue = NextValue;
+    }
+
+    /* Interval as needed by RTC */
+    HalpProfileRate = i;
+
+    /* Reset the  */
+    if (!HalpProfilingStopped)
+       HalStartProfileInterrupt(0);
+
+    return CurrentValue;
+}
+
 VOID
 NTAPI
 HalStartProfileInterrupt(IN KPROFILE_SOURCE ProfileSource)

@@ -22,6 +22,7 @@
 @ fastcall HalRequestSoftwareInterrupt(long)
 @ stdcall HalReturnToFirmware(long)
 @ stdcall HalSetEnvironmentVariable(str str)
+@ stdcall HalSetProfileInterval(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall HalStartProfileInterrupt(long)
 @ fastcall HalSystemVectorDispatchEntry(long long long)
