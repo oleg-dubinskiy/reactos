@@ -92,4 +92,18 @@ HalSystemVectorDispatchEntry(IN ULONG Vector,
     return 0;
 }
 
+ULONG
+NTAPI
+HalGetInterruptVector(IN INTERFACE_TYPE InterfaceType,
+                      IN ULONG BusNumber,
+                      IN ULONG BusInterruptLevel,
+                      IN ULONG BusInterruptVector,
+                      OUT PKIRQL Irql,
+                      OUT PKAFFINITY Affinity)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return 0;
+}
+
 /* EOF */
