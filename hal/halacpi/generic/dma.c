@@ -76,4 +76,39 @@ HalpInitDma(VOID)
     KeInitializeEvent(&HalpDmaLock, NotificationEvent, TRUE);
 }
 
+/* PUBLIC FUNCTIONS **********************************************************/
+
+/* HalAllocateAdapterChannel
+       Setup map registers for an adapter object.
+
+   AdapterObject
+      Pointer to an ADAPTER_OBJECT to set up.
+
+   WaitContextBlock
+      Context block to be used with ExecutionRoutine.
+
+   NumberOfMapRegisters
+      Number of map registers requested.
+
+   ExecutionRoutine
+      Callback to call when map registers are allocated.
+
+   return:
+      If not enough map registers can be allocated then STATUS_INSUFFICIENT_RESOURCES is returned.
+      If the function succeeds or the callback is queued for later delivering then STATUS_SUCCESS is returned.
+ 
+   see IoFreeAdapterChannel
+*/
+NTSTATUS
+NTAPI
+HalAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
+                          IN PWAIT_CONTEXT_BLOCK WaitContextBlock,
+                          IN ULONG NumberOfMapRegisters,
+                          IN PDRIVER_CONTROL ExecutionRoutine)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* EOF */
