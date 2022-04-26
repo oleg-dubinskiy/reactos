@@ -134,4 +134,38 @@ HalGetAdapter(IN PDEVICE_DESCRIPTION DeviceDescription,
     return NULL;
 }
 
+/* HalAllocateCommonBuffer
+      Allocates memory that is visible to both the processor(s) and the DMA device.
+  
+   AdapterObject
+      Adapter object representing the bus master or system dma controller.
+
+   Length
+      Number of bytes to allocate.
+
+   LogicalAddress
+      Logical address the driver can use to access the buffer.
+
+   CacheEnabled
+      Specifies if the memory can be cached.
+  
+   return: The base virtual address of the memory allocated or NULL on failure.
+  
+   On real NT x86 systems the CacheEnabled parameter is ignored, we honour it.
+   If it proves to cause problems change it.
+  
+   see HalFreeCommonBuffer
+*/
+PVOID
+NTAPI
+HalAllocateCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
+                        IN ULONG Length,
+                        IN PPHYSICAL_ADDRESS LogicalAddress,
+                        IN BOOLEAN CacheEnabled)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return NULL;
+}
+
 /* EOF */
