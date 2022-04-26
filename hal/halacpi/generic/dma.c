@@ -303,4 +303,47 @@ IoFreeMapRegisters(IN PADAPTER_OBJECT AdapterObject,
     ASSERT(0);//HalpDbgBreakPointEx();
 }
 
+/* IoMapTransfer
+      Map a DMA for transfer and do the DMA if it's a slave.
+
+   AdapterObject
+      Adapter object to do the DMA on. Bus-master may pass NULL.
+
+   Mdl
+      Locked-down user buffer to DMA in to or out of.
+
+   MapRegisterBase
+      Handle to map registers to use for this dma.
+
+   CurrentVa
+      Index into Mdl to transfer into/out of.
+
+   Length
+      Length of transfer. Number of bytes actually transferred on output.
+
+   WriteToDevice
+      TRUE if it's an output DMA, FALSE otherwise.
+
+   return: A logical address that can be used to program a DMA controller,
+           it's not meaningful for slave DMA device.
+
+   This function does a copyover to contiguous memory <16MB represented by the map registers if needed.
+   If the buffer described by MDL can be used as is no copyover is done.
+   If it's a slave transfer, this function actually performs it.
+*/
+PHYSICAL_ADDRESS
+NTAPI
+IoMapTransfer(IN PADAPTER_OBJECT AdapterObject,
+              IN PMDL Mdl,
+              IN PVOID MapRegisterBase,
+              IN PVOID CurrentVa,
+              IN OUT PULONG Length,
+              IN BOOLEAN WriteToDevice)
+{
+    PHYSICAL_ADDRESS PhysicalAddress = {{0,0}};
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return PhysicalAddress;
+}
+
 /* EOF */

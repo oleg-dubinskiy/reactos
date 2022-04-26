@@ -48,6 +48,7 @@
 @ stdcall IoFlushAdapterBuffers(ptr ptr ptr ptr long long)
 @ stdcall IoFreeAdapterChannel(ptr)
 @ stdcall IoFreeMapRegisters(ptr ptr long)
+@ stdcall IoMapTransfer(ptr ptr ptr ptr ptr long)
 @ extern KdComPortInUse
 @ fastcall KeAcquireInStackQueuedSpinLock(ptr ptr)
 @ fastcall KeAcquireInStackQueuedSpinLockRaiseToSynch(ptr ptr)
