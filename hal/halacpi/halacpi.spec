@@ -45,6 +45,7 @@
 @ stdcall HalStopProfileInterrupt(long)
 @ fastcall HalSystemVectorDispatchEntry(long long long)
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
+@ stdcall IoFlushAdapterBuffers(ptr ptr ptr ptr long long)
 @ extern KdComPortInUse
 @ fastcall KeAcquireInStackQueuedSpinLock(ptr ptr)
 @ fastcall KeAcquireInStackQueuedSpinLockRaiseToSynch(ptr ptr)

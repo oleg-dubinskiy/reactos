@@ -219,4 +219,45 @@ HalReadDmaCounter(IN PADAPTER_OBJECT AdapterObject)
     return 0;
 }
 
+/* IoFlushAdapterBuffers
+      Flush any data remaining in the DMA controller's memory into the host memory.
+
+   AdapterObject
+      The adapter object to flush.
+
+   Mdl
+      Original MDL to flush data into.
+
+   MapRegisterBase
+      Map register base that was just used by IoMapTransfer, etc.
+
+   CurrentVa
+      Offset into Mdl to be flushed into, same as was passed to IoMapTransfer.
+
+   Length
+      Length of the buffer to be flushed into.
+
+   WriteToDevice
+     TRUE if it's a write, FALSE if it's a read.
+
+   return: TRUE in all cases.
+
+   This copies data from the map register-backed buffer to the user's target buffer.
+   Data are not in the user buffer until this function is called.
+   For slave DMA transfers the controller channel is masked effectively stopping the current transfer.
+*/
+BOOLEAN
+NTAPI
+IoFlushAdapterBuffers(IN PADAPTER_OBJECT AdapterObject,
+                      IN PMDL Mdl,
+                      IN PVOID MapRegisterBase,
+                      IN PVOID CurrentVa,
+                      IN ULONG Length,
+                      IN BOOLEAN WriteToDevice)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return FALSE;
+}
+
 /* EOF */
