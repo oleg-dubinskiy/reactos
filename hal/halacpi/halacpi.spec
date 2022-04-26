@@ -47,6 +47,7 @@
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
 @ stdcall IoFlushAdapterBuffers(ptr ptr ptr ptr long long)
 @ stdcall IoFreeAdapterChannel(ptr)
+@ stdcall IoFreeMapRegisters(ptr ptr long)
 @ extern KdComPortInUse
 @ fastcall KeAcquireInStackQueuedSpinLock(ptr ptr)
 @ fastcall KeAcquireInStackQueuedSpinLockRaiseToSynch(ptr ptr)

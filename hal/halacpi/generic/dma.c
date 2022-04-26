@@ -281,4 +281,26 @@ IoFreeAdapterChannel(IN PADAPTER_OBJECT AdapterObject)
     ASSERT(0);//HalpDbgBreakPointEx();
 }
 
+/* IoFreeMapRegisters
+      Free map registers reserved by the system for a DMA.
+ 
+   AdapterObject
+     DMA adapter to free map registers on.
+
+   MapRegisterBase
+     Handle to map registers to free.
+
+   NumberOfRegisters
+     Number of map registers to be freed.
+*/
+VOID
+NTAPI
+IoFreeMapRegisters(IN PADAPTER_OBJECT AdapterObject,
+                   IN PVOID MapRegisterBase,
+                   IN ULONG NumberOfMapRegisters)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+}
+
 /* EOF */
