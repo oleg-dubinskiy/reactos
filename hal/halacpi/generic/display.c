@@ -24,4 +24,15 @@ HalAcquireDisplayOwnership(IN PHAL_RESET_DISPLAY_PARAMETERS ResetDisplayParamete
     return;
 }
 
+VOID
+NTAPI
+HalQueryDisplayParameters(OUT PULONG DispSizeX,
+                          OUT PULONG DispSizeY,
+                          OUT PULONG CursorPosX,
+                          OUT PULONG CursorPosY)
+{
+    /* Stub since Windows XP implemented Inbv */
+    return;
+}
+
 /* EOF */

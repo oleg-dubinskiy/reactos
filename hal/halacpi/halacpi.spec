@@ -21,6 +21,7 @@
 @ stdcall HalInitSystem(long ptr)
 @ stdcall HalInitializeProcessor(long ptr)
 @ stdcall HalProcessorIdle()
+@ stdcall HalQueryDisplayParameters(ptr ptr ptr ptr)
 @ stdcall HalQueryRealTimeClock(ptr)
 @ stdcall HalReportResourceUsage()
 @ stdcall HalRequestIpi(long)
