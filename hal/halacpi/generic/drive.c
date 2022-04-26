@@ -37,4 +37,18 @@ HalpReadPartitionTable(IN PDEVICE_OBJECT DeviceObject,
                                 PartitionBuffer);
 }
 
+NTSTATUS
+NTAPI
+HalpSetPartitionInformation(IN PDEVICE_OBJECT DeviceObject,
+                            IN ULONG SectorSize,
+                            IN ULONG PartitionNumber,
+                            IN ULONG PartitionType)
+{
+    /* Call the kernel */
+    return IoSetPartitionInformation(DeviceObject,
+                                     SectorSize,
+                                     PartitionNumber,
+                                     PartitionType);
+}
+
 /* EOF */

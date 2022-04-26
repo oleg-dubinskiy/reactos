@@ -52,6 +52,7 @@
 @ stdcall IoFreeMapRegisters(ptr ptr long)
 @ stdcall IoMapTransfer(ptr ptr ptr ptr ptr long)
 @ stdcall IoReadPartitionTable(ptr long long ptr) HalpReadPartitionTable
+@ stdcall IoSetPartitionInformation(ptr long long long) HalpSetPartitionInformation
 @ extern KdComPortInUse
 @ fastcall KeAcquireInStackQueuedSpinLock(ptr ptr)
 @ fastcall KeAcquireInStackQueuedSpinLockRaiseToSynch(ptr ptr)
