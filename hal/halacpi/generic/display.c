@@ -35,4 +35,13 @@ HalQueryDisplayParameters(OUT PULONG DispSizeX,
     return;
 }
 
+VOID
+NTAPI
+HalSetDisplayParameters(IN ULONG CursorPosX,
+                        IN ULONG CursorPosY)
+{
+    /* Stub since Windows XP implemented Inbv */
+    return;
+}
+
 /* EOF */
