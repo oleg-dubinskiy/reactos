@@ -51,4 +51,20 @@ HalpSetPartitionInformation(IN PDEVICE_OBJECT DeviceObject,
                                      PartitionType);
 }
 
+NTSTATUS
+NTAPI
+HalpWritePartitionTable(IN PDEVICE_OBJECT DeviceObject,
+                        IN ULONG SectorSize,
+                        IN ULONG SectorsPerTrack,
+                        IN ULONG NumberOfHeads,
+                        IN PDRIVE_LAYOUT_INFORMATION PartitionBuffer)
+{
+    /* Call the kernel */
+    return IoWritePartitionTable(DeviceObject,
+                                 SectorSize,
+                                 SectorsPerTrack,
+                                 NumberOfHeads,
+                                 PartitionBuffer);
+}
+
 /* EOF */
