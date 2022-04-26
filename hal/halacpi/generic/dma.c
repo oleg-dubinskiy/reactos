@@ -260,4 +260,25 @@ IoFlushAdapterBuffers(IN PADAPTER_OBJECT AdapterObject,
     return FALSE;
 }
 
+/* IoFreeAdapterChannel
+      Free DMA resources allocated by IoAllocateAdapterChannel.
+
+   AdapterObject
+      Adapter object with resources to free.
+
+   This function releases map registers registers assigned to the DMA adapter.
+   After releasing the adapter, it checks the adapter's queue
+   and runs each queued device object in series until the queue is empty.
+   This is the only way the device queue is emptied.
+  
+   see IoAllocateAdapterChannel
+*/
+VOID
+NTAPI
+IoFreeAdapterChannel(IN PADAPTER_OBJECT AdapterObject)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+}
+
 /* EOF */
