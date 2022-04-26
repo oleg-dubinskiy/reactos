@@ -207,4 +207,16 @@ HalFreeCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
                                        CacheEnabled ? MmCached : MmNonCached);
 }
 
+/* HalReadDmaCounter
+     Read DMA operation progress counter.
+*/
+ULONG
+NTAPI
+HalReadDmaCounter(IN PADAPTER_OBJECT AdapterObject)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return 0;
+}
+
 /* EOF */

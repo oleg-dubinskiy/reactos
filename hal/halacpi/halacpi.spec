@@ -28,6 +28,7 @@
 @ stdcall HalProcessorIdle()
 @ stdcall HalQueryDisplayParameters(ptr ptr ptr ptr)
 @ stdcall HalQueryRealTimeClock(ptr)
+@ stdcall HalReadDmaCounter(ptr)
 @ stdcall HalReportResourceUsage()
 @ stdcall HalRequestIpi(long)
 @ fastcall HalRequestSoftwareInterrupt(long)
