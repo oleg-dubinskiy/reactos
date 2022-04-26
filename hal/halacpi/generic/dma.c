@@ -111,4 +111,27 @@ HalAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
     return STATUS_NOT_IMPLEMENTED;
 }
 
+/* HalGetAdapter
+      Allocate an adapter object for DMA device.
+
+   DeviceDescriptor
+      Structure describing the attributes of the device.
+
+   NumberOfMapRegisters
+      On return filled with the maximum number of map registers
+      the device driver can allocate for DMA transfer operations.
+
+   return:
+      The DMA adapter on success, NULL otherwise.
+*/
+PADAPTER_OBJECT
+NTAPI
+HalGetAdapter(IN PDEVICE_DESCRIPTION DeviceDescription,
+              OUT PULONG NumberOfMapRegisters)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return NULL;
+}
+
 /* EOF */

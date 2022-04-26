@@ -10,6 +10,7 @@
 @ stdcall HalDisplayString(str)
 @ stdcall HalEnableSystemInterrupt(long long long)
 @ stdcall HalEndSystemInterrupt(long long) #NT use nonstandard parameters calling
+@ stdcall HalGetAdapter(ptr ptr)
 @ stdcall HalGetBusData(long long long ptr long)
 @ stdcall HalGetBusDataByOffset(long long long ptr long long)
 @ stdcall HalGetEnvironmentVariable(str long str)
