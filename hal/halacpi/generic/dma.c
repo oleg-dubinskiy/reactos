@@ -189,4 +189,22 @@ HalFlushCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
     return TRUE;
 }
 
+/* HalFreeCommonBuffer
+      Free common buffer allocated with HalAllocateCommonBuffer.
+
+   see HalAllocateCommonBuffer
+*/
+VOID
+NTAPI
+HalFreeCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
+                    IN ULONG Length,
+                    IN PHYSICAL_ADDRESS LogicalAddress,
+                    IN PVOID VirtualAddress,
+                    IN BOOLEAN CacheEnabled)
+{
+    MmFreeContiguousMemorySpecifyCache(VirtualAddress,
+                                       Length,
+                                       CacheEnabled ? MmCached : MmNonCached);
+}
+
 /* EOF */
