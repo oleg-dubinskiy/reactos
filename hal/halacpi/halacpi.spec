@@ -9,6 +9,7 @@
 @ stdcall HalAllocateCrashDumpRegisters(ptr ptr)
 @ stdcall HalAssignSlotResources(ptr ptr ptr ptr long long long ptr)
 @ stdcall HalBeginSystemInterrupt(long long ptr)
+@ stdcall HalCalibratePerformanceCounter(ptr long long)
 @ fastcall HalClearSoftwareInterrupt(long)
 @ stdcall HalDisableSystemInterrupt(long long)
 @ stdcall HalDisplayString(str)

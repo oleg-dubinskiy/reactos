@@ -120,4 +120,13 @@ KeQueryPerformanceCounter(PLARGE_INTEGER PerformanceFrequency)
     return CurrentPerfCounter;
 }
 
+VOID
+NTAPI
+HalCalibratePerformanceCounter(IN volatile PLONG Count,
+                               IN ULONGLONG NewCount)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+}
+
 /* EOF */
