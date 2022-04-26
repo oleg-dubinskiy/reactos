@@ -46,6 +46,7 @@
 @ stdcall HalStopProfileInterrupt(long)
 @ fastcall HalSystemVectorDispatchEntry(long long long)
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
+@ stdcall IoAssignDriveLetters(ptr str ptr ptr) HalpAssignDriveLetters
 @ stdcall IoFlushAdapterBuffers(ptr ptr ptr ptr long long)
 @ stdcall IoFreeAdapterChannel(ptr)
 @ stdcall IoFreeMapRegisters(ptr ptr long)

@@ -21,6 +21,7 @@ list(APPEND HAL_SOURCE
     generic/cmos.c
     generic/display.c
     generic/dma.c
+    generic/drive.c
     generic/halinit.c
     generic/memory.c
     generic/misc.c
