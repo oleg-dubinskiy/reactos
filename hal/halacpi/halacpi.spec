@@ -51,6 +51,7 @@
 @ stdcall IoFreeAdapterChannel(ptr)
 @ stdcall IoFreeMapRegisters(ptr ptr long)
 @ stdcall IoMapTransfer(ptr ptr ptr ptr ptr long)
+@ stdcall IoReadPartitionTable(ptr long long ptr) HalpReadPartitionTable
 @ extern KdComPortInUse
 @ fastcall KeAcquireInStackQueuedSpinLock(ptr ptr)
 @ fastcall KeAcquireInStackQueuedSpinLockRaiseToSynch(ptr ptr)

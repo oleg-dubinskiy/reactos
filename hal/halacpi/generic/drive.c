@@ -23,4 +23,18 @@ HalpAssignDriveLetters(IN struct _LOADER_PARAMETER_BLOCK * LoaderBlock,
                          NtSystemPathString);
 }
 
+NTSTATUS
+NTAPI
+HalpReadPartitionTable(IN PDEVICE_OBJECT DeviceObject,
+                       IN ULONG SectorSize,
+                       IN BOOLEAN ReturnRecognizedPartitions,
+                       IN OUT PDRIVE_LAYOUT_INFORMATION * PartitionBuffer)
+{
+    /* Call the kernel */
+    return IoReadPartitionTable(DeviceObject,
+                                SectorSize,
+                                ReturnRecognizedPartitions,
+                                PartitionBuffer);
+}
+
 /* EOF */
