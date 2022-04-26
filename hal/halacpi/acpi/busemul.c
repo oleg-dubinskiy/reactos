@@ -194,4 +194,42 @@ HalSetBusData(IN BUS_DATA_TYPE BusDataType,
                                  Length);
 }
 
+NTSTATUS
+NTAPI
+HalAssignSlotResources(IN PUNICODE_STRING RegistryPath,
+                       IN PUNICODE_STRING DriverClassName,
+                       IN PDRIVER_OBJECT DriverObject,
+                       IN PDEVICE_OBJECT DeviceObject,
+                       IN INTERFACE_TYPE BusType,
+                       IN ULONG BusNumber,
+                       IN ULONG SlotNumber,
+                       IN OUT PCM_RESOURCE_LIST * AllocatedResources)
+{
+    /* Check the bus type */
+    if (BusType != PCIBus)
+    {
+        /* Call our internal handler */
+        return HalpAssignSlotResources(RegistryPath,
+                                       DriverClassName,
+                                       DriverObject,
+                                       DeviceObject,
+                                       BusType,
+                                       BusNumber,
+                                       SlotNumber,
+                                       AllocatedResources);
+    }
+    else
+    {
+        /* Call the PCI registered function */
+        return HalPciAssignSlotResources(RegistryPath,
+                                         DriverClassName,
+                                         DriverObject,
+                                         DeviceObject,
+                                         PCIBus,
+                                         BusNumber,
+                                         SlotNumber,
+                                         AllocatedResources);
+    }
+}
+
 /* EOF */
