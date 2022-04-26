@@ -168,4 +168,14 @@ HalAllocateCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
     return NULL;
 }
 
+PVOID
+NTAPI
+HalAllocateCrashDumpRegisters(IN PADAPTER_OBJECT AdapterObject,
+                              IN OUT PULONG NumberOfMapRegisters)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return NULL;
+}
+
 /* EOF */

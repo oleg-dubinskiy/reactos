@@ -6,6 +6,7 @@
 @ stdcall HalAllProcessorsStarted()
 @ stdcall HalAllocateAdapterChannel(ptr ptr long ptr)
 @ stdcall HalAllocateCommonBuffer(ptr long ptr long)
+@ stdcall HalAllocateCrashDumpRegisters(ptr ptr)
 @ stdcall HalAssignSlotResources(ptr ptr ptr ptr long long long ptr)
 @ stdcall HalBeginSystemInterrupt(long long ptr)
 @ fastcall HalClearSoftwareInterrupt(long)
