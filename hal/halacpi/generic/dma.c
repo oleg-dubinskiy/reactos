@@ -178,4 +178,15 @@ HalAllocateCrashDumpRegisters(IN PADAPTER_OBJECT AdapterObject,
     return NULL;
 }
 
+BOOLEAN
+NTAPI
+HalFlushCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
+                     IN ULONG Length,
+                     IN PHYSICAL_ADDRESS LogicalAddress,
+                     IN PVOID VirtualAddress)
+{
+    /* Function always returns true */
+    return TRUE;
+}
+
 /* EOF */
