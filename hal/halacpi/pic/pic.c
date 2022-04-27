@@ -353,6 +353,65 @@ HalpDismissIrq15(IN KIRQL Irql,
     return _HalpDismissIrqGeneric(Irql, Irq, OldIrql);
 }
 
+/* LEVEL INTERRUPT DISMISSAL FUNCTIONS ****************************************/
+
+FORCEINLINE
+BOOLEAN
+_HalpDismissIrqLevel(IN KIRQL Irql,
+                     IN ULONG Irq,
+                     OUT PKIRQL OldIrql)
+{
+    PIC_MASK Mask;
+    KIRQL CurrentIrql;
+    I8259_OCW2 Ocw2;
+    PKPCR Pcr = KeGetPcr();
+
+    /* Update the PIC */
+    Mask.Both = (KiI8259MaskTable[Irql] | Pcr->IDR) & 0xFFFF;
+    WRITE_PORT_UCHAR(PIC1_DATA_PORT, Mask.Master);
+    WRITE_PORT_UCHAR(PIC2_DATA_PORT, Mask.Slave);
+
+    /* Update the IRR so that we clear this interrupt when the IRQL is proper */
+    Pcr->IRR |= (1 << (Irq + 4));
+
+    /* Save current IRQL */
+    CurrentIrql = Pcr->Irql;
+
+    /* Prepare OCW2 for EOI */
+    Ocw2.Bits = 0;
+    Ocw2.EoiMode = SpecificEoi;
+
+    /* Check which PIC needs the EOI */
+    if (Irq >= 8)
+    {
+        /* Send the EOI for the IRQ */
+        WRITE_PORT_UCHAR(PIC2_CONTROL_PORT, Ocw2.Bits | ((Irq - 8) & 0xFF));
+
+        /* Send the EOI for IRQ2 on the master because this was cascaded */
+        WRITE_PORT_UCHAR(PIC1_CONTROL_PORT, Ocw2.Bits | 2);
+    }
+    else
+    {
+        /* Send the EOI for the IRQ */
+        WRITE_PORT_UCHAR(PIC1_CONTROL_PORT, Ocw2.Bits | (Irq & 0xFF));
+    }
+
+    /* Check if this interrupt should be allowed to happen */
+    if (Irql > CurrentIrql)
+    {
+        /* Set the new IRQL and return the current one */
+        Pcr->Irql = Irql;
+        *OldIrql = CurrentIrql;
+
+        /* Enable interrupts and return success */
+        _enable();
+        return TRUE;
+    }
+
+    /* Now lie and say this was spurious */
+    return FALSE;
+}
+
 /* FUNCTIONS ******************************************************************/
 
 VOID
