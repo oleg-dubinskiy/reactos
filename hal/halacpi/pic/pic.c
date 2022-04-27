@@ -60,6 +60,29 @@ PHAL_DISMISS_INTERRUPT HalpSpecialDismissTable[16] =
     HalpDismissIrq15
 };
 
+/* These are the level IRQ dismissal functions that get copied in the table
+   above if the given IRQ is actually level triggered.
+*/
+PHAL_DISMISS_INTERRUPT HalpSpecialDismissLevelTable[16] =
+{
+    HalpDismissIrqLevel,
+    HalpDismissIrqLevel,
+    HalpDismissIrqLevel,
+    HalpDismissIrqLevel,
+    HalpDismissIrqLevel,
+    HalpDismissIrqLevel,
+    HalpDismissIrqLevel,
+    HalpDismissIrq07Level,
+    HalpDismissIrqLevel,
+    HalpDismissIrqLevel,
+    HalpDismissIrqLevel,
+    HalpDismissIrqLevel,
+    HalpDismissIrqLevel,
+    HalpDismissIrq13Level,
+    HalpDismissIrqLevel,
+    HalpDismissIrq15Level
+};
+
 /* This table contains the static x86 PIC mapping between IRQLs and IRQs */
 ULONG KiI8259MaskTable[32] =
 {
@@ -410,6 +433,90 @@ _HalpDismissIrqLevel(IN KIRQL Irql,
 
     /* Now lie and say this was spurious */
     return FALSE;
+}
+
+BOOLEAN
+NTAPI
+HalpDismissIrqLevel(IN KIRQL Irql,
+                    IN ULONG Irq,
+                    OUT PKIRQL OldIrql)
+{
+    /* Run the inline code */
+    return _HalpDismissIrqLevel(Irql, Irq, OldIrql);
+}
+
+BOOLEAN
+NTAPI
+HalpDismissIrq07Level(IN KIRQL Irql,
+                      IN ULONG Irq,
+                      OUT PKIRQL OldIrql)
+{
+    I8259_OCW3 Ocw3;
+    I8259_ISR Isr;
+
+    /* Request the ISR */
+    Ocw3.Bits = 0;
+    Ocw3.Sbo = 1;
+    Ocw3.ReadRequest = ReadIsr;
+    WRITE_PORT_UCHAR(PIC1_CONTROL_PORT, Ocw3.Bits);
+
+    /* Read the ISR */
+    Isr.Bits = READ_PORT_UCHAR(PIC1_CONTROL_PORT);
+
+    /* Is IRQ 7 really active? If it isn't, this is spurious so fail */
+    if (Isr.Irq7 == FALSE)
+        return FALSE;
+
+    /* Do normal interrupt dismiss */
+    return _HalpDismissIrqLevel(Irql, Irq, OldIrql);
+}
+
+BOOLEAN
+NTAPI
+HalpDismissIrq13Level(IN KIRQL Irql,
+                      IN ULONG Irq,
+                      OUT PKIRQL OldIrql)
+{
+    /* Clear the FPU busy latch */
+    WRITE_PORT_UCHAR((PUCHAR)0x00F0, 0);
+
+    /* Do normal interrupt dismiss */
+    return _HalpDismissIrqLevel(Irql, Irq, OldIrql);
+}
+
+BOOLEAN
+NTAPI
+HalpDismissIrq15Level(IN KIRQL Irql,
+                      IN ULONG Irq,
+                      OUT PKIRQL OldIrql)
+{
+    I8259_OCW3 Ocw3;
+    I8259_OCW2 Ocw2;
+    I8259_ISR Isr;
+
+    /* Request the ISR */
+    Ocw3.Bits = 0;
+    Ocw3.Sbo = 1; /* This encodes an OCW3 vs. an OCW2 */
+    Ocw3.ReadRequest = ReadIsr;
+    WRITE_PORT_UCHAR(PIC2_CONTROL_PORT, Ocw3.Bits);
+
+    /* Read the ISR */
+    Isr.Bits = READ_PORT_UCHAR(PIC2_CONTROL_PORT);
+
+    /* Is IRQ15 really active (this is IR7) */
+    if (Isr.Irq7 == FALSE)
+    {
+        /* It isn't, so we have to EOI IRQ2 because this was cascaded */
+        Ocw2.Bits = 0;
+        Ocw2.EoiMode = SpecificEoi;
+        WRITE_PORT_UCHAR(PIC1_CONTROL_PORT, Ocw2.Bits | 2);
+
+        /* And now fail since this was spurious */
+        return FALSE;
+    }
+
+    /* Do normal interrupt dismiss */
+    return _HalpDismissIrqLevel(Irql, Irq, OldIrql);
 }
 
 /* FUNCTIONS ******************************************************************/

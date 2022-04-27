@@ -229,5 +229,37 @@ HalpDismissIrq15(
     OUT PKIRQL OldIrql
 );
 
+BOOLEAN
+NTAPI
+HalpDismissIrqLevel(
+    IN KIRQL Irql,
+    IN ULONG Irq,
+    OUT PKIRQL OldIrql
+);
+
+BOOLEAN
+NTAPI
+HalpDismissIrq07Level(
+    IN KIRQL Irql,
+    IN ULONG Irq,
+    OUT PKIRQL OldIrql
+);
+
+BOOLEAN
+NTAPI
+HalpDismissIrq13Level(
+    IN KIRQL Irql,
+    IN ULONG Irq,
+    OUT PKIRQL OldIrql
+);
+
+BOOLEAN
+NTAPI
+HalpDismissIrq15Level(
+    IN KIRQL Irql,
+    IN ULONG Irq,
+    OUT PKIRQL OldIrql
+);
+
 /* EOF */
 
