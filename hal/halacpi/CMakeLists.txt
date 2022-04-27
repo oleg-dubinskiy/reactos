@@ -35,6 +35,7 @@ list(APPEND HAL_SOURCE
     up/processor.c)
 
 list(APPEND HAL_ASM_SOURCE
+    pic/pic.S
     pic/systimer.S)
 	
 add_library(halacpi MODULE

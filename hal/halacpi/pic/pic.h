@@ -189,12 +189,60 @@ typedef struct _PIC_MASK
     };
 } PIC_MASK, *PPIC_MASK;
 
+#if defined(__GNUC__)
+
+#define HalpDelayedHardwareInterrupt(x)                             \
+    VOID __cdecl HalpHardwareInterrupt##x(VOID);                    \
+    VOID                                                            \
+    __cdecl                                                         \
+    HalpHardwareInterrupt##x(VOID)                                  \
+    {                                                               \
+        asm volatile ("int $%c0\n"::"i"(PRIMARY_VECTOR_BASE + x));  \
+    }
+
+#elif defined(_MSC_VER)
+
+#define HalpDelayedHardwareInterrupt(x)                             \
+    VOID __cdecl HalpHardwareInterrupt##x(VOID);                    \
+    VOID                                                            \
+    __cdecl                                                         \
+    HalpHardwareInterrupt##x(VOID)                                  \
+    {                                                               \
+        __asm                                                       \
+        {                                                           \
+            int PRIMARY_VECTOR_BASE + x                             \
+        }                                                           \
+    }
+
+#else
+#error Unsupported compiler
+#endif
+
+VOID
+NTAPI
+HalpEndSoftwareInterrupt(
+    IN KIRQL OldIrql,
+    IN PKTRAP_FRAME TrapFrame
+);
+
 typedef
 BOOLEAN
 (NTAPI *PHAL_DISMISS_INTERRUPT)(
     IN KIRQL Irql,
     IN ULONG Irq,
     OUT PKIRQL OldIrql
+);
+
+typedef
+VOID
+(__cdecl *PHAL_SW_INTERRUPT_HANDLER)(
+    VOID
+);
+
+typedef
+VOID
+(FASTCALL *PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY)(
+    IN PKTRAP_FRAME TrapFrame
 );
 
 BOOLEAN

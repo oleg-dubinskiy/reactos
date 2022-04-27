@@ -193,6 +193,157 @@ ULONG KiI8259MaskTable[32] =
 #endif
 };
 
+/* This table indicates which IRQs, if pending, can preempt a given IRQL level */
+ULONG FindHigherIrqlMask[32] =
+{
+#if defined(__GNUC__) || defined(__clang__) || (defined(_MSC_VER) && _MSC_VER >= 1900)
+    /* Software IRQLs, at these levels all hardware interrupts can preempt.
+       Each higher IRQL simply enables which software IRQL can preempt the
+       current level.
+    */
+    0b11111111111111111111111111111110, /* IRQL 0 */
+    0b11111111111111111111111111111100, /* IRQL 1 */
+    0b11111111111111111111111111111000, /* IRQL 2 */
+
+    /* IRQL3 means only hardware IRQLs can now preempt. These last 4 zeros will
+       then continue throughout the rest of the list, trickling down.
+    */
+    0b11111111111111111111111111110000, /* IRQL 3 */
+
+    /* Just like in the previous list, these masks don't really mean anything
+       since we've only got two PICs with 16 possible IRQs total
+    */
+    0b00000111111111111111111111110000, /* IRQL 4 */
+    0b00000011111111111111111111110000, /* IRQL 5 */
+    0b00000001111111111111111111110000, /* IRQL 6 */
+    0b00000000111111111111111111110000, /* IRQL 7 */
+    0b00000000011111111111111111110000, /* IRQL 8 */
+    0b00000000001111111111111111110000, /* IRQL 9 */
+    0b00000000000111111111111111110000, /* IRQL 10 */
+
+    /* Now we start progressivly limiting which slave PIC interrupts have the
+       right to preempt us at each level.
+    */
+    0b00000000000011111111111111110000, /* IRQL 11 */
+    0b00000000000001111111111111110000, /* IRQL 12 */
+    0b00000000000000111111111111110000, /* IRQL 13 */
+    0b00000000000000011111111111110000, /* IRQL 14 */
+    0b00000000000000001111111111110000, /* IRQL 15 */
+    0b00000000000000000111111111110000, /* IRQL 16 */
+    0b00000000000000000011111111110000, /* IRQL 17 */
+    0b00000000000000000001111111110000, /* IRQL 18 */
+    0b00000000000000000001111111110000, /* IRQL 19 */
+
+    /* Also recall from the earlier table that IRQL 18/19 are treated the same
+       in order to spread the masks better thoughout the 32 IRQLs and to reflect
+       the fact that some bits will always stay on until much higher IRQLs since
+       they are system-critical. One such example is the 1 bit that you start to
+       see trickling down here. This is IRQ8, the RTC timer used for profiling,
+       so it will always preempt until we reach PROFILE_LEVEL.
+    */
+    0b00000000000000000001011111110000, /* IRQL 20 */
+    0b00000000000000000001001111110000, /* IRQL 21 */
+    0b00000000000000000001000111110000, /* IRQL 22 */
+    0b00000000000000000001000011110000, /* IRQL 23 */
+    0b00000000000000000001000001110000, /* IRQL 24 */
+    0b00000000000000000001000000110000, /* IRQL 25 */
+    0b00000000000000000001000000010000, /* IRQL 26 */
+
+    /* At this point, only the clock (IRQ0) can still preempt... */
+    0b00000000000000000000000000010000, /* IRQL 27 */
+
+    /* And any higher than that there's no relation with hardware PICs anymore */
+    0b00000000000000000000000000000000, /* IRQL 28 */
+    0b00000000000000000000000000000000, /* IRQL 29 */
+    0b00000000000000000000000000000000, /* IRQL 30 */
+    0b00000000000000000000000000000000  /* IRQL 31 */
+#else
+    0xFFFFFFFE,                   /* IRQL  0 */
+    0xFFFFFFFC,                   /* IRQL 1 */
+    0xFFFFFFF8,                   /* IRQL 2 */
+    0xFFFFFFF0,                   /* IRQL 3 */
+    0x7FFFFF0,                    /* IRQL 4 */
+    0x3FFFFF0,                    /* IRQL 5 */
+    0x1FFFFF0,                    /* IRQL 6 */
+    0x0FFFFF0,                    /* IRQL 7 */
+    0x7FFFF0,                     /* IRQL 8 */
+    0x3FFFF0,                     /* IRQL 9 */
+    0x1FFFF0,                     /* IRQL 10 */
+    0x0FFFF0,                     /* IRQL 11 */
+    0x7FFF0,                      /* IRQL 12 */
+    0x3FFF0,                      /* IRQL 13 */
+    0x1FFF0,                      /* IRQL 14 */
+    0x0FFF0,                      /* IRQL 15 */
+    0x7FF0,                       /* IRQL 16 */
+    0x3FF0,                       /* IRQL 17 */
+    0x1FF0,                       /* IRQL 18 */
+    0x1FF0,                       /* IRQL 19 */
+    0x17F0,                       /* IRQL 20 */
+    0x13F0,                       /* IRQL 21 */
+    0x11F0,                       /* IRQL 22 */
+    0x10F0,                       /* IRQL 23 */
+    0x1070,                       /* IRQL 24 */
+    0x1030,                       /* IRQL 25 */
+    0x1010,                       /* IRQL 26 */
+    0x10,                         /* IRQL 27 */
+    0,                            /* IRQL 28 */
+    0,                            /* IRQL 29 */
+    0,                            /* IRQL 30 */
+    0                             /* IRQL 31 */
+#endif
+};
+
+/* Pending/delayed hardware interrupt handlers */
+HalpDelayedHardwareInterrupt(0);
+HalpDelayedHardwareInterrupt(1);
+HalpDelayedHardwareInterrupt(2);
+HalpDelayedHardwareInterrupt(3);
+HalpDelayedHardwareInterrupt(4);
+HalpDelayedHardwareInterrupt(5);
+HalpDelayedHardwareInterrupt(6);
+HalpDelayedHardwareInterrupt(7);
+HalpDelayedHardwareInterrupt(8);
+HalpDelayedHardwareInterrupt(9);
+HalpDelayedHardwareInterrupt(10);
+HalpDelayedHardwareInterrupt(11);
+HalpDelayedHardwareInterrupt(12);
+HalpDelayedHardwareInterrupt(13);
+HalpDelayedHardwareInterrupt(14);
+HalpDelayedHardwareInterrupt(15);
+
+/* Handlers for pending interrupts */
+PHAL_SW_INTERRUPT_HANDLER SWInterruptHandlerTable[20] =
+{
+    NULL,//(PHAL_SW_INTERRUPT_HANDLER)KiUnexpectedInterrupt,
+    NULL,//HalpApcInterrupt,
+    NULL,//HalpDispatchInterrupt,
+    NULL,//(PHAL_SW_INTERRUPT_HANDLER)KiUnexpectedInterrupt,
+    HalpHardwareInterrupt0,
+    HalpHardwareInterrupt1,
+    HalpHardwareInterrupt2,
+    HalpHardwareInterrupt3,
+    HalpHardwareInterrupt4,
+    HalpHardwareInterrupt5,
+    HalpHardwareInterrupt6,
+    HalpHardwareInterrupt7,
+    HalpHardwareInterrupt8,
+    HalpHardwareInterrupt9,
+    HalpHardwareInterrupt10,
+    HalpHardwareInterrupt11,
+    HalpHardwareInterrupt12,
+    HalpHardwareInterrupt13,
+    HalpHardwareInterrupt14,
+    HalpHardwareInterrupt15
+};
+
+/* Handlers for pending software interrupts when we already have a trap frame*/
+PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY SWInterruptHandlerTable2[3] =
+{
+    NULL,//(PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY)KiUnexpectedInterrupt,
+    NULL,//HalpApcInterrupt2ndEntry,
+    NULL//HalpDispatchInterrupt2ndEntry
+};
+
 extern ULONG HalpBusType;
 
 /* IRQL MANAGEMENT ************************************************************/
@@ -519,6 +670,101 @@ HalpDismissIrq15Level(IN KIRQL Irql,
     return _HalpDismissIrqLevel(Irql, Irq, OldIrql);
 }
 
+/* SYSTEM INTERRUPTS **********************************************************/
+
+PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY
+FASTCALL
+HalEndSystemInterrupt2(IN KIRQL OldIrql,
+                       IN PKTRAP_FRAME TrapFrame)
+{
+    ULONG PendingIrql, PendingIrqlMask, PendingIrqMask;
+    PKPCR Pcr = KeGetPcr();
+    PIC_MASK Mask;
+
+    /* Set old IRQL */
+    Pcr->Irql = OldIrql;
+
+    /* Check for pending software interrupts and compare with current IRQL */
+    PendingIrqlMask = Pcr->IRR & FindHigherIrqlMask[OldIrql];
+    if (!PendingIrqlMask)
+        return NULL;
+
+    /* Check for in-service delayed interrupt */
+    if (Pcr->IrrActive & 0xFFFFFFF0)
+        return NULL;
+
+    /* Loop checking for pending interrupts */
+    while (TRUE)
+    {
+        /* Check if pending IRQL affects hardware state */
+        BitScanReverse(&PendingIrql, PendingIrqlMask);
+        if (PendingIrql <= DISPATCH_LEVEL)
+        {
+            /* Now handle pending software interrupt */
+            return SWInterruptHandlerTable2[PendingIrql];
+        }
+
+        /* Set new PIC mask */
+        Mask.Both = Pcr->IDR & 0xFFFF;
+        WRITE_PORT_UCHAR(PIC1_DATA_PORT, Mask.Master);
+        WRITE_PORT_UCHAR(PIC2_DATA_PORT, Mask.Slave);
+
+        /* Now check if this specific interrupt is already in-service */
+        PendingIrqMask = (1 << PendingIrql);
+        if (Pcr->IrrActive & PendingIrqMask)
+            return NULL;
+
+        /* Set active bit otherwise, and clear it from IRR */
+        Pcr->IrrActive |= PendingIrqMask;
+        Pcr->IRR ^= PendingIrqMask;
+
+        /* Handle delayed hardware interrupt */
+        SWInterruptHandlerTable[PendingIrql]();
+
+        /* Handling complete */
+        Pcr->IrrActive ^= PendingIrqMask;
+
+        /* Check if there's still interrupts pending */
+        PendingIrqlMask = Pcr->IRR & FindHigherIrqlMask[Pcr->Irql];
+        if (!PendingIrqlMask)
+            break;
+    }
+
+    return NULL;
+}
+
+/* SOFTWARE INTERRUPT TRAPS ***************************************************/
+
+FORCEINLINE
+DECLSPEC_NORETURN
+VOID
+_HalpApcInterruptHandler(IN PKTRAP_FRAME TrapFrame)
+{
+    KIRQL CurrentIrql;
+    PKPCR Pcr = KeGetPcr();
+
+    /* Save the current IRQL and update it */
+    CurrentIrql = Pcr->Irql;
+    Pcr->Irql = APC_LEVEL;
+
+    /* Remove DPC from IRR */
+    Pcr->IRR &= ~(1 << APC_LEVEL);
+
+    /* Enable interrupts and call the kernel's APC interrupt handler */
+    _enable();
+    KiDeliverApc(((KiUserTrap(TrapFrame)) || (TrapFrame->EFlags & EFLAGS_V86_MASK)) ?
+                UserMode : KernelMode,
+                NULL,
+                TrapFrame);
+
+    /* Disable interrupts and end the interrupt */
+    _disable();
+    HalpEndSoftwareInterrupt(CurrentIrql, TrapFrame);
+
+    /* Exit the interrupt */
+    KiEoiHelper(TrapFrame);
+}
+
 /* FUNCTIONS ******************************************************************/
 
 VOID
@@ -664,16 +910,6 @@ HalEnableSystemInterrupt(IN ULONG Vector,
     UNIMPLEMENTED;
     ASSERT(0);//HalpDbgBreakPointEx();
     return FALSE;
-}
-
-/* NT use nonstandard parameters calling */
-VOID
-NTAPI
-HalEndSystemInterrupt(_In_ KIRQL Irql,
-                      _In_ PKTRAP_FRAME TrapFrame)
-{
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
 }
 
 VOID
