@@ -341,7 +341,7 @@ PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY SWInterruptHandlerTable2[3] =
 {
     NULL,//(PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY)KiUnexpectedInterrupt,
     HalpApcInterrupt2ndEntry,
-    NULL//HalpDispatchInterrupt2ndEntry
+    HalpDispatchInterrupt2ndEntry
 };
 
 extern ULONG HalpBusType;
@@ -894,6 +894,23 @@ _HalpDispatchInterruptHandler(VOID)
 
     /* Return IRQL */
     return CurrentIrql;
+}
+
+DECLSPEC_NORETURN
+VOID
+FASTCALL
+HalpDispatchInterrupt2ndEntry(IN PKTRAP_FRAME TrapFrame)
+{
+    KIRQL CurrentIrql;
+
+    /* Do the work */
+    CurrentIrql = _HalpDispatchInterruptHandler();
+
+    /* End the interrupt */
+    HalpEndSoftwareInterrupt(CurrentIrql, TrapFrame);
+
+    /* Exit the interrupt */
+    KiEoiHelper(TrapFrame);
 }
 
 PHAL_SW_INTERRUPT_HANDLER

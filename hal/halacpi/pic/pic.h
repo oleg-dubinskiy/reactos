@@ -257,6 +257,13 @@ HalpApcInterrupt2ndEntry(
     IN PKTRAP_FRAME TrapFrame
 );
 
+DECLSPEC_NORETURN
+VOID
+FASTCALL
+HalpDispatchInterrupt2ndEntry(
+    IN PKTRAP_FRAME TrapFrame
+);
+
 VOID
 NTAPI
 HalpEndSoftwareInterrupt(
