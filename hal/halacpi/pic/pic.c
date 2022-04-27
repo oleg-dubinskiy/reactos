@@ -754,6 +754,53 @@ HalpHardwareInterruptLevel2(VOID)
 
 /* SYSTEM INTERRUPTS **********************************************************/
 
+BOOLEAN
+NTAPI
+HalEnableSystemInterrupt(IN ULONG Vector,
+                         IN KIRQL Irql,
+                         IN KINTERRUPT_MODE InterruptMode)
+{
+    ULONG Irq;
+    PKPCR Pcr = KeGetPcr();
+    PIC_MASK PicMask;
+
+    /* Validate the IRQ */
+    Irq = Vector - PRIMARY_VECTOR_BASE; // Vector = (PRIMARY_VECTOR_BASE + Irq);
+    if ((Vector < PRIMARY_VECTOR_BASE) || (Irq >= CLOCK2_LEVEL))
+    {
+        DPRINT1("HalEnableSystemInterrupt: wrong Vector!\n");
+        __debugbreak();
+        return FALSE;
+    }
+
+    // ? EISA_CONTROL.Pic1EdgeLevel|Pic2EdgeLevel
+
+    /* Check for level interrupt */
+    if (InterruptMode == LevelSensitive) // 0
+    {
+        /* Switch handler to level */
+        SWInterruptHandlerTable[Irq + 4] = HalpHardwareInterruptLevel;
+
+        /* Switch dismiss to level */
+        HalpSpecialDismissTable[Irq] = HalpSpecialDismissLevelTable[Irq];
+    }
+
+    /* Disable interrupts */
+    _disable();
+
+    /* Update software IDR */
+    Pcr->IDR &= ~(1 << Irq);
+
+    /* Set new PIC mask */
+    PicMask.Both = (KiI8259MaskTable[Pcr->Irql] | Pcr->IDR) & 0xFFFF;
+    WRITE_PORT_UCHAR(PIC1_DATA_PORT, PicMask.Master);
+    WRITE_PORT_UCHAR(PIC2_DATA_PORT, PicMask.Slave);
+
+    /* Enable interrupts and exit */
+    _enable();
+    return TRUE;
+}
+
 PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY
 FASTCALL
 HalEndSystemInterrupt2(IN KIRQL OldIrql,
@@ -1084,17 +1131,6 @@ HalDisableSystemInterrupt(IN ULONG Vector,
 {
     UNIMPLEMENTED;
     ASSERT(0);//HalpDbgBreakPointEx();
-}
-
-BOOLEAN
-NTAPI
-HalEnableSystemInterrupt(IN ULONG Vector,
-                         IN KIRQL Irql,
-                         IN KINTERRUPT_MODE InterruptMode)
-{
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return FALSE;
 }
 
 VOID
