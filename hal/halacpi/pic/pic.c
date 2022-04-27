@@ -293,6 +293,19 @@ ULONG FindHigherIrqlMask[32] =
 #endif
 };
 
+/* Denotes minimum required IRQL before we can process pending SW interrupts */
+KIRQL SWInterruptLookUpTable[8] =
+{
+    PASSIVE_LEVEL,                 /* IRR 0 */
+    PASSIVE_LEVEL,                 /* IRR 1 */
+    APC_LEVEL,                     /* IRR 2 */
+    APC_LEVEL,                     /* IRR 3 */
+    DISPATCH_LEVEL,                /* IRR 4 */
+    DISPATCH_LEVEL,                /* IRR 5 */
+    DISPATCH_LEVEL,                /* IRR 6 */
+    DISPATCH_LEVEL                 /* IRR 7 */
+};
+
 /* Pending/delayed hardware interrupt handlers */
 HalpDelayedHardwareInterrupt(0);
 HalpDelayedHardwareInterrupt(1);
@@ -384,6 +397,30 @@ KfRaiseIrql(IN KIRQL NewIrql)
 }
 
 /* SOFTWARE INTERRUPTS ********************************************************/
+
+VOID
+FASTCALL
+HalRequestSoftwareInterrupt(IN KIRQL Irql)
+{
+    ULONG EFlags;
+    PKPCR Pcr = KeGetPcr();
+    KIRQL PendingIrql;
+
+    /* Save EFlags and disable interrupts */
+    EFlags = __readeflags();
+    _disable();
+
+    /* Mask out the requested bit */
+    Pcr->IRR |= (1 << Irql);
+
+    /* Check for pending software interrupts and compare with current IRQL */
+    PendingIrql = SWInterruptLookUpTable[Pcr->IRR & 3];
+    if (PendingIrql > Pcr->Irql)
+        SWInterruptHandlerTable[PendingIrql]();
+
+    /* Restore interrupt state */
+    __writeeflags(EFlags);
+}
 
 PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY
 FASTCALL
@@ -1156,14 +1193,6 @@ HalClearSoftwareInterrupt(IN KIRQL Irql)
 {
     /* Mask out the requested bit */
     KeGetPcr()->IRR &= ~(1 << Irql);
-}
-
-VOID
-FASTCALL
-HalRequestSoftwareInterrupt(IN KIRQL Irql)
-{
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
 }
 
 VOID
