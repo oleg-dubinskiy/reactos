@@ -189,5 +189,45 @@ typedef struct _PIC_MASK
     };
 } PIC_MASK, *PPIC_MASK;
 
+typedef
+BOOLEAN
+(NTAPI *PHAL_DISMISS_INTERRUPT)(
+    IN KIRQL Irql,
+    IN ULONG Irq,
+    OUT PKIRQL OldIrql
+);
+
+BOOLEAN
+NTAPI
+HalpDismissIrqGeneric(
+    IN KIRQL Irql,
+    IN ULONG Irq,
+    OUT PKIRQL OldIrql
+);
+
+BOOLEAN
+NTAPI
+HalpDismissIrq07(
+    IN KIRQL Irql,
+    IN ULONG Irq,
+    OUT PKIRQL OldIrql
+);
+
+BOOLEAN
+NTAPI
+HalpDismissIrq13(
+    IN KIRQL Irql,
+    IN ULONG Irq,
+    OUT PKIRQL OldIrql
+);
+
+BOOLEAN
+NTAPI
+HalpDismissIrq15(
+    IN KIRQL Irql,
+    IN ULONG Irq,
+    OUT PKIRQL OldIrql
+);
+
 /* EOF */
 
