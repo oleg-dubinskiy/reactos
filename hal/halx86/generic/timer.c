@@ -206,7 +206,8 @@ HalpProfileInterruptHandler(IN PKTRAP_FRAME TrapFrame)
 
         /* Finish the interrupt */
         _disable();
-        HalEndSystemInterrupt(Irql, TrapFrame);
+        //HalEndSystemInterrupt(Irql, TrapFrame);
+        HalEndSystemInterrupt(Irql, 0xFF /*, TrapFrame*/); // FIXME compatible with NT
     }
 
     /* Spurious, just end the interrupt */

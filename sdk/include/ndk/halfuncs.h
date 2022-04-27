@@ -152,23 +152,25 @@ HalEnableSystemInterrupt(
     _In_ KINTERRUPT_MODE InterruptMode
 );
 
-#ifdef __REACTOS__
+//#ifdef __REACTOS__
 NTHALAPI
 VOID
 NTAPI
-HalEndSystemInterrupt(
+RosHalEndSystemInterrupt(
     _In_ KIRQL Irql,
+    _In_ UCHAR Vector, /* For APIC, the interrupt vector must also be transmitted. For PIC the Vector`s value is 0xFF.*/
     _In_ PKTRAP_FRAME TrapFrame
 );
-#else
+//#else
 NTHALAPI
 VOID
 NTAPI
 HalEndSystemInterrupt(
     _In_ KIRQL Irql,
     _In_ UCHAR Vector
+    //_In_ PKTRAP_FRAME TrapFrame /* NT uses the stack to place the pointer to the TrapFrame (really the third parameter) */
 );
-#endif
+//#endif
 
 #ifdef _ARM_ // FIXME: ndk/arm? armddk.h?
 ULONG

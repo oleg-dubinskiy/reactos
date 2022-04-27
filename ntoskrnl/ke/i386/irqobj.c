@@ -141,7 +141,8 @@ KiExitInterrupt(IN PKTRAP_FRAME TrapFrame,
     {
         /* It was, disable interrupts and restore the IRQL */
         _disable();
-        HalEndSystemInterrupt(OldIrql, TrapFrame);
+        //HalEndSystemInterrupt(OldIrql, TrapFrame);
+        HalEndSystemInterrupt(OldIrql, 0xFF /*, TrapFrame*/); // FIXME compatible with NT
     }
 
     /* Now exit the trap */

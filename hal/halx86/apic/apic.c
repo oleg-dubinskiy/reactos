@@ -738,9 +738,9 @@ HalBeginSystemInterrupt(
 
 VOID
 NTAPI
-HalEndSystemInterrupt(
-    IN KIRQL OldIrql,
-    IN PKTRAP_FRAME TrapFrame)
+RosHalEndSystemInterrupt(_In_ KIRQL OldIrql,
+                         _In_ UCHAR Vector,
+                         _In_ PKTRAP_FRAME TrapFrame)
 {
     /* Send an EOI */
     ApicSendEOI();
@@ -749,6 +749,16 @@ HalEndSystemInterrupt(
     ApicLowerIrql(OldIrql);
 }
 
+VOID
+NTAPI
+HalEndSystemInterrupt(_In_ KIRQL OldIrql,
+                      _In_ UCHAR Vector
+                      //_In_ PKTRAP_FRAME TrapFrame
+                     )
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);// DbgBreakPoint();
+}
 
 /* IRQL MANAGEMENT ************************************************************/
 

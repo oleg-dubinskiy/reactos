@@ -13,6 +13,39 @@ ASSUME CS:NOTHING, DS:NOTHING, ES:NOTHING, FS:NOTHING, GS:NOTHING
 
 .code
 
+MACRO(DEFINE_END_INTERRUPT_WRAPPER2, WrapperName, HandlerName)
+EXTERN @&HandlerName&@8:PROC
+PUBLIC _&WrapperName&@12
+.PROC _&WrapperName&@12
+    FPO 0, 2, 0, 0, 0, FRAME_FPO
+
+    /* Call the C function with the same arguments we got */
+    mov ecx, [esp+4]
+    //mov edx, [esp+8]
+    mov edx, [esp+12]
+    call @&HandlerName&@8
+
+    /* Check if we got a pointer back */
+    test eax, eax
+    jnz WrapperName&_CallIntHandler
+
+    /* No? Just return */
+    ret 12
+
+WrapperName&_CallIntHandler:
+    /* We got a pointer to call. Since it won't return, reset the stack to
+       the location of the stack frame. This frees up our own stack as well
+       as that of the functions above us, and avoids an overflow due to
+       excessive recursion.
+       The next function takes the trap frame as its (fastcall) argument. */
+    //mov ecx, [esp+8]
+    mov ecx, [esp+12]
+    mov esp, ecx
+    mov ebp, esp
+    jmp eax
+.ENDP
+ENDM
+
 MACRO(DEFINE_END_INTERRUPT_WRAPPER, WrapperName, HandlerName)
 EXTERN @&HandlerName&@8:PROC
 PUBLIC _&WrapperName&@8
@@ -71,6 +104,7 @@ DEFINE_END_INTERRUPT_WRAPPER HalpEndSoftwareInterrupt, HalpEndSoftwareInterrupt2
 
 /* NT use nonstandard parameters calling */
 DEFINE_END_INTERRUPT_WRAPPER HalEndSystemInterrupt, HalEndSystemInterrupt2
+DEFINE_END_INTERRUPT_WRAPPER2 RosHalEndSystemInterrupt, HalEndSystemInterrupt2
 
 DEFINE_INTERRUPT_WRAPPER HalpDispatchInterrupt, HalpDispatchInterrupt2
 DEFINE_INTERRUPT_WRAPPER HalpHardwareInterruptLevel, HalpHardwareInterruptLevel2

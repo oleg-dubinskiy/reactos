@@ -18,7 +18,8 @@
 @ stdcall HalDisableSystemInterrupt(long long)
 @ stdcall HalDisplayString(str)
 @ stdcall HalEnableSystemInterrupt(long long long)
-@ stdcall -arch=i386,arm HalEndSystemInterrupt(long long)
+@ stdcall -arch=i386,arm HalEndSystemInterrupt(long long) #NT use nonstandard parameters calling
+@ stdcall -arch=i386,arm RosHalEndSystemInterrupt(long long ptr) #ReactOS-specific HalEndSystemInterrupt()
 @ stdcall HalFlushCommonBuffer(long long long long long)
 @ stdcall HalFreeCommonBuffer(ptr long long long ptr long)
 @ stdcall HalGetAdapter(ptr ptr)

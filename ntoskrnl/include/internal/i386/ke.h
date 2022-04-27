@@ -879,7 +879,8 @@ KiEndInterrupt(IN KIRQL Irql,
 {
     /* Disable interrupts and end the interrupt */
     _disable();
-    HalEndSystemInterrupt(Irql, TrapFrame);
+    //HalEndSystemInterrupt(Irql, TrapFrame);
+    HalEndSystemInterrupt(Irql, 0xFF /*, TrapFrame*/); // FIXME compatible with NT
 
     /* Exit the interrupt */
     KiEoiHelper(TrapFrame);
