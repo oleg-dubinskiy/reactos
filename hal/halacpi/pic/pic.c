@@ -833,6 +833,19 @@ HalDisableSystemInterrupt(IN ULONG Vector,
     _enable();
 }
 
+BOOLEAN
+NTAPI
+HalBeginSystemInterrupt(IN KIRQL Irql,
+                        IN ULONG Vector,
+                        OUT PKIRQL OldIrql)
+{
+    ULONG Irq;
+
+    /* Get the IRQ and call the proper routine to handle it */
+    Irq = Vector - PRIMARY_VECTOR_BASE;
+    return HalpSpecialDismissTable[Irq](Irql, Irq, OldIrql);
+}
+
 PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY
 FASTCALL
 HalEndSystemInterrupt2(IN KIRQL OldIrql,
@@ -1136,17 +1149,6 @@ HalpInitializePICs(IN BOOLEAN EnableInterrupts)
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
-
-BOOLEAN
-NTAPI
-HalBeginSystemInterrupt(IN KIRQL Irql,
-                        IN ULONG Vector,
-                        OUT PKIRQL OldIrql)
-{
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return FALSE;
-}
 
 VOID
 FASTCALL
