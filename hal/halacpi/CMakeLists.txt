@@ -36,6 +36,7 @@ list(APPEND HAL_SOURCE
 
 list(APPEND HAL_ASM_SOURCE
     pic/pic.S
+    pic/pictrap.S
     pic/systimer.S)
 	
 add_library(halacpi MODULE

@@ -315,7 +315,7 @@ HalpDelayedHardwareInterrupt(15);
 PHAL_SW_INTERRUPT_HANDLER SWInterruptHandlerTable[20] =
 {
     NULL,//(PHAL_SW_INTERRUPT_HANDLER)KiUnexpectedInterrupt,
-    NULL,//HalpApcInterrupt,
+    HalpApcInterrupt,
     HalpDispatchInterrupt,
     NULL,//(PHAL_SW_INTERRUPT_HANDLER)KiUnexpectedInterrupt,
     HalpHardwareInterrupt0,
@@ -340,7 +340,7 @@ PHAL_SW_INTERRUPT_HANDLER SWInterruptHandlerTable[20] =
 PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY SWInterruptHandlerTable2[3] =
 {
     NULL,//(PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY)KiUnexpectedInterrupt,
-    NULL,//HalpApcInterrupt2ndEntry,
+    HalpApcInterrupt2ndEntry,
     NULL//HalpDispatchInterrupt2ndEntry
 };
 
@@ -845,6 +845,32 @@ _HalpApcInterruptHandler(IN PKTRAP_FRAME TrapFrame)
 
     /* Exit the interrupt */
     KiEoiHelper(TrapFrame);
+}
+
+DECLSPEC_NORETURN
+VOID
+FASTCALL
+HalpApcInterrupt2ndEntry(IN PKTRAP_FRAME TrapFrame)
+{
+    /* Do the work */
+    _HalpApcInterruptHandler(TrapFrame);
+}
+
+DECLSPEC_NORETURN
+VOID
+FASTCALL
+HalpApcInterruptHandler(IN PKTRAP_FRAME TrapFrame)
+{
+    /* Set up a fake INT Stack */
+    TrapFrame->EFlags = __readeflags();
+    TrapFrame->SegCs = KGDT_R0_CODE;
+    TrapFrame->Eip = TrapFrame->Eax;
+
+    /* Build the trap frame */
+    KiEnterInterruptTrap(TrapFrame);
+
+    /* Do the work */
+    _HalpApcInterruptHandler(TrapFrame);
 }
 
 FORCEINLINE

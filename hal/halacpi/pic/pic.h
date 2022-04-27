@@ -240,8 +240,21 @@ VOID
 
 VOID
 __cdecl
+HalpApcInterrupt(
+    VOID
+);
+
+VOID
+__cdecl
 HalpDispatchInterrupt(
     VOID
+);
+
+DECLSPEC_NORETURN
+VOID
+FASTCALL
+HalpApcInterrupt2ndEntry(
+    IN PKTRAP_FRAME TrapFrame
 );
 
 VOID
