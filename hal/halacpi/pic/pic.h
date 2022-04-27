@@ -48,7 +48,6 @@ typedef enum _I8259_ICW4_BUFFERED_MODE
     BufferedMaster
 } I8259_ICW4_BUFFERED_MODE;
 
-#if 0
 typedef enum _I8259_READ_REQUEST
 {
     InvalidRequest,
@@ -68,7 +67,6 @@ typedef enum _I8259_EOI_MODE
     SetPriority,
     RotateSpecific
 } I8259_EOI_MODE;
-#endif
 
 /* Definitions for ICW Registers */
 typedef union _I8259_ICW1
@@ -132,7 +130,6 @@ typedef union _I8259_ICW4
     UCHAR Bits;
 } I8259_ICW4, *PI8259_ICW4;
 
-#if 0
 typedef union _I8259_OCW2
 {
     struct
@@ -178,9 +175,19 @@ typedef union _I8259_ISR
 } I8259_ISR, *PI8259_ISR;
 
 typedef I8259_ISR I8259_IDR, *PI8259_IDR;
-#endif
+
+typedef struct _PIC_MASK
+{
+    union
+    {
+        struct
+        {
+            UCHAR Master;
+            UCHAR Slave;
+        };
+        USHORT Both;
+    };
+} PIC_MASK, *PPIC_MASK;
 
 /* EOF */
-#if 0
-#endif
 
