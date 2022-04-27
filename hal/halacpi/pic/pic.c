@@ -316,7 +316,7 @@ PHAL_SW_INTERRUPT_HANDLER SWInterruptHandlerTable[20] =
 {
     NULL,//(PHAL_SW_INTERRUPT_HANDLER)KiUnexpectedInterrupt,
     NULL,//HalpApcInterrupt,
-    NULL,//HalpDispatchInterrupt,
+    HalpDispatchInterrupt,
     NULL,//(PHAL_SW_INTERRUPT_HANDLER)KiUnexpectedInterrupt,
     HalpHardwareInterrupt0,
     HalpHardwareInterrupt1,
@@ -819,6 +819,66 @@ _HalpApcInterruptHandler(IN PKTRAP_FRAME TrapFrame)
 
     /* Exit the interrupt */
     KiEoiHelper(TrapFrame);
+}
+
+FORCEINLINE
+KIRQL
+_HalpDispatchInterruptHandler(VOID)
+{
+    KIRQL CurrentIrql;
+    PKPCR Pcr = KeGetPcr();
+
+    /* Save the current IRQL and update it */
+    CurrentIrql = Pcr->Irql;
+    Pcr->Irql = DISPATCH_LEVEL;
+
+    /* Remove DPC from IRR */
+    Pcr->IRR &= ~(1 << DISPATCH_LEVEL);
+
+    /* Enable interrupts and call the kernel's DPC interrupt handler */
+    _enable();
+    KiDispatchInterrupt();
+    _disable();
+
+    /* Return IRQL */
+    return CurrentIrql;
+}
+
+PHAL_SW_INTERRUPT_HANDLER
+__cdecl
+HalpDispatchInterrupt2(VOID)
+{
+    ULONG PendingIrqlMask, PendingIrql;
+    KIRQL OldIrql;
+    PIC_MASK Mask;
+    PKPCR Pcr = KeGetPcr();
+
+    /* Do the work */
+    OldIrql = _HalpDispatchInterruptHandler();
+
+    /* Restore IRQL */
+    Pcr->Irql = OldIrql;
+
+    /* Check for pending software interrupts and compare with current IRQL */
+    PendingIrqlMask = Pcr->IRR & FindHigherIrqlMask[OldIrql];
+    if (!PendingIrqlMask)
+        return NULL;
+
+    /* Check if pending IRQL affects hardware state */
+    BitScanReverse(&PendingIrql, PendingIrqlMask);
+    if (PendingIrql > DISPATCH_LEVEL)
+    {
+        /* Set new PIC mask */
+        Mask.Both = Pcr->IDR & 0xFFFF;
+        WRITE_PORT_UCHAR(PIC1_DATA_PORT, Mask.Master);
+        WRITE_PORT_UCHAR(PIC2_DATA_PORT, Mask.Slave);
+
+        /* Clear IRR bit */
+        Pcr->IRR ^= (1 << PendingIrql);
+    }
+
+    /* Now handle pending interrupt */
+    return SWInterruptHandlerTable[PendingIrql];
 }
 
 /* FUNCTIONS ******************************************************************/

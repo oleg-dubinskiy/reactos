@@ -239,6 +239,12 @@ VOID
 );
 
 VOID
+__cdecl
+HalpDispatchInterrupt(
+    VOID
+);
+
+VOID
 NTAPI
 HalpEndSoftwareInterrupt(
     IN KIRQL OldIrql,
