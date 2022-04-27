@@ -801,6 +801,38 @@ HalEnableSystemInterrupt(IN ULONG Vector,
     return TRUE;
 }
 
+VOID
+NTAPI
+HalDisableSystemInterrupt(IN ULONG Vector,
+                          IN KIRQL Irql)
+{
+    ULONG IrqMask;
+    PIC_MASK PicMask;
+
+    /* Compute new combined IRQ mask */
+    IrqMask = 1 << (Vector - PRIMARY_VECTOR_BASE);
+
+    /* Disable interrupts */
+    _disable();
+
+    /* Update software IDR */
+    KeGetPcr()->IDR |= IrqMask;
+
+    /* Read current interrupt mask */
+    PicMask.Master = READ_PORT_UCHAR(PIC1_DATA_PORT);
+    PicMask.Slave = READ_PORT_UCHAR(PIC2_DATA_PORT);
+
+    /* Add the new disabled interrupt */
+    PicMask.Both |= IrqMask;
+
+    /* Write new interrupt mask */
+    WRITE_PORT_UCHAR(PIC1_DATA_PORT, PicMask.Master);
+    WRITE_PORT_UCHAR(PIC2_DATA_PORT, PicMask.Slave);
+
+    /* Bring interrupts back */
+    _enable();
+}
+
 PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY
 FASTCALL
 HalEndSystemInterrupt2(IN KIRQL OldIrql,
@@ -1122,15 +1154,6 @@ HalClearSoftwareInterrupt(IN KIRQL Irql)
 {
     /* Mask out the requested bit */
     KeGetPcr()->IRR &= ~(1 << Irql);
-}
-
-VOID
-NTAPI
-HalDisableSystemInterrupt(IN ULONG Vector,
-                          IN KIRQL Irql)
-{
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
 }
 
 VOID
