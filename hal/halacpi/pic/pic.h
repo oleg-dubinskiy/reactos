@@ -251,6 +251,12 @@ HalpEndSoftwareInterrupt(
     IN PKTRAP_FRAME TrapFrame
 );
 
+VOID
+__cdecl
+HalpHardwareInterruptLevel(
+    VOID
+);
+
 BOOLEAN
 NTAPI
 HalpDismissIrqGeneric(
