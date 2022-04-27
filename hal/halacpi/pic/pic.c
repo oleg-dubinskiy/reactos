@@ -314,10 +314,10 @@ HalpDelayedHardwareInterrupt(15);
 /* Handlers for pending interrupts */
 PHAL_SW_INTERRUPT_HANDLER SWInterruptHandlerTable[20] =
 {
-    NULL,//(PHAL_SW_INTERRUPT_HANDLER)KiUnexpectedInterrupt,
+    (PHAL_SW_INTERRUPT_HANDLER)KiUnexpectedInterrupt,
     HalpApcInterrupt,
     HalpDispatchInterrupt,
-    NULL,//(PHAL_SW_INTERRUPT_HANDLER)KiUnexpectedInterrupt,
+    (PHAL_SW_INTERRUPT_HANDLER)KiUnexpectedInterrupt,
     HalpHardwareInterrupt0,
     HalpHardwareInterrupt1,
     HalpHardwareInterrupt2,
@@ -339,7 +339,7 @@ PHAL_SW_INTERRUPT_HANDLER SWInterruptHandlerTable[20] =
 /* Handlers for pending software interrupts when we already have a trap frame*/
 PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY SWInterruptHandlerTable2[3] =
 {
-    NULL,//(PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY)KiUnexpectedInterrupt,
+    (PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY)KiUnexpectedInterrupt,
     HalpApcInterrupt2ndEntry,
     HalpDispatchInterrupt2ndEntry
 };
