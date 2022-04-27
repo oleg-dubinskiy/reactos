@@ -719,9 +719,10 @@
 @ stdcall KeWaitForSingleObject(ptr long long long ptr)
 @ fastcall -arch=i386,arm KefAcquireSpinLockAtDpcLevel(ptr)
 @ fastcall -arch=i386,arm KefReleaseSpinLockFromDpcLevel(ptr)
-@ stdcall -arch=i386 Kei386EoiHelper()
+;@ stdcall -arch=i386 Kei386EoiHelper()
+@ cdecl -arch=i386 Kei386EoiHelper() #NT-specific, nonstandard parameters calling
 @ cdecl -arch=x86_64 -private KfRaiseIrql(long)
-@ fastcall -arch=i386 KiEoiHelper(ptr) #ReactOS-Specific
+@ fastcall -arch=i386 KiEoiHelper(ptr) #ReactOS-specific, NT use Kei386EoiHelper()
 @ fastcall -arch=i386,arm KiAcquireSpinLock(ptr)
 @ extern KiBugCheckData
 @ stdcall KiCheckForKernelApcDelivery()

@@ -120,6 +120,8 @@ KiCommonExit(IN PKTRAP_FRAME TrapFrame, BOOLEAN SkipPreviousMode)
     KiExitTrapDebugChecks(TrapFrame, SkipPreviousMode);
 }
 
+/* ReactOS use KiEoiHelper(), but NT use Kei386EoiHelper(). */
+//#ifdef __REACTOS__
 DECLSPEC_NORETURN
 VOID
 FASTCALL
@@ -143,6 +145,34 @@ KiEoiHelper(IN PKTRAP_FRAME TrapFrame)
     /* Exit the trap to kernel mode */
     KiTrapReturnNoSegmentsRet8(TrapFrame);
 }
+//#else
+DECLSPEC_NORETURN
+VOID
+__cdecl
+Kei386EoiHelper(VOID)
+{
+    ULONG_PTR Stack;
+
+    /* NT actually uses the stack to place the pointer to the TrapFrame */
+
+    /* Get current ESP */
+#if defined(_M_IX86)
+  #if defined __GNUC__
+    __asm__("mov %%ebp, %0" : "=r" (Stack) : );
+  #elif defined(_MSC_VER)
+    __asm mov Stack, ebp
+  #endif
+#else
+  #error Unknown architecture
+#endif
+
+    KiEoiHelper((PKTRAP_FRAME)(Stack+4));
+
+    /* We should never see this call happening */
+    ASSERT(FALSE);//KeDbgBreakPointEx();
+    KeBugCheck(0xFFFFFFFF);
+}
+//#endif
 
 DECLSPEC_NORETURN
 VOID
@@ -1851,17 +1881,6 @@ FASTCALL
 KiCheckForSListAddress(IN PKTRAP_FRAME TrapFrame)
 {
     UNIMPLEMENTED;
-}
-
-/*
- * @implemented
- */
-VOID
-NTAPI
-Kei386EoiHelper(VOID)
-{
-    /* We should never see this call happening */
-    KeBugCheck(MISMATCHED_HAL);
 }
 
 /* EOF */
