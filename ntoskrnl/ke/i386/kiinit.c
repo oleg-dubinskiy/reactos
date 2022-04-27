@@ -363,13 +363,17 @@ KiInitializePcr(IN ULONG ProcessorNumber,
     Pcr->PrcbData.MinorVersion = 1;
 
     /* Set the Build Type */
-    Pcr->PrcbData.BuildType = 0;
-#ifndef CONFIG_SMP
-    Pcr->PrcbData.BuildType |= PRCB_BUILD_UNIPROCESSOR;
-#endif
-#if DBG
-    Pcr->PrcbData.BuildType |= PRCB_BUILD_DEBUG;
-#endif
+  #if DBG
+    Pcr->PrcbData.BuildType = PRCB_BUILD_DEBUG;
+  #else
+    #ifdef CONFIG_SMP
+      //FIXME: #define PRCB_BUILD_MULTIPROCESSOR 0 (in ketypes.h)
+      //Pcr->PrcbData.BuildType = PRCB_BUILD_MULTIPROCESSOR;
+      Pcr->PrcbData.BuildType = 0;
+    #else
+      Pcr->PrcbData.BuildType = PRCB_BUILD_UNIPROCESSOR;
+    #endif
+  #endif
 
     /* Set the Processor Number and current Processor Mask */
     Pcr->PrcbData.Number = (UCHAR)ProcessorNumber;
