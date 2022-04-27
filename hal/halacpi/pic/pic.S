@@ -67,7 +67,7 @@ WrapperName&_CallIntHandler:
 ENDM
 
 
-//DEFINE_END_INTERRUPT_WRAPPER HalpEndSoftwareInterrupt, HalpEndSoftwareInterrupt2
+DEFINE_END_INTERRUPT_WRAPPER HalpEndSoftwareInterrupt, HalpEndSoftwareInterrupt2
 
 /* NT use nonstandard parameters calling */
 DEFINE_END_INTERRUPT_WRAPPER HalEndSystemInterrupt, HalEndSystemInterrupt2

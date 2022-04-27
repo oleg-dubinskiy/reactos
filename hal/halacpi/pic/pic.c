@@ -383,6 +383,62 @@ KfRaiseIrql(IN KIRQL NewIrql)
     return CurrentIrql;
 }
 
+/* SOFTWARE INTERRUPTS ********************************************************/
+
+PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY
+FASTCALL
+HalpEndSoftwareInterrupt2(IN KIRQL OldIrql,
+                          IN PKTRAP_FRAME TrapFrame)
+{
+    ULONG PendingIrql, PendingIrqlMask, PendingIrqMask;
+    PKPCR Pcr = KeGetPcr();
+    PIC_MASK Mask;
+
+    UNREFERENCED_PARAMETER(TrapFrame);
+
+    /* Set old IRQL */
+    Pcr->Irql = OldIrql;
+
+    /* Loop checking for pending interrupts */
+    while (TRUE)
+    {
+        /* Check for pending software interrupts and compare with current IRQL */
+        PendingIrqlMask = Pcr->IRR & FindHigherIrqlMask[OldIrql];
+        if (!PendingIrqlMask)
+            return NULL;
+
+        /* Check for in-service delayed interrupt */
+        if (Pcr->IrrActive & 0xFFFFFFF0)
+            return NULL;
+
+        /* Check if pending IRQL affects hardware state */
+        BitScanReverse(&PendingIrql, PendingIrqlMask);
+        if (PendingIrql <= DISPATCH_LEVEL)
+        {
+            /* No need to loop checking for hardware interrupts */
+            return SWInterruptHandlerTable2[PendingIrql];
+        }
+
+        /* Set new PIC mask */
+        Mask.Both = Pcr->IDR & 0xFFFF;
+        WRITE_PORT_UCHAR(PIC1_DATA_PORT, Mask.Master);
+        WRITE_PORT_UCHAR(PIC2_DATA_PORT, Mask.Slave);
+
+        /* Set active bit otherwise, and clear it from IRR */
+        PendingIrqMask = (1 << PendingIrql);
+        Pcr->IrrActive |= PendingIrqMask;
+        Pcr->IRR ^= PendingIrqMask;
+
+        /* Handle delayed hardware interrupt */
+        SWInterruptHandlerTable[PendingIrql]();
+
+        /* Handling complete */
+        Pcr->IrrActive ^= PendingIrqMask;
+    }
+
+    return NULL;
+}
+
 /* EDGE INTERRUPT DISMISSAL FUNCTIONS *****************************************/
 
 FORCEINLINE

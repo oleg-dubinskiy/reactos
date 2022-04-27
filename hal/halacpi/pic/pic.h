@@ -218,13 +218,6 @@ typedef struct _PIC_MASK
 #error Unsupported compiler
 #endif
 
-VOID
-NTAPI
-HalpEndSoftwareInterrupt(
-    IN KIRQL OldIrql,
-    IN PKTRAP_FRAME TrapFrame
-);
-
 typedef
 BOOLEAN
 (NTAPI *PHAL_DISMISS_INTERRUPT)(
@@ -242,6 +235,13 @@ VOID
 typedef
 VOID
 (FASTCALL *PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY)(
+    IN PKTRAP_FRAME TrapFrame
+);
+
+VOID
+NTAPI
+HalpEndSoftwareInterrupt(
+    IN KIRQL OldIrql,
     IN PKTRAP_FRAME TrapFrame
 );
 
