@@ -396,6 +396,57 @@ KfRaiseIrql(IN KIRQL NewIrql)
     return CurrentIrql;
 }
 
+VOID
+FASTCALL
+KfLowerIrql(IN KIRQL OldIrql)
+{
+    ULONG EFlags;
+    ULONG PendingIrql, PendingIrqlMask;
+    PKPCR Pcr = KeGetPcr();
+    PIC_MASK Mask;
+
+#if DBG
+    /* Validate correct lower */
+    if (OldIrql > Pcr->Irql)
+    {
+        /* Crash system */
+        Pcr->Irql = HIGH_LEVEL;
+        KeBugCheck(IRQL_NOT_LESS_OR_EQUAL);
+    }
+#endif
+
+    /* Save EFlags and disable interrupts */
+    EFlags = __readeflags();
+    _disable();
+
+    /* Set old IRQL */
+    Pcr->Irql = OldIrql;
+
+    /* Check for pending software interrupts and compare with current IRQL */
+    PendingIrqlMask = Pcr->IRR & FindHigherIrqlMask[OldIrql];
+    if (PendingIrqlMask)
+    {
+        /* Check if pending IRQL affects hardware state */
+        BitScanReverse(&PendingIrql, PendingIrqlMask);
+        if (PendingIrql > DISPATCH_LEVEL)
+        {
+            /* Set new PIC mask */
+            Mask.Both = Pcr->IDR & 0xFFFF;
+            WRITE_PORT_UCHAR(PIC1_DATA_PORT, Mask.Master);
+            WRITE_PORT_UCHAR(PIC2_DATA_PORT, Mask.Slave);
+
+            /* Clear IRR bit */
+            Pcr->IRR ^= (1 << PendingIrql);
+        }
+
+        /* Now handle pending interrupt */
+        SWInterruptHandlerTable[PendingIrql]();
+    }
+
+    /* Restore interrupt state */
+    __writeeflags(EFlags);
+}
+
 /* SOFTWARE INTERRUPTS ********************************************************/
 
 VOID
@@ -1193,14 +1244,6 @@ HalClearSoftwareInterrupt(IN KIRQL Irql)
 {
     /* Mask out the requested bit */
     KeGetPcr()->IRR &= ~(1 << Irql);
-}
-
-VOID
-FASTCALL
-KfLowerIrql(IN KIRQL OldIrql)
-{
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
 }
 
 KIRQL
