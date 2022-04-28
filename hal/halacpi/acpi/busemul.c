@@ -66,11 +66,22 @@ HalpFindBusAddressTranslation(IN PHYSICAL_ADDRESS BusAddress,
                               IN OUT PULONG_PTR Context,
                               IN BOOLEAN NextBus)
 {
-    DPRINT1("HalpFindBusAddressTranslation: ... \n");
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return FALSE;
+    /* Make sure we have a context */
+    if (!Context)
+        return FALSE;
+
+    /* If we have data in the context, then this shouldn't be a new lookup */
+    if ((*Context != 0) && (NextBus != FALSE))
+        return FALSE;
+
+    /* Return bus data */
+    TranslatedAddress->QuadPart = BusAddress.QuadPart;
+
+    /* Set context value and return success */
+    *Context = 1;
+    return TRUE;
 }
+
 
 /* PUBLIC FUNCTIONS **********************************************************/
 
