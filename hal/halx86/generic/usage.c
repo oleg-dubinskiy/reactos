@@ -71,7 +71,7 @@ USHORT HalpComPortIrqMapping[5][2] =
 
 ADDRESS_USAGE HalpComIoSpace =
 {
-    NULL, CmResourceTypePort, IDT_INTERNAL,
+    NULL, CmResourceTypePort, IDT_DEVICE,
     {
         {0x2F8,   0x8},     /* COM 1 */
         {0,0},
@@ -80,7 +80,7 @@ ADDRESS_USAGE HalpComIoSpace =
 
 ADDRESS_USAGE HalpDefaultIoSpace =
 {
-    NULL, CmResourceTypePort, IDT_INTERNAL,
+    NULL, CmResourceTypePort, IDT_DEVICE,
     {
         {0x00,  0x20}, /* DMA 1 */
         {0xC0,  0x20}, /* DMA 2 */
@@ -93,6 +93,23 @@ ADDRESS_USAGE HalpDefaultIoSpace =
         {0x70,  0x2},  /* CMOS  */
         {0xF0,  0x10}, /* x87 Coprocessor */
         {0xCF8, 0x8},  /* PCI 0 */
+        {0,0},
+    }
+};
+
+ADDRESS_USAGE HalpEisaIoSpace =
+{
+    NULL, CmResourceTypePort, IDT_DEVICE,
+    {
+        {0xD0,  0x10}, /*  */
+        {0x400, 0x10}, /*  */
+        {0x480, 0x10}, /*  */
+        {0x4C2, 0xE},  /*  */
+        {0x4D4, 0x2C}, /*  */
+        {0x461, 0x2},  /*  */
+        {0x464, 0x2},  /*  */
+        {0x4D0, 0x2},  /*  */
+        {0xC84, 0x1},  /*  */
         {0,0},
     }
 };
