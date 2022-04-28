@@ -15,8 +15,11 @@
 
 ULONG HalpCurrentTimeIncrement;
 ULONG HalpCurrentRollOver;
-//ULONG HalpNextMSRate = 14;
+ULONG HalpNextMSRate = 14;
 ULONG HalpLargestClockMS = 15;
+LARGE_INTEGER HalpPerfCounter;
+ULONG HalpPerfCounterCutoff;
+BOOLEAN HalpClockSetMSRate;
 
 static struct _HALP_ROLLOVER
 {
@@ -40,6 +43,8 @@ static struct _HALP_ROLLOVER
     {16695, 139920},
     {17892, 149952}
 };
+
+extern BOOLEAN HalpProfilingStopped;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -106,6 +111,115 @@ HalpInitializeClock(VOID)
     /* Save rollover and increment */
     HalpCurrentRollOver = RollOver;
     HalpCurrentTimeIncrement = Increment;
+}
+
+VOID
+FASTCALL
+HalpClockInterruptHandler(IN PKTRAP_FRAME TrapFrame)
+{
+    ULONG LastIncrement;
+    KIRQL Irql;
+
+    //DPRINT("HalpClockInterruptHandler: ... \n");
+
+    /* Enter trap */
+    KiEnterInterruptTrap(TrapFrame);
+
+    /* Start the interrupt */
+    if (!HalBeginSystemInterrupt(CLOCK2_LEVEL, (PRIMARY_VECTOR_BASE + 0), &Irql))
+    {
+        /* Spurious, just end the interrupt */
+        KiEoiHelper(TrapFrame); // DECLSPEC_NORETURN
+        return;
+    }
+
+    /* Update the performance counter */
+    HalpPerfCounter.QuadPart += HalpCurrentRollOver;
+    HalpPerfCounterCutoff = KiEnableTimerWatchdog;
+
+    /* Save increment */
+    LastIncrement = HalpCurrentTimeIncrement;
+
+    /* Check if someone changed the time rate */
+    if (HalpClockSetMSRate)
+    {
+        /* Update the global values */
+        HalpCurrentTimeIncrement = HalpRolloverTable[HalpNextMSRate - 1].Increment;
+        HalpCurrentRollOver = HalpRolloverTable[HalpNextMSRate - 1].RollOver;
+
+        /* Set new timer rollover */
+        HalpSetTimerRollOver((USHORT)HalpCurrentRollOver);
+
+        /* We're done */
+        HalpClockSetMSRate = FALSE;
+    }
+
+    /* Update the system time -- the kernel will exit this trap  */
+    RosKeUpdateSystemTime(TrapFrame, LastIncrement, 0xFF, Irql);
+
+    ASSERT(0);//HalpDbgBreakPointEx();
+    KiEoiHelper(TrapFrame);
+}
+
+VOID
+FASTCALL
+HalpProfileInterruptHandler(IN PKTRAP_FRAME TrapFrame)
+{
+    KIRQL Irql;
+
+    DPRINT("HalpProfileInterruptHandler: ... \n");
+
+    /* Enter trap */
+    KiEnterInterruptTrap(TrapFrame);
+
+    /* Start the interrupt */
+    if (!HalBeginSystemInterrupt(PROFILE_LEVEL, (PRIMARY_VECTOR_BASE + 8), &Irql))
+    {
+        /* Spurious, just end the interrupt */
+        KiEoiHelper(TrapFrame); // DECLSPEC_NORETURN
+        ASSERT(0);//HalpDbgBreakPointEx();
+        return;
+    }
+
+    /* Spin until the interrupt pending bit is clear */
+    HalpAcquireCmosSpinLock();
+    while (HalpReadCmos(RTC_REGISTER_C) & RTC_REG_C_IRQ)
+        ;
+    HalpReleaseCmosSpinLock();
+
+    /* If profiling is enabled, call the kernel function */
+    if (!HalpProfilingStopped)
+        KeProfileInterrupt(TrapFrame);
+
+    /* Finish the interrupt */
+    _disable();
+  #ifdef __REACTOS__
+    RosHalEndSystemInterrupt(Irql, 0xFF, TrapFrame);
+  #else
+    DPRINT1("KiEndInterrupt: FIXME! Irql %X, TrapFrame %X\n", Irql, TrapFrame);
+    ASSERT(FALSE);// DbgBreakPoint();
+    /* NT actually uses the stack to place the pointer to the TrapFrame (really the third parameter),
+       but ... HalEndSystemInterrupt() is defined with only two parameters ...
+    */
+    // ?add before?:
+    // _asm push (IntContext->TrapFrame)
+    HalEndSystemInterrupt(Irql, 0xFF /*, TrapFrame*/); // FIXME (compatible with NT)
+  #endif
+
+  /* Exit the interrupt */
+  #ifdef __REACTOS__
+    KiEoiHelper(TrapFrame);
+  #else
+    DPRINT1("KiEndInterrupt: FIXME before calling Kei386EoiHelper()\n");
+    ASSERT(FALSE);// DbgBreakPoint();
+    /* NT uses non-standard call parameters */
+    // ?add before?:
+    // _asm mov ebp, (IntContext->TrapFrame)
+    // _asm push ebp
+    Kei386EoiHelper(/*TrapFrame*/); // FIXME (compatible with NT)
+  #endif
+
+    ASSERT(0);//HalpDbgBreakPointEx();
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/

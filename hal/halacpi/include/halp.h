@@ -42,8 +42,8 @@ typedef struct _HalAddressUsage
 #define RTC_REG_A_UIP           0x80
 #define RTC_REGISTER_B          0x0B
 #define RTC_REG_B_PI            0x40
-//#define RTC_REGISTER_C          0x0C
-//#define RTC_REG_C_IRQ           0x80
+#define RTC_REGISTER_C          0x0C
+#define RTC_REG_C_IRQ           0x80
 //#define RTC_REGISTER_D          0x0D
 //#define RTC_REGISTER_CENTURY    0x32
 
@@ -269,6 +269,18 @@ KeUpdateSystemTime(
     VOID
 );
 //#endif
+
+VOID
+__cdecl
+HalpClockInterrupt(
+    VOID
+);
+
+VOID
+__cdecl
+HalpProfileInterrupt(
+    VOID
+);
 
 /* usage.c */
 INIT_FUNCTION
