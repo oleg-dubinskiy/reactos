@@ -144,6 +144,25 @@ HalpInitNonBusHandler(VOID)
 }
 
 INIT_FUNCTION
+VOID
+NTAPI
+HalpEnableInterruptHandler(IN UCHAR Flags,
+                           IN ULONG BusVector,
+                           IN ULONG SystemVector,
+                           IN KIRQL Irql,
+                           IN PVOID Handler,
+                           IN KINTERRUPT_MODE Mode)
+{
+    DPRINT("HalpEnableInterruptHandler: %X, %X, %X, %X\n", Flags, BusVector, SystemVector, Irql);
+
+    /* Connect the interrupt */
+    KeRegisterInterruptHandler(SystemVector, Handler);
+
+    /* Enable the interrupt */
+    HalEnableSystemInterrupt(SystemVector, Irql, Mode);
+}
+
+INIT_FUNCTION
 BOOLEAN
 NTAPI
 HalInitSystem(IN ULONG BootPhase,
@@ -318,7 +337,7 @@ HalInitSystem(IN ULONG BootPhase,
         /* Initialize DMA. NT does this in Phase 0 */
         HalpInitDma();
 
-        //HalpInitReservedPages();
+        DPRINT1("HalpInitPhase1: FIXME HalpInitReservedPages()\n");
 
         /* Initialize bus handlers */
         HalpInitNonBusHandler();
@@ -326,12 +345,32 @@ HalInitSystem(IN ULONG BootPhase,
         HalpFeatureBits = HalpGetFeatureBits();
         if (HalpFeatureBits & 0x20) {
             DPRINT1("FIXME HalpMovntiCopyBuffer\n");
-            ASSERT(0);//HalpDbgBreakPointEx();
+            //ASSERT(0);//HalpDbgBreakPointEx();
         }
 
-        DPRINT1("HalInitSystem: FIXME! HalpEnableInterruptHandler()\n");
-        ASSERT(0);// HalpDbgBreakPointEx();
+        /* Enable IRQ 0 */
+        HalpEnableInterruptHandler((IDT_DEVICE + IDT_LATCHED),
+                                   0,
+                                   (PRIMARY_VECTOR_BASE + 0), // 0x30
+                                   CLOCK2_LEVEL, // 0x1C
+                                   HalpClockInterrupt,
+                                   Latched);
 
+        /* Enable IRQ 8 */
+        HalpEnableInterruptHandler((IDT_DEVICE + IDT_LATCHED),
+                                   8,
+                                   (PRIMARY_VECTOR_BASE + 8), // 0x38
+                                   PROFILE_LEVEL, // 0x1B
+                                   HalpProfileInterrupt,
+                                   Latched);
+
+        DPRINT1("HalpInitPhase1: FIXME HalpAcpiTimerPerfCountHack()\n");
+
+        if (Prcb->CpuType == 3) // 80387 ?
+        {
+            DPRINT1("HalpInitPhase1: FIXME! Prcb->CpuType %X\n", Prcb->CpuType);
+            ASSERT(0);// HalpDbgBreakPointEx();
+        }
     }
     else
     {
