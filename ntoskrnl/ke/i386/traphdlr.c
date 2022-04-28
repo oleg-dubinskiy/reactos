@@ -9,7 +9,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-#define NDEBUG
+//#define NDEBUG
 #include <debug.h>
 
 VOID __cdecl KiFastCallEntry(VOID);
@@ -131,16 +131,20 @@ KiEoiHelper(IN PKTRAP_FRAME TrapFrame)
     KiCommonExit(TrapFrame, TRUE);
 
     /* Check if this was a V8086 trap */
-    if (TrapFrame->EFlags & EFLAGS_V86_MASK) KiTrapReturnNoSegments(TrapFrame);
+    if (TrapFrame->EFlags & EFLAGS_V86_MASK)
+        KiTrapReturnNoSegments(TrapFrame);
 
     /* Check for user mode exit */
-    if (KiUserTrap(TrapFrame)) KiTrapReturn(TrapFrame);
+    if (KiUserTrap(TrapFrame))
+        KiTrapReturn(TrapFrame);
 
     /* Check for edited frame */
-    if (KiIsFrameEdited(TrapFrame)) KiEditedTrapReturn(TrapFrame);
+    if (KiIsFrameEdited(TrapFrame))
+        KiEditedTrapReturn(TrapFrame);
 
     /* Check if we have single stepping enabled */
-    if (TrapFrame->EFlags & EFLAGS_TF) KiTrapReturnNoSegments(TrapFrame);
+    if (TrapFrame->EFlags & EFLAGS_TF)
+        KiTrapReturnNoSegments(TrapFrame);
 
     /* Exit the trap to kernel mode */
     KiTrapReturnNoSegmentsRet8(TrapFrame);

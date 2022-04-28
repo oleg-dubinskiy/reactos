@@ -868,22 +868,48 @@ KiIret(VOID)
     UNREACHABLE;
 }
 
-//
-// Normally this is done by the HAL, but on x86 as an optimization, the kernel
-// initiates the end by calling back into the HAL and exiting the trap here.
-//
+/* Normally this is done by the HAL, but on x86 as an optimization, the kernel
+   initiates the end by calling back into the HAL and exiting the trap here.
+*/
 FORCEINLINE
 VOID
-KiEndInterrupt(IN KIRQL Irql,
-               IN PKTRAP_FRAME TrapFrame)
+KiEndInterrupt(_In_ KIRQL Irql,
+               _In_ UCHAR Vector, /* For APIC, the interrupt vector must also be transmitted. For PIC the Vector`s value is 0xFF.*/
+               _In_ PKTRAP_FRAME TrapFrame,
+               _In_ BOOLEAN Spurious)
 {
-    /* Disable interrupts and end the interrupt */
-    _disable();
-    //HalEndSystemInterrupt(Irql, TrapFrame);
-    HalEndSystemInterrupt(Irql, 0xFF /*, TrapFrame*/); // FIXME compatible with NT
+    /* Check if this was a real interrupt */
+    if (!Spurious)
+    {
+        /* Disable interrupts and end the interrupt */
+        _disable();
 
-    /* Exit the interrupt */
+      #ifdef __REACTOS__
+        RosHalEndSystemInterrupt(Irql, Vector, TrapFrame);
+      #else
+        DPRINT1("KiEndInterrupt: FIXME! Irql %X, Vector %X, TrapFrame %X\n", Irql, Vector, TrapFrame);
+        ASSERT(FALSE);// DbgBreakPoint();
+        /* NT actually uses the stack to place the pointer to the TrapFrame (really the third parameter),
+           but ... HalEndSystemInterrupt() is defined with only two parameters ...
+        */
+        // ?add before?:
+        // _asm push (IntContext->TrapFrame)
+        HalEndSystemInterrupt(Irql, Vector /*, TrapFrame*/); // FIXME (compatible with NT)
+      #endif
+    }
+
+  /* Exit the interrupt */
+  #ifdef __REACTOS__
     KiEoiHelper(TrapFrame);
+  #else
+    DPRINT1("KiEndInterrupt: FIXME before calling Kei386EoiHelper()\n");
+    ASSERT(FALSE);// DbgBreakPoint();
+    /* NT uses non-standard call parameters */
+    // ?add before?:
+    // _asm mov ebp, (IntContext->TrapFrame)
+    // _asm push ebp
+    Kei386EoiHelper(/*TrapFrame*/); // FIXME (compatible with NT)
+  #endif
 }
 
 //

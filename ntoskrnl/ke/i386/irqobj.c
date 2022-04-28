@@ -12,7 +12,7 @@
 /* INCLUDES *****************************************************************/
 
 #include <ntoskrnl.h>
-#define NDEBUG
+//#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS *******************************************************************/
@@ -20,6 +20,7 @@
 ULONG KiISRTimeout = 55;
 USHORT KiISROverflow = 30000;
 extern ULONG NTAPI KiChainedDispatch2ndLvl(VOID);
+extern BOOLEAN HalCtrlPIC;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -129,26 +130,6 @@ KiConnectVectorToInterrupt(IN PKINTERRUPT Interrupt,
     KeRegisterInterruptHandler(Interrupt->Vector, Handler);
 }
 
-FORCEINLINE
-DECLSPEC_NORETURN
-VOID
-KiExitInterrupt(IN PKTRAP_FRAME TrapFrame,
-                IN KIRQL OldIrql,
-                IN BOOLEAN Spurious)
-{
-    /* Check if this was a real interrupt */
-    if (!Spurious)
-    {
-        /* It was, disable interrupts and restore the IRQL */
-        _disable();
-        //HalEndSystemInterrupt(OldIrql, TrapFrame);
-        HalEndSystemInterrupt(OldIrql, 0xFF /*, TrapFrame*/); // FIXME compatible with NT
-    }
-
-    /* Now exit the trap */
-    KiEoiHelper(TrapFrame);
-}
-
 DECLSPEC_NORETURN
 VOID
 __cdecl
@@ -162,7 +143,12 @@ VOID
 FASTCALL
 KiUnexpectedInterruptTailHandler(IN PKTRAP_FRAME TrapFrame)
 {
+    UCHAR Vector;
     KIRQL OldIrql;
+    BOOLEAN Spurious = TRUE;
+
+    DPRINT1("KiUnexpectedInterruptTailHandler: Interrupt 0x%02lx !!!\n", TrapFrame->ErrCode);
+    ASSERT(FALSE);//KeDbgBreakPointEx();
 
     /* Enter trap */
     KiEnterInterruptTrap(TrapFrame);
@@ -170,20 +156,22 @@ KiUnexpectedInterruptTailHandler(IN PKTRAP_FRAME TrapFrame)
     /* Increase interrupt count */
     KeGetCurrentPrcb()->InterruptCount++;
 
+    /* For APIC, the interrupt vector must be transmitted. For PIC the Vector`s value is 0xFF */
+    if (HalCtrlPIC)
+        Vector = 0xFF;
+    else
+        Vector = (UCHAR)TrapFrame->ErrCode;
+
     /* Start the interrupt */
     if (HalBeginSystemInterrupt(HIGH_LEVEL, TrapFrame->ErrCode, &OldIrql))
     {
         /* Warn user */
         DPRINT1("\n\x7\x7!!! Unexpected Interrupt 0x%02lx !!!\n", TrapFrame->ErrCode);
+        Spurious = FALSE;
+    }
 
-        /* Now call the epilogue code */
-        KiExitInterrupt(TrapFrame, OldIrql, FALSE);
-    }
-    else
-    {
-        /* Now call the epilogue code */
-        KiExitInterrupt(TrapFrame, OldIrql, TRUE);
-    }
+    /* Now call the epilogue code */
+    KiEndInterrupt(OldIrql, Vector, TrapFrame, Spurious);
 }
 
 typedef
@@ -198,15 +186,23 @@ FASTCALL
 KiInterruptDispatch(IN PKTRAP_FRAME TrapFrame,
                     IN PKINTERRUPT Interrupt)
 {
+    UCHAR Vector;
     KIRQL OldIrql;
+    BOOLEAN Spurious = TRUE;
+
+ASSERT(FALSE);//KeDbgBreakPointEx();
 
     /* Increase interrupt count */
     KeGetCurrentPrcb()->InterruptCount++;
 
+    /* For APIC, the interrupt vector must be transmitted. For PIC the Vector`s value is 0xFF */
+    if (HalCtrlPIC)
+        Vector = 0xFF;
+    else
+        Vector = (UCHAR)TrapFrame->ErrCode;
+
     /* Begin the interrupt, making sure it's not spurious */
-    if (HalBeginSystemInterrupt(Interrupt->SynchronizeIrql,
-                                Interrupt->Vector,
-                                &OldIrql))
+    if (HalBeginSystemInterrupt(Interrupt->SynchronizeIrql, Interrupt->Vector, &OldIrql))
     {
         /* Acquire interrupt lock */
         KxAcquireSpinLock(Interrupt->ActualLock);
@@ -217,14 +213,11 @@ KiInterruptDispatch(IN PKTRAP_FRAME TrapFrame,
         /* Release interrupt lock */
         KxReleaseSpinLock(Interrupt->ActualLock);
 
-        /* Now call the epilogue code */
-        KiExitInterrupt(TrapFrame, OldIrql, FALSE);
+        Spurious = FALSE;
     }
-    else
-    {
-        /* Now call the epilogue code */
-        KiExitInterrupt(TrapFrame, OldIrql, TRUE);
-    }
+
+    /* Now call the epilogue code */
+    KiEndInterrupt(OldIrql, Vector, TrapFrame, Spurious);
 }
 
 VOID
@@ -235,18 +228,27 @@ KiChainedDispatch(IN PKTRAP_FRAME TrapFrame,
     KIRQL OldIrql, OldInterruptIrql = 0;
     BOOLEAN Handled;
     PLIST_ENTRY NextEntry, ListHead;
+    UCHAR Vector;
+    BOOLEAN Spurious = TRUE;
+
+ASSERT(FALSE);//KeDbgBreakPointEx();
 
     /* Increase interrupt count */
     KeGetCurrentPrcb()->InterruptCount++;
 
+    /* For APIC, the interrupt vector must be transmitted. For PIC the Vector`s value is 0xFF */
+    if (HalCtrlPIC)
+        Vector = 0xFF;
+    else
+        Vector = (UCHAR)TrapFrame->ErrCode;
+
     /* Begin the interrupt, making sure it's not spurious */
-    if (HalBeginSystemInterrupt(Interrupt->Irql,
-                                Interrupt->Vector,
-                                &OldIrql))
+    if (HalBeginSystemInterrupt(Interrupt->Irql, Interrupt->Vector, &OldIrql))
     {
         /* Get list pointers */
         ListHead = &Interrupt->InterruptListEntry;
         NextEntry = ListHead; /* The head is an entry! */
+
         while (TRUE)
         {
             /* Check if this interrupt's IRQL is higher than the current one */
@@ -260,8 +262,7 @@ KiChainedDispatch(IN PKTRAP_FRAME TrapFrame,
             KxAcquireSpinLock(Interrupt->ActualLock);
 
             /* Call the ISR */
-            Handled = Interrupt->ServiceRoutine(Interrupt,
-                                                Interrupt->ServiceContext);
+            Handled = Interrupt->ServiceRoutine(Interrupt, Interrupt->ServiceContext);
 
             /* Release interrupt lock */
             KxReleaseSpinLock(Interrupt->ActualLock);
@@ -275,7 +276,8 @@ KiChainedDispatch(IN PKTRAP_FRAME TrapFrame,
             }
 
             /* Check if the interrupt got handled and it's level */
-            if ((Handled) && (Interrupt->Mode == LevelSensitive)) break;
+            if ((Handled) && (Interrupt->Mode == LevelSensitive))
+                break;
 
             /* What's next? */
             NextEntry = NextEntry->Flink;
@@ -284,24 +286,23 @@ KiChainedDispatch(IN PKTRAP_FRAME TrapFrame,
             if (NextEntry == ListHead)
             {
                 /* Level should not have gotten here */
-                if (Interrupt->Mode == LevelSensitive) break;
+                if (Interrupt->Mode == LevelSensitive)
+                    break;
 
                 /* As for edge, we can only exit once nobody can handle the interrupt */
-                if (!Handled) break;
+                if (!Handled)
+                    break;
             }
 
             /* Get the interrupt object for the next pass */
             Interrupt = CONTAINING_RECORD(NextEntry, KINTERRUPT, InterruptListEntry);
         }
 
-        /* Now call the epilogue code */
-        KiExitInterrupt(TrapFrame, OldIrql, FALSE);
+        Spurious = FALSE;
     }
-    else
-    {
-        /* Now call the epilogue code */
-        KiExitInterrupt(TrapFrame, OldIrql, TRUE);
-    }
+
+    /* Now call the epilogue code */
+    KiEndInterrupt(OldIrql, Vector, TrapFrame, Spurious);
 }
 
 VOID

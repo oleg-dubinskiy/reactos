@@ -712,7 +712,9 @@
 @ fastcall KeTryToAcquireSpinLockAtDpcLevel(ptr)
 @ stdcall KeUnstackDetachProcess(ptr)
 @ stdcall KeUpdateRunTime(ptr long)
-@ fastcall KeUpdateSystemTime(ptr long long)
+;@ fastcall KeUpdateSystemTime(ptr long long)
+@ stdcall -arch=i386 KeUpdateSystemTime() #NT-specific, nonstandard parameters calling
+@ fastcall RosKeUpdateSystemTime(ptr long long long) #ReactOS-specific KeUpdateSystemTime()
 @ stdcall KeUserModeCallback(long ptr long ptr ptr)
 @ stdcall KeWaitForMultipleObjects(long ptr long long long long ptr ptr)
 @ stdcall KeWaitForMutexObject(ptr long long long ptr) KeWaitForSingleObject

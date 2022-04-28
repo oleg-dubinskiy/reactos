@@ -472,13 +472,22 @@ HalpQueryAcpiResourceRequirements(
     OUT PIO_RESOURCE_REQUIREMENTS_LIST *Requirements
 );
 
+//#ifdef __REACTOS__
 VOID
 FASTCALL
-KeUpdateSystemTime(
-    IN PKTRAP_FRAME TrapFrame,
-    IN ULONG Increment,
-    IN KIRQL OldIrql
+RosKeUpdateSystemTime(
+    _In_ PKTRAP_FRAME TrapFrame,
+    _In_ ULONG Increment,
+    _In_ UCHAR Vector,
+    _In_ KIRQL Irql
 );
+//#else
+VOID
+NTAPI
+KeUpdateSystemTime(
+    VOID
+);
+//#endif
 
 INIT_FUNCTION
 VOID

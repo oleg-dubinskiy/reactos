@@ -173,11 +173,22 @@ HalpClockInterruptHandler(IN PKTRAP_FRAME TrapFrame)
         }
 
         /* Update the system time -- the kernel will exit this trap  */
-        KeUpdateSystemTime(TrapFrame, LastIncrement, Irql);
+        RosKeUpdateSystemTime(TrapFrame, LastIncrement, 0xFF, Irql);
     }
 
     /* Spurious, just end the interrupt */
+  #ifdef __REACTOS__
     KiEoiHelper(TrapFrame);
+  #else
+    //FIXME!
+    ASSERT(FALSE);// DbgBreakPoint();
+
+    /* NT uses non-standard call parameters */
+    // ?add before?:
+    // _asm mov ebp, (IntContext->TrapFrame)
+    // _asm push ebp
+    Kei386EoiHelper(/*TrapFrame*/);
+  #endif
 }
 
 VOID

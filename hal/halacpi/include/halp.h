@@ -253,6 +253,23 @@ HalpInitializeClock(
     VOID
 );
 
+//#ifdef __REACTOS__
+VOID
+FASTCALL
+RosKeUpdateSystemTime(
+    _In_ PKTRAP_FRAME TrapFrame,
+    _In_ ULONG Increment,
+    _In_ UCHAR Vector,
+    _In_ KIRQL Irql
+);
+//#else
+VOID
+NTAPI
+KeUpdateSystemTime(
+    VOID
+);
+//#endif
+
 /* usage.c */
 INIT_FUNCTION
 VOID

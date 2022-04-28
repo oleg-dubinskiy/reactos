@@ -9,7 +9,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-#define NDEBUG
+//#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS ********************************************************************/
@@ -17,6 +17,7 @@
 LONG KiTickOffset;
 ULONG KeTimeAdjustment;
 BOOLEAN KiTimeAdjustmentEnabled = FALSE;
+BOOLEAN HalCtrlPIC = FALSE;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -59,15 +60,20 @@ KiCheckForTimerExpiration(
     }
 }
 
+//#ifdef __REACTOS__
 VOID
 FASTCALL
-KeUpdateSystemTime(IN PKTRAP_FRAME TrapFrame,
-                   IN ULONG Increment,
-                   IN KIRQL Irql)
+RosKeUpdateSystemTime(_In_ PKTRAP_FRAME TrapFrame,
+                      _In_ ULONG Increment,
+                      _In_ UCHAR Vector,
+                      _In_ KIRQL Irql)
 {
     PKPRCB Prcb = KeGetCurrentPrcb();
     ULARGE_INTEGER CurrentTime, InterruptTime;
     LONG OldTickOffset;
+
+    if (Vector == 0xFF)
+        HalCtrlPIC = TRUE;
 
     /* Check if this tick is being skipped */
     if (Prcb->SkipTick)
@@ -77,7 +83,7 @@ KeUpdateSystemTime(IN PKTRAP_FRAME TrapFrame,
 
         /* Increase interrupt count and end the interrupt */
         Prcb->InterruptCount++;
-        KiEndInterrupt(Irql, TrapFrame);
+        KiEndInterrupt(Irql, Vector, TrapFrame, FALSE);
 
         /* Note: non-x86 return back to the caller! */
         return;
@@ -132,8 +138,17 @@ KeUpdateSystemTime(IN PKTRAP_FRAME TrapFrame,
     }
 
     /* Disable interrupts and end the interrupt */
-    KiEndInterrupt(Irql, TrapFrame);
+    KiEndInterrupt(Irql, Vector, TrapFrame, FALSE);
 }
+//#else
+VOID
+NTAPI
+KeUpdateSystemTime(VOID) // #NT-specific, nonstandard parameters calling
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);// DbgBreakPoint();
+}
+//#endif
 
 VOID
 NTAPI
