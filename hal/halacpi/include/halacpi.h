@@ -98,4 +98,11 @@ HaliHaltSystem(
     VOID
 );
 
+PVOID
+NTAPI
+HalpAcpiGetTable(
+    IN PLOADER_PARAMETER_BLOCK LoaderBlock,
+    IN ULONG Signature
+);
+
 /* EOF */
