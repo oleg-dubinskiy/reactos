@@ -250,4 +250,14 @@ TYPE2_DEFINE(HalpPCIWriteUcharType2);
 TYPE2_DEFINE(HalpPCIWriteUshortType2);
 TYPE2_DEFINE(HalpPCIWriteUlongType2);
 
+VOID
+NTAPI
+HalpReadPCIConfig(
+    IN PBUS_HANDLER BusHandler,
+    IN PCI_SLOT_NUMBER Slot,
+    IN PVOID Buffer,
+    IN ULONG Offset,
+    IN ULONG Length
+);
+
 /* EOF */

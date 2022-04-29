@@ -214,6 +214,82 @@ HalpPCIConfig(IN PBUS_HANDLER BusHandler,
     PCIConfigHandler.ReleaseSynchronzation(BusHandler, OldIrql);
 }
 
+BOOLEAN
+NTAPI
+HalpValidPCISlot(IN PBUS_HANDLER BusHandler,
+                 IN PCI_SLOT_NUMBER Slot)
+{
+    PCI_SLOT_NUMBER MultiSlot;
+    PPCIPBUSDATA BusData = (PPCIPBUSDATA)BusHandler->BusData;
+    UCHAR HeaderType;
+    //ULONG Device;
+
+    /* Simple validation */
+    if (Slot.u.bits.Reserved)
+        return FALSE;
+
+    if (Slot.u.bits.DeviceNumber >= BusData->MaxDevice)
+        return FALSE;
+
+    /* Function 0 doesn't need checking */
+    if (!Slot.u.bits.FunctionNumber)
+        return TRUE;
+
+    /* Functions 0+ need Multi-Function support, so check the slot */
+    //Device = Slot.u.bits.DeviceNumber;
+    MultiSlot = Slot;
+    MultiSlot.u.bits.FunctionNumber = 0;
+
+    /* Send function 0 request to get the header back */
+    HalpReadPCIConfig(BusHandler,
+                      MultiSlot,
+                      &HeaderType,
+                      FIELD_OFFSET(PCI_COMMON_CONFIG, HeaderType),
+                      sizeof(UCHAR));
+
+    /* Now make sure the header is multi-function */
+    if (!(HeaderType & PCI_MULTIFUNCTION) || (HeaderType == 0xFF))
+        return FALSE;
+
+    return TRUE;
+}
+
+VOID
+NTAPI
+HalpReadPCIConfig(IN PBUS_HANDLER BusHandler,
+                  IN PCI_SLOT_NUMBER Slot,
+                  IN PVOID Buffer,
+                  IN ULONG Offset,
+                  IN ULONG Length)
+{
+    /* Validate the PCI Slot */
+    if (!HalpValidPCISlot(BusHandler, Slot))
+    {
+        /* Fill the buffer with invalid data */
+        RtlFillMemory(Buffer, Length, -1);
+        return;
+    }
+
+    /* Send the request */
+    HalpPCIConfig(BusHandler, Slot, Buffer, Offset, Length, PCIConfigHandler.ConfigRead);
+}
+
+VOID
+NTAPI
+HalpWritePCIConfig(IN PBUS_HANDLER BusHandler,
+                   IN PCI_SLOT_NUMBER Slot,
+                   IN PVOID Buffer,
+                   IN ULONG Offset,
+                   IN ULONG Length)
+{
+    /* Validate the PCI Slot */
+    if (!HalpValidPCISlot(BusHandler, Slot))
+        return;
+
+    /* Send the request */
+    HalpPCIConfig(BusHandler, Slot, Buffer, Offset, Length, PCIConfigHandler.ConfigWrite);
+}
+
 /* HAL PCI FOR DEBUGGING *****************************************************/
 
 INIT_FUNCTION
