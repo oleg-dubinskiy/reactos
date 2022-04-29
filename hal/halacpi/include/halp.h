@@ -54,6 +54,24 @@ HalpBiosDisplayReset(
     VOID
 );
 
+VOID
+__cdecl
+HalpRealModeStart(
+    VOID
+);
+
+VOID
+__cdecl
+HalpTrap0D(
+    VOID
+);
+
+VOID
+FASTCALL
+HalpExitToV86(
+    PKTRAP_FRAME TrapFrame
+);
+
 /* cmos.c */
 INIT_FUNCTION
 VOID

@@ -35,6 +35,7 @@ list(APPEND HAL_SOURCE
     up/processor.c)
 
 list(APPEND HAL_ASM_SOURCE
+    generic/v86.S
     pic/pic.S
     pic/pictrap.S
     pic/systimer.S)
