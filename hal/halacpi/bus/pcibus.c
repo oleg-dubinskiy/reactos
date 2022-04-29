@@ -61,6 +61,17 @@ PCI_CONFIG_HANDLER PCIConfigHandlerType2 =
     }
 };
 
+PCI_CONFIG_HANDLER PCIConfigHandler;
+
+/* PCI Operation Matrix */
+UCHAR PCIDeref[4][4] =
+{
+    {0, 1, 2, 2},   // ULONG-aligned offset
+    {1, 1, 1, 1},   // UCHAR-aligned offset
+    {2, 1, 2, 2},   // USHORT-aligned offset
+    {1, 1, 1, 1}    // UCHAR-aligned offset
+};
+
 /* TYPE 1 FUNCTIONS **********************************************************/
 
 VOID
@@ -164,6 +175,44 @@ TYPE2_READ(HalpPCIReadUlongType2, ULONG)
 TYPE2_WRITE(HalpPCIWriteUcharType2, UCHAR)
 TYPE2_WRITE(HalpPCIWriteUshortType2, USHORT)
 TYPE2_WRITE(HalpPCIWriteUlongType2, ULONG)
+
+/* PCI CONFIGURATION SPACE ***************************************************/
+
+VOID
+NTAPI
+HalpPCIConfig(IN PBUS_HANDLER BusHandler,
+              IN PCI_SLOT_NUMBER Slot,
+              IN PUCHAR Buffer,
+              IN ULONG Offset,
+              IN ULONG Length,
+              IN FncConfigIO * ConfigIO)
+{
+    KIRQL OldIrql;
+    ULONG ix;
+    ULONG Bytes;
+    UCHAR State[20];
+
+    /* Synchronize the operation */
+    PCIConfigHandler.Synchronize(BusHandler, Slot, &OldIrql, State);
+
+    /* Loop every increment */
+    while (Length)
+    {
+        /* Find out the type of read/write we need to do */
+        ix = PCIDeref[Offset % sizeof(ULONG)][Length % sizeof(ULONG)];
+
+        /* Do the read/write and return the number of bytes */
+        Bytes = ConfigIO[ix]((PPCIPBUSDATA)BusHandler->BusData, State, Buffer, Offset);
+
+        /* Increment the buffer position and offset, and decrease the length */
+        Offset += Bytes;
+        Buffer += Bytes;
+        Length -= Bytes;
+    }
+
+    /* Release the lock and PCI bus */
+    PCIConfigHandler.ReleaseSynchronzation(BusHandler, OldIrql);
+}
 
 /* HAL PCI FOR DEBUGGING *****************************************************/
 
