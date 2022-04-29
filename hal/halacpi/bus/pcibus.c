@@ -10,10 +10,80 @@
 #if defined(ALLOC_PRAGMA) && !defined(_MINIHAL_)
   #pragma alloc_text(INIT, HalpSetupPciDeviceForDebugging)
   #pragma alloc_text(INIT, HalpReleasePciDeviceForDebugging)
+  #pragma alloc_text(INIT, HalpQueryPciRegistryInfo)
 #endif
 
 /* GLOBALS *******************************************************************/
 
+KSPIN_LOCK HalpPCIConfigLock;
+
+/* Type 1 PCI Bus */
+PCI_CONFIG_HANDLER PCIConfigHandlerType1 =
+{
+    /* Synchronization */
+    (FncSync)HalpPCISynchronizeType1,
+    (FncReleaseSync)HalpPCIReleaseSynchronzationType1,
+
+    /* Read */
+    {
+        (FncConfigIO)HalpPCIReadUlongType1,
+        (FncConfigIO)HalpPCIReadUcharType1,
+        (FncConfigIO)HalpPCIReadUshortType1
+    },
+
+    /* Write */
+    {
+        (FncConfigIO)HalpPCIWriteUlongType1,
+        (FncConfigIO)HalpPCIWriteUcharType1,
+        (FncConfigIO)HalpPCIWriteUshortType1
+    }
+};
+
+/* TYPE 1 FUNCTIONS **********************************************************/
+
+VOID
+NTAPI
+HalpPCISynchronizeType1(IN PBUS_HANDLER BusHandler,
+                        IN PCI_SLOT_NUMBER Slot,
+                        IN PKIRQL Irql,
+                        IN PPCI_TYPE1_CFG_BITS PciCfg1)
+{
+    /* Setup the PCI Configuration Register */
+    PciCfg1->u.AsULONG = 0;
+    PciCfg1->u.bits.BusNumber = BusHandler->BusNumber;
+    PciCfg1->u.bits.DeviceNumber = Slot.u.bits.DeviceNumber;
+    PciCfg1->u.bits.FunctionNumber = Slot.u.bits.FunctionNumber;
+    PciCfg1->u.bits.Enable = TRUE;
+
+    /* Acquire the lock */
+    KeRaiseIrql(HIGH_LEVEL, Irql);
+    KiAcquireSpinLock(&HalpPCIConfigLock);
+}
+
+VOID
+NTAPI
+HalpPCIReleaseSynchronzationType1(IN PBUS_HANDLER BusHandler,
+                                  IN KIRQL Irql)
+{
+    PCI_TYPE1_CFG_BITS PciCfg1;
+    PPCIPBUSDATA BusData = (PPCIPBUSDATA)BusHandler->BusData;
+
+    /* Clear the PCI Configuration Register */
+    PciCfg1.u.AsULONG = 0;
+    WRITE_PORT_ULONG(BusData->Config.Type1.Address, PciCfg1.u.AsULONG);
+
+    /* Release the lock */
+    KiReleaseSpinLock(&HalpPCIConfigLock);
+    KeLowerIrql(Irql);
+}
+
+TYPE1_READ(HalpPCIReadUcharType1, UCHAR)
+TYPE1_READ(HalpPCIReadUshortType1, USHORT)
+TYPE1_READ(HalpPCIReadUlongType1, ULONG)
+
+TYPE1_WRITE(HalpPCIWriteUcharType1, UCHAR)
+TYPE1_WRITE(HalpPCIWriteUshortType1, USHORT)
+TYPE1_WRITE(HalpPCIWriteUlongType1, ULONG)
 
 /* HAL PCI FOR DEBUGGING *****************************************************/
 
