@@ -54,5 +54,6 @@
 #include "halp.h"
 #include "halacpi.h"
 #include "haldma.h"
+#include "bus.h"
 
 #endif /* _HAL_PCH_ */
