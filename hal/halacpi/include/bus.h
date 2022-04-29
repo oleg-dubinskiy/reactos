@@ -260,4 +260,26 @@ HalpReadPCIConfig(
     IN ULONG Length
 );
 
+ULONG
+NTAPI
+HalpGetPCIData(
+    IN PBUS_HANDLER BusHandler,
+    IN PBUS_HANDLER RootBusHandler,
+    IN ULONG SlotNumber,
+    IN PVOID Buffer,
+    IN ULONG Offset,
+    IN ULONG Length
+);
+
+ULONG
+NTAPI
+HalpSetPCIData(
+    IN PBUS_HANDLER BusHandler,
+    IN PBUS_HANDLER RootBusHandler,
+    IN ULONG SlotNumber,
+    IN PVOID Buffer,
+    IN ULONG Offset,
+    IN ULONG Length
+);
+
 /* EOF */

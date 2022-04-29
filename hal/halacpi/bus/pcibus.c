@@ -311,10 +311,156 @@ HalpReleasePciDeviceForDebugging(IN OUT PDEBUG_DEVICE_DESCRIPTOR PciDevice)
     return STATUS_NOT_IMPLEMENTED;
 }
 
-/* PCI CONFIGURATION SPACE ***************************************************/
-
-
 /* HAL PCI CALLBACKS *********************************************************/
+
+ULONG
+NTAPI
+HalpGetPCIData(IN PBUS_HANDLER BusHandler,
+               IN PBUS_HANDLER RootHandler,
+               IN ULONG SlotNumber,
+               IN PVOID Buffer,
+               IN ULONG Offset,
+               IN ULONG Length)
+{
+    PCI_SLOT_NUMBER Slot;
+    UCHAR PciBuffer[PCI_COMMON_HDR_LENGTH];
+    PPCI_COMMON_CONFIG PciConfig = (PPCI_COMMON_CONFIG)PciBuffer;
+    ULONG Len = 0;
+
+    Slot.u.AsULONG = SlotNumber;
+
+    /* Normalize the length */
+    if (Length > sizeof(PCI_COMMON_CONFIG))
+        Length = sizeof(PCI_COMMON_CONFIG);
+
+    /* Check if this is a vendor-specific read */
+    if (Offset >= PCI_COMMON_HDR_LENGTH)
+    {
+        /* Read the header */
+        HalpReadPCIConfig(BusHandler, Slot, PciConfig, 0, sizeof(ULONG));
+
+        /* Make sure the vendor is valid */
+        if (PciConfig->VendorID == PCI_INVALID_VENDORID)
+            return 0;
+    }
+    else
+    {
+        /* Read the entire header */
+        Len = PCI_COMMON_HDR_LENGTH;
+        HalpReadPCIConfig(BusHandler, Slot, PciConfig, 0, Len);
+
+        /* Validate the vendor ID */
+        if (PciConfig->VendorID == PCI_INVALID_VENDORID)
+        {
+            /* It's invalid, but we want to return this much */
+            Len = sizeof(USHORT);
+        }
+
+        /* Now check if there's space left */
+        if (Len < Offset)
+            return 0;
+
+        /* There is, so return what's after the offset and normalize */
+        Len -= Offset;
+        if (Len > Length)
+            Len = Length;
+
+        /* Copy the data into the caller's buffer */
+        RtlMoveMemory(Buffer, PciBuffer + Offset, Len);
+
+        /* Update buffer and offset, decrement total length */
+        Offset += Len;
+        Buffer = (PVOID)((ULONG_PTR)Buffer + Len);
+        Length -= Len;
+    }
+
+    /* Now we still have something to copy */
+    if (!Length)
+        return Len;
+
+    /* Check if it's vendor-specific data */
+    if (Offset >= PCI_COMMON_HDR_LENGTH)
+    {
+        /* Read it now */
+        HalpReadPCIConfig(BusHandler, Slot, Buffer, Offset, Length);
+        Len += Length;
+    }
+
+    /* Update the total length read */
+    return Len;
+}
+
+ULONG
+NTAPI
+HalpSetPCIData(IN PBUS_HANDLER BusHandler,
+               IN PBUS_HANDLER RootHandler,
+               IN ULONG SlotNumber,
+               IN PVOID Buffer,
+               IN ULONG Offset,
+               IN ULONG Length)
+{
+    PCI_SLOT_NUMBER Slot;
+    UCHAR PciBuffer[PCI_COMMON_HDR_LENGTH];
+    PPCI_COMMON_CONFIG PciConfig = (PPCI_COMMON_CONFIG)PciBuffer;
+    ULONG Len = 0;
+
+    Slot.u.AsULONG = SlotNumber;
+
+    /* Normalize the length */
+    if (Length > sizeof(PCI_COMMON_CONFIG))
+        Length = sizeof(PCI_COMMON_CONFIG);
+
+    /* Check if this is a vendor-specific read */
+    if (Offset >= PCI_COMMON_HDR_LENGTH)
+    {
+        /* Read the header */
+        HalpReadPCIConfig(BusHandler, Slot, PciConfig, 0, sizeof(ULONG));
+
+        /* Make sure the vendor is valid */
+        if (PciConfig->VendorID == PCI_INVALID_VENDORID)
+            return 0;
+    }
+    else
+    {
+        /* Read the entire header and validate the vendor ID */
+        Len = PCI_COMMON_HDR_LENGTH;
+        HalpReadPCIConfig(BusHandler, Slot, PciConfig, 0, Len);
+
+        if (PciConfig->VendorID == PCI_INVALID_VENDORID)
+            return 0;
+
+        /* Return what's after the offset and normalize */
+        Len -= Offset;
+        if (Len > Length)
+            Len = Length;
+
+        /* Copy the specific caller data */
+        RtlMoveMemory(PciBuffer + Offset, Buffer, Len);
+
+        /* Write the actual configuration data */
+        HalpWritePCIConfig(BusHandler, Slot, PciBuffer + Offset, Offset, Len);
+
+        /* Update buffer and offset, decrement total length */
+        Offset += Len;
+        Buffer = (PVOID)((ULONG_PTR)Buffer + Len);
+        Length -= Len;
+    }
+
+    /* Now we still have something to copy */
+    if (!Length)
+        return Len;
+
+    /* Check if it's vendor-specific data */
+    if (Offset >= PCI_COMMON_HDR_LENGTH)
+    {
+        /* Read it now */
+        HalpWritePCIConfig(BusHandler, Slot, Buffer, Offset, Length);
+        Len += Length;
+    }
+
+    /* Update the total length read */
+    return Len;
+}
 
 ULONG
 NTAPI
