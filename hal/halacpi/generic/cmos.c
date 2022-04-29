@@ -85,9 +85,29 @@ BOOLEAN
 NTAPI
 HalQueryRealTimeClock(OUT PTIME_FIELDS Time)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return FALSE;
+    HalpAcquireCmosSpinLock();
+
+    /* Loop while update is in progress */
+    while ((HalpReadCmos(RTC_REGISTER_A)) & RTC_REG_A_UIP)
+        ;
+
+    /* Set the time data */
+    Time->Second = BCD_INT(HalpReadCmos(0));
+    Time->Minute = BCD_INT(HalpReadCmos(2));
+    Time->Hour = BCD_INT(HalpReadCmos(4));
+    Time->Weekday = BCD_INT(HalpReadCmos(6));
+    Time->Day = BCD_INT(HalpReadCmos(7));
+    Time->Month = BCD_INT(HalpReadCmos(8));
+    Time->Year = BCD_INT(HalpReadCmos(9));
+    Time->Milliseconds = 0;
+
+    /* FIXME: Check century byte */
+
+    /* Compensate for the century field */
+    Time->Year += ((Time->Year > 80) ? 1900: 2000);
+
+    HalpReleaseCmosSpinLock();
+    return TRUE;
 }
 
 ARC_STATUS
