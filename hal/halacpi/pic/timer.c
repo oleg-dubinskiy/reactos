@@ -18,6 +18,7 @@ ULONG HalpCurrentRollOver;
 ULONG HalpNextMSRate = 14;
 ULONG HalpLargestClockMS = 15;
 LARGE_INTEGER HalpPerfCounter;
+LARGE_INTEGER HalpLastPerfCounter;
 ULONG HalpPerfCounterCutoff;
 BOOLEAN HalpClockSetMSRate;
 
@@ -48,6 +49,23 @@ extern BOOLEAN HalpProfilingStopped;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
+FORCEINLINE
+ULONG
+HalpRead8254Value(void)
+{
+    ULONG TimerValue;
+
+    /* Send counter latch command for channel 0 */
+    WRITE_PORT_UCHAR(TIMER_CONTROL_PORT, PIT_LATCH);
+    __nop();
+
+    /* Read the value, LSB first */
+    TimerValue = READ_PORT_UCHAR(TIMER_CHANNEL0_DATA_PORT);
+    __nop();
+    TimerValue |= (READ_PORT_UCHAR(TIMER_CHANNEL0_DATA_PORT) << 8);
+
+    return TimerValue;
+}
 VOID
 NTAPI
 HalpSetTimerRollOver(USHORT RollOver)
@@ -224,13 +242,94 @@ HalpProfileInterruptHandler(IN PKTRAP_FRAME TrapFrame)
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 
+/* FIXME */
+#if 0
+
+HALPSTALLEXECPROC      PmTimerFunction0 = HalpPmTimerStallExecProc;
+HALPCALIBRATEPERFCOUNT PmTimerFunction1 = HalpPmTimerCalibratePerfCount;
+HALPQUERYPERFCOUNT     PmTimerFunction2 = HalpPmTimerQueryPerfCount;
+HALPSETTIMEINCREMENT   PmTimerFunction3 = HalpAcpiTimerSetTimeIncrement;
+
 LARGE_INTEGER
 NTAPI
-KeQueryPerformanceCounter(PLARGE_INTEGER PerformanceFrequency)
+KeQueryPerformanceCounter(_Out_opt_ PLARGE_INTEGER PerformanceFrequency)
 {
-    LARGE_INTEGER CurrentPerfCounter = {{0,0}};
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
+    return HalpPmTimerQueryPerfCount(PerformanceFrequency);
+}
+
+#endif
+
+LARGE_INTEGER
+NTAPI
+KeQueryPerformanceCounter(OUT PLARGE_INTEGER PerformanceFrequency)
+{
+    LARGE_INTEGER CurrentPerfCounter;
+    ULONG CounterValue, ClockDelta;
+    KIRQL OldIrql;
+
+    /* If caller wants performance frequency, return hardcoded value */
+    if (PerformanceFrequency)
+        PerformanceFrequency->QuadPart = PIT_FREQUENCY;
+
+    /* Check if we were called too early */
+    if (HalpCurrentRollOver == 0)
+        return HalpPerfCounter;
+
+    /* Check if interrupts are disabled */
+    if(!(__readeflags() & EFLAGS_INTERRUPT_MASK))
+        return HalpPerfCounter;
+
+    /* Raise irql to DISPATCH_LEVEL */
+    OldIrql = KeGetCurrentIrql();
+    if (OldIrql < DISPATCH_LEVEL)
+        KfRaiseIrql(DISPATCH_LEVEL);
+
+    do
+    {
+        /* Get the current performance counter value */
+        CurrentPerfCounter = HalpPerfCounter;
+
+        /* Read the 8254 counter value */
+        CounterValue = HalpRead8254Value();
+
+        /* Repeat if the value has changed (a clock interrupt happened) */
+    }
+    while (CurrentPerfCounter.QuadPart != HalpPerfCounter.QuadPart);
+
+    /* After someone changed the clock rate, during the first clock cycle we
+       might see a counter value larger than the rollover. In this case we
+       pretend it already has the new rollover value.
+    */
+    if (CounterValue > HalpCurrentRollOver)
+        CounterValue = HalpCurrentRollOver;
+
+    /* The interrupt is issued on the falling edge of the OUT line, when the
+       counter changes from 1 to max. Calculate a clock delta, so that directly
+       after the interrupt it is 0, going up to (HalpCurrentRollOver - 1).
+    */
+    ClockDelta = HalpCurrentRollOver - CounterValue;
+
+    /* Add the clock delta */
+    CurrentPerfCounter.QuadPart += ClockDelta;
+
+    /* Check if the value is smaller then before, this means, we somehow
+       missed an interrupt. This is a sign that the timer interrupt
+       is very inaccurate. Probably a virtual machine.
+    */
+    if (CurrentPerfCounter.QuadPart < HalpLastPerfCounter.QuadPart)
+    {
+        /* We missed an interrupt. Assume we will receive it later */
+        CurrentPerfCounter.QuadPart += HalpCurrentRollOver;
+    }
+
+    /* Update the last counter value */
+    HalpLastPerfCounter = CurrentPerfCounter;
+
+    /* Restore previous irql */
+    if (OldIrql < DISPATCH_LEVEL)
+        KfLowerIrql(OldIrql);
+
+    /* Return the result */
     return CurrentPerfCounter;
 }
 

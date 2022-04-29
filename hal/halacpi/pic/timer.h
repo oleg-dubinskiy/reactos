@@ -64,12 +64,14 @@ typedef union _TIMER_CONTROL_PORT_REGISTER
    119318167 into 1193167 by ommitting the "18". This is very plausible as the
    number is quite long.
 */
-//#define PIT_FREQUENCY 1193182
+#define PIT_FREQUENCY 1193182
 
 /* These ports are controlled by the i8254 Programmable Interrupt Timer (PIT) */
 #define TIMER_CHANNEL0_DATA_PORT (PUCHAR)0x0040
 #define TIMER_CHANNEL1_DATA_PORT (PUCHAR)0x0041
 #define TIMER_CHANNEL2_DATA_PORT (PUCHAR)0x0042
 #define TIMER_CONTROL_PORT       (PUCHAR)0x0043
+
+#define PIT_LATCH  0x00
 
 /* EOF */
