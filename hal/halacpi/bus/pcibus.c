@@ -39,6 +39,28 @@ PCI_CONFIG_HANDLER PCIConfigHandlerType1 =
     }
 };
 
+/* Type 2 PCI Bus */
+PCI_CONFIG_HANDLER PCIConfigHandlerType2 =
+{
+    /* Synchronization */
+    (FncSync)HalpPCISynchronizeType2,
+    (FncReleaseSync)HalpPCIReleaseSynchronizationType2,
+
+    /* Read */
+    {
+        (FncConfigIO)HalpPCIReadUlongType2,
+        (FncConfigIO)HalpPCIReadUcharType2,
+        (FncConfigIO)HalpPCIReadUshortType2
+    },
+
+    /* Write */
+    {
+        (FncConfigIO)HalpPCIWriteUlongType2,
+        (FncConfigIO)HalpPCIWriteUcharType2,
+        (FncConfigIO)HalpPCIWriteUshortType2
+    }
+};
+
 /* TYPE 1 FUNCTIONS **********************************************************/
 
 VOID
@@ -84,6 +106,64 @@ TYPE1_READ(HalpPCIReadUlongType1, ULONG)
 TYPE1_WRITE(HalpPCIWriteUcharType1, UCHAR)
 TYPE1_WRITE(HalpPCIWriteUshortType1, USHORT)
 TYPE1_WRITE(HalpPCIWriteUlongType1, ULONG)
+
+/* TYPE 2 FUNCTIONS **********************************************************/
+
+VOID
+NTAPI
+HalpPCISynchronizeType2(IN PBUS_HANDLER BusHandler,
+                        IN PCI_SLOT_NUMBER Slot,
+                        IN PKIRQL Irql,
+                        IN PPCI_TYPE2_ADDRESS_BITS PciCfg)
+{
+    PCI_TYPE2_CSE_BITS PciCfg2Cse;
+    PPCIPBUSDATA BusData = (PPCIPBUSDATA)BusHandler->BusData;
+
+    /* Setup the configuration register */
+    PciCfg->u.AsUSHORT = 0;
+    PciCfg->u.bits.Agent = (USHORT)Slot.u.bits.DeviceNumber;
+    PciCfg->u.bits.AddressBase = (USHORT)BusData->Config.Type2.Base;
+
+    /* Acquire the lock */
+    KeRaiseIrql(HIGH_LEVEL, Irql);
+    KiAcquireSpinLock(&HalpPCIConfigLock);
+
+    /* Setup the CSE Register */
+    PciCfg2Cse.u.AsUCHAR = 0;
+    PciCfg2Cse.u.bits.Enable = TRUE;
+    PciCfg2Cse.u.bits.FunctionNumber = (UCHAR)Slot.u.bits.FunctionNumber;
+    PciCfg2Cse.u.bits.Key = -1;
+
+    /* Write the bus number and CSE */
+    WRITE_PORT_UCHAR(BusData->Config.Type2.Forward, (UCHAR)BusHandler->BusNumber);
+    WRITE_PORT_UCHAR(BusData->Config.Type2.CSE, PciCfg2Cse.u.AsUCHAR);
+}
+
+VOID
+NTAPI
+HalpPCIReleaseSynchronizationType2(IN PBUS_HANDLER BusHandler,
+                                   IN KIRQL Irql)
+{
+    PCI_TYPE2_CSE_BITS PciCfg2Cse;
+    PPCIPBUSDATA BusData = (PPCIPBUSDATA)BusHandler->BusData;
+
+    /* Clear CSE and bus number */
+    PciCfg2Cse.u.AsUCHAR = 0;
+    WRITE_PORT_UCHAR(BusData->Config.Type2.CSE, PciCfg2Cse.u.AsUCHAR);
+    WRITE_PORT_UCHAR(BusData->Config.Type2.Forward, 0);
+
+    /* Release the lock */
+    KiReleaseSpinLock(&HalpPCIConfigLock);
+    KeLowerIrql(Irql);
+}
+
+TYPE2_READ(HalpPCIReadUcharType2, UCHAR)
+TYPE2_READ(HalpPCIReadUshortType2, USHORT)
+TYPE2_READ(HalpPCIReadUlongType2, ULONG)
+
+TYPE2_WRITE(HalpPCIWriteUcharType2, UCHAR)
+TYPE2_WRITE(HalpPCIWriteUshortType2, USHORT)
+TYPE2_WRITE(HalpPCIWriteUlongType2, ULONG)
 
 /* HAL PCI FOR DEBUGGING *****************************************************/
 

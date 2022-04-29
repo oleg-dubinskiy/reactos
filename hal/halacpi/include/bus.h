@@ -46,6 +46,26 @@
                 *((POINTER_TO_(y))Buffer));                                    \
     TYPE1_END(y)
 
+/* Defines a PCI Register Read/Write Type 2 Routine Prologue and Epilogue */
+#define TYPE2_START(x, y)                                               \
+    TYPE_DEFINE(x, PPCI_TYPE2_ADDRESS_BITS)                             \
+{                                                                       \
+    PciCfg->u.bits.RegisterNumber = (USHORT)Offset;
+
+/* PCI Register Read Type 2 Routine */
+#define TYPE2_READ(x, y)                                                \
+    TYPE2_START(x, y)                                                   \
+    *((POINTER_TO_(y))Buffer) =                                         \
+        READ_FROM(y)((POINTER_TO_(y))(ULONG_PTR)PciCfg->u.AsUSHORT);    \
+    TYPE2_END(y)
+
+/* PCI Register Write Type 2 Routine */
+#define TYPE2_WRITE(x, y)                                               \
+    TYPE2_START(x, y)                                                   \
+    WRITE_TO(y)((POINTER_TO_(y))(ULONG_PTR)PciCfg->u.AsUSHORT,          \
+                *((POINTER_TO_(y))Buffer));                             \
+    TYPE2_END(y)
+
 typedef NTSTATUS
 (NTAPI * PciIrqRange)(
     IN PBUS_HANDLER BusHandler,
@@ -122,6 +142,7 @@ typedef struct _PCI_REGISTRY_INFO_INTERNAL
     PCI_CARD_DESCRIPTOR CardList[ANYSIZE_ARRAY];
 } PCI_REGISTRY_INFO_INTERNAL, *PPCI_REGISTRY_INFO_INTERNAL;
 
+/* PCI Type 1 Configuration Register */
 typedef struct _PCI_TYPE1_CFG_BITS
 {
     union
@@ -141,6 +162,37 @@ typedef struct _PCI_TYPE1_CFG_BITS
     } u;
 } PCI_TYPE1_CFG_BITS, *PPCI_TYPE1_CFG_BITS;
 
+/* PCI Type 2 CSE Register */
+typedef struct _PCI_TYPE2_CSE_BITS
+{
+    union
+    {
+        struct
+        {
+            UCHAR Enable:1;
+            UCHAR FunctionNumber:3;
+            UCHAR Key:4;
+        } bits;
+
+        UCHAR AsUCHAR;
+    } u;
+} PCI_TYPE2_CSE_BITS, PPCI_TYPE2_CSE_BITS;
+
+/* PCI Type 2 Address Register */
+typedef struct _PCI_TYPE2_ADDRESS_BITS
+{
+    union
+    {
+        struct
+        {
+            USHORT RegisterNumber:8;
+            USHORT Agent:4;
+            USHORT AddressBase:4;
+        } bits;
+
+        USHORT AsUSHORT;
+    } u;
+} PCI_TYPE2_ADDRESS_BITS, *PPCI_TYPE2_ADDRESS_BITS;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -173,5 +225,29 @@ TYPE1_DEFINE(HalpPCIReadUlongType1);
 TYPE1_DEFINE(HalpPCIWriteUcharType1);
 TYPE1_DEFINE(HalpPCIWriteUshortType1);
 TYPE1_DEFINE(HalpPCIWriteUlongType1);
+
+VOID
+NTAPI
+HalpPCISynchronizeType2(
+    IN PBUS_HANDLER BusHandler,
+    IN PCI_SLOT_NUMBER Slot,
+    IN PKIRQL Irql,
+    IN PPCI_TYPE2_ADDRESS_BITS PciCfg
+);
+
+VOID
+NTAPI
+HalpPCIReleaseSynchronizationType2(
+    IN PBUS_HANDLER BusHandler,
+    IN KIRQL Irql
+);
+
+TYPE2_DEFINE(HalpPCIReadUcharType2);
+TYPE2_DEFINE(HalpPCIReadUshortType2);
+TYPE2_DEFINE(HalpPCIReadUlongType2);
+
+TYPE2_DEFINE(HalpPCIWriteUcharType2);
+TYPE2_DEFINE(HalpPCIWriteUshortType2);
+TYPE2_DEFINE(HalpPCIWriteUlongType2);
 
 /* EOF */
