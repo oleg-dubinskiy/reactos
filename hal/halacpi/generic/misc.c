@@ -54,6 +54,30 @@ HalpFlushTLB(VOID)
     __writeeflags(Flags);
 }
 
+NTSTATUS
+NTAPI
+HalpOpenRegistryKey(IN PHANDLE KeyHandle,
+                    IN HANDLE RootKey,
+                    IN PUNICODE_STRING KeyName,
+                    IN ACCESS_MASK DesiredAccess,
+                    IN BOOLEAN Create)
+{
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    ULONG Disposition;
+
+    /* Setup the attributes we received */
+    InitializeObjectAttributes(&ObjectAttributes, KeyName, OBJ_CASE_INSENSITIVE, RootKey, NULL);
+
+    if (!Create)
+    {
+        /* Open the key */
+        return ZwOpenKey(KeyHandle, DesiredAccess, &ObjectAttributes);
+    }
+
+    /* Create the key */
+    return ZwCreateKey(KeyHandle, DesiredAccess, &ObjectAttributes, 0, NULL, REG_OPTION_VOLATILE, &Disposition);
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 VOID
