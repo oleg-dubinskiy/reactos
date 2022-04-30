@@ -11,11 +11,14 @@
   #pragma alloc_text(INIT, HalpSetupPciDeviceForDebugging)
   #pragma alloc_text(INIT, HalpReleasePciDeviceForDebugging)
   #pragma alloc_text(INIT, HalpQueryPciRegistryInfo)
+  #pragma alloc_text(INIT, HalpInitializePciStubs)
 #endif
 
 /* GLOBALS *******************************************************************/
 
 KSPIN_LOCK HalpPCIConfigLock;
+ULONG HalpMaxPciBus;
+BOOLEAN HalpPCIConfigInitialized;
 
 /* Type 1 PCI Bus */
 PCI_CONFIG_HANDLER PCIConfigHandlerType1 =
@@ -903,6 +906,117 @@ Finish:
     PciRegistryInfo->ElementCount = ElementCount;
 
     return PciRegistryInfo;
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializePciStubs(VOID)
+{
+    PPCI_REGISTRY_INFO_INTERNAL PciRegistryInfo;
+    UCHAR PciType;
+    PPCIPBUSDATA BusData = (PPCIPBUSDATA)HalpFakePciBusHandler.BusData;
+    ULONG Bus;
+    PCI_SLOT_NUMBER Slot;
+    ULONG VendorId = 0;
+    ULONG MaxPciBusNumber;
+
+    /* Query registry information */
+    PciRegistryInfo = HalpQueryPciRegistryInfo();
+    if (!PciRegistryInfo)
+    {
+        /* Assume type 1 */
+        PciType = 1;
+
+        /* Force a manual bus scan later */
+        MaxPciBusNumber = MAXULONG;
+    }
+    else
+    {
+        /* Get the PCI type */
+        PciType = (PciRegistryInfo->HardwareMechanism & 0xF);
+
+        /* Get MaxPciBusNumber and make it 0-based */
+        MaxPciBusNumber = (PciRegistryInfo->NoBuses - 1);
+
+        /* Free the info structure */
+        ExFreePoolWithTag(PciRegistryInfo, TAG_HAL);
+    }
+
+    /* Initialize the PCI lock */
+    KeInitializeSpinLock(&HalpPCIConfigLock);
+
+    /* Check the type of PCI bus */
+    switch (PciType)
+    {
+        /* Type 1 PCI Bus */
+        case 1:
+
+            /* Copy the Type 1 handler data */
+            RtlCopyMemory(&PCIConfigHandler, &PCIConfigHandlerType1, sizeof(PCIConfigHandler));
+
+            /* Set correct I/O Ports */
+            BusData->Config.Type1.Address = PCI_TYPE1_ADDRESS_PORT;
+            BusData->Config.Type1.Data = PCI_TYPE1_DATA_PORT;
+            break;
+
+        /* Type 2 PCI Bus */
+        case 2:
+
+            /* Copy the Type 2 handler data */
+            RtlCopyMemory(&PCIConfigHandler, &PCIConfigHandlerType2, sizeof(PCIConfigHandler));
+
+            /* Set correct I/O Ports */
+            BusData->Config.Type2.CSE = PCI_TYPE2_CSE_PORT;
+            BusData->Config.Type2.Forward = PCI_TYPE2_FORWARD_PORT;
+            BusData->Config.Type2.Base = PCI_TYPE2_ADDRESS_BASE;
+
+            /* Only 16 devices supported, not 32 */
+            BusData->MaxDevice = 0x10;
+            break;
+
+        default:
+            /* Invalid type */
+            DbgPrint("HAL: Unknown PCI type\n");
+    }
+
+    /* Run a forced bus scan if needed */
+    if (MaxPciBusNumber != MAXULONG)
+        goto Exit;
+
+    /* Initialize the max bus number to 0xFF */
+    HalpMaxPciBus = 0xFF;
+
+    /* Initialize the counter */
+    MaxPciBusNumber = 0;
+
+    /* Loop all possible buses */
+    for (Bus = 0; Bus < HalpMaxPciBus; Bus++)
+    {
+        /* Loop all devices */
+        for (Slot.u.AsULONG = 0; Slot.u.AsULONG < BusData->MaxDevice; Slot.u.AsULONG++)
+        {
+            /* Query the interface */
+            if (HaliPciInterfaceReadConfig(NULL, Bus, Slot, &VendorId, 0, sizeof(ULONG)))
+            {
+                /* Validate the vendor ID */
+                if ((VendorId & 0xFFFF) != PCI_INVALID_VENDORID)
+                {
+                    /* Set this as the maximum ID */
+                    MaxPciBusNumber = Bus;
+                    break;
+                }
+            }
+        }
+    }
+
+Exit:
+
+    /* Set the real max bus number */
+    HalpMaxPciBus = MaxPciBusNumber;
+
+    /* We're done */
+    HalpPCIConfigInitialized = TRUE;
 }
 
 /* EOF */

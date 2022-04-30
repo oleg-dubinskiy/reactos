@@ -218,6 +218,12 @@ HaliPciInterfaceWriteConfig(
     _In_ ULONG Length
 );
 
+VOID
+NTAPI
+HalpInitializePciStubs(
+    VOID
+);
+
 /* pic.c */
 VOID
 NTAPI
