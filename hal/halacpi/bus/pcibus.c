@@ -659,16 +659,24 @@ HalpAssignPCISlotResources(IN PBUS_HANDLER BusHandler,
 
 ULONG
 NTAPI
-HaliPciInterfaceReadConfig(_In_ PVOID Context,
+HaliPciInterfaceReadConfig(_In_ PBUS_HANDLER RootBusHandler,
                            _In_ ULONG BusNumber,
-                           _In_ ULONG SlotNumber,
+                           _In_ PCI_SLOT_NUMBER SlotNumber,
                            _In_ PVOID Buffer,
                            _In_ ULONG Offset,
                            _In_ ULONG Length)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);// HalpDbgBreakPointEx();
-    return 0;
+    BUS_HANDLER BusHandler;
+
+    /* Setup fake PCI Bus handler */
+    RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BUS_HANDLER));
+    BusHandler.BusNumber = BusNumber;
+
+    /* Read configuration data */
+    HalpReadPCIConfig(&BusHandler, SlotNumber, Buffer, Offset, Length);
+
+    /* Return length */
+    return Length;
 }
 
 ULONG
