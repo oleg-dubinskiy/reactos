@@ -137,8 +137,8 @@ HalpBuildPartialFromAddress(IN INTERFACE_TYPE Interface,
         TranslatedDescriptor->Flags = CM_RESOURCE_PORT_MEMORY;
 }
 
+static
 VOID
-NTAPI
 HalpAddDescriptors(IN PCM_PARTIAL_RESOURCE_LIST List,
                    IN OUT PCM_PARTIAL_RESOURCE_DESCRIPTOR * Descriptor,
                    IN PCM_PARTIAL_RESOURCE_DESCRIPTOR NewDescriptor)
@@ -151,6 +151,45 @@ HalpAddDescriptors(IN PCM_PARTIAL_RESOURCE_LIST List,
 
     /* Move pointer to the next partial descriptor */
     (*Descriptor)++;
+}
+
+static
+VOID
+HalpGetResourceSortValue(IN PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor,
+                         OUT PULONG Scale,
+                         OUT PLARGE_INTEGER Value)
+{
+    /* Sorting depends on resource type */
+    switch (Descriptor->Type)
+    {
+        case CmResourceTypeInterrupt:
+
+            /* Interrupt goes by level */
+            *Scale = 0;
+            *Value = RtlConvertUlongToLargeInteger(Descriptor->u.Interrupt.Level);
+            break;
+
+        case CmResourceTypePort:
+
+            /* Port goes by port address */
+            *Scale = 1;
+            *Value = Descriptor->u.Port.Start;
+            break;
+
+        case CmResourceTypeMemory:
+
+            /* Memory goes by base address */
+            *Scale = 2;
+            *Value = Descriptor->u.Memory.Start;
+            break;
+
+        default:
+
+            /* Anything else */
+            *Scale = 4;
+            *Value = RtlConvertUlongToLargeInteger(0);
+            break;
+    }
 }
 
 INIT_FUNCTION
