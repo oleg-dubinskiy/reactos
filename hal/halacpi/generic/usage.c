@@ -7,6 +7,7 @@
 
 #if defined(ALLOC_PRAGMA) && !defined(_MINIHAL_)
   #pragma alloc_text(INIT, HalpRegisterVector)
+  #pragma alloc_text(INIT, HalpReportResourceUsage)
 #endif
 
 /* GLOBALS ********************************************************************/
@@ -34,6 +35,16 @@ HalpRegisterVector(IN UCHAR Flags,
     /* Save the vector data */
     HalpIDTUsage[SystemVector].Irql  = Irql;
     HalpIDTUsage[SystemVector].BusReleativeVector = (UCHAR)BusVector;
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpReportResourceUsage(IN PUNICODE_STRING HalName,
+                        IN INTERFACE_TYPE InterfaceType)
+{
+    DPRINT1("HalpReportResourceUsage: %wZ Detected\n", HalName);
+    ASSERT(0);// HalpDbgBreakPointEx();
 }
 
 /* EOF */

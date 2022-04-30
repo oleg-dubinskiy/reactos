@@ -105,4 +105,26 @@ HalpAcpiGetTable(
     IN ULONG Signature
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpReportResourceUsage(
+    IN PUNICODE_STRING HalName,
+    IN INTERFACE_TYPE InterfaceType
+);
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializePciBus(
+    VOID
+);
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpGetNMICrashFlag(
+    VOID
+);
+
 /* EOF */

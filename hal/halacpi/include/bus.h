@@ -205,6 +205,23 @@ typedef struct _PCI_TYPE2_ADDRESS_BITS
     } u;
 } PCI_TYPE2_ADDRESS_BITS, *PPCI_TYPE2_ADDRESS_BITS;
 
+typedef struct _PCI_TYPE1_CFG_CYCLE_BITS
+{
+    union
+    {
+        struct
+        {
+            ULONG Reserved1:2;
+            ULONG RegisterNumber:6;
+            ULONG FunctionNumber:3;
+            ULONG DeviceNumber:5;
+            ULONG BusNumber:8;
+            ULONG Reserved2:8;
+        } bits;
+        ULONG AsULONG;
+    } u;
+} PCI_TYPE1_CFG_CYCLE_BITS, *PPCI_TYPE1_CFG_CYCLE_BITS;
+
 /* FUNCTIONS *****************************************************************/
 
 PPCI_REGISTRY_INFO_INTERNAL
@@ -314,6 +331,13 @@ HalpAssignPCISlotResources(
     IN PDEVICE_OBJECT DeviceObject OPTIONAL,
     IN ULONG Slot,
     IN OUT PCM_RESOURCE_LIST *pAllocatedResources
+);
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpRegisterPciDebuggingDeviceInfo(
+    VOID
 );
 
 /* EOF */

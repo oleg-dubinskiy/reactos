@@ -12,6 +12,7 @@
   #pragma alloc_text(INIT, HalpReleasePciDeviceForDebugging)
   #pragma alloc_text(INIT, HalpQueryPciRegistryInfo)
   #pragma alloc_text(INIT, HalpInitializePciStubs)
+  #pragma alloc_text(INIT, HalpRegisterPciDebuggingDeviceInfo)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -118,6 +119,8 @@ BUS_HANDLER HalpFakePciBusHandler =
     NULL,
     NULL
 };
+
+PCI_TYPE1_CFG_CYCLE_BITS HalpPciDebuggingDevice[2] = {{{{0}}}};
 
 /* TYPE 1 FUNCTIONS **********************************************************/
 
@@ -702,6 +705,36 @@ HaliPciInterfaceWriteConfig(_In_ PBUS_HANDLER RootBusHandler,
 
     /* Return length */
     return Length;
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpRegisterPciDebuggingDeviceInfo(VOID)
+{
+    BOOLEAN Found = FALSE;
+    ULONG ix;
+
+    PAGED_CODE();
+
+    /* Loop PCI debugging devices */
+    for (ix = 0; ix < 2; ix++)
+    {
+        /* Reserved bit is set if we found one */
+        if (HalpPciDebuggingDevice[ix].u.bits.Reserved1)
+        {
+            Found = TRUE;
+            break;
+        }
+    }
+
+    /* Bail out if there aren't any */
+    if (!Found)
+        return;
+
+    /* FIXME: TODO */
+    UNIMPLEMENTED_DBGBREAK("You have implemented the KD routines for searching PCI debugger"
+                           "devices, but you have forgotten to implement this routine\n");
 }
 
 INIT_FUNCTION

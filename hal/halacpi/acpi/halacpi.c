@@ -8,9 +8,14 @@
 #if defined(ALLOC_PRAGMA) && !defined(_MINIHAL_)
   #pragma alloc_text(INIT, HalAcpiGetTable)
   #pragma alloc_text(INIT, HalpCheckPowerButton)
+  #pragma alloc_text(INIT, HalpGetNMICrashFlag)
+  #pragma alloc_text(INIT, HalpInitializePciBus)
+  #pragma alloc_text(INIT, HalReportResourceUsage)
 #endif
 
 /* GLOBALS ********************************************************************/
+
+PWCHAR HalName = L"ACPI Compatible Eisa/Isa HAL";
 
 PHYSICAL_ADDRESS HalpMaxHotPlugMemoryAddress;
 PHYSICAL_ADDRESS HalpLowStubPhysicalAddress;
@@ -29,9 +34,11 @@ ULONG HalpWAETDeviceFlags = 0;
 ULONG HalpInvalidAcpiTable;
 //ULONG HalpShutdownContext = 0;
 BOOLEAN HalpProcessedACPIPhase0;
+BOOLEAN HalpNMIDumpFlag;
 
 extern BOOLEAN LessThan16Mb;
 extern BOOLEAN HalpPhysicalMemoryMayAppearAbove4GB;
+extern ULONG HalpBusType;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -894,14 +901,117 @@ HaliHaltSystem(VOID)
     ASSERT(0);//HalpDbgBreakPointEx();
 }
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpGetNMICrashFlag(VOID)
+{
+    UNICODE_STRING ValueName;
+    UNICODE_STRING KeyName = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\CrashControl");
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    ULONG ResultLength;
+    HANDLE Handle;
+    NTSTATUS Status;
+    KEY_VALUE_PARTIAL_INFORMATION KeyValueInformation;
+
+    /* Set default */
+    HalpNMIDumpFlag = 0;
+
+    /* Initialize attributes */
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &KeyName,
+                               OBJ_CASE_INSENSITIVE,
+                               NULL,
+                               NULL);
+
+    /* Open crash key */
+    Status = ZwOpenKey(&Handle, KEY_READ, &ObjectAttributes);
+    if (NT_SUCCESS(Status))
+    {
+        /* Query key value */
+        RtlInitUnicodeString(&ValueName, L"NMICrashDump");
+        Status = ZwQueryValueKey(Handle,
+                                 &ValueName,
+                                 KeyValuePartialInformation,
+                                 &KeyValueInformation,
+                                 sizeof(KeyValueInformation),
+                                 &ResultLength);
+        if (NT_SUCCESS(Status))
+        {
+            /* Check for valid data */
+            if (ResultLength == sizeof(KEY_VALUE_PARTIAL_INFORMATION))
+            {
+                /* Read the flag */
+                HalpNMIDumpFlag = KeyValueInformation.Data[0];
+            }
+        }
+
+        /* We're done */
+        ZwClose(Handle);
+    }
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializePciBus(VOID)
+{
+    /* Setup the PCI stub support */
+    HalpInitializePciStubs();
+
+    /* Set the NMI crash flag */
+    HalpGetNMICrashFlag();
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
+INIT_FUNCTION
 VOID
 NTAPI
 HalReportResourceUsage(VOID)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
+    INTERFACE_TYPE InterfaceType;
+    UNICODE_STRING HalString;
+
+    DPRINT("HalReportResourceUsage()\n");
+
+    /* FIXME: HalpDmaFinalizeDoubleBufferingDisposition() */
+    /* FIXME: Initialize DMA 64-bit support */
+    /* FIXME: Initialize MCA bus */
+
+    /* Initialize PCI bus. */
+    HalpInitializePciBus();
+
+    /* What kind of bus is this? */
+    switch (HalpBusType)
+    {
+        /* ISA Machine */
+        case MACHINE_TYPE_ISA:
+            InterfaceType = Isa;
+            break;
+
+        /* EISA Machine */
+        case MACHINE_TYPE_EISA:
+            InterfaceType = Eisa;
+            break;
+
+        /* MCA Machine */
+        case MACHINE_TYPE_MCA:
+            InterfaceType = MicroChannel;
+            break;
+
+        /* Unknown */
+        default:
+            InterfaceType = Internal;
+            break;
+    }
+
+    /* Build HAL usage */
+    RtlInitUnicodeString(&HalString, HalName);
+    HalpReportResourceUsage(&HalString, InterfaceType);
+
+    /* Setup PCI debugging and Hibernation */
+    HalpRegisterPciDebuggingDeviceInfo();
 }
 
 ULONG
