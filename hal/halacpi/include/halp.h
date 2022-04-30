@@ -334,4 +334,15 @@ HalpBuildPartialFromIdt(
     IN PCM_PARTIAL_RESOURCE_DESCRIPTOR TranslatedDescriptor
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpBuildPartialFromAddress(
+    IN INTERFACE_TYPE Interface,
+    IN PADDRESS_USAGE CurrentAddress,
+    IN ULONG Element,
+    IN PCM_PARTIAL_RESOURCE_DESCRIPTOR RawDescriptor,
+    IN PCM_PARTIAL_RESOURCE_DESCRIPTOR TranslatedDescriptor
+);
+
 /* EOF */
