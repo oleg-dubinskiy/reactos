@@ -20,6 +20,9 @@ PUCHAR KdComPortInUse;
 IDTUsageFlags HalpIDTUsageFlags[MAXIMUM_IDTVECTOR + 1];
 IDTUsage HalpIDTUsage[MAXIMUM_IDTVECTOR + 1];
 
+UCHAR HalpSerialLen;
+CHAR HalpSerialNumber[31];
+
 extern KAFFINITY HalpActiveProcessors;
 
 /* FUNCTIONS ******************************************************************/
@@ -70,6 +73,36 @@ HalpMarkAcpiHal(VOID)
 
     /* Return status */
     return Status;
+}
+
+static
+VOID
+HalpReportSerialNumber(VOID)
+{
+    UNICODE_STRING KeyString;
+    HANDLE Handle;
+    NTSTATUS Status;
+
+    /* Make sure there is a serial number */
+    if (!HalpSerialLen)
+        return;
+
+    /* Open the system key */
+    RtlInitUnicodeString(&KeyString, L"\\Registry\\Machine\\Hardware\\Description\\System");
+
+    Status = HalpOpenRegistryKey(&Handle, 0, &KeyString, KEY_ALL_ACCESS, FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpReportSerialNumber: Status %X\n", Status);
+        return;
+    }
+
+    /* Add the serial number */
+    RtlInitUnicodeString(&KeyString, L"Serial Number");
+    ZwSetValueKey(Handle, &KeyString, 0, REG_BINARY, HalpSerialNumber, HalpSerialLen);
+
+    /* Close the handle */
+    ZwClose(Handle);
 }
 
 INIT_FUNCTION
