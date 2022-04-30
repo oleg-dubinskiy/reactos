@@ -137,6 +137,22 @@ HalpBuildPartialFromAddress(IN INTERFACE_TYPE Interface,
         TranslatedDescriptor->Flags = CM_RESOURCE_PORT_MEMORY;
 }
 
+VOID
+NTAPI
+HalpAddDescriptors(IN PCM_PARTIAL_RESOURCE_LIST List,
+                   IN OUT PCM_PARTIAL_RESOURCE_DESCRIPTOR * Descriptor,
+                   IN PCM_PARTIAL_RESOURCE_DESCRIPTOR NewDescriptor)
+{
+    /* We have written a new partial descriptor */
+    List->Count++;
+
+    /* Copy new descriptor into the actual list */
+    RtlCopyMemory(*Descriptor, NewDescriptor, sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+
+    /* Move pointer to the next partial descriptor */
+    (*Descriptor)++;
+}
+
 INIT_FUNCTION
 VOID
 NTAPI
