@@ -963,7 +963,18 @@ HalpInitializePciBus(VOID)
     HalpGetNMICrashFlag();
 }
 
-/* PUBLIC FUNCTIONS **********************************************************/
+/BOOLEAN
+NTAPI
+HalpGetDebugPortTable(VOID)
+{
+    DPRINT("HalpGetDebugPortTable()\n");
+    if (!HalpDebugPortTable)
+        return FALSE;
+
+    return (HalpDebugPortTable->BaseAddress.AddressSpaceID == 1);
+}
+
+* PUBLIC FUNCTIONS **********************************************************/
 
 INIT_FUNCTION
 VOID

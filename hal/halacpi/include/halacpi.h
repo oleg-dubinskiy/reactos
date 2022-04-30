@@ -127,4 +127,10 @@ HalpGetNMICrashFlag(
     VOID
 );
 
+BOOLEAN
+NTAPI
+HalpGetDebugPortTable(
+    VOID
+);
+
 /* EOF */
