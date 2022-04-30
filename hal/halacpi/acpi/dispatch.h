@@ -54,9 +54,9 @@ typedef ULONG
 
 typedef ULONG
 (NTAPI * PHAL_PCI_INTERFACE_WRITE_CONFIG)(
-    _In_ PVOID Context,
+    _In_ PBUS_HANDLER RootBusHandler,
     _In_ ULONG BusNumber,
-    _In_ ULONG SlotNumber,
+    _In_ PCI_SLOT_NUMBER SlotNumber,
     _In_ PVOID Buffer,
     _In_ ULONG Offset,
     _In_ ULONG Length

@@ -210,12 +210,12 @@ HaliPciInterfaceReadConfig(
 ULONG
 NTAPI
 HaliPciInterfaceWriteConfig(
-    IN IN PVOID Context,
-    IN ULONG BusNumber,
-    IN ULONG SlotNumber,
-    IN PVOID Buffer,
-    IN ULONG Offset,
-    IN ULONG Length
+    _In_ PBUS_HANDLER RootBusHandler,
+    _In_ ULONG BusNumber,
+    _In_ PCI_SLOT_NUMBER SlotNumber,
+    _In_ PVOID Buffer,
+    _In_ ULONG Offset,
+    _In_ ULONG Length
 );
 
 /* pic.c */

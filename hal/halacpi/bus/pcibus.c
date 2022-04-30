@@ -681,16 +681,24 @@ HaliPciInterfaceReadConfig(_In_ PBUS_HANDLER RootBusHandler,
 
 ULONG
 NTAPI
-HaliPciInterfaceWriteConfig(_In_ PVOID Context,
+HaliPciInterfaceWriteConfig(_In_ PBUS_HANDLER RootBusHandler,
                             _In_ ULONG BusNumber,
-                            _In_ ULONG SlotNumber,
+                            _In_ PCI_SLOT_NUMBER SlotNumber,
                             _In_ PVOID Buffer,
                             _In_ ULONG Offset,
                             _In_ ULONG Length)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);// HalpDbgBreakPointEx();
-    return 0;
+    BUS_HANDLER BusHandler;
+
+    /* Setup fake PCI Bus handler */
+    RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BUS_HANDLER));
+    BusHandler.BusNumber = BusNumber;
+
+    /* Write configuration data */
+    HalpWritePCIConfig(&BusHandler, SlotNumber, Buffer, Offset, Length);
+
+    /* Return length */
+    return Length;
 }
 
 INIT_FUNCTION
