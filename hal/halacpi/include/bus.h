@@ -2,6 +2,8 @@
 
 /* INCLUDES ******************************************************************/
 
+#define PCI_ADDRESS_MEMORY_SPACE 0x00000000
+
 /* Helper Macros */
 #define PASTE2(x,y)     x ## y
 #define POINTER_TO_(x)  PASTE2(P,x)
@@ -260,6 +262,16 @@ HalpReadPCIConfig(
     IN ULONG Length
 );
 
+VOID
+NTAPI
+HalpWritePCIConfig(
+    IN PBUS_HANDLER BusHandler,
+    IN PCI_SLOT_NUMBER Slot,
+    IN PVOID Buffer,
+    IN ULONG Offset,
+    IN ULONG Length
+);
+
 ULONG
 NTAPI
 HalpGetPCIData(
@@ -280,6 +292,19 @@ HalpSetPCIData(
     IN PVOID Buffer,
     IN ULONG Offset,
     IN ULONG Length
+);
+
+NTSTATUS
+NTAPI
+HalpAssignPCISlotResources(
+    IN PBUS_HANDLER BusHandler,
+    IN PBUS_HANDLER RootHandler,
+    IN PUNICODE_STRING RegistryPath,
+    IN PUNICODE_STRING DriverClassName OPTIONAL,
+    IN PDRIVER_OBJECT DriverObject,
+    IN PDEVICE_OBJECT DeviceObject OPTIONAL,
+    IN ULONG Slot,
+    IN OUT PCM_RESOURCE_LIST *pAllocatedResources
 );
 
 /* EOF */
