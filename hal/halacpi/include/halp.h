@@ -325,4 +325,13 @@ HalpReportResourceUsage(
     IN INTERFACE_TYPE InterfaceType
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpBuildPartialFromIdt(
+    IN ULONG Entry,
+    IN PCM_PARTIAL_RESOURCE_DESCRIPTOR RawDescriptor,
+    IN PCM_PARTIAL_RESOURCE_DESCRIPTOR TranslatedDescriptor
+);
+
 /* EOF */
