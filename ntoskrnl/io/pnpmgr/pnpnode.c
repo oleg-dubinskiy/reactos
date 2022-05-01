@@ -17,6 +17,8 @@
 /* GLOBALS *******************************************************************/
 
 extern KSPIN_LOCK IopPnPSpinLock;
+extern ERESOURCE PiEngineLock;
+extern ERESOURCE PiDeviceTreeLock;
 
 /* DATA **********************************************************************/
 
@@ -69,6 +71,63 @@ PipAllocateDeviceNode(IN PDEVICE_OBJECT PhysicalDeviceObject)
 
     /* Return the node */
     return DeviceNode;
+}
+
+VOID
+NTAPI
+PpDevNodeLockTree(
+    _In_ ULONG LockLevel)
+{
+    ULONG SharedCount;
+    ULONG ix;
+
+    PAGED_CODE();
+    DPRINT("PpDevNodeLockTree: LockLevel %X\n", LockLevel);
+
+    KeEnterCriticalRegion();
+
+    if (LockLevel == 0)
+    {
+        ExAcquireSharedWaitForExclusive(&PiDeviceTreeLock, TRUE);
+        return;
+    }
+
+    if (LockLevel == 1)
+    {
+        ExAcquireResourceExclusiveLite(&PiEngineLock, TRUE);
+        ExAcquireSharedWaitForExclusive(&PiDeviceTreeLock, TRUE);
+        return;
+    }
+
+    if (LockLevel == 2)
+    {
+        ExAcquireResourceExclusiveLite(&PiEngineLock, TRUE);
+        ExAcquireResourceExclusiveLite(&PiDeviceTreeLock, TRUE);
+    }
+    else if (LockLevel == 3)
+    {
+        ASSERT(ExIsResourceAcquiredExclusiveLite(&PiEngineLock));
+        ASSERT(ExIsResourceAcquiredSharedLite(&PiDeviceTreeLock) &&
+              (!ExIsResourceAcquiredExclusiveLite(&PiDeviceTreeLock)));
+
+        SharedCount = ExIsResourceAcquiredSharedLite(&PiDeviceTreeLock);
+
+        for (ix = 0; ix < SharedCount; ix++)
+        {
+            ExReleaseResourceLite(&PiDeviceTreeLock);
+        }
+
+        for (ix = 0; ix < SharedCount; ix++)
+        {
+            ExAcquireResourceExclusiveLite(&PiDeviceTreeLock, TRUE);
+        }
+    }
+    else
+    {
+        ASSERT(FALSE);
+    }
+
+    DPRINT("PpDevNodeLockTree: Locked\n");
 }
 
 VOID

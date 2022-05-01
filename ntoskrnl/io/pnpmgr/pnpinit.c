@@ -32,6 +32,8 @@ LONG IopNumberDeviceNodes = 0;
 KSPIN_LOCK IopPnPSpinLock;
 LIST_ENTRY IopPnpEnumerationRequestList;
 BOOLEAN PnPBootDriversLoaded = FALSE;
+ERESOURCE PiEngineLock;
+ERESOURCE PiDeviceTreeLock;
 
 ARBITER_INSTANCE IopRootBusNumberArbiter;
 ARBITER_INSTANCE IopRootIrqArbiter;
@@ -622,6 +624,8 @@ IopInitializePlugPlayServices(
     InitializeListHead(&IopDeviceActionRequestList);
     InitializeListHead(&IopPnpEnumerationRequestList);
     KeInitializeEvent(&PiEnumerationLock, NotificationEvent, TRUE);
+    ExInitializeResourceLite(&PiEngineLock);
+    ExInitializeResourceLite(&PiDeviceTreeLock);
 
     /* Get the default interface */
     PnpDefaultInterfaceType = IopDetermineDefaultInterfaceType();
