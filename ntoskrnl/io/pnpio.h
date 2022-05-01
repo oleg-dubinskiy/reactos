@@ -69,4 +69,11 @@ IopWriteResourceList(
     _In_ ULONG ListSize
 );
 
+/* pnputil.c */
+PDEVICE_OBJECT
+NTAPI
+IopDeviceObjectFromDeviceInstance(
+    _In_ PUNICODE_STRING DeviceInstance
+);
+
 #endif  /* _PNPIO_H */

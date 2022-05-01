@@ -9,10 +9,15 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-#define NDEBUG
+#include "../pnpio.h"
+
+//#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS ********************************************************************/
+
+extern RTL_AVL_TABLE PpDeviceReferenceTable;
+extern KGUARDED_MUTEX PpDeviceReferenceTableLock;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -190,6 +195,64 @@ PnpRegSzToString(IN PWCHAR RegSzData,
         *StringLength = (USHORT)(p - RegSzData) * sizeof(WCHAR);
     }
     return TRUE;
+}
+
+PDEVICE_OBJECT
+NTAPI
+IopDeviceObjectFromDeviceInstance(
+    _In_ PUNICODE_STRING DeviceInstance)
+{
+    PPNP_DEVICE_INSTANCE_CONTEXT Entry;
+    PDEVICE_OBJECT DeviceObject;
+    PDEVICE_NODE DeviceNode;
+    PNP_DEVICE_INSTANCE_CONTEXT MapContext;
+
+    PAGED_CODE();
+    DPRINT("IopDeviceObjectFromDeviceInstance: DeviceInstance %wZ\n", DeviceInstance);
+
+    MapContext.DeviceObject = NULL;
+    MapContext.InstancePath = DeviceInstance;
+
+    KeAcquireGuardedMutex(&PpDeviceReferenceTableLock);
+
+    Entry = RtlLookupElementGenericTableAvl(&PpDeviceReferenceTable, &MapContext);
+    if (!Entry)
+    {
+        KeReleaseGuardedMutex(&PpDeviceReferenceTableLock);
+        return NULL;
+    }
+
+    DeviceObject = Entry->DeviceObject;
+    ASSERT(DeviceObject);
+    if (!DeviceObject)
+    {
+        KeReleaseGuardedMutex(&PpDeviceReferenceTableLock);
+        return NULL;
+    }
+
+    if (DeviceObject->Type != IO_TYPE_DEVICE)
+    {
+        ASSERT(DeviceObject->Type == IO_TYPE_DEVICE);
+        KeReleaseGuardedMutex(&PpDeviceReferenceTableLock);
+        return NULL;
+    }
+
+    DeviceNode = IopGetDeviceNode(DeviceObject);
+
+    ASSERT(DeviceNode && (DeviceNode->PhysicalDeviceObject == DeviceObject));
+
+    if (!DeviceNode || DeviceNode->PhysicalDeviceObject != DeviceObject)
+    {
+        DeviceObject = NULL;
+    }
+
+    if (DeviceObject)
+    {
+        ObReferenceObject(DeviceObject);
+    }
+
+    KeReleaseGuardedMutex(&PpDeviceReferenceTableLock);
+    return DeviceObject;
 }
 
 /* EOF */
