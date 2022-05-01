@@ -13,8 +13,42 @@ typedef struct _PNP_DEVICE_INSTANCE_CONTEXT
     PUNICODE_STRING InstancePath;
 } PNP_DEVICE_INSTANCE_CONTEXT, *PPNP_DEVICE_INSTANCE_CONTEXT;
 
-/* debug.c */
+/* Request types for PIP_ENUM_REQUEST */
+typedef enum _PIP_ENUM_TYPE
+{
+    PipEnumAddBootDevices,
+    PipEnumAssignResources,
+    PipEnumGetSetDeviceStatus,
+    PipEnumClearProblem,
+    PipEnumInvalidateRelationsInList,
+    PipEnumHaltDevice,
+    PipEnumBootDevices,
+    PipEnumDeviceOnly,
+    PipEnumDeviceTree,
+    PipEnumRootDevices,
+    PipEnumInvalidateDeviceState,
+    PipEnumResetDevice,
+    PipEnumIoResourceChanged,
+    PipEnumSystemHiveLimitChange,
+    PipEnumSetProblem,
+    PipEnumShutdownPnpDevices,
+    PipEnumStartDevice,
+    PipEnumStartSystemDevices
+} PIP_ENUM_TYPE;
 
+typedef struct _PIP_ENUM_REQUEST
+{
+    LIST_ENTRY RequestLink;
+    PDEVICE_OBJECT DeviceObject;
+    PIP_ENUM_TYPE RequestType;
+    UCHAR ReorderingBarrier;
+    UCHAR Padded[3];
+    ULONG_PTR RequestArgument;
+    PKEVENT CompletionEvent;
+    NTSTATUS * CompletionStatus;
+} PIP_ENUM_REQUEST, *PPIP_ENUM_REQUEST;
+
+/* debug.c */
 VOID
 NTAPI
 PipDumpCmResourceList(
