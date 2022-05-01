@@ -133,6 +133,12 @@ PipSetDevNodeProblem(
 
 VOID
 NTAPI
+PipClearDevNodeProblem(
+    _In_ PDEVICE_NODE DeviceNode
+);
+
+VOID
+NTAPI
 PpDevNodeAssertLockLevel(
     _In_ LONG Level
 );
