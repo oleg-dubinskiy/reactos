@@ -29,6 +29,8 @@ USHORT PiInitGroupOrderTableCount;
 INTERFACE_TYPE PnpDefaultInterfaceType;
 PCM_RESOURCE_LIST IopInitHalResources;
 
+LONG IopNumberDeviceNodes = 0;
+
 ARBITER_INSTANCE IopRootBusNumberArbiter;
 ARBITER_INSTANCE IopRootIrqArbiter;
 ARBITER_INSTANCE IopRootDmaArbiter;
