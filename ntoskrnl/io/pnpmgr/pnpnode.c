@@ -132,6 +132,40 @@ PpDevNodeLockTree(
 
 VOID
 NTAPI
+PpDevNodeUnlockTree(
+    _In_ ULONG LockLevel)
+{
+    PAGED_CODE();
+    DPRINT("PpDevNodeUnlockTree: LockLevel %X\n", LockLevel);
+
+    PpDevNodeAssertLockLevel(LockLevel);
+
+    if (LockLevel == 0)
+    {
+        ExReleaseResourceLite(&PiDeviceTreeLock);
+    }
+    else if (LockLevel == 1 || LockLevel == 2)
+    {
+        ExReleaseResourceLite(&PiDeviceTreeLock);
+        ExReleaseResourceLite(&PiEngineLock);
+    }
+    else if (LockLevel == 3)
+    {
+        ASSERT(ExIsResourceAcquiredExclusiveLite(&PiDeviceTreeLock));
+        ASSERT(ExIsResourceAcquiredExclusiveLite(&PiEngineLock));
+        ExConvertExclusiveToSharedLite(&PiDeviceTreeLock);
+    }
+    else
+    {
+        ASSERT(FALSE);
+    }
+
+    KeLeaveCriticalRegion();
+    DPRINT("PpDevNodeUnlockTree: UnLocked\n");
+}
+
+VOID
+NTAPI
 PipSetDevNodeState(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ PNP_DEVNODE_STATE NewState,
@@ -175,6 +209,36 @@ PipSetDevNodeState(
     {
         ASSERT(FALSE);
         //PpRemoveDeviceActionRequests(DeviceNode->PhysicalDeviceObject);
+    }
+}
+
+VOID
+NTAPI
+PpDevNodeAssertLockLevel(
+    _In_ LONG LockLevel)
+{
+    PAGED_CODE();
+
+    switch (LockLevel)
+    {
+        case 0:
+            ASSERT(ExIsResourceAcquiredSharedLite(&PiDeviceTreeLock));
+            break;
+
+        case 1:
+            ASSERT(ExIsResourceAcquiredSharedLite(&PiDeviceTreeLock));
+            ASSERT(ExIsResourceAcquiredExclusiveLite(&PiEngineLock));
+            break;
+
+        case 2:
+        case 3:
+            ASSERT(ExIsResourceAcquiredExclusiveLite(&PiDeviceTreeLock));
+            ASSERT(ExIsResourceAcquiredExclusiveLite(&PiEngineLock));
+            break;
+
+        default:
+            ASSERT(FALSE);
+            break;
     }
 }
 

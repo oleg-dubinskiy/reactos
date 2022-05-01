@@ -112,10 +112,22 @@ PpDevNodeLockTree(
 
 VOID
 NTAPI
+PpDevNodeUnlockTree(
+    _In_ ULONG LockLevel
+);
+
+VOID
+NTAPI
 PipSetDevNodeState(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ PNP_DEVNODE_STATE NewState,
     _Out_ PNP_DEVNODE_STATE *OutPreviousState
+);
+
+VOID
+NTAPI
+PpDevNodeAssertLockLevel(
+    _In_ LONG Level
 );
 
 /* pnpres.c */
