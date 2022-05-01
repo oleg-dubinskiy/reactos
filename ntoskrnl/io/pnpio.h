@@ -103,6 +103,15 @@ PipRequestDeviceAction(
     _Inout_ NTSTATUS * CompletionStatus
 );
 
+/* pnpirp.c */
+NTSTATUS
+NTAPI
+IopQueryDeviceRelations(
+    _In_ DEVICE_RELATION_TYPE RelationsType,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Inout_ PDEVICE_RELATIONS * OutPendingDeviceRelations
+);
+
 /* pnpnode.c */
 VOID
 NTAPI
