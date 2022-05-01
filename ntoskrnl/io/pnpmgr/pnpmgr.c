@@ -10,7 +10,9 @@
 /* INCLUDES ******************************************************************/
 
 #include <ntoskrnl.h>
-#define NDEBUG
+#include "../pnpio.h"
+
+//#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS *******************************************************************/
@@ -3950,9 +3952,23 @@ PiCompareInstancePath(IN PRTL_AVL_TABLE Table,
                       IN PVOID FirstStruct,
                       IN PVOID SecondStruct)
 {
-    /* FIXME: TODO */
-    ASSERT(FALSE);
-    return 0;
+    PPNP_DEVICE_INSTANCE_CONTEXT FirstContext = FirstStruct;
+    PPNP_DEVICE_INSTANCE_CONTEXT SecondContext = SecondStruct;
+    PUNICODE_STRING First = FirstContext->InstancePath;
+    PUNICODE_STRING Second = SecondContext->InstancePath;
+    LONG Result;
+    RTL_GENERIC_COMPARE_RESULTS CompareResult;
+
+    Result = RtlCompareUnicodeString(First, Second, TRUE);
+
+    if (Result < 0)
+        CompareResult = GenericLessThan;
+    else if (Result == 0)
+        CompareResult = GenericEqual;
+    else
+        CompareResult = GenericGreaterThan;
+
+    return CompareResult;
 }
 
 //
