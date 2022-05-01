@@ -1215,7 +1215,7 @@ IoReportHalResourceUsage(
 
     if (HeadlessRawList)
     {
-        IopDumpCmResourceList(HeadlessRawList);
+        PipDumpCmResourceList(HeadlessRawList, 1);
         RawList = HeadlessRawList;
         ListSize = HeadlessListSize;
     }
@@ -1249,7 +1249,7 @@ IoReportHalResourceUsage(
 
     if (HeadlessTranslatedList)
     {
-        IopDumpCmResourceList(HeadlessRawList);
+        PipDumpCmResourceList(HeadlessRawList, 1);
         TranslatedList = HeadlessTranslatedList;
         ListSize = HeadlessListSize;
     }

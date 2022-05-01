@@ -9,8 +9,12 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
+#include "../pnpio.h"
+
 #define NDEBUG
 #include <debug.h>
+
+#include "../mm/ARM3/miarm.h"
 
 /* GLOBALS ********************************************************************/
 
@@ -23,7 +27,6 @@ typedef struct _IOPNP_DEVICE_EXTENSION
 PUNICODE_STRING PiInitGroupOrderTable;
 USHORT PiInitGroupOrderTableCount;
 INTERFACE_TYPE PnpDefaultInterfaceType;
-
 PCM_RESOURCE_LIST IopInitHalResources;
 
 ARBITER_INSTANCE IopRootBusNumberArbiter;
@@ -38,7 +41,153 @@ NTSTATUS NTAPI IopDmaInitialize(VOID);
 NTSTATUS NTAPI IopIrqInitialize(VOID);
 NTSTATUS NTAPI IopBusNumberInitialize(VOID);
 
+extern PPHYSICAL_MEMORY_DESCRIPTOR MmPhysicalMemoryBlock;
+
 /* FUNCTIONS ******************************************************************/
+
+VOID
+NTAPI
+IopInitializeResourceMap(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    PCM_RESOURCE_LIST CmResources;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR PartialDesc;
+    PPHYSICAL_MEMORY_DESCRIPTOR MemoryDescriptor;
+    UNICODE_STRING ResourceName;
+    UNICODE_STRING ValueName;
+    UNICODE_STRING DescriptionName;
+    HANDLE ResourceMapHandle;
+    ULONG Runs;
+    ULONG Size;
+    ULONG Type;
+    ULONG ix;
+    UNICODE_STRING ResourceMapName = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\HARDWARE\\RESOURCEMAP");
+    NTSTATUS Status;
+    BOOLEAN IncludeType[LoaderMaximum];
+
+    DPRINT("IopInitializeResourceMap: LoaderBlock - %p\n", LoaderBlock);
+
+    RtlInitUnicodeString(&ResourceName, L"System Resources");
+
+    for (Type = 0; Type < 3; Type++)
+    {
+        if (Type == 0)
+        {
+            RtlInitUnicodeString(&DescriptionName, L"Physical Memory");
+            RtlInitUnicodeString(&ValueName, L".Translated");
+
+            MemoryDescriptor = MmPhysicalMemoryBlock;
+        }
+        else if (Type == 1)
+        {
+            RtlInitUnicodeString(&DescriptionName, L"Reserved");
+            RtlInitUnicodeString(&ValueName, L".Translated");
+
+            RtlZeroMemory(IncludeType, sizeof(IncludeType));
+
+            IncludeType[LoaderSpecialMemory] = TRUE;
+            IncludeType[LoaderHALCachedMemory] = TRUE;
+
+            MemoryDescriptor = MmInitializeMemoryLimits(LoaderBlock, IncludeType);
+
+            if (!MemoryDescriptor)
+            {
+                continue;
+            }
+        }
+        else
+        {
+            RtlInitUnicodeString(&DescriptionName, L"Loader Reserved");
+            RtlInitUnicodeString(&ValueName, L".Raw");
+
+            RtlZeroMemory(IncludeType, sizeof(IncludeType));
+
+            IncludeType[LoaderBad] = TRUE;
+            IncludeType[LoaderFirmwarePermanent] = TRUE;
+            IncludeType[LoaderSpecialMemory] = TRUE;
+            IncludeType[LoaderBBTMemory] = TRUE;
+            IncludeType[LoaderHALCachedMemory] = TRUE;
+
+            MemoryDescriptor = MmInitializeMemoryLimits(LoaderBlock, IncludeType);
+
+            if (!MemoryDescriptor)
+            {
+                return;
+            }
+        }
+
+        Runs = MemoryDescriptor->NumberOfRuns;
+
+        if (!Runs)
+        {
+            if (Type != 0)
+            {
+                ExFreePoolWithTag(MemoryDescriptor, 'lMmM');
+            }
+            continue;
+        }
+
+        Size = sizeof(CM_RESOURCE_LIST) +
+               sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR) * (Runs - 1);
+
+        CmResources = ExAllocatePoolWithTag(PagedPool, Size, '  pP');
+
+        if (!CmResources)
+        {
+            if (Type != 0)
+            {
+                ExFreePoolWithTag(MemoryDescriptor, 'lMmM');
+            }
+            return;
+        }
+
+        RtlZeroMemory(CmResources, Size);
+
+        CmResources->Count = 1;
+        CmResources->List[0].PartialResourceList.Count = Runs;
+
+        PartialDesc = CmResources->List[0].PartialResourceList.PartialDescriptors;
+
+        for (ix = 0; ix < Runs; ix++, PartialDesc++)
+        {
+            PartialDesc->Type = CmResourceTypeMemory;
+            PartialDesc->ShareDisposition = CmResourceShareDeviceExclusive;
+
+            PartialDesc->u.Memory.Start.QuadPart = MemoryDescriptor->Run[ix].BasePage;
+            PartialDesc->u.Memory.Start.QuadPart <<= PAGE_SHIFT;
+            PartialDesc->u.Memory.Length = MemoryDescriptor->Run[ix].PageCount;
+            PartialDesc->u.Memory.Length <<= PAGE_SHIFT;
+        }
+
+        Status = IopCreateRegistryKeyEx(&ResourceMapHandle,
+                                        NULL,
+                                        &ResourceMapName,
+                                        KEY_READ | KEY_WRITE,
+                                        REG_OPTION_VOLATILE,
+                                        NULL);
+
+        if (NT_SUCCESS(Status))
+        {
+            PipDumpCmResourceList(CmResources, 1);
+
+            IopWriteResourceList(ResourceMapHandle,
+                                 &ResourceName,
+                                 &DescriptionName,
+                                 &ValueName,
+                                 CmResources,
+                                 Size);
+
+            ZwClose(ResourceMapHandle);
+        }
+
+        ExFreePoolWithTag(CmResources, '  pP');
+
+        if (Type != 0)
+        {
+            ExFreePoolWithTag(MemoryDescriptor, 'lMmM');
+        }
+    }
+}
 
 INTERFACE_TYPE
 NTAPI
@@ -458,7 +607,7 @@ IopInitializePlugPlayServices(
     {
         DPRINT1("IopInitializePlugPlayServices: Phase is 1\n");
         ASSERT(FALSE);
-        return STATUS_UNIMPLEMENTED;
+        return STATUS_NOT_IMPLEMENTED;
     }
 
     /* Initialize locks and such */
