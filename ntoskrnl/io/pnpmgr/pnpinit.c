@@ -436,7 +436,9 @@ Exit:
 INIT_FUNCTION
 NTSTATUS
 NTAPI
-IopInitializePlugPlayServices(VOID)
+IopInitializePlugPlayServices(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock,
+    _In_ ULONG Phase)
 {
     NTSTATUS Status;
     ULONG Disposition;
@@ -444,6 +446,20 @@ IopInitializePlugPlayServices(VOID)
     UNICODE_STRING KeyName = RTL_CONSTANT_STRING(L"\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET");
     UNICODE_STRING PnpManagerDriverName = RTL_CONSTANT_STRING(DRIVER_ROOT_NAME L"PnpManager");
     PDEVICE_OBJECT Pdo;
+
+    if (Phase != 0 && Phase != 1)
+    {
+        DPRINT1("IopInitializePlugPlayServices: Phase - %X\n", Phase);
+        ASSERT(FALSE);
+        return STATUS_INVALID_PARAMETER_2;
+    }
+
+    if (Phase == 1)
+    {
+        DPRINT1("IopInitializePlugPlayServices: Phase is 1\n");
+        ASSERT(FALSE);
+        return STATUS_UNIMPLEMENTED;
+    }
 
     /* Initialize locks and such */
     KeInitializeSpinLock(&IopDeviceTreeLock);
