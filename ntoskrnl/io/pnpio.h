@@ -51,4 +51,16 @@ PipDumpDeviceNodes(
     _In_ ULONG DebugLevel
 );
 
+/* pnpres.c */
+NTSTATUS
+NTAPI
+IopWriteResourceList(
+    _In_ HANDLE ResourceHandle,
+    _In_ PUNICODE_STRING ResourceName,
+    _In_ PUNICODE_STRING Description,
+    _In_ PUNICODE_STRING ValueName,
+    _In_ PCM_RESOURCE_LIST CmResource,
+    _In_ ULONG ListSize
+);
+
 #endif  /* _PNPIO_H */
