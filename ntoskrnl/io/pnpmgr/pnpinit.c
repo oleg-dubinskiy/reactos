@@ -28,8 +28,10 @@ PUNICODE_STRING PiInitGroupOrderTable;
 USHORT PiInitGroupOrderTableCount;
 INTERFACE_TYPE PnpDefaultInterfaceType;
 PCM_RESOURCE_LIST IopInitHalResources;
-
 LONG IopNumberDeviceNodes = 0;
+KSPIN_LOCK IopPnPSpinLock;
+LIST_ENTRY IopPnpEnumerationRequestList;
+BOOLEAN PnPBootDriversLoaded = FALSE;
 
 ARBITER_INSTANCE IopRootBusNumberArbiter;
 ARBITER_INSTANCE IopRootIrqArbiter;
@@ -44,8 +46,7 @@ NTSTATUS NTAPI IopIrqInitialize(VOID);
 NTSTATUS NTAPI IopBusNumberInitialize(VOID);
 
 extern PPHYSICAL_MEMORY_DESCRIPTOR MmPhysicalMemoryBlock;
-
-KSPIN_LOCK IopPnPSpinLock;
+extern KEVENT PiEnumerationLock;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -619,6 +620,8 @@ IopInitializePlugPlayServices(
     KeInitializeSpinLock(&IopDeviceTreeLock);
     KeInitializeSpinLock(&IopDeviceActionLock);
     InitializeListHead(&IopDeviceActionRequestList);
+    InitializeListHead(&IopPnpEnumerationRequestList);
+    KeInitializeEvent(&PiEnumerationLock, NotificationEvent, TRUE);
 
     /* Get the default interface */
     PnpDefaultInterfaceType = IopDetermineDefaultInterfaceType();

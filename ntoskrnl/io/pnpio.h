@@ -17,18 +17,18 @@ typedef struct _PNP_DEVICE_INSTANCE_CONTEXT
 typedef enum _PIP_ENUM_TYPE
 {
     PipEnumAddBootDevices,
-    PipEnumAssignResources,
+    PipEnumAssignResources,//PipEnumResourcesAssign
     PipEnumGetSetDeviceStatus,
     PipEnumClearProblem,
     PipEnumInvalidateRelationsInList,
     PipEnumHaltDevice,
-    PipEnumBootDevices,
-    PipEnumDeviceOnly,
-    PipEnumDeviceTree,
-    PipEnumRootDevices,
+    PipEnumBootDevices,//PipEnumBootProcess
+    PipEnumDeviceOnly,//PipEnumInvalidateRelations
+    PipEnumDeviceTree,//PipEnumInvalidateBusRelations
+    PipEnumRootDevices,//PipEnumInitPnpServices
     PipEnumInvalidateDeviceState,
     PipEnumResetDevice,
-    PipEnumIoResourceChanged,
+    PipEnumIoResourceChanged,//PipEnumResourceChange
     PipEnumSystemHiveLimitChange,
     PipEnumSetProblem,
     PipEnumShutdownPnpDevices,
@@ -89,6 +89,27 @@ PipDumpDeviceNodes(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ ULONG Flags,
     _In_ ULONG DebugLevel
+);
+
+/* pnpenum.c */
+NTSTATUS
+NTAPI
+PipRequestDeviceAction(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIP_ENUM_TYPE RequestType,
+    _In_ UCHAR ReorderingBarrier,
+    _In_ ULONG_PTR RequestArgument,
+    _In_ PKEVENT CompletionEvent,
+    _Inout_ NTSTATUS * CompletionStatus
+);
+
+/* pnpnode.c */
+VOID
+NTAPI
+PipSetDevNodeState(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ PNP_DEVNODE_STATE NewState,
+    _Out_ PNP_DEVNODE_STATE *OutPreviousState
 );
 
 /* pnpres.c */
