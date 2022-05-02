@@ -1253,6 +1253,7 @@ IopCreateDeviceNode(PDEVICE_NODE ParentNode,
                     PDEVICE_OBJECT PhysicalDeviceObject,
                     PUNICODE_STRING ServiceName,
                     PDEVICE_NODE *DeviceNode)
+#if 0
 {
     PDEVICE_NODE Node;
     NTSTATUS Status;
@@ -1409,6 +1410,11 @@ IopCreateDeviceNode(PDEVICE_NODE ParentNode,
     *DeviceNode = Node;
 
     return STATUS_SUCCESS;
+}
+#endif
+{
+    ASSERT(FALSE);
+    return STATUS_UNSUCCESSFUL;
 }
 
 NTSTATUS
@@ -2614,6 +2620,7 @@ IopActionInterrogateDeviceStack(PDEVICE_NODE DeviceNode,
     return STATUS_SUCCESS;
 }
 
+#if 0
 static
 VOID
 IopHandleDeviceRemoval(
@@ -2660,10 +2667,12 @@ IopHandleDeviceRemoval(
         Child = NextChild;
     }
 }
+#endif
 
 NTSTATUS
 IopEnumerateDevice(
     IN PDEVICE_OBJECT DeviceObject)
+#if 0
 {
     PDEVICE_NODE DeviceNode = IopGetDeviceNode(DeviceObject);
     DEVICETREE_TRAVERSE_CONTEXT Context;
@@ -2805,7 +2814,11 @@ IopEnumerateDevice(
     DPRINT("IopEnumerateDevice() finished\n");
     return STATUS_SUCCESS;
 }
-
+#endif
+{
+    ASSERT(FALSE);
+    return STATUS_UNSUCCESSFUL;
+}
 
 /*
  * IopActionConfigureChildServices
@@ -5102,7 +5115,8 @@ IoSynchronousInvalidateDeviceRelations(
     {
         case BusRelations:
             /* Enumerate the device */
-            return IopEnumerateDevice(DeviceObject);
+            ASSERT(FALSE);// return IopEnumerateDevice(DeviceObject);
+            return STATUS_NOT_SUPPORTED;
         case PowerRelations:
              /* Not handled yet */
              return STATUS_NOT_IMPLEMENTED;

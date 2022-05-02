@@ -863,3 +863,22 @@ PnpRootDriverEntry(
 
     return STATUS_SUCCESS;
 }
+
+NTSTATUS
+PnpRootCreateDevice(
+    IN PUNICODE_STRING ServiceName,
+    IN OPTIONAL PDRIVER_OBJECT DriverObject,
+    OUT PDEVICE_OBJECT *PhysicalDeviceObject,
+    OUT OPTIONAL PUNICODE_STRING FullInstancePath)
+{
+    ASSERT(FALSE);
+    return STATUS_UNSUCCESSFUL;
+}
+
+NTSTATUS
+PnpRootRegisterDevice(
+    IN PDEVICE_OBJECT DeviceObject)
+{
+    ASSERT(FALSE);
+    return STATUS_UNSUCCESSFUL;
+}
