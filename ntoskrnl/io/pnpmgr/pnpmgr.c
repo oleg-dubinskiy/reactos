@@ -5148,3 +5148,47 @@ IoTranslateBusAddress(IN INTERFACE_TYPE InterfaceType,
                                   AddressSpace,
                                   TranslatedAddress);
 }
+
+NTSTATUS
+NTAPI
+PiDeviceRegistration(
+    _In_ PUNICODE_STRING InstancePath,
+    _In_ BOOLEAN IsEnableInstance,
+    _In_ PUNICODE_STRING ServiceName)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PpDeviceRegistration(
+    _In_ PUNICODE_STRING InstancePath,
+    _In_ BOOLEAN IsEnableInstance,
+    _In_ PUNICODE_STRING ServiceName)
+{
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    if (ServiceName)
+    {
+        DPRINT("PpDeviceRegistration: (%X) '%wZ', '%wZ'\n", IsEnableInstance, InstancePath, ServiceName);
+    }
+    else
+    {
+        DPRINT("PpDeviceRegistration: (%X) '%wZ'\n", IsEnableInstance, InstancePath);
+    }
+
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(&PpRegistryDeviceResource, TRUE);
+
+    Status = PiDeviceRegistration(InstancePath, IsEnableInstance, ServiceName);
+
+    ExReleaseResourceLite(&PpRegistryDeviceResource);
+    KeLeaveCriticalRegion();
+
+    return Status;
+}
+
+/* EOF */

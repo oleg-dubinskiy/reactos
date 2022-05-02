@@ -15,6 +15,10 @@
 //#define NDEBUG
 #include <debug.h>
 
+/* GLOBALS *******************************************************************/
+
+extern ERESOURCE PpRegistryDeviceResource;
+
 /* TYPES *******************************************************************/
 
 typedef struct _INTERNAL_WORK_QUEUE_ITEM

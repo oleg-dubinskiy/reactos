@@ -228,6 +228,15 @@ MapperProcessFirmwareTree(
     _In_ BOOLEAN IsDisableMapper
 );
 
+/* pnpmgr.c */
+NTSTATUS
+NTAPI
+PpDeviceRegistration(
+    _In_ PUNICODE_STRING InstancePath,
+    _In_ BOOLEAN Param1,
+    _In_ PUNICODE_STRING ServiceName
+);
+
 /* pnpnode.c */
 VOID
 NTAPI
