@@ -4026,15 +4026,17 @@ PnpDeviceObjectToDeviceInstance(IN PDEVICE_OBJECT DeviceObject,
     NTSTATUS Status;
     HANDLE KeyHandle;
     PDEVICE_NODE DeviceNode;
-    UNICODE_STRING KeyName = RTL_CONSTANT_STRING(L"\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET\\ENUM");
+    UNICODE_STRING KeyName = RTL_CONSTANT_STRING(ENUM_ROOT);
+
     PAGED_CODE();
 
     /* Open the enum key */
-    Status = IopOpenRegistryKeyEx(&KeyHandle,
-                                  NULL,
-                                  &KeyName,
-                                  KEY_READ);
-    if (!NT_SUCCESS(Status)) return Status;
+    Status = IopOpenRegistryKeyEx(&KeyHandle, NULL, &KeyName, KEY_READ);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("PnpDeviceObjectToDeviceInstance: Status %X\n", Status);
+        return Status;
+    }
 
     /* Make sure we have an instance path */
     DeviceNode = IopGetDeviceNode(DeviceObject);
