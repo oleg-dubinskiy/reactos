@@ -29,6 +29,7 @@ USHORT PiInitGroupOrderTableCount;
 INTERFACE_TYPE PnpDefaultInterfaceType;
 PCM_RESOURCE_LIST IopInitHalResources;
 LONG IopNumberDeviceNodes = 0;
+ULONG IopMaxDeviceNodeLevel = 0;
 KSPIN_LOCK IopPnPSpinLock;
 LIST_ENTRY IopPnpEnumerationRequestList;
 BOOLEAN PnPBootDriversLoaded = FALSE;
