@@ -33,6 +33,8 @@ ULONG IopMaxDeviceNodeLevel = 0;
 KSPIN_LOCK IopPnPSpinLock;
 LIST_ENTRY IopPnpEnumerationRequestList;
 BOOLEAN PnPBootDriversLoaded = FALSE;
+BOOLEAN PnPBootDriversInitialized = FALSE;
+BOOLEAN IopBootConfigsReserved = FALSE;
 ERESOURCE PiEngineLock;
 ERESOURCE PiDeviceTreeLock;
 
