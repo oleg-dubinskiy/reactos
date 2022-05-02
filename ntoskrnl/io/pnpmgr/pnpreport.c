@@ -10,7 +10,9 @@
 /* INCLUDES ******************************************************************/
 
 #include <ntoskrnl.h>
-#define NDEBUG
+#include "../pnpio.h"
+
+//#define NDEBUG
 #include <debug.h>
 
 /* TYPES *******************************************************************/
@@ -159,7 +161,7 @@ PpCreateLegacyDeviceIds(
     _In_ PUNICODE_STRING ServiceName,
     _In_ PCM_RESOURCE_LIST ResourceList)
 {
-    PPNP_LEGACY_DEVICE_EXTENSION DeviceExtension;
+    PIOPNP_DEVICE_EXTENSION DeviceExtension;
     INTERFACE_TYPE InterfaceType;
     PWCHAR BusName;
     WCHAR Buffer[200];
@@ -226,8 +228,8 @@ PpCreateLegacyDeviceIds(
     RtlCopyMemory(Id, Buffer, Length);
 
     DeviceExtension = DeviceObject->DeviceExtension;
-    DeviceExtension->CompatibleIDs = Id;
-    DeviceExtension->CompatibleIdsLenght = Length;
+    DeviceExtension->CompatibleIdList = Id;
+    DeviceExtension->CompatibleIdListSize = Length;
 
     return STATUS_SUCCESS;
 }

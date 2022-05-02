@@ -18,12 +18,6 @@
 
 /* GLOBALS ********************************************************************/
 
-typedef struct _IOPNP_DEVICE_EXTENSION
-{
-    PWCHAR CompatibleIdList;
-    ULONG CompatibleIdListSize;
-} IOPNP_DEVICE_EXTENSION, *PIOPNP_DEVICE_EXTENSION;
-
 PUNICODE_STRING PiInitGroupOrderTable;
 USHORT PiInitGroupOrderTableCount;
 INTERFACE_TYPE PnpDefaultInterfaceType;

@@ -145,6 +145,12 @@ typedef union _CM_DEVICE_CAPABILITIES_FLAGS
 
 C_ASSERT(sizeof(CM_DEVICE_CAPABILITIES_FLAGS) == sizeof(ULONG));
 
+typedef struct _IOPNP_DEVICE_EXTENSION
+{
+    PWCHAR CompatibleIdList;
+    ULONG CompatibleIdListSize;
+} IOPNP_DEVICE_EXTENSION, *PIOPNP_DEVICE_EXTENSION;
+
 /* debug.c */
 VOID
 NTAPI
