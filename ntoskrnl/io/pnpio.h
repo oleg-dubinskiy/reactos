@@ -1,6 +1,9 @@
 #ifndef _PNPIO_H
 #define _PNPIO_H
 
+#define PIP_SUBKEY_FLAG_SKIP_ERROR  1
+#define PIP_SUBKEY_FLAG_DELETE_KEY  2
+
 /* Dump resources flags */
 #define PIP_DUMP_FL_ALL_NODES        1
 #define PIP_DUMP_FL_RES_ALLOCATED    2
