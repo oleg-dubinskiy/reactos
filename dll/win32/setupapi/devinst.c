@@ -5435,7 +5435,8 @@ SetupDiInstallDevice(
             SetLastError(ERROR_GEN_FAILURE);
             goto cleanup;
         }
-        ConfigFlags |= DNF_DISABLED;
+        ASSERT(FALSE);//may be DNF_HAS_PROBLEM?
+        //ConfigFlags |= DNF_DISABLED;
         Result = SetupDiSetDeviceRegistryPropertyW(
             DeviceInfoSet,
             DeviceInfoData,
