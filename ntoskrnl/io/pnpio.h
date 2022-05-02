@@ -236,4 +236,11 @@ PipApplyFunctionToSubKeys(
     _In_ PVOID Context
 );
 
+NTSTATUS
+NTAPI
+IopGetDeviceInstanceCsConfigFlags(
+    _In_ PUNICODE_STRING InstanceName,
+    _Out_ PULONG OutConfigFlagsValue
+);
+
 #endif  /* _PNPIO_H */
