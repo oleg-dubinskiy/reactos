@@ -622,4 +622,86 @@ IopGetDeviceInstanceCsConfigFlags(
     return Status;
 }
 
+NTSTATUS
+NTAPI
+PipOpenServiceEnumKeys(
+    _In_ PUNICODE_STRING ServiceString,
+    _In_ ACCESS_MASK Access,
+    _Out_ PHANDLE OutServiceHandle,
+    _Out_ PHANDLE OutEnumHandle,
+    _In_ BOOLEAN IsCreateKey)
+{
+    UNICODE_STRING ServicesKeyName;
+    UNICODE_STRING EnumName;
+    HANDLE ServicesRootHandle;
+    HANDLE ServiceHandle;
+    HANDLE EnumHandle;
+    NTSTATUS Status;
+
+    DPRINT("PipOpenServiceEnumKeys: Service '%wZ'\n", ServiceString);
+
+    RtlInitUnicodeString(&ServicesKeyName, IO_REG_KEY_SERVICES);
+
+    Status = IopOpenRegistryKeyEx(&ServicesRootHandle, NULL, &ServicesKeyName, Access);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PipOpenServiceEnumKeys: Status %X\n", Status);
+        ASSERT(FALSE);
+        return Status;
+    }
+
+    Status = IopOpenRegistryKeyEx(&ServiceHandle, ServicesRootHandle, ServiceString, Access);
+    ZwClose(ServicesRootHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PipOpenServiceEnumKeys: Service '%wZ', Status %X\n", ServiceString, Status);
+        return Status;
+    }
+
+    if (!OutEnumHandle && !IsCreateKey)
+    {
+        if (OutServiceHandle)
+            *OutServiceHandle = ServiceHandle;
+        else
+            ZwClose(ServiceHandle);
+
+        return STATUS_SUCCESS;
+    }
+
+    RtlInitUnicodeString(&EnumName, REGSTR_KEY_ENUM);
+
+    if (IsCreateKey)
+    {
+        Status = IopCreateRegistryKeyEx(&EnumHandle,
+                                        ServiceHandle,
+                                        &EnumName,
+                                        Access,
+                                        REG_OPTION_VOLATILE,
+                                        NULL);
+    }
+    else
+    {
+        Status = IopOpenRegistryKeyEx(&EnumHandle, ServiceHandle, &EnumName, Access);
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("PipOpenServiceEnumKeys: Status %X\n", Status);
+        ZwClose(ServiceHandle);
+        return Status;
+    }
+
+    if (OutEnumHandle)
+        *OutEnumHandle = EnumHandle;
+    else
+        ZwClose(EnumHandle);
+
+    if (OutServiceHandle)
+        *OutServiceHandle = ServiceHandle;
+    else
+        ZwClose(ServiceHandle);
+
+    return STATUS_SUCCESS;
+}
+
 /* EOF */

@@ -243,4 +243,14 @@ IopGetDeviceInstanceCsConfigFlags(
     _Out_ PULONG OutConfigFlagsValue
 );
 
+NTSTATUS
+NTAPI
+PipOpenServiceEnumKeys(
+    _In_ PUNICODE_STRING ServiceString,
+    _In_ ACCESS_MASK Aaccess,
+    _Out_ PHANDLE OutHandle,
+    _Out_ PHANDLE OutEnumHandle,
+    _In_ BOOLEAN IsCreate
+);
+
 #endif  /* _PNPIO_H */
