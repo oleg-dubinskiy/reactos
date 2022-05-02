@@ -194,6 +194,12 @@ PipDumpDeviceNodes(
     _In_ ULONG DebugLevel
 );
 
+PWCHAR
+NTAPI
+IopGetBusName(
+    _In_ INTERFACE_TYPE IfType
+);
+
 /* pnpenum.c */
 NTSTATUS
 NTAPI
