@@ -236,6 +236,13 @@ PpIrpQueryCapabilities(
     _Out_ PDEVICE_CAPABILITIES DeviceCapabilities
 );
 
+NTSTATUS
+NTAPI
+IopQueryDeviceState(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Out_ PNP_DEVICE_STATE *OutState
+);
+
 /* pnpmap.c */
 VOID
 NTAPI
