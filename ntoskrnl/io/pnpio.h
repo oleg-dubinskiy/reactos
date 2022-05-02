@@ -353,4 +353,13 @@ PipOpenServiceEnumKeys(
     _In_ BOOLEAN IsCreate
 );
 
+NTSTATUS
+NTAPI
+IopOpenDeviceParametersSubkey(
+    _Out_ PHANDLE OutHandle,
+    _In_opt_ HANDLE ParentKey,
+    _In_ PUNICODE_STRING NameString,
+    _In_ ACCESS_MASK Access
+);
+
 #endif  /* _PNPIO_H */
