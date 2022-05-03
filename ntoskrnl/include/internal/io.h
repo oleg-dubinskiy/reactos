@@ -592,14 +592,6 @@ IopDetectResourceConflict(
 //
 // PNP Routines
 //
-NTSTATUS
-NTAPI
-PipCallDriverAddDevice(
-    IN PDEVICE_NODE DeviceNode,
-    IN BOOLEAN LoadDriver,
-    IN PDRIVER_OBJECT DriverObject
-);
-
 INIT_FUNCTION
 NTSTATUS
 NTAPI

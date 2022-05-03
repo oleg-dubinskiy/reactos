@@ -253,6 +253,14 @@ PipRequestDeviceAction(
     _Inout_ NTSTATUS * CompletionStatus
 );
 
+NTSTATUS
+NTAPI
+PipCallDriverAddDevice(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ BOOLEAN IsLoadDriver,
+    _In_ SERVICE_LOAD_TYPE * DriverLoadType
+);
+
 /* pnpinit.c */
 INIT_FUNCTION
 BOOLEAN
