@@ -286,6 +286,12 @@ MapperProcessFirmwareTree(
 );
 
 /* pnpmgr.c */
+USHORT
+NTAPI
+IopGetBusTypeGuidIndex(
+    _In_ LPGUID BusTypeGuid
+);
+
 NTSTATUS
 NTAPI
 PpDeviceRegistration(

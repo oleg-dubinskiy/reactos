@@ -1168,7 +1168,7 @@ IopGetSystemPowerDeviceObject(PDEVICE_OBJECT *DeviceObject)
 
 USHORT
 NTAPI
-IopGetBusTypeGuidIndex(LPGUID BusTypeGuid)
+IopGetBusTypeGuidIndex(_In_ LPGUID BusTypeGuid)
 {
     USHORT i = 0, FoundIndex = 0xFFFF;
     ULONG NewSize;
