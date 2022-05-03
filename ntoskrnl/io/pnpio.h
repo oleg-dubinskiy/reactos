@@ -315,6 +315,25 @@ IopGetBusTypeGuidIndex(
 
 NTSTATUS
 NTAPI
+PiGetDeviceRegistryProperty(
+    IN PDEVICE_OBJECT DeviceObject,
+    IN ULONG ValueType,
+    IN PWSTR ValueName,
+    IN PWSTR KeyName,
+    OUT PVOID Buffer,
+    IN PULONG BufferLength
+);
+
+NTSTATUS
+NTAPI
+PnpDeviceObjectToDeviceInstance(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PHANDLE DeviceInstanceHandle,
+    _In_ ACCESS_MASK DesiredAccess
+);
+
+NTSTATUS
+NTAPI
 PpDeviceRegistration(
     _In_ PUNICODE_STRING InstancePath,
     _In_ BOOLEAN Param1,
