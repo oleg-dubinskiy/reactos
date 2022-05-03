@@ -309,4 +309,34 @@ PpDevNodeAssertLockLevel(
     }
 }
 
+VOID
+NTAPI
+PiHotSwapGetDetachableNode(
+    _In_ PDEVICE_NODE DeviceNode,
+    _Out_ PDEVICE_NODE * OutDeviceNode)
+{
+    PDEVICE_NODE CurrentNode;
+    DEVICE_CAPABILITIES_FLAGS CapsFlags;
+
+    PAGED_CODE();
+    DPRINT("PiHotSwapGetDetachableNode: DeviceNode %p\n", DeviceNode);
+
+    PpDevNodeAssertLockLevel(0);
+
+    for (CurrentNode = DeviceNode;
+         CurrentNode;
+         CurrentNode = CurrentNode->Parent)
+    {
+        CapsFlags.AsULONG = CurrentNode->CapabilityFlags;
+
+        if (CapsFlags.EjectSupported || CapsFlags.Removable)
+        {
+            DPRINT("PiHotSwapGetDetachableNode: CurrentNode %p\n", CurrentNode);
+            break;
+        }
+    }
+
+    *OutDeviceNode = CurrentNode;
+}
+
 /* EOF */
