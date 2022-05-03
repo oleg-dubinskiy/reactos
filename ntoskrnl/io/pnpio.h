@@ -97,6 +97,21 @@ typedef BOOLEAN
     _In_ PVOID Context
 );
 
+typedef
+NTSTATUS
+(NTAPI *PNP_ALLOCATE_RESOURCES_ROUTINE)(
+    _In_ ARBITER_REQUEST_SOURCE AllocationType,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PCM_RESOURCE_LIST CmResource
+);
+
+typedef struct _PNP_RESERVED_RESOURCES_CONTEXT
+{
+    struct _PNP_RESERVED_RESOURCES_CONTEXT * NextReservedContext;
+    PDEVICE_OBJECT DeviceObject;
+    PCM_RESOURCE_LIST ReservedResource;
+} PNP_RESERVED_RESOURCES_CONTEXT, *PPNP_RESERVED_RESOURCES_CONTEXT;
+
 typedef union _DEVICE_CAPABILITIES_FLAGS
 {
     struct {
