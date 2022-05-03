@@ -40,6 +40,12 @@ WORK_QUEUE_ITEM IopDeviceActionWorkItem;
 BOOLEAN IopDeviceActionInProgress;
 KSPIN_LOCK IopDeviceActionLock;
 
+typedef struct _DEVICE_REGISTRATION_CONTEXT {
+    PUNICODE_STRING InstancePath;
+    PVOID Function;
+    PBOOLEAN EnableInstance;
+} DEVICE_REGISTRATION_CONTEXT, *PDEVICE_REGISTRATION_CONTEXT;
+
 /* FUNCTIONS *****************************************************************/
 
 NTSTATUS
