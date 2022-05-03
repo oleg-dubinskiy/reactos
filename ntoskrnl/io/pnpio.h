@@ -417,6 +417,14 @@ PpHotSwapUpdateRemovalPolicy(
 
 VOID
 NTAPI
+IopInsertLegacyBusDeviceNode(
+    _In_ PDEVICE_NODE LegacyDeviceNode,
+    _In_ INTERFACE_TYPE InterfaceType,
+    _In_ ULONG Bus
+);
+
+VOID
+NTAPI
 PpDevNodeAssertLockLevel(
     _In_ LONG Level
 );
