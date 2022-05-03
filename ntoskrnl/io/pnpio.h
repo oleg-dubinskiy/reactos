@@ -480,4 +480,11 @@ IopOpenDeviceParametersSubkey(
     _In_ ACCESS_MASK Access
 );
 
+NTSTATUS
+NTAPI
+IopReplaceSeparatorWithPound(
+    _Out_ PUNICODE_STRING OutString,
+    _In_ PUNICODE_STRING InString
+);
+
 #endif  /* _PNPIO_H */
