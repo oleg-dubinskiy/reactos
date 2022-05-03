@@ -18,6 +18,7 @@
 
 /* GLOBALS ********************************************************************/
 
+PPNP_RESERVED_RESOURCES_CONTEXT IopInitReservedResourceList = NULL;
 PNP_ALLOCATE_RESOURCES_ROUTINE IopAllocateBootResourcesRoutine;
 PUNICODE_STRING PiInitGroupOrderTable;
 USHORT PiInitGroupOrderTableCount;
@@ -31,6 +32,7 @@ BOOLEAN PnPBootDriversLoaded = FALSE;
 BOOLEAN PnPBootDriversInitialized = FALSE;
 BOOLEAN IopBootConfigsReserved = FALSE;
 BOOLEAN PpDisableFirmwareMapper = FALSE;
+BOOLEAN PiCriticalDeviceDatabaseEnabled = TRUE;
 ERESOURCE PiEngineLock;
 ERESOURCE PiDeviceTreeLock;
 KSEMAPHORE PpRegistrySemaphore;
