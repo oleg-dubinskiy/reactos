@@ -244,6 +244,21 @@ PipRequestDeviceAction(
     _Inout_ NTSTATUS * CompletionStatus
 );
 
+/* pnpinit.c */
+INIT_FUNCTION
+BOOLEAN
+FASTCALL
+IopInitializeBootDrivers(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock
+);
+
+INIT_FUNCTION
+VOID
+FASTCALL
+IopInitializeSystemDrivers(
+    VOID
+);
+
 /* pnpirp.c */
 NTSTATUS
 NTAPI
