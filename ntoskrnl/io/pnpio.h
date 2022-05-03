@@ -181,6 +181,15 @@ IopIsLegacyDriver(
     _In_ PDRIVER_OBJECT DriverObject
 );
 
+NTSTATUS
+NTAPI
+IopLoadDriver(
+    _In_ HANDLE ServiceHandle,
+    _In_ BOOLEAN SafeBootModeFlag,
+    _In_ BOOLEAN IsFilter,
+    _Out_ NTSTATUS * OutInitStatus
+);
+
 /* === PNP mgr =============================== */
 
 /* debug.c */
