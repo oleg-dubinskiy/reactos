@@ -359,6 +359,24 @@ IopWriteResourceList(
     _In_ ULONG ListSize
 );
 
+BOOLEAN
+NTAPI
+IopProcessAssignResources(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ BOOLEAN IncludeFailedDevices,
+    _Inout_ BOOLEAN *OutIsAssigned
+);
+
+NTSTATUS
+NTAPI
+IopGetDeviceResourcesFromRegistry(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ BOOLEAN ResourcesType,
+    _In_ ULONG VectorType,
+    _Out_ PVOID * OutResource,
+    _Out_ SIZE_T * OutSize
+);
+
 /* pnputil.c */
 NTSTATUS
 NTAPI
