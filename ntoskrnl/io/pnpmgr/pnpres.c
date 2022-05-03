@@ -15,6 +15,9 @@
 
 /* GLOBALS *******************************************************************/
 
+extern PPNP_RESERVED_RESOURCES_CONTEXT IopInitReservedResourceList;
+extern KSEMAPHORE PpRegistrySemaphore;
+extern INTERFACE_TYPE PnpDefaultInterfaceType;
 extern BOOLEAN IopBootConfigsReserved;
 
 /* FUNCTIONS *****************************************************************/
@@ -2051,3 +2054,92 @@ Exit:
     return Status;
 }
 
+NTSTATUS
+NTAPI
+IopReportBootResources(
+    _In_ ARBITER_REQUEST_SOURCE AllocationType,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PCM_RESOURCE_LIST CmResource)
+{
+    PPNP_RESERVED_RESOURCES_CONTEXT ReservedContext;
+    PCM_RESOURCE_LIST NewList;
+    PCM_RESOURCE_LIST ReservedResource;
+    PDEVICE_NODE DeviceNode;
+    SIZE_T ListSize;
+
+    DPRINT("IopReportBootResources: DeviceObject %p, AllocationType %X\n", DeviceObject, AllocationType);
+
+    ListSize = PnpDetermineResourceListSize(CmResource);
+    if (!ListSize)
+    {
+        DPRINT1("IopReportBootResources: ListSize is 0\n");
+        ASSERT(FALSE);
+        return STATUS_SUCCESS;
+    }
+
+    if (DeviceObject)
+    {
+        DeviceNode = IopGetDeviceNode(DeviceObject);
+        ASSERT(DeviceNode);
+
+        if (!(DeviceNode->Flags & DNF_MADEUP))
+            return IopAllocateBootResources(AllocationType, DeviceObject, CmResource);
+
+        if (DeviceNode->BootResources == NULL)
+        {
+            NewList = ExAllocatePoolWithTag(PagedPool, ListSize, 'erpP');
+
+            DeviceNode->BootResources = NewList;
+            if (!NewList)
+            {
+                DPRINT1("IopReportBootResources: STATUS_INSUFFICIENT_RESOURCES\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(NewList, CmResource, ListSize);
+        }
+    }
+    else
+    {
+        DPRINT1("IopReportBootResources: DeviceObject is NULL\n");
+        ASSERT(FALSE);
+        DeviceNode = NULL;
+    }
+
+    ReservedContext = ExAllocatePoolWithTag(PagedPool, sizeof(PNP_RESERVED_RESOURCES_CONTEXT), 'erpP');
+    if (!ReservedContext)
+    {
+        ASSERT(FALSE);
+
+        if (!DeviceNode)
+        {
+            DPRINT1("IopReportBootResources: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        if (DeviceNode->BootResources)
+            ExFreePoolWithTag(DeviceNode->BootResources, 0);
+    }
+
+    if (DeviceNode)
+    {
+        ReservedResource = DeviceNode->BootResources;
+        DPRINT("IopReportBootResources: (%p) '%wZ', '%wZ'\n", DeviceNode, &DeviceNode->InstancePath, &DeviceNode->ServiceName);
+    }
+    else
+    {
+        ReservedResource = CmResource;
+    }
+
+    ReservedContext->ReservedResource = ReservedResource;
+    ReservedContext->DeviceObject = DeviceObject;
+    ReservedContext->NextReservedContext = IopInitReservedResourceList;
+
+    IopInitReservedResourceList = ReservedContext;
+
+    DPRINT("IopReportBootResources: List %p\n", IopInitReservedResourceList);
+
+    return STATUS_SUCCESS;
+}
+
+/* EOF */

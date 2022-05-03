@@ -392,6 +392,14 @@ IopGetDeviceResourcesFromRegistry(
     _Out_ SIZE_T * OutSize
 );
 
+NTSTATUS
+NTAPI
+IopReportBootResources(
+    _In_ ARBITER_REQUEST_SOURCE AllocationType,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PCM_RESOURCE_LIST CmResource
+);
+
 /* pnputil.c */
 NTSTATUS
 NTAPI

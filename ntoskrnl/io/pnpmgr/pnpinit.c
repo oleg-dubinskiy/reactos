@@ -18,6 +18,7 @@
 
 /* GLOBALS ********************************************************************/
 
+PNP_ALLOCATE_RESOURCES_ROUTINE IopAllocateBootResourcesRoutine;
 PUNICODE_STRING PiInitGroupOrderTable;
 USHORT PiInitGroupOrderTableCount;
 INTERFACE_TYPE PnpDefaultInterfaceType;
@@ -32,6 +33,7 @@ BOOLEAN IopBootConfigsReserved = FALSE;
 BOOLEAN PpDisableFirmwareMapper = FALSE;
 ERESOURCE PiEngineLock;
 ERESOURCE PiDeviceTreeLock;
+KSEMAPHORE PpRegistrySemaphore;
 
 ARBITER_INSTANCE IopRootBusNumberArbiter;
 ARBITER_INSTANCE IopRootIrqArbiter;
@@ -639,6 +641,9 @@ IopInitializePlugPlayServices(
     KeInitializeEvent(&PiEnumerationLock, NotificationEvent, TRUE);
     ExInitializeResourceLite(&PiEngineLock);
     ExInitializeResourceLite(&PiDeviceTreeLock);
+    KeInitializeSemaphore(&PpRegistrySemaphore, 1, 1);
+
+    IopAllocateBootResourcesRoutine = IopReportBootResources;
 
     /* Get the default interface */
     PnpDefaultInterfaceType = IopDetermineDefaultInterfaceType();
