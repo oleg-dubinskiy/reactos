@@ -20,6 +20,7 @@
 
 PPNP_RESERVED_RESOURCES_CONTEXT IopInitReservedResourceList = NULL;
 PNP_ALLOCATE_RESOURCES_ROUTINE IopAllocateBootResourcesRoutine;
+LIST_ENTRY IopLegacyBusInformationTable[MaximumInterfaceType];
 PUNICODE_STRING PiInitGroupOrderTable;
 USHORT PiInitGroupOrderTableCount;
 INTERFACE_TYPE PnpDefaultInterfaceType;
@@ -505,6 +506,10 @@ IopInitializePlugPlayServices(
     ExInitializeResourceLite(&PiEngineLock);
     ExInitializeResourceLite(&PiDeviceTreeLock);
     KeInitializeSemaphore(&PpRegistrySemaphore, 1, 1);
+
+    for (ix = Internal; ix < MaximumInterfaceType; ix++)
+        InitializeListHead(&IopLegacyBusInformationTable[ix]);
+
 
     IopAllocateBootResourcesRoutine = IopReportBootResources;
 
