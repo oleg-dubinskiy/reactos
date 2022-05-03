@@ -1118,7 +1118,8 @@ IopAssignDeviceResources(
    NTSTATUS Status;
    ULONG ListSize;
 
-   IopDeviceNodeSetFlag(DeviceNode, DNF_ASSIGNING_RESOURCES);
+ASSERT(FALSE);
+   //IopDeviceNodeSetFlag(DeviceNode, DNF_ASSIGNING_RESOURCES);
 
    Status = IopFilterResourceRequirements(DeviceNode);
    if (!NT_SUCCESS(Status))
@@ -1126,8 +1127,9 @@ IopAssignDeviceResources(
 
    if (!DeviceNode->BootResources && !DeviceNode->ResourceRequirements)
    {
-      DeviceNode->Flags |= DNF_NO_RESOURCE_REQUIRED;
-      DeviceNode->Flags &= ~DNF_ASSIGNING_RESOURCES;
+ASSERT(FALSE);
+      //DeviceNode->Flags |= DNF_NO_RESOURCE_REQUIRED;
+      //DeviceNode->Flags &= ~DNF_ASSIGNING_RESOURCES;
 
       /* No resource needed for this device */
       DeviceNode->ResourceList = NULL;
@@ -1200,9 +1202,11 @@ Finish:
    if (!NT_SUCCESS(Status))
        goto ByeBye;
 
-   IopDeviceNodeSetFlag(DeviceNode, DNF_RESOURCE_ASSIGNED);
+ASSERT(FALSE);
+   //IopDeviceNodeSetFlag(DeviceNode, DNF_RESOURCE_ASSIGNED);
 
-   IopDeviceNodeClearFlag(DeviceNode, DNF_ASSIGNING_RESOURCES);
+ASSERT(FALSE);
+   //IopDeviceNodeClearFlag(DeviceNode, DNF_ASSIGNING_RESOURCES);
 
    return STATUS_SUCCESS;
 
@@ -1215,7 +1219,8 @@ ByeBye:
 
    DeviceNode->ResourceListTranslated = NULL;
 
-   IopDeviceNodeClearFlag(DeviceNode, DNF_ASSIGNING_RESOURCES);
+ASSERT(FALSE);
+   //IopDeviceNodeClearFlag(DeviceNode, DNF_ASSIGNING_RESOURCES);
 
    return Status;
 }

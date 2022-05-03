@@ -691,6 +691,7 @@ IopGetRelatedDevice(PPLUGPLAY_CONTROL_RELATED_DEVICE_DATA RelatedDeviceData)
     return Status;
 }
 
+#if 0
 static ULONG
 IopGetDeviceNodeStatus(PDEVICE_NODE DeviceNode)
 {
@@ -738,6 +739,7 @@ IopGetDeviceNodeStatus(PDEVICE_NODE DeviceNode)
 
     return Output;
 }
+#endif
 
 static NTSTATUS
 IopDeviceStatus(PPLUGPLAY_CONTROL_STATUS_DATA StatusData)
@@ -796,7 +798,8 @@ IopDeviceStatus(PPLUGPLAY_CONTROL_STATUS_DATA StatusData)
     {
         case PNP_GET_DEVICE_STATUS:
             DPRINT("Get status data\n");
-            DeviceStatus = IopGetDeviceNodeStatus(DeviceNode);
+            ASSERT(FALSE);
+            DeviceStatus = 0;//IopGetDeviceNodeStatus(DeviceNode);
             DeviceProblem = DeviceNode->Problem;
             break;
 
@@ -1062,11 +1065,11 @@ IopResetDevice(PPLUGPLAY_CONTROL_RESET_DEVICE_DATA ResetDeviceData)
     /* Get the device node */
     DeviceNode = IopGetDeviceNode(DeviceObject);
 
-    ASSERT(DeviceNode->Flags & DNF_ENUMERATED);
-    ASSERT(DeviceNode->Flags & DNF_PROCESSED);
+    ASSERT(FALSE);
+    //ASSERT(DeviceNode->Flags & DNF_PROCESSED);
 
     /* Check if there's already a driver loaded for this device */
-    if (DeviceNode->Flags & DNF_ADDED)
+    if (0)//DeviceNode->Flags & DNF_ADDED)
     {
 #if 0
         /* Remove the device node */
@@ -1088,7 +1091,8 @@ IopResetDevice(PPLUGPLAY_CONTROL_RESET_DEVICE_DATA ResetDeviceData)
     else
     {
         /* FIXME: What if the device really is disabled? */
-        DeviceNode->Flags &= ~DNF_DISABLED;
+        ASSERT(FALSE);
+        //DeviceNode->Flags &= ~DNF_DISABLED;
         DeviceNode->Problem = 0;
 
         /* Load service data from the registry */
@@ -1098,7 +1102,8 @@ IopResetDevice(PPLUGPLAY_CONTROL_RESET_DEVICE_DATA ResetDeviceData)
         {
             /* Start the service and begin PnP initialization of the device again */
             DPRINT("A new driver will be loaded for '%wZ' (no FDO above)\n", &DeviceNode->InstancePath);
-            Status = IopActionInitChildServices(DeviceNode, DeviceNode->Parent);
+            ASSERT(FALSE);
+            Status = 0;//IopActionInitChildServices(DeviceNode, DeviceNode->Parent);
         }
     }
 
