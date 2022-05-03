@@ -172,6 +172,17 @@ typedef struct _IOPNP_DEVICE_EXTENSION
     ULONG CompatibleIdListSize;
 } IOPNP_DEVICE_EXTENSION, *PIOPNP_DEVICE_EXTENSION;
 
+/* === IO mgr ================================ */
+
+/* driver.c */
+BOOLEAN
+NTAPI
+IopIsLegacyDriver(
+    _In_ PDRIVER_OBJECT DriverObject
+);
+
+/* === PNP mgr =============================== */
+
 /* debug.c */
 VOID
 NTAPI
