@@ -68,7 +68,9 @@ typedef struct _PIP_ENUM_REQUEST
     NTSTATUS * CompletionStatus;
 } PIP_ENUM_REQUEST, *PPIP_ENUM_REQUEST;
 
-typedef struct _PIP_RESOURCE_REQUEST
+typedef struct _PNP_REQ_LIST PNP_REQ_LIST, *PPNP_REQ_LIST;
+
+typedef struct _PNP_RESOURCE_REQUEST
 {
     PDEVICE_OBJECT PhysicalDevice;
     ULONG Flags;
@@ -76,11 +78,11 @@ typedef struct _PIP_RESOURCE_REQUEST
     ULONG Priority;
     ULONG Position;
     PIO_RESOURCE_REQUIREMENTS_LIST ResourceRequirements;
-    PVOID ReqList;
+    PPNP_REQ_LIST ReqList;
     PCM_RESOURCE_LIST ResourceAssignment;
     PCM_RESOURCE_LIST TranslatedResourceAssignment;
     NTSTATUS Status;
-} PIP_RESOURCE_REQUEST, *PPIP_RESOURCE_REQUEST;
+} PNP_RESOURCE_REQUEST, *PPNP_RESOURCE_REQUEST;
 
 typedef struct _PIP_ASSIGN_RESOURCES_CONTEXT
 {

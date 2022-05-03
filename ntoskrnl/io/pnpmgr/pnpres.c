@@ -1621,7 +1621,7 @@ IopProcessAssignResources(
 {
     PPIP_ASSIGN_RESOURCES_CONTEXT AssignContext;
     DEVICETREE_TRAVERSE_CONTEXT Context;
-    PPIP_RESOURCE_REQUEST ResRequest;
+    PPNP_RESOURCE_REQUEST ResRequest;
     PDEVICE_NODE node;
     ULONG AssignContextSize;
     ULONG DeviceCount;
@@ -1655,7 +1655,7 @@ IopProcessAssignResources(
 
         IsRetry = FALSE;
 
-        AssignContextSize = sizeof(PIP_RESOURCE_REQUEST) + (IopNumberDeviceNodes * sizeof(PDEVICE_OBJECT));
+        AssignContextSize = sizeof(PNP_RESOURCE_REQUEST) + (IopNumberDeviceNodes * sizeof(PDEVICE_OBJECT));
 
         AssignContext = ExAllocatePoolWithTag(PagedPool, AssignContextSize, 'ddpP');
         if (!AssignContext)
@@ -1682,7 +1682,7 @@ IopProcessAssignResources(
 
         DPRINT("IopProcessAssignResources: DeviceCount %x\n", DeviceCount);
 
-        ResRequest = ExAllocatePoolWithTag(PagedPool, (DeviceCount * sizeof(PIP_RESOURCE_REQUEST)), 'ddpP');
+        ResRequest = ExAllocatePoolWithTag(PagedPool, (DeviceCount * sizeof(PNP_RESOURCE_REQUEST)), 'ddpP');
         if (!ResRequest)
         {
             ASSERT(FALSE);
