@@ -394,6 +394,14 @@ IopGetDeviceResourcesFromRegistry(
 
 NTSTATUS
 NTAPI
+IopAllocateBootResources(
+    _In_ ARBITER_REQUEST_SOURCE AllocationType,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PCM_RESOURCE_LIST CmResource
+);
+
+NTSTATUS
+NTAPI
 IopReportBootResources(
     _In_ ARBITER_REQUEST_SOURCE AllocationType,
     _In_ PDEVICE_OBJECT DeviceObject,
