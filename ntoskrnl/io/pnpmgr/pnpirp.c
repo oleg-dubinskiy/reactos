@@ -339,4 +339,69 @@ PpIrpQueryBusInformation(
     return Status;
 }
 
+NTSTATUS
+NTAPI
+PpIrpQueryResources(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Out_ PCM_RESOURCE_LIST * OutResourceList,
+    _Out_ PULONG OutSize)
+{
+    IO_STACK_LOCATION IoStack;
+    PDEVICE_NODE DeviceNode;
+    ULONG ConfigTypes;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("PpIrpQueryResources: DeviceObject %p\n", DeviceObject);
+
+    *OutResourceList = NULL;
+    *OutSize = 0;
+
+    RtlZeroMemory(&IoStack, sizeof(IoStack));
+
+    DeviceNode = IopGetDeviceNode(DeviceObject);
+
+    if (DeviceNode->Flags & DNF_MADEUP)
+    {
+        DPRINT("PpIrpQueryResources: DeviceNode->Flags & DNF_MADEUP\n");
+
+        ConfigTypes = PIP_CONFIG_TYPE_BOOT +
+                      PIP_CONFIG_TYPE_FORCED +
+                      PIP_CONFIG_TYPE_ALLOC;
+
+        Status = IopGetDeviceResourcesFromRegistry(DeviceObject,
+                                                   FALSE, // PCM_RESOURCE_LIST
+                                                   ConfigTypes,
+                                                   (PVOID *)OutResourceList,
+                                                   OutSize);
+
+        if (Status != STATUS_OBJECT_NAME_NOT_FOUND)
+        {
+            return Status;
+        }
+
+        return STATUS_SUCCESS;
+    }
+
+    IoStack.MajorFunction = IRP_MJ_PNP;
+    IoStack.MinorFunction = IRP_MN_QUERY_RESOURCES;
+
+    Status = IopSynchronousCall(DeviceObject, &IoStack, (PVOID*)OutResourceList);
+
+    if (Status == STATUS_NOT_SUPPORTED)
+    {
+        DPRINT("PpIrpQueryResources: Status == STATUS_NOT_SUPPORTED\n");
+        *OutResourceList = NULL;
+        Status = STATUS_SUCCESS;
+    }
+
+    if (NT_SUCCESS(Status))
+    {
+        *OutSize = PnpDetermineResourceListSize(*OutResourceList);
+         DPRINT("PpIrpQueryResources: OutSize %X\n", *OutSize);
+    }
+
+    return Status;
+}
+
 /* EOF */
