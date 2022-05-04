@@ -259,6 +259,20 @@ IopGetBusName(
     _In_ INTERFACE_TYPE IfType
 );
 
+VOID
+NTAPI
+devnode(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ ULONG Flags,
+    _In_ PUNICODE_STRING ServiceName
+);
+
+VOID
+NTAPI
+PipDumpResRequest(
+    _In_ PPNP_RESOURCE_REQUEST ResRequest
+);
+
 /* pnpenum.c */
 NTSTATUS
 NTAPI
