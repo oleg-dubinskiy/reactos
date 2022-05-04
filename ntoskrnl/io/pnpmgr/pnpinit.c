@@ -26,6 +26,7 @@ USHORT PiInitGroupOrderTableCount;
 USHORT IopGroupIndex;
 PLIST_ENTRY IopGroupTable; // rointer to array[IopGroupIndex]
 INTERFACE_TYPE PnpDefaultInterfaceType;
+PDEVICE_NODE IopInitHalDeviceNode;
 PCM_RESOURCE_LIST IopInitHalResources;
 LONG IopNumberDeviceNodes = 0;
 ULONG IopMaxDeviceNodeLevel = 0;

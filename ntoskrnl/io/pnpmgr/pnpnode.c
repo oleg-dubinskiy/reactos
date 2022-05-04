@@ -23,6 +23,7 @@ extern ULONG IopMaxDeviceNodeLevel;
 extern KSEMAPHORE PpRegistrySemaphore;
 extern LIST_ENTRY IopLegacyBusInformationTable[MaximumInterfaceType];
 extern PDEVICE_NODE IopRootDeviceNode;
+extern PDEVICE_NODE IopInitHalDeviceNode;
 
 /* DATA **********************************************************************/
 
@@ -72,6 +73,8 @@ PipAllocateDeviceNode(IN PDEVICE_OBJECT PhysicalDeviceObject)
         ((PEXTENDED_DEVOBJ_EXTENSION)PhysicalDeviceObject->DeviceObjectExtension)->DeviceNode = DeviceNode;
         PhysicalDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
     }
+
+    DPRINT("PipAllocateDeviceNode: %p, %p, IopNumberDeviceNodes %X\n", PhysicalDeviceObject, DeviceNode, IopNumberDeviceNodes);
 
     /* Return the node */
     return DeviceNode;
