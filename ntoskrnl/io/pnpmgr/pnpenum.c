@@ -30,6 +30,7 @@ extern BOOLEAN PnPBootDriversLoaded;
 extern BOOLEAN PnPBootDriversInitialized;
 extern BOOLEAN PiCriticalDeviceDatabaseEnabled;
 extern BOOLEAN PnpSystemInit;
+extern BOOLEAN PpPnpShuttingDown;
 
 /* DATA **********************************************************************/
 
@@ -4932,28 +4933,40 @@ PipRequestDeviceAction(
     _In_ PIP_ENUM_TYPE RequestType,
     _In_ UCHAR ReorderingBarrier,
     _In_ ULONG_PTR RequestArgument,
-    _In_ PKEVENT Event,
-    _Inout_ NTSTATUS * OutStatus)
+    _In_ PKEVENT CompletionEvent,
+    _Inout_ NTSTATUS * CompletionStatus)
 {
     PPIP_ENUM_REQUEST Request;
     PDEVICE_OBJECT RequestDeviceObject;
     KIRQL OldIrql;
 
-    DPRINT("PipRequestDeviceAction: %p, %X\n", DeviceObject, RequestType);
+    DPRINT("PipRequestDeviceAction: DeviceObject - %p, RequestType - %X\n",
+           DeviceObject,
+           RequestType);
 
-    //FIXME: check ShuttingDown
+    if (PpPnpShuttingDown)
+    {
+        DPRINT1("PipRequestDeviceAction: STATUS_TOO_LATE\n");
+        return STATUS_TOO_LATE;
+    }
 
-    Request = ExAllocatePoolWithTag(NonPagedPool, sizeof(PIP_ENUM_REQUEST), TAG_IO);
+    Request = ExAllocatePoolWithTag(NonPagedPool,
+                                    sizeof(PIP_ENUM_REQUEST),
+                                    TAG_IO);
     if (!Request)
     {
-        DPRINT1("PipRequestDeviceAction: error\n");
+        DPRINT1("PipRequestDeviceAction: STATUS_INSUFFICIENT_RESOURCES\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     if (!DeviceObject)
+    {
         RequestDeviceObject = IopRootDeviceNode->PhysicalDeviceObject;
+    }
     else
+    {
         RequestDeviceObject = DeviceObject;
+    }
 
     ObReferenceObject(RequestDeviceObject);
 
@@ -4961,15 +4974,15 @@ PipRequestDeviceAction(
     Request->RequestType = RequestType;
     Request->ReorderingBarrier = ReorderingBarrier;
     Request->RequestArgument = RequestArgument;
-    Request->CompletionEvent = Event;
-    Request->CompletionStatus = OutStatus;
+    Request->CompletionEvent = CompletionEvent;
+    Request->CompletionStatus = CompletionStatus;
 
     InitializeListHead(&Request->RequestLink);
 
     KeAcquireSpinLock(&IopPnPSpinLock, &OldIrql);
 
     InsertTailList(&IopPnpEnumerationRequestList, &Request->RequestLink);
-    DPRINT("PipRequestDeviceAction: Inserted Request %p\n", Request);
+    DPRINT("PipRequestDeviceAction: Inserted Request - %p\n", Request);
 
     if (RequestType == PipEnumAddBootDevices ||
         RequestType == PipEnumBootDevices ||
@@ -4995,7 +5008,7 @@ PipRequestDeviceAction(
 
     if (PipEnumerationInProgress)
     {
-        DPRINT("PipRequestDeviceAction: PipEnumerationInProgress\n");
+        DPRINT("PipRequestDeviceAction: PipEnumerationInProgress - TRUE\n");
         KeReleaseSpinLock(&IopPnPSpinLock, OldIrql);
         return STATUS_SUCCESS;
     }
@@ -5004,10 +5017,13 @@ PipRequestDeviceAction(
     KeClearEvent(&PiEnumerationLock);
     KeReleaseSpinLock(&IopPnPSpinLock, OldIrql);
 
-    ExInitializeWorkItem(&PipDeviceEnumerationWorkItem, PipEnumerationWorker, Request);
+    ExInitializeWorkItem(&PipDeviceEnumerationWorkItem,
+                         PipEnumerationWorker,
+                         Request);
 
     ExQueueWorkItem(&PipDeviceEnumerationWorkItem, DelayedWorkQueue);
-    DPRINT("PipRequestDeviceAction: Queue %p\n", &PipDeviceEnumerationWorkItem);
+    DPRINT("PipRequestDeviceAction: Queue &PipDeviceEnumerationWorkItem - %p\n",
+           &PipDeviceEnumerationWorkItem);
 
     return STATUS_SUCCESS;
 }

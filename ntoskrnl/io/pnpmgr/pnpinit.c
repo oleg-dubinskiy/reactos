@@ -38,9 +38,10 @@ KEVENT PiEnumerationLock;
 BOOLEAN PnPBootDriversLoaded = FALSE;
 BOOLEAN PnPBootDriversInitialized = FALSE;
 BOOLEAN IopBootConfigsReserved = FALSE;
-BOOLEAN PpDisableFirmwareMapper;
+BOOLEAN PpDisableFirmwareMapper = FALSE;
 BOOLEAN PiCriticalDeviceDatabaseEnabled = TRUE;
 BOOLEAN PnpSystemInit = FALSE;
+BOOLEAN PpPnpShuttingDown = FALSE;
 ERESOURCE PiEngineLock;
 ERESOURCE PiDeviceTreeLock;
 KSEMAPHORE PpRegistrySemaphore;
@@ -2367,7 +2368,7 @@ Next:
                                        NULL);
             }
 
-            if (!PipWaitForBootDevicesDeleted())
+            if (!IopWaitForBootDevicesDeleted())
             {
                 return FALSE;
             }
