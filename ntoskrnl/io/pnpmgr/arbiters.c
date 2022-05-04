@@ -36,9 +36,22 @@ IopBusNumberUnpackRequirement(
     _Out_ PULONG OutAlignment)
 {
     PAGED_CODE();
+    DPRINT("IopBusNumberUnpackRequirement: IoDescriptor - %p, MinBusNumber - %X, MaxBusNumber - %X, Length - %X\n",
+            IoDescriptor,
+            IoDescriptor->u.BusNumber.MinBusNumber,
+            IoDescriptor->u.BusNumber.MaxBusNumber,
+            IoDescriptor->u.BusNumber.Length);
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    ASSERT(IoDescriptor);
+    ASSERT(IoDescriptor->Type == CmResourceTypeBusNumber);
+
+    *OutMinimumAddress = IoDescriptor->u.BusNumber.MinBusNumber;
+    *OutMaximumAddress = IoDescriptor->u.BusNumber.MaxBusNumber;
+
+    *OutLength = IoDescriptor->u.Generic.Length;
+    *OutAlignment = 1;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS

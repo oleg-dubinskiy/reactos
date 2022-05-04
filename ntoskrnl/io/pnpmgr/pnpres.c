@@ -3272,8 +3272,7 @@ IopBootAllocation(
         }
     }
 
-    ASSERT(FALSE);
-    //IopCheckDataStructures(IopRootDeviceNode);
+    IopCheckDataStructures(IopRootDeviceNode);
 
     return Status;
 }
