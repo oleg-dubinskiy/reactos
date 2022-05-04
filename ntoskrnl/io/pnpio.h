@@ -180,6 +180,19 @@ typedef struct _IOPNP_DEVICE_EXTENSION
 /* === IO mgr ================================ */
 
 /* driver.c */
+NTSTATUS
+NTAPI
+IopInvalidDeviceRequest(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp
+);
+
+VOID
+FASTCALL
+IopDisplayLoadingMessage(
+    _In_ PUNICODE_STRING ServiceName
+);
+
 BOOLEAN
 NTAPI
 IopIsLegacyDriver(

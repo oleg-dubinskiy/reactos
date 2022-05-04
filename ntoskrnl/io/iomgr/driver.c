@@ -818,6 +818,7 @@ LdrProcessDriverModule(PLDR_DATA_TABLE_ENTRY LdrEntry,
     return STATUS_SUCCESS;
 }
 
+#if 0
 /*
  * IopInitializeBuiltinDriver
  *
@@ -942,6 +943,7 @@ IopInitializeBuiltinDriver(IN PLDR_DATA_TABLE_ENTRY BootLdrEntry)
 
     return Status;
 }
+#endif
 
 #if 0
 /*
