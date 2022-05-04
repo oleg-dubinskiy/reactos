@@ -1340,6 +1340,10 @@ IopIsAnyDeviceInstanceEnabled(
 
         ExFreePoolWithTag(ValueInfo, 'uspP');
     }
+    else
+    {
+        DPRINT("IopIsAnyDeviceInstanceEnabled: Status - %X\n", Status);
+    }
 
     ZwClose(EnumHandle);
 
@@ -1422,6 +1426,10 @@ IopIsAnyDeviceInstanceEnabled(
                           ServiceKeyName->Length + sizeof(WCHAR));
 
             ZwClose(KeyHandle);
+        }
+        else
+        {
+            DPRINT("IopIsAnyDeviceInstanceEnabled: Status - %X\n", Status);
         }
 
         Result = TRUE;
