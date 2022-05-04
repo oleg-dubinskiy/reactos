@@ -1652,8 +1652,12 @@ Next:
         PipDumpResRequest(&ResContext[Idx]);
     }
 
-    ASSERT(FALSE);
-    return 0;//IopAllocateResources(&DeviceCount, &ResContext, FALSE, Config, OutIsAssigned);
+    Status = IopAllocateResources(&DeviceCount,
+                                  &ResContext,
+                                  FALSE,
+                                  Config,
+                                  OutIsAssigned);
+    return Status;
 }
 
 NTSTATUS
