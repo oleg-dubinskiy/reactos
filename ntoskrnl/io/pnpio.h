@@ -24,9 +24,15 @@
 #define PIP_REENUM_TYPE_SINGLE      1
 #define PIP_REENUM_TYPE_SUBTREE     2
 
+/* For Resource Lists */
 #define PIP_CONFIG_TYPE_ALLOC   1
 #define PIP_CONFIG_TYPE_FORCED  2
 #define PIP_CONFIG_TYPE_BOOT    4
+
+/* For Resource Requirements Lists */
+#define PIP_CONFIG_TYPE_BASIC     1
+#define PIP_CONFIG_TYPE_FILTERED  2
+#define PIP_CONFIG_TYPE_OVERRIDE  4
 
 /* Dump resources flags */
 #define PIP_DUMP_FL_ALL_NODES        1
