@@ -30,16 +30,22 @@ PDEVICE_NODE IopInitHalDeviceNode;
 PCM_RESOURCE_LIST IopInitHalResources;
 LONG IopNumberDeviceNodes = 0;
 ULONG IopMaxDeviceNodeLevel = 0;
+ULONG IoDeviceNodeTreeSequence = 0;
 KSPIN_LOCK IopPnPSpinLock;
 LIST_ENTRY IopPnpEnumerationRequestList;
+KEVENT PiEnumerationLock;
 BOOLEAN PnPBootDriversLoaded = FALSE;
 BOOLEAN PnPBootDriversInitialized = FALSE;
 BOOLEAN IopBootConfigsReserved = FALSE;
-BOOLEAN PpDisableFirmwareMapper = FALSE;
+BOOLEAN PpDisableFirmwareMapper;
 BOOLEAN PiCriticalDeviceDatabaseEnabled = TRUE;
+BOOLEAN PnpSystemInit = FALSE;
 ERESOURCE PiEngineLock;
 ERESOURCE PiDeviceTreeLock;
 KSEMAPHORE PpRegistrySemaphore;
+KEVENT PiEventQueueEmpty;
+PPNP_DEVICE_EVENT_LIST PpDeviceEventList;
+KGUARDED_MUTEX PiNotificationInProgressLock;
 
 ARBITER_INSTANCE IopRootBusNumberArbiter;
 ARBITER_INSTANCE IopRootIrqArbiter;
@@ -466,23 +472,22 @@ IopInitializePlugPlayServices(
 {
     NTSTATUS Status;
     ULONG Disposition;
-    HANDLE KeyHandle, EnumHandle, ParentHandle, TreeHandle, ControlHandle;
-    UNICODE_STRING KeyName = RTL_CONSTANT_STRING(L"\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET");
+    HANDLE ControlSetHandle, EnumHandle, TreeHandle, EnumRootHandle;
+    UNICODE_STRING KeyName;
     UNICODE_STRING PnpManagerDriverName = RTL_CONSTANT_STRING(DRIVER_ROOT_NAME L"PnpManager");
     PDEVICE_OBJECT Pdo;
     ULONG ix;
 
+    DPRINT1("IopInitializePlugPlayServices: Phase - %X\n", Phase);
+
     if (Phase != 0 && Phase != 1)
     {
-        DPRINT1("IopInitializePlugPlayServices: Phase - %X\n", Phase);
         ASSERT(FALSE);
         return STATUS_INVALID_PARAMETER_2;
     }
 
     if (Phase == 1)
     {
-        DPRINT1("IopInitializePlugPlayServices: Phase - %X\n", Phase);
-
         MapperProcessFirmwareTree(PpDisableFirmwareMapper);
         MapperConstructRootEnumTree(PpDisableFirmwareMapper);
 
@@ -498,8 +503,11 @@ IopInitializePlugPlayServices(
                                0,
                                NULL,
                                NULL);
-        return Status=0;
+        return STATUS_SUCCESS;
     }
+
+    DPRINT("IopInitializePlugPlayServices: FIXME Hive Limits\n");
+    DPRINT("IopInitializePlugPlayServices: FIXME PpInitializeBootDDB()\n");
 
     /* Initialize locks and such */
     KeInitializeSpinLock(&IopPnPSpinLock);
@@ -508,87 +516,96 @@ IopInitializePlugPlayServices(
     InitializeListHead(&IopDeviceActionRequestList);
     InitializeListHead(&IopPnpEnumerationRequestList);
     KeInitializeEvent(&PiEnumerationLock, NotificationEvent, TRUE);
+    KeInitializeEvent(&PiEventQueueEmpty, NotificationEvent, TRUE);
     ExInitializeResourceLite(&PiEngineLock);
     ExInitializeResourceLite(&PiDeviceTreeLock);
     KeInitializeSemaphore(&PpRegistrySemaphore, 1, 1);
-
-    for (ix = Internal; ix < MaximumInterfaceType; ix++)
-        InitializeListHead(&IopLegacyBusInformationTable[ix]);
-
-
-    IopAllocateBootResourcesRoutine = IopReportBootResources;
 
     /* Get the default interface */
     PnpDefaultInterfaceType = IopDetermineDefaultInterfaceType();
 
     /* Setup the group cache */
     Status = PiInitCacheGroupInformation();
-    if (!NT_SUCCESS(Status)) return Status;
+    if (!NT_SUCCESS(Status))
+    {
+        return Status;
+    }
+
+    for (ix = Internal; ix < MaximumInterfaceType; ix++)
+    {
+        InitializeListHead(&IopLegacyBusInformationTable[ix]);
+    }
+
+    IopAllocateBootResourcesRoutine = IopReportBootResources;
 
     /* Initialize memory resources */
     IopInitializeResourceMap(LoaderBlock);
 
     /* Initialize arbiters */
     Status = IopInitializeArbiters();
-    if (!NT_SUCCESS(Status)) return Status;
+    if (!NT_SUCCESS(Status))
+    {
+        return Status;
+    }
 
     /* Open the current control set */
-    Status = IopOpenRegistryKeyEx(&KeyHandle,
+    RtlInitUnicodeString(&KeyName, IO_REG_KEY_CURRENTCONTROLSET);
+    Status = IopOpenRegistryKeyEx(&ControlSetHandle,
                                   NULL,
-                                  &KeyName,
-                                  KEY_ALL_ACCESS);
-    if (!NT_SUCCESS(Status)) return Status;
-
-    /* !!! Test the control key */
-    RtlInitUnicodeString(&KeyName, L"Control");
-    Status = IopOpenRegistryKeyEx(&ControlHandle,
-                                  KeyHandle,
                                   &KeyName,
                                   KEY_ALL_ACCESS);
     if (!NT_SUCCESS(Status))
     {
-        ASSERT(FALSE);
-        return Status;
+        goto Exit;
     }
+
+    DPRINT("IopInitializePlugPlayServices: FIXME test 'Win2000StartOrder' and 'ReturnHandleInfo'\n");
 
     /* Create the enum key */
     RtlInitUnicodeString(&KeyName, REGSTR_KEY_ENUM);
     Status = IopCreateRegistryKeyEx(&EnumHandle,
-                                    KeyHandle,
+                                    ControlSetHandle,
                                     &KeyName,
                                     KEY_ALL_ACCESS,
                                     REG_OPTION_NON_VOLATILE,
                                     &Disposition);
-    if (!NT_SUCCESS(Status)) return Status;
+    if (!NT_SUCCESS(Status))
+    {
+        goto Exit;
+    }
 
     /* Check if it's a new key */
     if (Disposition == REG_CREATED_NEW_KEY)
     {
         /* FIXME: DACLs */
+        DPRINT1("IopInitializePlugPlayServices: FIXME Create DACLs\n");
     }
 
     /* Create the root key */
-    ParentHandle = EnumHandle;
-    RtlInitUnicodeString(&KeyName, REGSTR_KEY_ROOTENUM);
-    Status = IopCreateRegistryKeyEx(&EnumHandle,
-                                    ParentHandle,
+    RtlInitUnicodeString(&KeyName, REGSTR_KEY_ROOT);
+    Status = IopCreateRegistryKeyEx(&EnumRootHandle,
+                                    EnumHandle,
                                     &KeyName,
                                     KEY_ALL_ACCESS,
                                     REG_OPTION_NON_VOLATILE,
                                     &Disposition);
-    NtClose(ParentHandle);
-    if (!NT_SUCCESS(Status)) return Status;
     NtClose(EnumHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        goto Exit;
+    }
 
-    /* Open the root key now */
-    RtlInitUnicodeString(&KeyName, L"\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET\\ENUM");
+    NtClose(EnumRootHandle);
+
+    /* Open the enum key now */
+    RtlInitUnicodeString(&KeyName, IO_REG_KEY_ENUM);
     Status = IopOpenRegistryKeyEx(&EnumHandle,
                                   NULL,
                                   &KeyName,
                                   KEY_ALL_ACCESS);
     if (NT_SUCCESS(Status))
     {
-        /* Create the root dev node */
+        /* Create the root tree dev node key */
         RtlInitUnicodeString(&KeyName, REGSTR_VAL_ROOT_DEVNODE);
         Status = IopCreateRegistryKeyEx(&TreeHandle,
                                         EnumHandle,
@@ -597,8 +614,14 @@ IopInitializePlugPlayServices(
                                         REG_OPTION_NON_VOLATILE,
                                         NULL);
         NtClose(EnumHandle);
-        if (NT_SUCCESS(Status)) NtClose(TreeHandle);
+        if (NT_SUCCESS(Status))
+        {
+            NtClose(TreeHandle);
+        }
     }
+
+    DPRINT("IopInitializePlugPlayServices: FIXME PpProfileInit()\n");
+    //PpProfileInit();
 
     /* Create the root driver */
     Status = IoCreateDriver(&PnpManagerDriverName, PnpRootDriverEntry);
@@ -632,26 +655,54 @@ IopInitializePlugPlayServices(
         DPRINT1("PipAllocateDeviceNode() failed\n");
         KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, Status, 0, 0, 0);
     }
+    DPRINT("IopInitializePlugPlayServices: IopRootDeviceNode - %p\n", IopRootDeviceNode);
 
     /* Set flags */
     IopRootDeviceNode->Flags |= DNF_MADEUP +
                                 DNF_ENUMERATED +
-                                0x20 + //DNF_IDS_QUERIED
+                                DNF_IDS_QUERIED +
                                 DNF_NO_RESOURCE_REQUIRED;
 
     /* Create instance path */
-    RtlCreateUnicodeString(&IopRootDeviceNode->InstancePath,
-                           REGSTR_VAL_ROOT_DEVNODE);
+    if (RtlCreateUnicodeString(&IopRootDeviceNode->InstancePath,
+                               REGSTR_VAL_ROOT_DEVNODE) == FALSE)
+    {
+        ASSERT(IopRootDeviceNode->InstancePath.Buffer);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    } 
 
+    /* Map PDO to Instance */
     Status = IopMapDeviceObjectToDeviceInstance(IopRootDeviceNode->PhysicalDeviceObject,
                                                 &IopRootDeviceNode->InstancePath);
-    if (!NT_SUCCESS(Status)) return Status;
+    if (!NT_SUCCESS(Status))
+    {
+        goto Exit;
+    }
 
     PipSetDevNodeState(IopRootDeviceNode, DeviceNodeStarted, NULL);
 
     /* Initialize PnP-Event notification support */
     Status = IopInitPlugPlayEvents();
-    if (!NT_SUCCESS(Status)) return Status;
+    if (!NT_SUCCESS(Status))
+    {
+        goto Exit;
+    }
+
+    PpDeviceEventList = ExAllocatePoolWithTag(NonPagedPool, sizeof(PNP_DEVICE_EVENT_LIST), 'LEpP');
+    if ( !PpDeviceEventList )
+    {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    KeInitializeMutex(&PpDeviceEventList->EventQueueMutex, 0);
+    KeInitializeGuardedMutex(&PpDeviceEventList->Lock);
+    InitializeListHead(&PpDeviceEventList->List);
+
+    PpDeviceEventList->Status = STATUS_PENDING;
+
+    KeInitializeGuardedMutex(&PiNotificationInProgressLock);
 
     /* Report the device to the user-mode pnp manager */
     IopQueueTargetDeviceEvent(&GUID_DEVICE_ARRIVAL,
@@ -669,10 +720,15 @@ IopInitializePlugPlayServices(
                            NULL,
                            NULL);
 
-    /* Close the handle to the control set */
-    NtClose(KeyHandle);
+    Status = STATUS_SUCCESS;
 
-    /* We made it */
+Exit:
+
+    if (ControlSetHandle)
+    {
+        NtClose(ControlSetHandle);
+    }
+
     return STATUS_SUCCESS;
 }
 
