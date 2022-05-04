@@ -2454,7 +2454,7 @@ IopAssignResourcesToDevices(
 
 Next:
         ResContext[Idx].ResourceRequirements = NULL;
-        PipDumpResRequest(&ResContext[Idx]);
+        IopDumpResRequest(&ResContext[Idx]);
     }
 
  ASSERT(FALSE);
@@ -2599,7 +2599,7 @@ IopProcessAssignResources(
 
 #if 0
         for (ix = 0; ix < DeviceCount; ix++)
-            PipDumpResRequest(&ResRequest[ix]);
+            IopDumpResRequest(&ResRequest[ix]);
 #endif
 
         for (ix = 0; ix < DeviceCount; ix++)
