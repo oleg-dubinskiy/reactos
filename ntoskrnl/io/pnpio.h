@@ -71,6 +71,15 @@ typedef struct _PIP_ENUM_REQUEST
     NTSTATUS * CompletionStatus;
 } PIP_ENUM_REQUEST, *PPIP_ENUM_REQUEST;
 
+typedef struct _PI_RESOURCE_TRANSLATOR_ENTRY
+{
+    LIST_ENTRY DeviceTranslatorList; // Link to DeviceNode->DeviceTranslatorList
+    UCHAR ResourceType;
+    UCHAR Padding[3];
+    PTRANSLATOR_INTERFACE TranslatorInterface;
+    PDEVICE_NODE DeviceNode;
+} PI_RESOURCE_TRANSLATOR_ENTRY, *PPI_RESOURCE_TRANSLATOR_ENTRY;
+
 typedef struct _PNP_REQ_LIST PNP_REQ_LIST, *PPNP_REQ_LIST;
 
 typedef struct _PNP_RESOURCE_REQUEST
