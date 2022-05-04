@@ -978,9 +978,39 @@ Exit:
     return Status;
 }
 
-INIT_FUNCTION
+VOID
+NTAPI
+PipInsertDriverList(
+    _In_ PLIST_ENTRY DriverList,
+    _In_ PLIST_ENTRY Link)
+{
+    PLIST_ENTRY Entry;
+    USHORT EntryTagPosition;
+    USHORT LinkTagPosition;
+
+    LinkTagPosition = (CONTAINING_RECORD(Link,
+                                         DRIVER_INFORMATION,
+                                         Link))->TagPosition;
+    for (Entry = DriverList->Flink;
+         Entry != DriverList;
+         Entry = Entry->Flink)
+    {
+        EntryTagPosition = (CONTAINING_RECORD(Entry,
+                                              DRIVER_INFORMATION,
+                                              Link))->TagPosition;
+
+        if (EntryTagPosition > LinkTagPosition)
+        {
+            break;
+        }
+    }
+
+    InsertHeadList(Entry->Blink, Link);
+}
+
 BOOLEAN
 FASTCALL
+INIT_FUNCTION
 IopInitializeBootDrivers(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
@@ -1127,8 +1157,7 @@ IopInitializeBootDrivers(
             DPRINT("IopInitializeBootDrivers: BootEntry - %p, RegistryPath - %wZ, TagPosition - %X, Idx - %X\n",
                    BootEntry, &BootEntry->RegistryPath, DriverInfo->TagPosition, Idx);
 
-            DPRINT("IopInitializeBootDrivers: FIXME PipInsertDriverList\n");
-            ASSERT(FALSE);
+            PipInsertDriverList(&IopGroupTable[Idx], &DriverInfo->Link);
         }
         else
         {
