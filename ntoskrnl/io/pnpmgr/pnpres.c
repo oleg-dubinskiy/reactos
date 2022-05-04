@@ -1574,6 +1574,89 @@ IopWriteResourceList(
 }
 
 NTSTATUS
+NTAPI
+IopAssignResourcesToDevices(
+    _In_ ULONG DeviceCount,
+    _In_ PPNP_RESOURCE_REQUEST ResContext,
+    _In_ BOOLEAN Config,
+    _Out_ BOOLEAN * OutIsAssigned)
+{
+    KEY_VALUE_PARTIAL_INFORMATION KeyValueInformation;
+    PDEVICE_NODE DeviceNode;
+    ULONG DeviceReported;
+    UNICODE_STRING ValueName;
+    ULONG ResultLength;
+    HANDLE KeyHandle;
+    ULONG Idx;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("IopAssignResourcesToDevices: ResContext - %p, DeviceCount - %X\n",
+           ResContext, DeviceCount);
+
+    ASSERT(DeviceCount);
+
+    for (Idx = 0; Idx < DeviceCount; Idx++)
+    {
+        ResContext[Idx].Flags = 0;
+        ResContext[Idx].AllocationType = ArbiterRequestPnpEnumerated;
+        ResContext[Idx].ResourceAssignment = NULL;
+        ResContext[Idx].Status = STATUS_SUCCESS;
+
+        DeviceNode = IopGetDeviceNode(ResContext[Idx].PhysicalDevice);
+
+        DPRINT("IopAssignResourcesToDevices: Idx - %X, DeviceNode - %p, Flags - %X\n",
+               Idx, DeviceNode, DeviceNode->Flags);
+
+        if (!(DeviceNode->Flags & DNF_MADEUP))
+        {
+            goto Next;
+        }
+
+        DeviceReported = 0;
+
+        Status = PnpDeviceObjectToDeviceInstance(ResContext[Idx].PhysicalDevice,
+                                                 &KeyHandle,
+                                                 KEY_READ);
+        if (!NT_SUCCESS(Status))
+        {
+            goto Next;
+        }
+
+        ResultLength = 0;
+        RtlInitUnicodeString(&ValueName, L"DeviceReported");
+
+        Status = ZwQueryValueKey(KeyHandle,
+                                 &ValueName,
+                                 KeyValuePartialInformation,
+                                 &KeyValueInformation,
+                                 sizeof(KEY_VALUE_PARTIAL_INFORMATION) +
+                                   sizeof(DeviceReported),
+                                 &ResultLength);
+
+        if (NT_SUCCESS(Status))
+        {
+            DeviceReported = *(PULONG)&KeyValueInformation.Data[0];
+        }
+
+        ZwClose(KeyHandle);
+
+        if (DeviceReported != 0)
+        {
+            ASSERT(FALSE);
+            ResContext[Idx].AllocationType = ArbiterRequestLegacyReported;
+        }
+
+Next:
+        ResContext[Idx].ResourceRequirements = NULL;
+        PipDumpResRequest(&ResContext[Idx]);
+    }
+
+    ASSERT(FALSE);
+    return 0;//IopAllocateResources(&DeviceCount, &ResContext, FALSE, Config, OutIsAssigned);
+}
+
+NTSTATUS
 IopProcessAssignResourcesWorker(
     _In_ PDEVICE_NODE DeviceNode,
     _Inout_ PVOID Context)
@@ -1594,7 +1677,7 @@ IopProcessAssignResourcesWorker(
     }
 
     if ((DeviceNode->Flags & DNF_HAS_PROBLEM)||
-        (DeviceNode->Flags & 0x4000))//DNF_HAS_PRIVATE_PROBLEM
+        (DeviceNode->Flags & DNF_HAS_PRIVATE_PROBLEM))
     {
         DPRINT("IopProcessAssignResourcesWorker: [%p][%p] Flags %X\n", DeviceNode->PhysicalDeviceObject, DeviceNode, DeviceNode->Flags);
         return STATUS_SUCCESS;
