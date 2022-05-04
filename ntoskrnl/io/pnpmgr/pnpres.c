@@ -2161,6 +2161,86 @@ Exit:
     return Status;
 }
 
+NTSTATUS
+NTAPI
+IopMergeFilteredResourceRequirementsList(
+    _In_ PIO_RESOURCE_REQUIREMENTS_LIST IoResources1,
+    _In_ PIO_RESOURCE_REQUIREMENTS_LIST IoResources2,
+    _Out_ PIO_RESOURCE_REQUIREMENTS_LIST *OutIoResources)
+{
+    PIO_RESOURCE_REQUIREMENTS_LIST IoResources;
+    PIO_RESOURCE_REQUIREMENTS_LIST NewIoResources;
+    SIZE_T Size;
+
+    PAGED_CODE();
+    DPRINT("IopMergeFilteredResourceRequirementsList: IoResources1 %p, IoResources2 %p\n",
+           IoResources1, IoResources2);
+
+    *OutIoResources = NULL;
+
+    if ((!IoResources1 || !IoResources1->AlternativeLists) &&
+        (!IoResources2 || !IoResources2->AlternativeLists))
+    {
+        return STATUS_SUCCESS;
+    }
+
+    if (IoResources1 && IoResources1->AlternativeLists)
+    {
+        if (IoResources2 && IoResources2->AlternativeLists)
+        {
+            Size = IoResources1->ListSize +
+                   IoResources2->ListSize -
+                   sizeof(IO_RESOURCE_DESCRIPTOR);
+
+            NewIoResources = ExAllocatePoolWithTag(PagedPool, Size, 'uspP');
+
+            if (NewIoResources)
+            {
+                RtlCopyMemory(NewIoResources,
+                              IoResources1,
+                              IoResources1->ListSize);
+
+                RtlCopyMemory((PUCHAR)NewIoResources + IoResources1->ListSize,
+                              IoResources2->List,
+                              Size - IoResources1->ListSize);
+
+                NewIoResources->ListSize = Size;
+                NewIoResources->AlternativeLists += IoResources2->AlternativeLists;
+
+                *OutIoResources = NewIoResources;
+
+                return STATUS_SUCCESS;
+            }
+            else
+            {
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+        }
+        else
+        {
+            IoResources = IoResources1;
+        }
+    }
+    else
+    {
+        IoResources = IoResources2;
+    }
+
+    NewIoResources = ExAllocatePoolWithTag(PagedPool,
+                                           IoResources->ListSize,
+                                           'uspP');
+    if (!NewIoResources)
+    {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(NewIoResources, IoResources, IoResources->ListSize);
+
+    *OutIoResources = NewIoResources;
+
+    return STATUS_SUCCESS;
+}
+
 PDEVICE_NODE
 NTAPI
 IopFindLegacyBusDeviceNode(
