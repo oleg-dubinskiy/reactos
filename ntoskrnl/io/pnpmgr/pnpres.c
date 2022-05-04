@@ -3157,6 +3157,7 @@ IopBootAllocation(
     PPNP_REQ_RESOURCE_ENTRY ReqResDesc;
     ARBITER_PARAMETERS ArbiterParams;
     PLIST_ENTRY Entry;
+    PLIST_ENTRY NextEntry;
     LIST_ENTRY List;
     NTSTATUS Status = STATUS_SUCCESS;
 
@@ -3172,11 +3173,12 @@ IopBootAllocation(
                          &List,
                          TRUE);
 
-    for (Entry = List.Flink; Entry != &List; Entry = Entry->Flink)
+    for (Entry = List.Flink; !IsListEmpty(&List); Entry = NextEntry)
     {
         ArbiterEntry = CONTAINING_RECORD(Entry,
                                          PI_RESOURCE_ARBITER_ENTRY,
                                          ActiveArbiterList);
+        NextEntry = Entry->Flink;
 
         if (ArbiterEntry->ResourcesChanged)
         {
