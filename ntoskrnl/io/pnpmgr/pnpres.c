@@ -3965,10 +3965,8 @@ IopTestConfiguration(
                 Status = STATUS_UNSUCCESSFUL;
                 break;
             }
-            else
-            {
-                continue;
-            }
+
+            continue;
         }
 
         ArbInterface = ArbiterEntry->ArbiterInterface;
@@ -3979,18 +3977,16 @@ IopTestConfiguration(
         Params.Parameters.TestAllocation.AllocateFrom = NULL;
 
         Status = ArbInterface->ArbiterHandler(ArbInterface->Context,
-                                              0,
+                                              ArbiterActionTestAllocation,
                                               &Params);
         if (!NT_SUCCESS(Status))
         {
-            ArbiterEntry->State |= 2u;
+            ArbiterEntry->State |= 2;
             break;
         }
 
         ArbiterEntry->State = (ArbiterEntry->State & ~2) | 1;
         ArbiterEntry->ResourcesChanged = 0;
-
-        break;
     }
 
     return Status;
@@ -4133,9 +4129,9 @@ IopCommitConfiguration(
         ASSERT(!IsListEmpty(&ArbiterEntry->ResourceList));
 
         commitStatus = ArbiterEntry->ArbiterInterface->
-                       ArbiterHandler)(ArbiterEntry->ArbiterInterface->Context,
-                                       ArbiterActionCommitAllocation,
-                                       NULL);
+                       ArbiterHandler(ArbiterEntry->ArbiterInterface->Context,
+                                      ArbiterActionCommitAllocation,
+                                      NULL);
 
         ArbiterEntry->ResourcesChanged = 0;
         ArbiterEntry->State = 0;
@@ -4371,7 +4367,8 @@ IopAllocateResources(
 
             if (NT_SUCCESS(Status))
             {
-                IopBuildCmResourceLists(Current, &Current[1]);
+                ASSERT(FALSE);
+                //IopBuildCmResourceLists(Current, &Current[1]);
 
                 DPRINT("IopAllocateResources: DeviceNode - %p, DeviceNode->BootResources - %p\n",
                        DeviceNode, DeviceNode->BootResources);
