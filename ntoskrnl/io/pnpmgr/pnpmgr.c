@@ -4823,53 +4823,6 @@ cleanup:
 /*
  * @implemented
  */
-VOID
-NTAPI
-IoInvalidateDeviceRelations(
-    IN PDEVICE_OBJECT DeviceObject,
-    IN DEVICE_RELATION_TYPE Type)
-{
-    DEVICE_ACTION_DATA ActionData;
-
-    ActionData.DeviceObject = DeviceObject;
-    ActionData.Action = DeviceActionInvalidateDeviceRelations;
-    ActionData.InvalidateDeviceRelations.Type = Type;
-
-    IopQueueDeviceAction(&ActionData);
-}
-
-/*
- * @implemented
- */
-NTSTATUS
-NTAPI
-IoSynchronousInvalidateDeviceRelations(
-    IN PDEVICE_OBJECT DeviceObject,
-    IN DEVICE_RELATION_TYPE Type)
-{
-    PAGED_CODE();
-
-    switch (Type)
-    {
-        case BusRelations:
-            /* Enumerate the device */
-            ASSERT(FALSE);// return IopEnumerateDevice(DeviceObject);
-            return STATUS_NOT_SUPPORTED;
-        case PowerRelations:
-             /* Not handled yet */
-             return STATUS_NOT_IMPLEMENTED;
-        case TargetDeviceRelation:
-            /* Nothing to do */
-            return STATUS_SUCCESS;
-        default:
-            /* Ejection relations are not supported */
-            return STATUS_NOT_SUPPORTED;
-    }
-}
-
-/*
- * @implemented
- */
 BOOLEAN
 NTAPI
 IoTranslateBusAddress(IN INTERFACE_TYPE InterfaceType,
