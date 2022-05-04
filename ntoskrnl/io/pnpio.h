@@ -599,6 +599,12 @@ IopInsertLegacyBusDeviceNode(
 
 VOID
 NTAPI
+IopDestroyDeviceNode(
+    _In_ PDEVICE_NODE DeviceNode
+);
+
+VOID
+NTAPI
 IopMarkHalDeviceNode(
     VOID
 );
