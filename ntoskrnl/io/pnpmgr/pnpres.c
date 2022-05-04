@@ -2522,7 +2522,7 @@ IopFindLegacyBusDeviceNode(
     DeviceNode = IopRootDeviceNode;
 
     if (InterfaceType >= MaximumInterfaceType ||
-        InterfaceType < InterfaceTypeUndefined ||
+        InterfaceType <= InterfaceTypeUndefined ||
         InterfaceType == PNPBus)
     {
         DPRINT("IopFindLegacyBusDeviceNode: return IopRootDeviceNode\n");
