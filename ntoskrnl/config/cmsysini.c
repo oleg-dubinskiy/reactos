@@ -1771,7 +1771,7 @@ CmpFreeDriverList(IN PHHIVE Hive,
 }
 
 INIT_FUNCTION
-PUNICODE_STRING*
+PHANDLE
 NTAPI
 CmGetSystemDriverList(VOID)
 {

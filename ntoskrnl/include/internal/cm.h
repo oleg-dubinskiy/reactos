@@ -1447,7 +1447,7 @@ CmpSetVersionData(
 // Driver List Routines
 //
 INIT_FUNCTION
-PUNICODE_STRING*
+PHANDLE
 NTAPI
 CmGetSystemDriverList(
     VOID
