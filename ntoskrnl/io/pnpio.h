@@ -438,6 +438,12 @@ PipCallDriverAddDevice(
 /* pnpevent.c */
 NTSTATUS
 NTAPI
+PpSynchronizeDeviceEventQueue(
+    VOID
+);
+
+NTSTATUS
+NTAPI
 PpSetDeviceClassChange(
     _In_ CONST GUID * EventGuid,
     _In_ GUID * ClassGuid,
