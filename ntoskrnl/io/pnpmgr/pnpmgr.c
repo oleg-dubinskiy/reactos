@@ -17,6 +17,10 @@
 
 /* GLOBALS *******************************************************************/
 
+#define MAX_DEVICE_ID_LEN          200
+#define MAX_SEPARATORS_INSTANCEID  0
+#define MAX_SEPARATORS_DEVICEID    1
+
 PDEVICE_NODE IopRootDeviceNode;
 KSPIN_LOCK IopDeviceTreeLock;
 ERESOURCE PpRegistryDeviceResource;
@@ -26,10 +30,7 @@ RTL_AVL_TABLE PpDeviceReferenceTable;
 extern ERESOURCE IopDriverLoadResource;
 extern ULONG ExpInitializationPhase;
 extern BOOLEAN PnpSystemInit;
-
-#define MAX_DEVICE_ID_LEN          200
-#define MAX_SEPARATORS_INSTANCEID  0
-#define MAX_SEPARATORS_DEVICEID    1
+extern BOOLEAN PpDisableFirmwareMapper;
 
 /* DATA **********************************************************************/
 
@@ -3751,9 +3752,6 @@ PiGetDeviceRegistryProperty(IN PDEVICE_OBJECT DeviceObject,
 #define PIP_REGISTRY_DATA(x, y) {ValueName = x; ValueType = y; break;}
 #define PIP_UNIMPLEMENTED()     {UNIMPLEMENTED_DBGBREAK(); break;}
 
-/*
- * @implemented
- */
 NTSTATUS
 NTAPI
 IoGetDeviceProperty(IN PDEVICE_OBJECT DeviceObject,
@@ -3763,56 +3761,64 @@ IoGetDeviceProperty(IN PDEVICE_OBJECT DeviceObject,
                     OUT PULONG ResultLength)
 {
     PDEVICE_NODE DeviceNode = IopGetDeviceNode(DeviceObject);
-    DEVICE_CAPABILITIES DeviceCaps;
-    ULONG ReturnLength = 0, Length = 0, ValueType;
-    PWCHAR ValueName = NULL, EnumeratorNameEnd, DeviceInstanceName;
-    PVOID Data = NULL;
-    NTSTATUS Status = STATUS_BUFFER_TOO_SMALL;
-    GUID BusTypeGuid;
     POBJECT_NAME_INFORMATION ObjectNameInfo = NULL;
+    DEVICE_CAPABILITIES DeviceCaps;
+    PWSTR DeviceInstanceName;
+    PWSTR ValueName = NULL;
+    PWCHAR EnumeratorNameEnd;
+    PVOID Data = NULL;
+    GUID BusTypeGuid;
+    ULONG ReturnLength = 0;
+    ULONG Length = 0;
+    ULONG ValueType;
+    NTSTATUS Status = STATUS_BUFFER_TOO_SMALL;
     BOOLEAN NullTerminate = FALSE;
-    DEVICE_REMOVAL_POLICY Policy;
 
     DPRINT("IoGetDeviceProperty(0x%p %d)\n", DeviceObject, DeviceProperty);
 
     /* Assume failure */
     *ResultLength = 0;
 
-    /* Only PDOs can call this */
-    if (!DeviceNode) return STATUS_INVALID_DEVICE_REQUEST;
+    if (!DeviceNode)
+    {
+        /* Only PDOs can call this */
+        DPRINT1("IoGetDeviceProperty: STATUS_INVALID_DEVICE_REQUEST\n");
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
 
     /* Handle all properties */
     switch (DeviceProperty)
     {
         case DevicePropertyBusTypeGuid:
-
+        {
             /* Get the GUID from the internal cache */
             Status = PnpBusTypeGuidGet(DeviceNode->ChildBusTypeIndex, &BusTypeGuid);
-            if (!NT_SUCCESS(Status)) return Status;
+            if (!NT_SUCCESS(Status))
+                return Status;
 
             /* This is the format of the returned data */
             PIP_RETURN_DATA(sizeof(GUID), &BusTypeGuid);
-
+        }
         case DevicePropertyLegacyBusType:
-
+        {
             /* Validate correct interface type */
             if (DeviceNode->ChildInterfaceType == InterfaceTypeUndefined)
                 return STATUS_OBJECT_NAME_NOT_FOUND;
 
             /* This is the format of the returned data */
             PIP_RETURN_DATA(sizeof(INTERFACE_TYPE), &DeviceNode->ChildInterfaceType);
-
+        }
         case DevicePropertyBusNumber:
-
+        {
             /* Validate correct bus number */
             if ((DeviceNode->ChildBusNumber & 0x80000000) == 0x80000000)
                 return STATUS_OBJECT_NAME_NOT_FOUND;
 
             /* This is the format of the returned data */
             PIP_RETURN_DATA(sizeof(ULONG), &DeviceNode->ChildBusNumber);
-
+        }
         case DevicePropertyEnumeratorName:
-
+        {
             /* Get the instance path */
             DeviceInstanceName = DeviceNode->InstancePath.Buffer;
 
@@ -3828,106 +3834,117 @@ IoGetDeviceProperty(IN PDEVICE_OBJECT DeviceObject,
             NullTerminate = TRUE;
 
             /* This is the format of the returned data */
-            PIP_RETURN_DATA((ULONG)(EnumeratorNameEnd - DeviceInstanceName) * sizeof(WCHAR),
-                            DeviceInstanceName);
-
+            PIP_RETURN_DATA((ULONG)(EnumeratorNameEnd - DeviceInstanceName) * sizeof(WCHAR), DeviceInstanceName);
+        }
         case DevicePropertyAddress:
-
+        {
             /* Query the device caps */
-            Status = PpIrpQueryCapabilities(DeviceNode, &DeviceCaps);
+            Status = PpIrpQueryCapabilities(DeviceObject, &DeviceCaps);
             if (!NT_SUCCESS(Status) || (DeviceCaps.Address == MAXULONG))
                 return STATUS_OBJECT_NAME_NOT_FOUND;
 
             /* This is the format of the returned data */
             PIP_RETURN_DATA(sizeof(ULONG), &DeviceCaps.Address);
-
+        }
         case DevicePropertyBootConfigurationTranslated:
-
-            /* Validate we have resources */
-            if (!DeviceNode->BootResources)
-//            if (!DeviceNode->BootResourcesTranslated) // FIXFIX: Need this field
-            {
-                /* No resources will still fake success, but with 0 bytes */
-                *ResultLength = 0;
-                return STATUS_SUCCESS;
-            }
-
-            /* This is the format of the returned data */
-            PIP_RETURN_DATA(PnpDetermineResourceListSize(DeviceNode->BootResources), // FIXFIX: Should use BootResourcesTranslated
-                            DeviceNode->BootResources); // FIXFIX: Should use BootResourcesTranslated
-
+        {
+            // w2003 return STATUS_NOT_SUPPORTED
+            return STATUS_NOT_SUPPORTED;
+        }
         case DevicePropertyPhysicalDeviceObjectName:
-
+        {
             /* Sanity check for Unicode-sized string */
             ASSERT((BufferLength & 1) == 0);
 
             /* Allocate name buffer */
             Length = BufferLength + sizeof(OBJECT_NAME_INFORMATION);
             ObjectNameInfo = ExAllocatePool(PagedPool, Length);
-            if (!ObjectNameInfo) return STATUS_INSUFFICIENT_RESOURCES;
+            if (!ObjectNameInfo)
+            {
+                DPRINT1("IoGetDeviceProperty: STATUS_INSUFFICIENT_RESOURCES\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
 
             /* Query the PDO name */
-            Status = ObQueryNameString(DeviceObject,
-                                       ObjectNameInfo,
-                                       Length,
-                                       ResultLength);
+            Status = ObQueryNameString(DeviceObject, ObjectNameInfo, Length, ResultLength);
             if (Status == STATUS_INFO_LENGTH_MISMATCH)
-            {
                 /* It's up to the caller to try again */
                 Status = STATUS_BUFFER_TOO_SMALL;
-            }
 
             /* This string needs to be NULL-terminated */
             NullTerminate = TRUE;
 
             /* Return if successful */
-            if (NT_SUCCESS(Status)) PIP_RETURN_DATA(ObjectNameInfo->Name.Length,
-                                                    ObjectNameInfo->Name.Buffer);
+            if (NT_SUCCESS(Status))
+                PIP_RETURN_DATA(ObjectNameInfo->Name.Length, ObjectNameInfo->Name.Buffer);
 
             /* Let the caller know how big the name is */
             *ResultLength -= sizeof(OBJECT_NAME_INFORMATION);
             break;
-
-        case DevicePropertyRemovalPolicy:
-
-            Policy = DeviceNode->RemovalPolicy;
-            PIP_RETURN_DATA(sizeof(Policy), &Policy);
+        }
 
         /* Handle the registry-based properties */
         case DevicePropertyUINumber:
             PIP_REGISTRY_DATA(REGSTR_VAL_UI_NUMBER, REG_DWORD);
+
         case DevicePropertyLocationInformation:
             PIP_REGISTRY_DATA(REGSTR_VAL_LOCATION_INFORMATION, REG_SZ);
+
         case DevicePropertyDeviceDescription:
             PIP_REGISTRY_DATA(REGSTR_VAL_DEVDESC, REG_SZ);
+
         case DevicePropertyHardwareID:
             PIP_REGISTRY_DATA(REGSTR_VAL_HARDWAREID, REG_MULTI_SZ);
+
         case DevicePropertyCompatibleIDs:
             PIP_REGISTRY_DATA(REGSTR_VAL_COMPATIBLEIDS, REG_MULTI_SZ);
+
         case DevicePropertyBootConfiguration:
             PIP_REGISTRY_DATA(REGSTR_VAL_BOOTCONFIG, REG_RESOURCE_LIST);
+
         case DevicePropertyClassName:
             PIP_REGISTRY_DATA(REGSTR_VAL_CLASS, REG_SZ);
+
         case DevicePropertyClassGuid:
             PIP_REGISTRY_DATA(REGSTR_VAL_CLASSGUID, REG_SZ);
+
         case DevicePropertyDriverKeyName:
             PIP_REGISTRY_DATA(REGSTR_VAL_DRIVER, REG_SZ);
+
         case DevicePropertyManufacturer:
             PIP_REGISTRY_DATA(REGSTR_VAL_MFG, REG_SZ);
+
         case DevicePropertyFriendlyName:
             PIP_REGISTRY_DATA(REGSTR_VAL_FRIENDLYNAME, REG_SZ);
+
         case DevicePropertyContainerID:
             //PIP_REGISTRY_DATA(REGSTR_VAL_CONTAINERID, REG_SZ); // Win7
             PIP_UNIMPLEMENTED();
-            break;
+
+        case DevicePropertyRemovalPolicy:
+        {
+            DEVICE_REMOVAL_POLICY Policy;
+
+            ASSERT(BufferLength == sizeof(DEVICE_REMOVAL_POLICY));
+            *ResultLength = sizeof(DEVICE_REMOVAL_POLICY);
+
+            PpHotSwapGetDevnodeRemovalPolicy(DeviceNode, TRUE, &Policy);
+            DPRINT("IoGetDeviceProperty: DevicePropertyRemovalPolicy %X\n", Policy);
+
+            PIP_RETURN_DATA(sizeof(DEVICE_REMOVAL_POLICY), &Policy);
+        }
         case DevicePropertyInstallState:
             PIP_REGISTRY_DATA(REGSTR_VAL_CONFIGFLAGS, REG_DWORD);
             break;
+
         case DevicePropertyResourceRequirements:
             PIP_UNIMPLEMENTED();
+
         case DevicePropertyAllocatedResources:
             PIP_UNIMPLEMENTED();
+
         default:
+            DPRINT1("IoGetDeviceProperty: [%p] invalid DeviceProperty %d\n", DeviceObject, DeviceProperty);
             return STATUS_INVALID_PARAMETER_2;
     }
 
@@ -3941,16 +3958,15 @@ IoGetDeviceProperty(IN PDEVICE_OBJECT DeviceObject,
         Status = PiGetDeviceRegistryProperty(DeviceObject,
                                              ValueType,
                                              ValueName,
-                                             (DeviceProperty ==
-                                              DevicePropertyBootConfiguration) ?
-                                             L"LogConf":  NULL,
+                                             ((DeviceProperty == DevicePropertyBootConfiguration) ? L"LogConf":  NULL),
                                              PropertyBuffer,
                                              ResultLength);
     }
     else if (NT_SUCCESS(Status))
     {
         /* We know up-front how much data to expect, check the caller's buffer */
-        *ResultLength = ReturnLength + (NullTerminate ? sizeof(UNICODE_NULL) : 0);
+        *ResultLength = (ReturnLength + (NullTerminate ? sizeof(UNICODE_NULL) : 0));
+
         if (*ResultLength <= BufferLength)
         {
             /* Buffer is all good, copy the data */
@@ -3958,10 +3974,8 @@ IoGetDeviceProperty(IN PDEVICE_OBJECT DeviceObject,
 
             /* Check if we need to NULL-terminate the string */
             if (NullTerminate)
-            {
                 /* Terminate the string */
                 ((PWCHAR)PropertyBuffer)[ReturnLength / sizeof(WCHAR)] = UNICODE_NULL;
-            }
 
             /* This is the success path */
             Status = STATUS_SUCCESS;
@@ -3973,8 +3987,9 @@ IoGetDeviceProperty(IN PDEVICE_OBJECT DeviceObject,
         }
     }
 
-    /* Free any allocation we may have made, and return the status code */
-    if (ObjectNameInfo) ExFreePool(ObjectNameInfo);
+    if (ObjectNameInfo)
+        ExFreePool(ObjectNameInfo);
+
     return Status;
 }
 
