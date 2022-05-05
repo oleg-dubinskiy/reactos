@@ -1672,6 +1672,16 @@ PipInsertDriverList(
     InsertHeadList(Entry->Blink, Link);
 }
 
+NTSTATUS
+NTAPI
+PipAddDevicesToBootDriver(
+    _In_ PDRIVER_OBJECT DriverObject)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 PipFreeGroupTree(
