@@ -428,37 +428,6 @@ IopInstallCriticalDevice(PDEVICE_NODE DeviceNode)
 static
 NTSTATUS
 NTAPI
-IopSendEject(IN PDEVICE_OBJECT DeviceObject)
-{
-    IO_STACK_LOCATION Stack;
-    PVOID Dummy;
-
-    RtlZeroMemory(&Stack, sizeof(IO_STACK_LOCATION));
-    Stack.MajorFunction = IRP_MJ_PNP;
-    Stack.MinorFunction = IRP_MN_EJECT;
-
-    return IopSynchronousCall(DeviceObject, &Stack, &Dummy);
-}
-
-static
-VOID
-NTAPI
-IopSendSurpriseRemoval(IN PDEVICE_OBJECT DeviceObject)
-{
-    IO_STACK_LOCATION Stack;
-    PVOID Dummy;
-
-    RtlZeroMemory(&Stack, sizeof(IO_STACK_LOCATION));
-    Stack.MajorFunction = IRP_MJ_PNP;
-    Stack.MinorFunction = IRP_MN_SURPRISE_REMOVAL;
-
-    /* Drivers should never fail a IRP_MN_SURPRISE_REMOVAL request */
-    IopSynchronousCall(DeviceObject, &Stack, &Dummy);
-}
-
-static
-NTSTATUS
-NTAPI
 IopQueryRemoveDevice(IN PDEVICE_OBJECT DeviceObject)
 {
     PDEVICE_NODE DeviceNode = IopGetDeviceNode(DeviceObject);
@@ -491,21 +460,6 @@ IopQueryRemoveDevice(IN PDEVICE_OBJECT DeviceObject)
     }
 
     return Status;
-}
-
-static
-NTSTATUS
-NTAPI
-IopQueryStopDevice(IN PDEVICE_OBJECT DeviceObject)
-{
-    IO_STACK_LOCATION Stack;
-    PVOID Dummy;
-
-    RtlZeroMemory(&Stack, sizeof(IO_STACK_LOCATION));
-    Stack.MajorFunction = IRP_MJ_PNP;
-    Stack.MinorFunction = IRP_MN_QUERY_STOP_DEVICE;
-
-    return IopSynchronousCall(DeviceObject, &Stack, &Dummy);
 }
 
 static
@@ -558,163 +512,6 @@ IopCancelRemoveDevice(IN PDEVICE_OBJECT DeviceObject)
                                   &GUID_TARGET_DEVICE_REMOVE_CANCELLED,
                                   NULL,
                                   NULL);
-}
-
-static
-VOID
-NTAPI
-IopSendStopDevice(IN PDEVICE_OBJECT DeviceObject)
-{
-    IO_STACK_LOCATION Stack;
-    PVOID Dummy;
-
-    RtlZeroMemory(&Stack, sizeof(IO_STACK_LOCATION));
-    Stack.MajorFunction = IRP_MJ_PNP;
-    Stack.MinorFunction = IRP_MN_STOP_DEVICE;
-
-    /* Drivers should never fail a IRP_MN_STOP_DEVICE request */
-    IopSynchronousCall(DeviceObject, &Stack, &Dummy);
-}
-
-static
-NTSTATUS
-IopSetServiceEnumData(PDEVICE_NODE DeviceNode)
-{
-    UNICODE_STRING ServicesKeyPath = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\");
-    UNICODE_STRING ServiceKeyName;
-    UNICODE_STRING EnumKeyName;
-    UNICODE_STRING ValueName;
-    PKEY_VALUE_FULL_INFORMATION KeyValueInformation;
-    HANDLE ServiceKey = NULL, ServiceEnumKey = NULL;
-    ULONG Disposition;
-    ULONG Count = 0, NextInstance = 0;
-    WCHAR ValueBuffer[6];
-    NTSTATUS Status = STATUS_SUCCESS;
-
-    DPRINT("IopSetServiceEnumData(%p)\n", DeviceNode);
-    DPRINT("Instance: %wZ\n", &DeviceNode->InstancePath);
-    DPRINT("Service: %wZ\n", &DeviceNode->ServiceName);
-
-    if (DeviceNode->ServiceName.Buffer == NULL)
-    {
-        DPRINT1("No service!\n");
-        return STATUS_SUCCESS;
-    }
-
-    ServiceKeyName.MaximumLength = ServicesKeyPath.Length + DeviceNode->ServiceName.Length + sizeof(UNICODE_NULL);
-    ServiceKeyName.Length = 0;
-    ServiceKeyName.Buffer = ExAllocatePool(PagedPool, ServiceKeyName.MaximumLength);
-    if (ServiceKeyName.Buffer == NULL)
-    {
-        DPRINT1("No ServiceKeyName.Buffer!\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    RtlAppendUnicodeStringToString(&ServiceKeyName, &ServicesKeyPath);
-    RtlAppendUnicodeStringToString(&ServiceKeyName, &DeviceNode->ServiceName);
-
-    DPRINT("ServiceKeyName: %wZ\n", &ServiceKeyName);
-
-    Status = IopOpenRegistryKeyEx(&ServiceKey, NULL, &ServiceKeyName, KEY_CREATE_SUB_KEY);
-    if (!NT_SUCCESS(Status))
-    {
-        goto done;
-    }
-
-    RtlInitUnicodeString(&EnumKeyName, L"Enum");
-    Status = IopCreateRegistryKeyEx(&ServiceEnumKey,
-                                    ServiceKey,
-                                    &EnumKeyName,
-                                    KEY_SET_VALUE,
-                                    REG_OPTION_VOLATILE,
-                                    &Disposition);
-    if (NT_SUCCESS(Status))
-    {
-        if (Disposition == REG_OPENED_EXISTING_KEY)
-        {
-            /* Read the NextInstance value */
-            Status = IopGetRegistryValue(ServiceEnumKey,
-                                         L"Count",
-                                         &KeyValueInformation);
-            if (!NT_SUCCESS(Status))
-                goto done;
-
-            if ((KeyValueInformation->Type == REG_DWORD) &&
-                (KeyValueInformation->DataLength))
-            {
-                /* Read it */
-                Count = *(PULONG)((ULONG_PTR)KeyValueInformation +
-                                  KeyValueInformation->DataOffset);
-            }
-
-            ExFreePool(KeyValueInformation);
-            KeyValueInformation = NULL;
-
-            /* Read the NextInstance value */
-            Status = IopGetRegistryValue(ServiceEnumKey,
-                                         L"NextInstance",
-                                         &KeyValueInformation);
-            if (!NT_SUCCESS(Status))
-                goto done;
-
-            if ((KeyValueInformation->Type == REG_DWORD) &&
-                (KeyValueInformation->DataLength))
-            {
-                NextInstance = *(PULONG)((ULONG_PTR)KeyValueInformation +
-                                         KeyValueInformation->DataOffset);
-            }
-
-            ExFreePool(KeyValueInformation);
-            KeyValueInformation = NULL;
-        }
-
-        /* Set the instance path */
-        swprintf(ValueBuffer, L"%lu", NextInstance);
-        RtlInitUnicodeString(&ValueName, ValueBuffer);
-        Status = ZwSetValueKey(ServiceEnumKey,
-                               &ValueName,
-                               0,
-                               REG_SZ,
-                               DeviceNode->InstancePath.Buffer,
-                               DeviceNode->InstancePath.MaximumLength);
-        if (!NT_SUCCESS(Status))
-            goto done;
-
-        /* Increment Count and NextInstance */
-        Count++;
-        NextInstance++;
-
-        /* Set the new Count value */
-        RtlInitUnicodeString(&ValueName, L"Count");
-        Status = ZwSetValueKey(ServiceEnumKey,
-                               &ValueName,
-                               0,
-                               REG_DWORD,
-                               &Count,
-                               sizeof(Count));
-        if (!NT_SUCCESS(Status))
-            goto done;
-
-        /* Set the new NextInstance value */
-        RtlInitUnicodeString(&ValueName, L"NextInstance");
-        Status = ZwSetValueKey(ServiceEnumKey,
-                               &ValueName,
-                               0,
-                               REG_DWORD,
-                               &NextInstance,
-                               sizeof(NextInstance));
-    }
-
-done:
-    if (ServiceEnumKey != NULL)
-        ZwClose(ServiceEnumKey);
-
-    if (ServiceKey != NULL)
-        ZwClose(ServiceKey);
-
-    ExFreePool(ServiceKeyName.Buffer);
-
-    return Status;
 }
 
 static
@@ -2288,29 +2085,6 @@ IopSendRemoveChildDevices(PDEVICE_NODE ParentDeviceNode)
 }
 
 static
-VOID
-IopCancelRemoveChildDevices(PDEVICE_NODE ParentDeviceNode)
-{
-    PDEVICE_NODE ChildDeviceNode, NextDeviceNode;
-    KIRQL OldIrql;
-
-    KeAcquireSpinLock(&IopDeviceTreeLock, &OldIrql);
-    ChildDeviceNode = ParentDeviceNode->Child;
-    while (ChildDeviceNode != NULL)
-    {
-        NextDeviceNode = ChildDeviceNode->Sibling;
-        KeReleaseSpinLock(&IopDeviceTreeLock, OldIrql);
-
-        IopCancelPrepareDeviceForRemoval(ChildDeviceNode->PhysicalDeviceObject);
-
-        ChildDeviceNode = NextDeviceNode;
-
-        KeAcquireSpinLock(&IopDeviceTreeLock, &OldIrql);
-    }
-    KeReleaseSpinLock(&IopDeviceTreeLock, OldIrql);
-}
-
-static
 NTSTATUS
 IopQueryRemoveDeviceRelations(PDEVICE_RELATIONS DeviceRelations, BOOLEAN Force)
 {
@@ -2483,7 +2257,7 @@ VOID
 NTAPI
 IoRequestDeviceEject(IN PDEVICE_OBJECT PhysicalDeviceObject)
 {
-    UNIMPLEMENTED();
+    UNIMPLEMENTED;
     ASSERT(FALSE); // IoDbgBreakPointEx();
 }
 

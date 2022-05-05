@@ -1196,7 +1196,7 @@ NtPlugPlayControl(IN PLUGPLAY_CONTROL_CLASS PlugPlayControlClass,
                   IN ULONG BufferLength)
 {
     DPRINT1("NtPlugPlayControl(%d %p %lu) called\n", PlugPlayControlClass, Buffer, BufferLength);
-    UNIMPLEMENTED();
+    UNIMPLEMENTED;
     ASSERT(FALSE); // IoDbgBreakPointEx();
     return STATUS_NOT_IMPLEMENTED;
 }
