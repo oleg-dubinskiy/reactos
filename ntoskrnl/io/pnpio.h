@@ -423,13 +423,8 @@ PpCriticalProcessCriticalDevice(
 
 NTSTATUS
 NTAPI
-PipRequestDeviceAction(
-    _In_ PDEVICE_OBJECT DeviceObject,
-    _In_ PIP_ENUM_TYPE RequestType,
-    _In_ UCHAR ReorderingBarrier,
-    _In_ ULONG_PTR RequestArgument,
-    _In_ PKEVENT CompletionEvent,
-    _Inout_ NTSTATUS * CompletionStatus
+IopQueryAndSaveDeviceNodeCapabilities(
+    _In_ PDEVICE_NODE DeviceNode
 );
 
 NTSTATUS
@@ -438,6 +433,18 @@ PipCallDriverAddDevice(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ BOOLEAN IsLoadDriver,
     _In_ SERVICE_LOAD_TYPE * DriverLoadType
+);
+
+/* pnpevent.c */
+NTSTATUS
+NTAPI
+PipRequestDeviceAction(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIP_ENUM_TYPE RequestType,
+    _In_ UCHAR ReorderingBarrier,
+    _In_ ULONG_PTR RequestArgument,
+    _In_ PKEVENT CompletionEvent,
+    _Inout_ NTSTATUS * CompletionStatus
 );
 
 /* pnpinit.c */
