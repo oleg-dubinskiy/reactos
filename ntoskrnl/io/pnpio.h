@@ -487,10 +487,27 @@ IopQueryAndSaveDeviceNodeCapabilities(
 
 NTSTATUS
 NTAPI
+PipRequestDeviceAction(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIP_ENUM_TYPE RequestType,
+    _In_ UCHAR ReorderingBarrier,
+    _In_ ULONG_PTR RequestArgument,
+    _In_ PKEVENT CompletionEvent,
+    _Inout_ NTSTATUS * CompletionStatus
+);
+
+NTSTATUS
+NTAPI
 PipCallDriverAddDevice(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ BOOLEAN IsLoadDriver,
     _In_ SERVICE_LOAD_TYPE * DriverLoadType
+);
+
+PDRIVER_OBJECT
+NTAPI
+IopReferenceDriverObjectByName(
+    _In_ PUNICODE_STRING Name
 );
 
 /* pnpevent.c */
@@ -506,17 +523,6 @@ PpSetDeviceClassChange(
     _In_ CONST GUID * EventGuid,
     _In_ GUID * ClassGuid,
     _In_ PUNICODE_STRING SymbolicLinkName
-);
-
-NTSTATUS
-NTAPI
-PipRequestDeviceAction(
-    _In_ PDEVICE_OBJECT DeviceObject,
-    _In_ PIP_ENUM_TYPE RequestType,
-    _In_ UCHAR ReorderingBarrier,
-    _In_ ULONG_PTR RequestArgument,
-    _In_ PKEVENT CompletionEvent,
-    _Inout_ NTSTATUS * CompletionStatus
 );
 
 /* pnpinit.c */
