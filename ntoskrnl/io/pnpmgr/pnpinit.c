@@ -523,9 +523,9 @@ Quickie:
     return i;
 }
 
+INIT_FUNCTION
 NTSTATUS
 NTAPI
-INIT_FUNCTION
 IopInitializePlugPlayServices(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock,
     _In_ ULONG Phase)
@@ -588,13 +588,12 @@ IopInitializePlugPlayServices(
     Status = PiInitCacheGroupInformation();
     if (!NT_SUCCESS(Status))
     {
+        DPRINT1("IopInitializePlugPlayServices: Status %X\n", Status);
         return Status;
     }
 
     for (ix = Internal; ix < MaximumInterfaceType; ix++)
-    {
         InitializeListHead(&IopLegacyBusInformationTable[ix]);
-    }
 
     IopAllocateBootResourcesRoutine = IopReportBootResources;
 
@@ -605,17 +604,17 @@ IopInitializePlugPlayServices(
     Status = IopInitializeArbiters();
     if (!NT_SUCCESS(Status))
     {
+        DPRINT1("IopInitializePlugPlayServices: Status %X\n", Status);
         return Status;
     }
 
     /* Open the current control set */
     RtlInitUnicodeString(&KeyName, IO_REG_KEY_CURRENTCONTROLSET);
-    Status = IopOpenRegistryKeyEx(&ControlSetHandle,
-                                  NULL,
-                                  &KeyName,
-                                  KEY_ALL_ACCESS);
+
+    Status = IopOpenRegistryKeyEx(&ControlSetHandle, NULL, &KeyName, KEY_ALL_ACCESS);
     if (!NT_SUCCESS(Status))
     {
+        DPRINT1("IopInitializePlugPlayServices: Status %X\n", Status);
         goto Exit;
     }
 
@@ -631,6 +630,7 @@ IopInitializePlugPlayServices(
                                     &Disposition);
     if (!NT_SUCCESS(Status))
     {
+        DPRINT("IopInitializePlugPlayServices: Status %X\n", Status);
         goto Exit;
     }
 
@@ -652,6 +652,7 @@ IopInitializePlugPlayServices(
     NtClose(EnumHandle);
     if (!NT_SUCCESS(Status))
     {
+        DPRINT1("IopInitializePlugPlayServices: Status %X\n", Status);
         goto Exit;
     }
 
@@ -659,10 +660,8 @@ IopInitializePlugPlayServices(
 
     /* Open the enum key now */
     RtlInitUnicodeString(&KeyName, IO_REG_KEY_ENUM);
-    Status = IopOpenRegistryKeyEx(&EnumHandle,
-                                  NULL,
-                                  &KeyName,
-                                  KEY_ALL_ACCESS);
+
+    Status = IopOpenRegistryKeyEx(&EnumHandle, NULL, &KeyName, KEY_ALL_ACCESS);
     if (NT_SUCCESS(Status))
     {
         /* Create the root tree dev node key */
@@ -675,9 +674,11 @@ IopInitializePlugPlayServices(
                                         NULL);
         NtClose(EnumHandle);
         if (NT_SUCCESS(Status))
-        {
             NtClose(TreeHandle);
-        }
+    }
+    else
+    {
+        DPRINT1("IopInitializePlugPlayServices: Status %X\n", Status);
     }
 
     DPRINT("IopInitializePlugPlayServices: FIXME PpProfileInit()\n");
@@ -687,7 +688,8 @@ IopInitializePlugPlayServices(
     Status = IoCreateDriver(&PnpManagerDriverName, PnpRootDriverEntry);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("IoCreateDriverObject() failed\n");
+        DPRINT1("IoCreateDriverObject() failed. Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
         KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, Status, 0, 0, 0);
     }
 
@@ -701,7 +703,8 @@ IopInitializePlugPlayServices(
                             &Pdo);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("IoCreateDevice() failed\n");
+        DPRINT1("IoCreateDevice() failed. Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
         KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, Status, 0, 0, 0);
     }
 
@@ -712,7 +715,8 @@ IopInitializePlugPlayServices(
     IopRootDeviceNode = PipAllocateDeviceNode(Pdo);
     if (!IopRootDeviceNode)
     {
-        DPRINT1("PipAllocateDeviceNode() failed\n");
+        DPRINT1("PipAllocateDeviceNode() failed. Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
         KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, Status, 0, 0, 0);
     }
     DPRINT("IopInitializePlugPlayServices: IopRootDeviceNode - %p\n", IopRootDeviceNode);
@@ -724,19 +728,19 @@ IopInitializePlugPlayServices(
                                 DNF_NO_RESOURCE_REQUIRED;
 
     /* Create instance path */
-    if (RtlCreateUnicodeString(&IopRootDeviceNode->InstancePath,
-                               REGSTR_VAL_ROOT_DEVNODE) == FALSE)
+    if (RtlCreateUnicodeString(&IopRootDeviceNode->InstancePath, REGSTR_VAL_ROOT_DEVNODE) == FALSE)
     {
+        DPRINT1("IopInitializePlugPlayServices: STATUS_INSUFFICIENT_RESOURCES\n");
         ASSERT(IopRootDeviceNode->InstancePath.Buffer);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto Exit;
     } 
 
     /* Map PDO to Instance */
-    Status = IopMapDeviceObjectToDeviceInstance(IopRootDeviceNode->PhysicalDeviceObject,
-                                                &IopRootDeviceNode->InstancePath);
+    Status = IopMapDeviceObjectToDeviceInstance(IopRootDeviceNode->PhysicalDeviceObject, &IopRootDeviceNode->InstancePath);
     if (!NT_SUCCESS(Status))
     {
+        DPRINT1("IopInitializePlugPlayServices: Status %X\n", Status);
         goto Exit;
     }
 
@@ -746,12 +750,14 @@ IopInitializePlugPlayServices(
     Status = IopInitPlugPlayEvents();
     if (!NT_SUCCESS(Status))
     {
+        DPRINT1("IopInitializePlugPlayServices: Status %X\n", Status);
         goto Exit;
     }
 
     PpDeviceEventList = ExAllocatePoolWithTag(NonPagedPool, sizeof(PNP_DEVICE_EVENT_LIST), 'LEpP');
     if (!PpDeviceEventList)
     {
+        DPRINT1("IopInitializePlugPlayServices: STATUS_INSUFFICIENT_RESOURCES\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto Exit;
     }
@@ -765,8 +771,7 @@ IopInitializePlugPlayServices(
     KeInitializeGuardedMutex(&PiNotificationInProgressLock);
 
     /* Report the device to the user-mode pnp manager */
-    IopQueueTargetDeviceEvent(&GUID_DEVICE_ARRIVAL,
-                              &IopRootDeviceNode->InstancePath);
+    IopQueueTargetDeviceEvent(&GUID_DEVICE_ARRIVAL, &IopRootDeviceNode->InstancePath);
 
     /* Initialize the Bus Type GUID List */
     PnpBusTypeGuidList = ExAllocatePool(PagedPool, sizeof(IO_BUS_TYPE_GUID_LIST));
@@ -785,9 +790,7 @@ IopInitializePlugPlayServices(
 Exit:
 
     if (ControlSetHandle)
-    {
         NtClose(ControlSetHandle);
-    }
 
     return STATUS_SUCCESS;
 }
