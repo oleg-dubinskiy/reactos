@@ -48,6 +48,13 @@ KSEMAPHORE PpRegistrySemaphore;
 KEVENT PiEventQueueEmpty;
 PPNP_DEVICE_EVENT_LIST PpDeviceEventList;
 KGUARDED_MUTEX PiNotificationInProgressLock;
+LIST_ENTRY IopProfileNotifyList;
+LIST_ENTRY IopDeviceClassNotifyList[13];
+LIST_ENTRY IopDeferredRegistrationList;
+KGUARDED_MUTEX IopHwProfileNotifyLock;
+KGUARDED_MUTEX IopDeviceClassNotifyLock;
+KGUARDED_MUTEX IopTargetDeviceNotifyLock;
+KGUARDED_MUTEX IopDeferredRegistrationLock;
 
 ARBITER_INSTANCE IopRootBusNumberArbiter;
 ARBITER_INSTANCE IopRootIrqArbiter;
@@ -523,6 +530,26 @@ Quickie:
     return i;
 }
 
+VOID
+NTAPI
+IopInitializePlugPlayNotification(VOID)
+{
+    ULONG ix;
+
+    PAGED_CODE();
+
+    for (ix = 0; ix < 13; ix++)
+        InitializeListHead(&IopDeviceClassNotifyList[ix]);
+
+    InitializeListHead(&IopProfileNotifyList);
+    InitializeListHead(&IopDeferredRegistrationList);
+
+    KeInitializeGuardedMutex(&IopHwProfileNotifyLock);
+    KeInitializeGuardedMutex(&IopDeviceClassNotifyLock);
+    KeInitializeGuardedMutex(&IopTargetDeviceNotifyLock);
+    KeInitializeGuardedMutex(&IopDeferredRegistrationLock);
+}
+
 INIT_FUNCTION
 NTSTATUS
 NTAPI
@@ -745,6 +772,7 @@ IopInitializePlugPlayServices(
     }
 
     PipSetDevNodeState(IopRootDeviceNode, DeviceNodeStarted, NULL);
+    IopInitializePlugPlayNotification();
 
     /* Initialize PnP-Event notification support */
     Status = IopInitPlugPlayEvents();
