@@ -58,14 +58,12 @@ IopDeleteDevice(IN PVOID ObjectBody)
     PAGED_CODE();
 
     /* Cleanup and free the device node */
-    if (DeviceNode)
-        IopFreeDeviceNode(DeviceNode);
+    IopDestroyDeviceNode(DeviceNode);
 
     /* Dereference the driver object, referenced in IoCreateDevice */
     if (DeviceObject->DriverObject)
         ObDereferenceObject(DeviceObject->DriverObject);
 }
-
 
 PDEVICE_OBJECT
 NTAPI

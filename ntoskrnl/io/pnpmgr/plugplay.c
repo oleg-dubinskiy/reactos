@@ -188,40 +188,6 @@ IopCaptureUnicodeString(PUNICODE_STRING DstName, PUNICODE_STRING SrcName)
     return Status;
 }
 
-static NTSTATUS
-IopPnpEnumerateDevice(PPLUGPLAY_CONTROL_ENUMERATE_DEVICE_DATA DeviceData)
-{
-    PDEVICE_OBJECT DeviceObject;
-    UNICODE_STRING DeviceInstance;
-    NTSTATUS Status = STATUS_SUCCESS;
-
-    Status = IopCaptureUnicodeString(&DeviceInstance, &DeviceData->DeviceInstance);
-    if (!NT_SUCCESS(Status))
-    {
-        return Status;
-    }
-
-    DPRINT("IopPnpEnumerateDevice(%wZ)\n", &DeviceInstance);
-
-    /* Get the device object */
-    DeviceObject = IopGetDeviceObjectFromDeviceInstance(&DeviceInstance);
-    if (DeviceInstance.Buffer != NULL)
-    {
-        ExFreePool(DeviceInstance.Buffer);
-    }
-    if (DeviceObject == NULL)
-    {
-        return STATUS_NO_SUCH_DEVICE;
-    }
-
-    Status = IopEnumerateDevice(DeviceObject);
-
-    ObDereferenceObject(DeviceObject);
-
-    return Status;
-}
-
-
 /*
  * Remove the current PnP event from the tail of the event queue
  * and signal IopPnpNotifyEvent if there is yet another event in the queue.
@@ -1034,84 +1000,6 @@ IopGetDeviceDepth(PPLUGPLAY_CONTROL_DEPTH_DATA DepthData)
     return Status;
 }
 
-
-static NTSTATUS
-IopResetDevice(PPLUGPLAY_CONTROL_RESET_DEVICE_DATA ResetDeviceData)
-{
-    PDEVICE_OBJECT DeviceObject;
-    PDEVICE_NODE DeviceNode;
-    NTSTATUS Status = STATUS_SUCCESS;
-    UNICODE_STRING DeviceInstance;
-
-    Status = IopCaptureUnicodeString(&DeviceInstance, &ResetDeviceData->DeviceInstance);
-    if (!NT_SUCCESS(Status))
-    {
-        return Status;
-    }
-
-    DPRINT("IopResetDevice(%wZ)\n", &DeviceInstance);
-
-    /* Get the device object */
-    DeviceObject = IopGetDeviceObjectFromDeviceInstance(&DeviceInstance);
-    if (DeviceInstance.Buffer != NULL)
-    {
-        ExFreePool(DeviceInstance.Buffer);
-    }
-    if (DeviceObject == NULL)
-    {
-        return STATUS_NO_SUCH_DEVICE;
-    }
-
-    /* Get the device node */
-    DeviceNode = IopGetDeviceNode(DeviceObject);
-
-    ASSERT(FALSE);
-    //ASSERT(DeviceNode->Flags & DNF_PROCESSED);
-
-    /* Check if there's already a driver loaded for this device */
-    if (0)//DeviceNode->Flags & DNF_ADDED)
-    {
-#if 0
-        /* Remove the device node */
-        Status = IopRemoveDevice(DeviceNode);
-        if (NT_SUCCESS(Status))
-        {
-            /* Invalidate device relations for the parent to reenumerate the device */
-            DPRINT1("A new driver will be loaded for '%wZ' (FDO above removed)\n", &DeviceNode->InstancePath);
-            Status = IoSynchronousInvalidateDeviceRelations(DeviceNode->Parent->PhysicalDeviceObject, BusRelations);
-        }
-        else
-#endif
-        {
-            /* A driver has already been loaded for this device */
-            DPRINT("A reboot is required for the current driver for '%wZ' to be replaced\n", &DeviceNode->InstancePath);
-            DeviceNode->Problem = CM_PROB_NEED_RESTART;
-        }
-    }
-    else
-    {
-        /* FIXME: What if the device really is disabled? */
-        ASSERT(FALSE);
-        //DeviceNode->Flags &= ~DNF_DISABLED;
-        DeviceNode->Problem = 0;
-
-        /* Load service data from the registry */
-        Status = IopActionConfigureChildServices(DeviceNode, DeviceNode->Parent);
-
-        if (NT_SUCCESS(Status))
-        {
-            /* Start the service and begin PnP initialization of the device again */
-            DPRINT("A new driver will be loaded for '%wZ' (no FDO above)\n", &DeviceNode->InstancePath);
-            ASSERT(FALSE);
-            Status = 0;//IopActionInitChildServices(DeviceNode, DeviceNode->Parent);
-        }
-    }
-
-    ObDereferenceObject(DeviceObject);
-
-    return Status;
-}
-
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
@@ -1247,7 +1135,7 @@ NtGetPlugPlayEvent(IN ULONG Reserved1,
     return STATUS_SUCCESS;
 }
 
-/*
+/* unimplemented
  * NtPlugPlayControl
  *
  * A function for doing various Plug & Play operations from user mode.
@@ -1300,8 +1188,6 @@ NtGetPlugPlayEvent(IN ULONG Reserved1,
  *    STATUS_PRIVILEGE_NOT_HELD
  *    STATUS_SUCCESS
  *    ...
- *
- * @unimplemented
  */
 NTSTATUS
 NTAPI
@@ -1309,107 +1195,8 @@ NtPlugPlayControl(IN PLUGPLAY_CONTROL_CLASS PlugPlayControlClass,
                   IN OUT PVOID Buffer,
                   IN ULONG BufferLength)
 {
-    DPRINT("NtPlugPlayControl(%d %p %lu) called\n",
-           PlugPlayControlClass, Buffer, BufferLength);
-
-    /* Function can only be called from user-mode */
-    if (KeGetPreviousMode() == KernelMode)
-    {
-        DPRINT1("NtGetPlugPlayEvent cannot be called from kernel mode!\n");
-        return STATUS_ACCESS_DENIED;
-    }
-
-    /* Check for Tcb privilege */
-    if (!SeSinglePrivilegeCheck(SeTcbPrivilege,
-                                UserMode))
-    {
-        DPRINT1("NtGetPlugPlayEvent: Caller does not hold the SeTcbPrivilege privilege!\n");
-        return STATUS_PRIVILEGE_NOT_HELD;
-    }
-
-    /* Probe the buffer */
-    _SEH2_TRY
-    {
-        ProbeForWrite(Buffer,
-                      BufferLength,
-                      sizeof(ULONG));
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        _SEH2_YIELD(return _SEH2_GetExceptionCode());
-    }
-    _SEH2_END;
-
-    switch (PlugPlayControlClass)
-    {
-        case PlugPlayControlEnumerateDevice:
-            if (!Buffer || BufferLength < sizeof(PLUGPLAY_CONTROL_ENUMERATE_DEVICE_DATA))
-                return STATUS_INVALID_PARAMETER;
-            return IopPnpEnumerateDevice((PPLUGPLAY_CONTROL_ENUMERATE_DEVICE_DATA)Buffer);
-
-//        case PlugPlayControlRegisterNewDevice:
-//        case PlugPlayControlDeregisterDevice:
-//        case PlugPlayControlInitializeDevice:
-//        case PlugPlayControlStartDevice:
-//        case PlugPlayControlUnlockDevice:
-//        case PlugPlayControlQueryAndRemoveDevice:
-
-        case PlugPlayControlUserResponse:
-            if (!Buffer || BufferLength < sizeof(PLUGPLAY_CONTROL_USER_RESPONSE_DATA))
-                return STATUS_INVALID_PARAMETER;
-            return IopRemovePlugPlayEvent((PPLUGPLAY_CONTROL_USER_RESPONSE_DATA)Buffer);
-
-//        case PlugPlayControlGenerateLegacyDevice:
-
-        case PlugPlayControlGetInterfaceDeviceList:
-            if (!Buffer || BufferLength < sizeof(PLUGPLAY_CONTROL_INTERFACE_DEVICE_LIST_DATA))
-                return STATUS_INVALID_PARAMETER;
-            return IopGetInterfaceDeviceList((PPLUGPLAY_CONTROL_INTERFACE_DEVICE_LIST_DATA)Buffer);
-
-        case PlugPlayControlProperty:
-            if (!Buffer || BufferLength < sizeof(PLUGPLAY_CONTROL_PROPERTY_DATA))
-                return STATUS_INVALID_PARAMETER;
-            return IopGetDeviceProperty((PPLUGPLAY_CONTROL_PROPERTY_DATA)Buffer);
-
-//        case PlugPlayControlDeviceClassAssociation:
-
-        case PlugPlayControlGetRelatedDevice:
-            if (!Buffer || BufferLength < sizeof(PLUGPLAY_CONTROL_RELATED_DEVICE_DATA))
-                return STATUS_INVALID_PARAMETER;
-            return IopGetRelatedDevice((PPLUGPLAY_CONTROL_RELATED_DEVICE_DATA)Buffer);
-
-//        case PlugPlayControlGetInterfaceDeviceAlias:
-
-        case PlugPlayControlDeviceStatus:
-            if (!Buffer || BufferLength < sizeof(PLUGPLAY_CONTROL_STATUS_DATA))
-                return STATUS_INVALID_PARAMETER;
-            return IopDeviceStatus((PPLUGPLAY_CONTROL_STATUS_DATA)Buffer);
-
-        case PlugPlayControlGetDeviceDepth:
-            if (!Buffer || BufferLength < sizeof(PLUGPLAY_CONTROL_DEPTH_DATA))
-                return STATUS_INVALID_PARAMETER;
-            return IopGetDeviceDepth((PPLUGPLAY_CONTROL_DEPTH_DATA)Buffer);
-
-        case PlugPlayControlQueryDeviceRelations:
-            if (!Buffer || BufferLength < sizeof(PLUGPLAY_CONTROL_DEVICE_RELATIONS_DATA))
-                return STATUS_INVALID_PARAMETER;
-            return IopGetDeviceRelations((PPLUGPLAY_CONTROL_DEVICE_RELATIONS_DATA)Buffer);
-
-//        case PlugPlayControlTargetDeviceRelation:
-//        case PlugPlayControlQueryConflictList:
-//        case PlugPlayControlRetrieveDock:
-
-        case PlugPlayControlResetDevice:
-            if (!Buffer || BufferLength < sizeof(PLUGPLAY_CONTROL_RESET_DEVICE_DATA))
-                return STATUS_INVALID_PARAMETER;
-            return IopResetDevice((PPLUGPLAY_CONTROL_RESET_DEVICE_DATA)Buffer);
-
-//        case PlugPlayControlHaltDevice:
-//        case PlugPlayControlGetBlockedDriverList:
-
-        default:
-            return STATUS_NOT_IMPLEMENTED;
-    }
-
+    DPRINT1("NtPlugPlayControl(%d %p %lu) called\n", PlugPlayControlClass, Buffer, BufferLength);
+    UNIMPLEMENTED();
+    ASSERT(FALSE); // IoDbgBreakPointEx();
     return STATUS_NOT_IMPLEMENTED;
 }

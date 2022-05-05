@@ -39,11 +39,6 @@ IopCreateDeviceKeyPath(IN PCUNICODE_STRING RegistryPath,
 NTSTATUS
 IopSetDeviceInstanceData(HANDLE InstanceKey,
                          PDEVICE_NODE DeviceNode);
-
-NTSTATUS
-IopActionInterrogateDeviceStack(PDEVICE_NODE DeviceNode,
-                                PVOID Context);
-
 NTSTATUS
 PpSetCustomTargetEvent(IN PDEVICE_OBJECT DeviceObject,
                        IN OUT PKEVENT SyncEvent OPTIONAL,

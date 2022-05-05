@@ -650,11 +650,6 @@ IopCreateDeviceNode(
 );
 
 NTSTATUS
-IopFreeDeviceNode(
-    IN PDEVICE_NODE DeviceNode
-);
-
-NTSTATUS
 NTAPI
 IopQueryDeviceCapabilities(PDEVICE_NODE DeviceNode,
                            PDEVICE_CAPABILITIES DeviceCaps);
@@ -683,20 +678,9 @@ IopGetDeviceNode(
 );
 
 NTSTATUS
-IopActionConfigureChildServices(
-    IN PDEVICE_NODE DeviceNode,
-    IN PVOID Context
-);
-
-NTSTATUS
 IopActionInitChildServices(
     IN PDEVICE_NODE DeviceNode,
     IN PVOID Context
-);
-
-NTSTATUS
-IopEnumerateDevice(
-    IN PDEVICE_OBJECT DeviceObject
 );
 
 NTSTATUS
@@ -758,13 +742,6 @@ IopTraverseDeviceTree(
 //
 // PnP Routines
 //
-INIT_FUNCTION
-NTSTATUS
-NTAPI
-IopUpdateRootKey(
-    VOID
-);
-
 INIT_FUNCTION
 NTSTATUS
 NTAPI
