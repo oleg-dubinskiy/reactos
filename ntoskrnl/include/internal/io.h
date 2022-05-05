@@ -848,28 +848,6 @@ IopReadyDeviceObjects(
     IN PDRIVER_OBJECT Driver
 );
 
-NTSTATUS
-FASTCALL
-IopInitializeDevice(
-    IN PDEVICE_NODE DeviceNode,
-    IN PDRIVER_OBJECT DriverObject
-);
-
-NTSTATUS
-IopStartDevice(
-    IN PDEVICE_NODE DeviceNode
-);
-
-NTSTATUS
-IopStopDevice(
-    IN PDEVICE_NODE DeviceNode
-);
-
-NTSTATUS
-IopRemoveDevice(
-    IN PDEVICE_NODE DeviceNode
-);
-
 PVPB
 NTAPI
 IopCheckVpbMounted(
@@ -1111,18 +1089,6 @@ PnpRootDriverEntry(
    IN PUNICODE_STRING RegistryPath
 );
 
-NTSTATUS
-PnpRootCreateDevice(
-    IN PUNICODE_STRING ServiceName,
-    IN OPTIONAL PDRIVER_OBJECT DriverObject,
-    OUT PDEVICE_OBJECT *PhysicalDeviceObject,
-    OUT OPTIONAL PUNICODE_STRING FullInstancePath
-);
-
-NTSTATUS
-PnpRootRegisterDevice(
-    IN PDEVICE_OBJECT DeviceObject);
-
 //
 // Driver Routines
 //
@@ -1171,15 +1137,6 @@ IopInitializeDriverModule(
     IN PUNICODE_STRING ServiceName,
     IN BOOLEAN FileSystemDriver,
     OUT PDRIVER_OBJECT *DriverObject
-);
-
-NTSTATUS
-FASTCALL
-IopAttachFilterDrivers(
-    IN PDEVICE_NODE DeviceNode,
-    IN HANDLE EnumSubKey,
-    IN HANDLE ClassKey,
-    IN BOOLEAN Lower
 );
 
 VOID
