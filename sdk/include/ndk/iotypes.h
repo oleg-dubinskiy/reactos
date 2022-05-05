@@ -850,18 +850,18 @@ typedef struct _IO_CLIENT_EXTENSION
     PVOID ClientIdentificationAddress;
 } IO_CLIENT_EXTENSION, *PIO_CLIENT_EXTENSION;
 
-//
-// Device Node
-//
+/* Device Node */
 typedef struct _DEVICE_NODE
 {
-    struct _DEVICE_NODE *Sibling;
-    struct _DEVICE_NODE *Child;
-    struct _DEVICE_NODE *Parent;
-    struct _DEVICE_NODE *LastChild;
+    struct _DEVICE_NODE* Sibling;
+    struct _DEVICE_NODE* Child;
+    struct _DEVICE_NODE* Parent;
+    struct _DEVICE_NODE* LastChild;
     ULONG Level;
-    struct _PO_DEVICE_NOTIFY *Notify;
+    struct _PO_DEVICE_NOTIFY* Notify;
+  #if (NTDDI_VERSION >= NTDDI_LONGHORN)
     PO_IRP_MANAGER PoIrpManager;
+  #endif
     PNP_DEVNODE_STATE State;
     PNP_DEVNODE_STATE PreviousState;
     PNP_DEVNODE_STATE StateHistory[20];
@@ -894,33 +894,41 @@ typedef struct _DEVICE_NODE
     USHORT QueryArbiterMask;
     union
     {
-        struct _DEVICE_NODE *LegacyDeviceNode;
+        struct _DEVICE_NODE* LegacyDeviceNode;
         PDEVICE_RELATIONS PendingDeviceRelations;
+      #if (NTDDI_VERSION >= NTDDI_LONGHORN)
+        PVOID Information;
+      #endif
     } OverUsed1;
     union
     {
-        struct _DEVICE_NODE *NextResourceDeviceNode;
+        struct _DEVICE_NODE* NextResourceDeviceNode;
     } OverUsed2;
     PCM_RESOURCE_LIST BootResources;
-#if (NTDDI_VERSION >= NTDDI_LONGHORN)
+  #if (NTDDI_VERSION >= NTDDI_LONGHORN)
     PCM_RESOURCE_LIST BootResourcesTranslated;
-#endif
+  #endif
     ULONG CapabilityFlags;
     struct
     {
         PROFILE_STATUS DockStatus;
         LIST_ENTRY ListEntry;
-        WCHAR *SerialNumber;
+        WCHAR* SerialNumber;
     } DockInfo;
     ULONG DisableableDepends;
     LIST_ENTRY PendedSetInterfaceState;
     LIST_ENTRY LegacyBusListEntry;
     ULONG DriverUnloadRetryCount;
-    struct _DEVICE_NODE *PreviousParent;
+    struct _DEVICE_NODE* PreviousParent;
     ULONG DeletedChildren;
-#if (NTDDI_VERSION >= NTDDI_LONGHORN)
+  #if (NTDDI_VERSION >= NTDDI_LONGHORN)
     ULONG NumaNodeIndex;
-#endif
+  #endif
+  #if DBG
+    NTSTATUS DebugStatus;
+    PVOID PrevCmResource;
+    PVOID DbgParam2;
+  #endif
 } DEVICE_NODE, *PDEVICE_NODE;
 
 //
