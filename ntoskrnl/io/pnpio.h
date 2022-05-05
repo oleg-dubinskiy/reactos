@@ -133,9 +133,9 @@ typedef struct _PNP_REQ_RESOURCE_ENTRY
     ULONG Reserved3;
     ULONG Reserved4;
     CM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor;
-} PNP_REQ_RESOURCE_ENTRY, *PPNP_REQ_RESOURCE_ENTRY; 
+} PNP_REQ_RESOURCE_ENTRY, *PPNP_REQ_RESOURCE_ENTRY;
 
-typedef struct _PNP_REQ_ALT_LIST *PPNP_REQ_ALT_LIST; 
+typedef struct _PNP_REQ_ALT_LIST *PPNP_REQ_ALT_LIST;
 
 typedef struct _PNP_REQ_DESCRIPTOR
 {
@@ -155,7 +155,7 @@ typedef struct _PNP_REQ_DESCRIPTOR
         struct _PI_RESOURCE_ARBITER_ENTRY * ArbiterEntry;
         struct _PI_RESOURCE_TRANSLATOR_ENTRY * TranslatorEntry;
     };
-} PNP_REQ_DESCRIPTOR, *PPNP_REQ_DESCRIPTOR; 
+} PNP_REQ_DESCRIPTOR, *PPNP_REQ_DESCRIPTOR;
 
 typedef struct _PNP_REQ_ALT_LIST
 {
@@ -165,7 +165,7 @@ typedef struct _PNP_REQ_ALT_LIST
     ULONG ListNumber;
     ULONG CountDescriptors;
     PPNP_REQ_DESCRIPTOR ReqDescriptors[1]; // array pointers to descriptors
-} PNP_REQ_ALT_LIST, *PPNP_REQ_ALT_LIST; 
+} PNP_REQ_ALT_LIST, *PPNP_REQ_ALT_LIST;
 
 typedef struct _PNP_REQ_LIST
 { 
@@ -176,7 +176,7 @@ typedef struct _PNP_REQ_LIST
     PPNP_REQ_ALT_LIST * AltList2;
     ULONG Count;
     PPNP_REQ_ALT_LIST AltLists[1]; // array pointers to alternative lists
-} PNP_REQ_LIST, *PPNP_REQ_LIST; 
+} PNP_REQ_LIST, *PPNP_REQ_LIST;
 
 typedef struct _PIP_ASSIGN_RESOURCES_CONTEXT
 {
@@ -287,6 +287,13 @@ typedef struct _DRIVER_GROUP_LIST_ENTRY {
     UNICODE_STRING GroupName;
     WCHAR Buffer[];
 } DRIVER_GROUP_LIST_ENTRY, *PDRIVER_GROUP_LIST_ENTRY;
+
+typedef struct _PNP_REMOVAL_WALK_CONTEXT
+{
+    BOOLEAN TreeDeletion;
+    BOOLEAN DescendantNode;
+    UCHAR Pad[2];
+} PNP_REMOVAL_WALK_CONTEXT, *PPNP_REMOVAL_WALK_CONTEXT;
 
 typedef struct _RELATION_LIST_ENTRY
 {
