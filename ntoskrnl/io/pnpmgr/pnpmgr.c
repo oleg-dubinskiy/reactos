@@ -442,7 +442,7 @@ ASSERT(FALSE);
 
     if (!DriverObject->DriverExtension->AddDevice)
     {
-        DeviceNode->Flags |= DNF_LEGACY_DRIVER;
+        //DeviceNode->Flags |= DNF_LEGACY_DRIVER;
     }
 
     if (DeviceNode->Flags & DNF_LEGACY_DRIVER)
@@ -467,9 +467,9 @@ ASSERT(FALSE);
                 &DriverObject->DriverName,
                 &DeviceNode->InstancePath,
                 Status);
-        IopDeviceNodeSetFlag(DeviceNode, DNF_DISABLED);
 ASSERT(FALSE);
         //IopDeviceNodeSetFlag(DeviceNode, DNF_DISABLED);
+        DeviceNode->Problem = CM_PROB_FAILED_ADD;
         return Status;
     }
 
