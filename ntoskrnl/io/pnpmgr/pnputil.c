@@ -86,8 +86,10 @@ PnpConcatenateUnicodeStrings(
 
 VOID
 NTAPI
-PnpFreeUnicodeStringList(IN PUNICODE_STRING UnicodeStringList,
-                         IN ULONG StringCount)
+PnpFreeUnicodeStringList(
+    _In_ PUNICODE_STRING UnicodeStringList,
+    _In_ ULONG StringCount)
+
 {
     ULONG i;
 

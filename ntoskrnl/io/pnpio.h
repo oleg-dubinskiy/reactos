@@ -845,6 +845,13 @@ PnpConcatenateUnicodeStrings(
     _In_ PUNICODE_STRING AppendString
 );
 
+VOID
+NTAPI
+PnpFreeUnicodeStringList(
+    _In_ PUNICODE_STRING UnicodeStringList,
+    _In_ ULONG StringCount
+);
+
 NTSTATUS
 NTAPI
 IopMapDeviceObjectToDeviceInstance(
