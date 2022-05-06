@@ -930,6 +930,13 @@ IopReportBootResources(
     _In_ PCM_RESOURCE_LIST CmResource
 );
 
+NTSTATUS
+NTAPI
+IopReleaseDeviceResources(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ BOOLEAN IsAllocateBootResources
+);
+
 /* pnputil.c */
 NTSTATUS
 NTAPI

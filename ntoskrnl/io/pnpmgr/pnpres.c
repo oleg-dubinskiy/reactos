@@ -4156,6 +4156,17 @@ IopCommitConfiguration(
 
 NTSTATUS
 NTAPI
+IopReleaseDeviceResources(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ BOOLEAN IsAllocateBootResources)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 IopAllocateResources(
     _Inout_ PULONG OutDeviceCount,
     _In_ PPNP_RESOURCE_REQUEST * ResContext,
