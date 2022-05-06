@@ -11,7 +11,9 @@
 /* INCLUDES ******************************************************************/
 
 #include <ntoskrnl.h>
-#define NDEBUG
+#include "../pnpio.h"
+
+//#define NDEBUG
 #include <debug.h>
 
 /* TYPES *******************************************************************/
@@ -388,3 +390,39 @@ IoUnregisterPlugPlayNotification(IN PVOID NotificationEntry)
 
     return STATUS_SUCCESS;
 }
+
+VOID
+NTAPI
+IopProcessDeferredRegistrations(VOID)
+{
+    PPNP_DEFER_NOTIFY DeferNotification;
+    PKGUARDED_MUTEX NotifyLock;
+    PLIST_ENTRY Entry;
+
+    PAGED_CODE();
+    DPRINT("IopProcessDeferredRegistrations()\n");
+
+    KeAcquireGuardedMutex(&IopDeferredRegistrationLock);
+
+    while (!IsListEmpty(&IopDeferredRegistrationList))
+    {
+        Entry = RemoveHeadList(&IopDeferredRegistrationList);
+        DeferNotification = CONTAINING_RECORD(Entry, PNP_DEFER_NOTIFY, Link);
+        DPRINT("IopProcessDeferredRegistrations: DeferNotification %X\n", DeferNotification);
+
+        NotifyLock = DeferNotification->NotifyHeader->NotifyLock;
+        if (NotifyLock)
+            KeAcquireGuardedMutex(NotifyLock);
+
+        DeferNotification->NotifyHeader->Unregistered = FALSE;
+        IopDereferenceNotify(DeferNotification->NotifyHeader);
+        ExFreePoolWithTag(DeferNotification, 0);
+
+        if (NotifyLock)
+            KeReleaseGuardedMutex(NotifyLock);
+    }
+
+    KeReleaseGuardedMutex(&IopDeferredRegistrationLock);
+}
+
+/* EOF */

@@ -805,6 +805,13 @@ PpDevNodeAssertLockLevel(
     _In_ LONG Level
 );
 
+/* pnpnotify.c */
+VOID
+NTAPI
+IopProcessDeferredRegistrations(
+    VOID
+);
+
 /* pnpres.c */
 NTSTATUS
 NTAPI
