@@ -5115,7 +5115,7 @@ IopBootAllocation(
                        ReqResDesc->Count, ReqResDesc->PhysicalDevice);
 
                 ASSERT(FALSE);
-                IopDumpIoResourceDescriptor("    ", ReqResDesc->IoDescriptor);
+                PipDumpIoResourceDescriptor(ReqResDesc->IoDescriptor, 0);
             }
 
             ArbiterEntry->ResourcesChanged = 0; // FIXME UCHAR ==>> BOOLEAN
