@@ -16,6 +16,17 @@
 //#define NDEBUG
 #include <debug.h>
 
+/* GLOBALS *******************************************************************/
+
+extern LIST_ENTRY IopProfileNotifyList;
+extern LIST_ENTRY IopDeviceClassNotifyList[13];
+extern LIST_ENTRY IopDeferredRegistrationList;
+extern KGUARDED_MUTEX IopHwProfileNotifyLock;
+extern KGUARDED_MUTEX IopDeviceClassNotifyLock;
+extern KGUARDED_MUTEX IopTargetDeviceNotifyLock;
+extern KGUARDED_MUTEX IopDeferredRegistrationLock;
+extern KGUARDED_MUTEX PiNotificationInProgressLock;
+
 /* TYPES *******************************************************************/
 
 typedef struct _PNP_NOTIFY_ENTRY
@@ -241,6 +252,46 @@ IoPnPDeliverServicePowerNotification(ULONG VetoedPowerOperation OPTIONAL,
 {
     UNIMPLEMENTED;
     return 0;
+}
+
+VOID
+NTAPI
+IopDereferenceNotify(
+    _In_ PPNP_NOTIFY_HEADER NotifyHeader)
+{
+    PAGED_CODE();
+    DPRINT("IopDereferenceNotify: NotifyHeader %p\n", NotifyHeader);
+
+    ASSERT(NotifyHeader);
+    ASSERT(NotifyHeader->RefCount > 0);
+
+    NotifyHeader->RefCount--;
+    if (NotifyHeader->RefCount != 0)
+        return;
+
+    ASSERT(NotifyHeader->Unregistered);
+
+    RemoveEntryList(&NotifyHeader->Link);
+    ObDereferenceObject(NotifyHeader->DriverObject);
+
+    if (NotifyHeader->EventCategory == EventCategoryTargetDeviceChange)
+    {
+        PTARGET_DEVICE_NOTIFY Notify = (PTARGET_DEVICE_NOTIFY)NotifyHeader;
+
+        if (Notify->PhysicalDeviceObject)
+        {
+            ObDereferenceObject(Notify->PhysicalDeviceObject);
+            Notify->PhysicalDeviceObject = NULL;
+        }
+    }
+
+    if (NotifyHeader->OpaqueSession)
+    {
+        MmQuitNextSession(NotifyHeader->OpaqueSession);
+        NotifyHeader->OpaqueSession = NULL;
+    }
+
+    ExFreePoolWithTag(NotifyHeader, '  pP');
 }
 
 /*
