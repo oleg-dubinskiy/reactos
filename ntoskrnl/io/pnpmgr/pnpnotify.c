@@ -393,6 +393,17 @@ IoUnregisterPlugPlayNotification(IN PVOID NotificationEntry)
 
 VOID
 NTAPI
+IopNotifyDeviceClassChange(
+    _In_ PPLUGPLAY_EVENT_BLOCK EventBlock,
+    _In_ GUID * ClassGuid,
+    _In_ PUNICODE_STRING SymbolicLinkName)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+}
+
+VOID
+NTAPI
 IopProcessDeferredRegistrations(VOID)
 {
     PPNP_DEFER_NOTIFY DeferNotification;

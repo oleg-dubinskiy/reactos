@@ -812,6 +812,14 @@ IopProcessDeferredRegistrations(
     VOID
 );
 
+VOID
+NTAPI
+IopNotifyDeviceClassChange(
+    _In_ PPLUGPLAY_EVENT_BLOCK EventBlock,
+    _In_ GUID * ClassGuid,
+    _In_ PUNICODE_STRING SymbolicLinkName
+);
+
 /* pnpres.c */
 NTSTATUS
 NTAPI
