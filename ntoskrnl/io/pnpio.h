@@ -561,6 +561,15 @@ PpSetDeviceClassChange(
     _In_ PUNICODE_STRING SymbolicLinkName
 );
 
+PVOID
+NTAPI
+PiAllocateCriticalMemory(
+    _In_ PIP_TYPE_REMOVAL_DEVICE RemoveType,
+    _In_ POOL_TYPE PoolType,
+    _In_ SIZE_T NumberOfBytes,
+    _In_ ULONG Tag
+);
+
 /* pnpinit.c */
 INIT_FUNCTION
 BOOLEAN
