@@ -4163,6 +4163,15 @@ Exit:
     return Status;
 }
 
+VOID
+NTAPI
+IopUncacheInterfaceInformation(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+}
+
 BOOLEAN
 NTAPI
 PiCollapseEnumRequests(

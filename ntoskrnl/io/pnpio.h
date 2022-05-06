@@ -566,6 +566,12 @@ PipCallDriverAddDevice(
     _In_ SERVICE_LOAD_TYPE * DriverLoadType
 );
 
+VOID
+NTAPI
+IopUncacheInterfaceInformation(
+    _In_ PDEVICE_OBJECT DeviceObject
+);
+
 PDRIVER_OBJECT
 NTAPI
 IopReferenceDriverObjectByName(
