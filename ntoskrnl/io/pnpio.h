@@ -342,6 +342,14 @@ typedef struct _PNP_NOTIFY_HEADER
     UCHAR Padded;
     PKGUARDED_MUTEX NotifyLock;
 } PNP_NOTIFY_HEADER, *PPNP_NOTIFY_HEADER;
+
+typedef struct _TARGET_DEVICE_NOTIFY
+{
+    PNP_NOTIFY_HEADER Header;
+    PFILE_OBJECT FileObject;
+    PDEVICE_OBJECT PhysicalDeviceObject;
+} TARGET_DEVICE_NOTIFY, *PTARGET_DEVICE_NOTIFY; 
+
 typedef struct _PNP_DEFER_NOTIFY
 {
     LIST_ENTRY Link;
