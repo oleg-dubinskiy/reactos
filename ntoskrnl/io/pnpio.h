@@ -508,6 +508,12 @@ PipRequestDeviceRemoval(
     _In_ ULONG Problem
 );
 
+VOID
+NTAPI
+IopFreeRelationList(
+    _In_ PRELATION_LIST RelationsList
+);
+
 /* pnpenum.c */
 NTSTATUS
 NTAPI

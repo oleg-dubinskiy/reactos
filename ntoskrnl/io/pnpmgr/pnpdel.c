@@ -326,4 +326,35 @@ PipRequestDeviceRemoval(
                             NULL);
 }
 
+VOID
+NTAPI
+IopFreeRelationList(
+    _In_ PRELATION_LIST RelationsList)
+{
+    PRELATION_LIST_ENTRY Entry;
+    PDEVICE_OBJECT DeviceObject;
+    ULONG ix;
+    ULONG jx;
+
+    PAGED_CODE();
+    DPRINT("IopFreeRelationList: RelationsList %p, %X - %X\n", RelationsList, RelationsList->FirstLevel, RelationsList->MaxLevel);
+
+    for (ix = 0; ix <= (RelationsList->MaxLevel - RelationsList->FirstLevel); ix++)
+    {
+        Entry = RelationsList->Entries[ix];
+        if (!Entry)
+            continue;
+
+        for (jx = 0; jx < Entry->Count; jx++)
+        {
+            DeviceObject = Entry->Devices[jx];
+            ObDereferenceObject((PVOID)((ULONG_PTR)DeviceObject & 0xFFFFFFFC));
+        }
+
+        ExFreePoolWithTag(Entry, 0);
+    }
+
+    ExFreePoolWithTag(RelationsList, 0);
+}
+
 /* EOF */
