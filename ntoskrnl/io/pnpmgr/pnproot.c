@@ -193,7 +193,6 @@ IopInitializeDeviceInstanceKey(
     ULONG ServiceType;
     NTSTATUS Status;
     BOOLEAN DuplicateOf = FALSE;
-    BOOLEAN Result;
 
     PAGED_CODE();
     DPRINT("IopInitializeDeviceInstanceKey: KeyHandle - %p, KeyName - %wZ, RelationContext->Objects - %p\n",
