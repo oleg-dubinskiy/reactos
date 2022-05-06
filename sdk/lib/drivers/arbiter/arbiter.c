@@ -22,6 +22,18 @@
 
 NTSTATUS
 NTAPI
+ArbArbiterHandler(
+    _In_ PVOID Context,
+    _In_ ARBITER_ACTION Action,
+    _Out_ PARBITER_PARAMETERS Params)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ArbTestAllocation(
     _In_ PARBITER_INSTANCE Arbiter,
     _In_ PLIST_ENTRY ArbitrationList)
