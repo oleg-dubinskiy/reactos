@@ -1018,34 +1018,6 @@ IopSetDeviceInstanceData(HANDLE InstanceKey,
     return Status;
 }
 
-/*
- * IopInitializePnpServices
- *
- * Initialize services for discovered children
- *
- * Parameters
- *    DeviceNode
- *       Top device node to start initializing services.
- *
- * Return Value
- *    Status
- */
-NTSTATUS
-IopInitializePnpServices(IN PDEVICE_NODE DeviceNode)
-{
-    DEVICETREE_TRAVERSE_CONTEXT Context;
-
-    DPRINT("IopInitializePnpServices(%p)\n", DeviceNode);
-
-    IopInitDeviceTreeTraverseContext(
-        &Context,
-        DeviceNode,
-        IopActionInitChildServices,
-        DeviceNode);
-
-    return IopTraverseDeviceTree(&Context);
-}
-
 NTSTATUS
 NTAPI
 IopCreateRegistryKeyEx(OUT PHANDLE Handle,

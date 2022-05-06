@@ -678,12 +678,6 @@ IopGetDeviceNode(
 );
 
 NTSTATUS
-IopActionInitChildServices(
-    IN PDEVICE_NODE DeviceNode,
-    IN PVOID Context
-);
-
-NTSTATUS
 IoCreateDriverList(
     VOID
 );
@@ -702,10 +696,6 @@ IopQueueTargetDeviceEvent(
     const GUID *Guid,
     PUNICODE_STRING DeviceIds
 );
-
-NTSTATUS
-IopInitializePnpServices(
-    IN PDEVICE_NODE DeviceNode);
 
 NTSTATUS
 NTAPI
