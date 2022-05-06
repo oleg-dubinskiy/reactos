@@ -1479,7 +1479,7 @@ PiQueryResourceRequirements(
         DPRINT("PiQueryResourceRequirements: DeviceNode->ResourceRequirements - %p\n",
                DeviceNode->ResourceRequirements);
 
-        IopDumpResourceRequirementsList(DeviceNode->ResourceRequirements);
+        PipDumpResourceRequirementsList(DeviceNode->ResourceRequirements, 1);
     }
 
     return Status;
@@ -1612,7 +1612,7 @@ PiQueryAndAllocateBootResources(
 
     if (DeviceNode->BootResources)
     {
-        IopDumpCmResourceList(DeviceNode->BootResources);
+        PipDumpCmResourceList(DeviceNode->BootResources, 1);
     }
 
     if (NT_SUCCESS(Status))
@@ -2808,7 +2808,7 @@ PiProcessNewDeviceNode(
     KeLeaveCriticalRegion();
 
     PiQueryResourceRequirements(DeviceNode, Handle);
-    //IopDumpResourceRequirementsList(DeviceNode->ResourceRequirements);
+    PipDumpResourceRequirementsList(DeviceNode->ResourceRequirements, 1);
 
     KeEnterCriticalRegion();
     ExAcquireResourceSharedLite(&PpRegistryDeviceResource, TRUE);

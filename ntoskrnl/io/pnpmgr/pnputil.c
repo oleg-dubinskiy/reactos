@@ -1486,7 +1486,7 @@ IopCmResourcesToIoResources(
         for (jx = 0; jx < CmFullList->PartialResourceList.Count; jx++)
         {
             PartialCount++;
-            CmDescriptor = IopGetNextCmPartialDescriptor(CmDescriptor);
+            CmDescriptor = PipGetNextCmPartialDescriptor(CmDescriptor);
         }
 
         CmFullList = (PCM_FULL_RESOURCE_DESCRIPTOR)CmDescriptor;
@@ -1494,7 +1494,7 @@ IopCmResourcesToIoResources(
 
     if (!PartialCount)
     {
-        IopDumpCmResourceList(CmResource);
+        PipDumpCmResourceList(CmResource, 1);
         ASSERT(FALSE);
         return NULL;
     }

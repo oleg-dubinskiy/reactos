@@ -1675,7 +1675,7 @@ IopFilterResourceRequirementsList(
                 CmDescCount--;
             }
 
-            CmDescriptor = IopGetNextCmPartialDescriptor(CmDescriptor);
+            CmDescriptor = PipGetNextCmPartialDescriptor(CmDescriptor);
         }
 
         CmFullList = (PCM_FULL_RESOURCE_DESCRIPTOR)CmDescriptor;
@@ -2349,8 +2349,8 @@ IopQueryDeviceRequirements(
         }
         else
         {
-            DPRINT("IopQueryDeviceRequirements: IopDumpResourceRequirementsList\n");
-            IopDumpResourceRequirementsList(IoResources);
+            DPRINT("IopQueryDeviceRequirements: PipDumpResourceRequirementsList\n");
+            PipDumpResourceRequirementsList(IoResources, 1);
         }
     }
     else
@@ -2364,8 +2364,8 @@ IopQueryDeviceRequirements(
             return STATUS_NO_MEMORY;
         }
 
-        DPRINT("IopQueryDeviceRequirements: IopDumpResourceRequirementsList. IoResources - %p, Size - %X\n", DeviceNode->ResourceRequirements, DeviceNode->ResourceRequirements->ListSize);
-        IopDumpResourceRequirementsList(DeviceNode->ResourceRequirements);
+        DPRINT("IopQueryDeviceRequirements: PipDumpResourceRequirementsList (%p, %X)\n", DeviceNode->ResourceRequirements, DeviceNode->ResourceRequirements->ListSize);
+        PipDumpResourceRequirementsList(DeviceNode->ResourceRequirements, 1);
         RtlCopyMemory(IoResources, DeviceNode->ResourceRequirements, DeviceNode->ResourceRequirements->ListSize);
     }
 
@@ -3684,7 +3684,7 @@ IopGetResourceRequirementsForAssignTable(
                       DPRINT("IopGetResourceRequirementsForAssignTable: List size - %X\n",
                              ListSize);
 
-                      IopDumpResourceRequirementsList(ResRequest->ResourceRequirements);
+                      PipDumpResourceRequirementsList(ResRequest->ResourceRequirements, 1);
 
                       if (!NT_SUCCESS(Status) ||
                           !ResRequest->ResourceRequirements)
@@ -4353,9 +4353,9 @@ IopAllocateResources(
                DeviceNode, DeviceNode->BootResources);
 
         DPRINT("\n");
-        IopDumpResourceRequirementsList(DeviceNode->ResourceRequirements);
+        PipDumpResourceRequirementsList(DeviceNode->ResourceRequirements, 1);
         DPRINT("\n");
-        IopDumpCmResourceList(DeviceNode->BootResources);
+        PipDumpCmResourceList(DeviceNode->BootResources, 1);
         DPRINT("\n");
 
         Status = IopFindBestConfiguration(Current, 1, &List);
@@ -4869,7 +4869,7 @@ PipReadDeviceConfiguration(
 
         for (jx = 0; jx < FullList->PartialResourceList.Count; jx++)
         {
-            CmDescriptor = IopGetNextCmPartialDescriptor(CmDescriptor);
+            CmDescriptor = PipGetNextCmPartialDescriptor(CmDescriptor);
         }
 
         FullList = (PCM_FULL_RESOURCE_DESCRIPTOR)CmDescriptor;
@@ -5162,7 +5162,7 @@ IopAllocateBootResourcesInternal(
 
     DPRINT("\n");
     DPRINT("=== BootResourceRequirementsList =======================\n");
-    IopDumpResourceRequirementsList(IoResources);
+    PipDumpResourceRequirementsList(IoResources, 1);
     DPRINT("=== BootResourceRequirementsList end ===================\n");
 
     ResRequest.AllocationType = AllocationType;
