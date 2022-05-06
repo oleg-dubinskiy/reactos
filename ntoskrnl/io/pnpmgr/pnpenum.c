@@ -4696,6 +4696,76 @@ PiProcessReenumeration(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+PiProcessAddBootDevices(
+    _In_ PPIP_ENUM_REQUEST Request)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PiProcessResourceRequirementsChanged(
+    _In_ PPIP_ENUM_REQUEST Request)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PiProcessStartSystemDevices(
+    _In_ PPIP_ENUM_REQUEST Request)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PiProcessRequeryDeviceState(
+    _In_ PPIP_ENUM_REQUEST Request)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PpProcessClearProblem(
+    _In_ PPIP_ENUM_REQUEST Request)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PiProcessShutdownPnpDevices(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PiRestartDevice(
+    _In_ PPIP_ENUM_REQUEST Request)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 PipEnumerationWorker(
