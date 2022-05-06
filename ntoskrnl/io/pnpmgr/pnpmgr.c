@@ -1148,12 +1148,13 @@ NTSTATUS
 NTAPI
 IopGetRegistryValue(IN HANDLE Handle,
                     IN PWSTR ValueName,
-                    OUT PKEY_VALUE_FULL_INFORMATION *Information)
+                    OUT PKEY_VALUE_FULL_INFORMATION * Information)
 {
-    UNICODE_STRING ValueString;
-    NTSTATUS Status;
     PKEY_VALUE_FULL_INFORMATION FullInformation;
+    UNICODE_STRING ValueString;
     ULONG Size;
+    NTSTATUS Status;
+
     PAGED_CODE();
 
     RtlInitUnicodeString(&ValueString, ValueName);
@@ -1164,14 +1165,26 @@ IopGetRegistryValue(IN HANDLE Handle,
                              NULL,
                              0,
                              &Size);
+
     if ((Status != STATUS_BUFFER_OVERFLOW) &&
         (Status != STATUS_BUFFER_TOO_SMALL))
     {
+        if (Status != STATUS_OBJECT_NAME_NOT_FOUND)
+        {
+            DPRINT1("IopGetRegistryValue: Status %X\n", Status);
+        }
+
         return Status;
     }
 
-    FullInformation = ExAllocatePool(NonPagedPool, Size);
-    if (!FullInformation) return STATUS_INSUFFICIENT_RESOURCES;
+    ASSERT(Size != 0);
+
+    FullInformation = ExAllocatePoolWithTag(NonPagedPool, Size, 'uspP');
+    if (!FullInformation)
+    {
+        DPRINT1("IopGetRegistryValue: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     Status = ZwQueryValueKey(Handle,
                              &ValueString,
@@ -1181,11 +1194,12 @@ IopGetRegistryValue(IN HANDLE Handle,
                              &Size);
     if (!NT_SUCCESS(Status))
     {
-        ExFreePool(FullInformation);
+        ExFreePoolWithTag(FullInformation, 'uspP');
         return Status;
     }
 
     *Information = FullInformation;
+
     return STATUS_SUCCESS;
 }
 
