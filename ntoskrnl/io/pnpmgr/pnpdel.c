@@ -42,6 +42,21 @@ IopAllocateRelationList(
     return RelationsList;
 }
 
+NTSTATUS
+NTAPI
+IopProcessRelation(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ PIP_TYPE_REMOVAL_DEVICE RemovalType,
+    _In_ BOOLEAN IsDirectDescendant,
+    _In_ PPNP_VETO_TYPE VetoType,
+    _In_ PUNICODE_STRING VetoName,
+    _In_ PRELATION_LIST RelationsList)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 IopCompressRelationList(
