@@ -358,6 +358,8 @@ PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY SWInterruptHandlerTable2[3] =
 };
 
 extern ULONG HalpBusType;
+extern IDTUsageFlags HalpIDTUsageFlags[MAXIMUM_IDTVECTOR + 1];
+extern KAFFINITY HalpDefaultInterruptAffinity;
 
 /* IRQL MANAGEMENT ************************************************************/
 
@@ -1234,6 +1236,62 @@ HalpInitializePICs(IN BOOLEAN EnableInterrupts)
         EFlags |= EFLAGS_INTERRUPT_MASK;
 
     __writeeflags(EFlags);
+}
+
+ULONG
+NTAPI
+HalpGetRootInterruptVector(ULONG Level,
+                           ULONG Vector,
+                           PKIRQL OutIrql,
+                           PKAFFINITY OutAffinity)
+{
+    ULONG RootVector;
+
+    DPRINT("HalpGetRootInterruptVector: Level %X\n", Level);
+
+    if (Level >= 0xFFFFFFD0 || Level > PROFILE_LEVEL)
+    {
+        DPRINT1("HalpGetRootInterruptVector: return 0. Level %X\n", Level);
+        return 0;
+    }
+
+    *OutIrql = (PROFILE_LEVEL - Level);
+    *OutAffinity = HalpDefaultInterruptAffinity;
+
+    ASSERT(HalpDefaultInterruptAffinity);
+
+    RootVector = (PRIMARY_VECTOR_BASE + Level);
+
+    DPRINT("HalpGetRootInterruptVector: Vector %X, Irql %X [%X]\n", RootVector, *OutIrql, *OutAffinity);
+
+    return RootVector;
+}
+
+ULONG
+NTAPI
+HalpGetSystemInterruptVector(IN PBUS_HANDLER BusHandler,
+                             IN PBUS_HANDLER RootHandler,
+                             IN ULONG BusInterruptLevel,
+                             IN ULONG BusInterruptVector,
+                             OUT PKIRQL Irql,
+                             OUT PKAFFINITY Affinity)
+{
+    ULONG Vector;
+    
+    /* Get the root vector */
+    Vector = HalpGetRootInterruptVector(BusInterruptLevel,
+                                        BusInterruptVector,
+                                        Irql,
+                                        Affinity);
+    
+    /* Check if the vector is owned by the HAL and fail if it is */
+    if (HalpIDTUsageFlags[Vector].Flags & IDT_REGISTERED)
+    {
+        DPRINT1("Vector %lx is ALREADY IN USE!\n", Vector);
+        return  0;
+    }
+
+    return Vector;
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/

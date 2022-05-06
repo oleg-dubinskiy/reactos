@@ -241,6 +241,17 @@ HalpInitializePICs(
     IN BOOLEAN EnableInterrupts
 );
 
+ULONG
+NTAPI
+HalpGetSystemInterruptVector(
+    IN PBUS_HANDLER BusHandler,
+    IN PBUS_HANDLER RootHandler,
+    IN ULONG BusInterruptLevel,
+    IN ULONG BusInterruptVector,
+    OUT PKIRQL Irql,
+    OUT PKAFFINITY Affinity
+);
+
 /* processor.c */
 ULONG
 NTAPI
