@@ -312,13 +312,11 @@ IopNotifyFileSystemChange(IN PDEVICE_OBJECT DeviceObject,
     }
 }
 
-/*
- * @implemented
- */
 ULONG
 FASTCALL
-IopInterlockedIncrementUlong(IN KSPIN_LOCK_QUEUE_NUMBER Queue,
-                             IN PULONG Ulong)
+IopInterlockedIncrementUlong(
+    _In_ KSPIN_LOCK_QUEUE_NUMBER Queue,
+    _Inout_ PULONG Ulong)
 {
     KIRQL Irql;
     ULONG OldValue;

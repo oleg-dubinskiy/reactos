@@ -1116,7 +1116,7 @@ IopIncrementDeviceObjectHandleCount(
     _Inout_ PDEVICE_OBJECT FileDeviceObject)
 {
     return IopInterlockedIncrementUlong(LockQueueIoDatabaseLock,
-                                        &FileDeviceObject->ReferenceCount);
+                                        (PULONG)&FileDeviceObject->ReferenceCount);
 }
 
 PDEVICE_OBJECT

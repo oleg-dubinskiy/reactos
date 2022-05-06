@@ -359,6 +359,14 @@ IopLoadDriver(
     _Out_ NTSTATUS * OutInitStatus
 );
 
+/* volume.c */
+ULONG
+FASTCALL
+IopInterlockedIncrementUlong(
+    _In_ KSPIN_LOCK_QUEUE_NUMBER Queue,
+    _Inout_ PULONG Ulong
+);
+
 /* === PNP mgr =============================== */
 
 /* debug.c */
