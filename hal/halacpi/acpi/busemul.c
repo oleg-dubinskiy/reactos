@@ -7,6 +7,9 @@
 
 /* GLOBALS ********************************************************************/
 
+ULONG HalpPicVectorRedirect[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+
+extern BUS_HANDLER HalpFakePciBusHandler;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -109,12 +112,47 @@ HalGetInterruptVector(IN INTERFACE_TYPE InterfaceType,
                       IN ULONG BusNumber,
                       IN ULONG BusInterruptLevel,
                       IN ULONG BusInterruptVector,
-                      OUT PKIRQL Irql,
-                      OUT PKAFFINITY Affinity)
+                      OUT PKIRQL OutIrql,
+                      OUT PKAFFINITY OutAffinity)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return 0;
+    ULONG Vector;
+    ULONG Level;
+    ULONG SystemVector;
+    BUS_HANDLER BusHandler;
+
+    if (InterfaceType == Isa)
+    {
+        if (BusInterruptVector >= 0x10)
+        {
+            DPRINT1("HalGetInterruptVector: BusInterruptVector %X\n", BusInterruptVector);
+            ASSERT(BusInterruptVector < 0x10); // HalpDbgBreakPointEx();
+        }
+
+        Vector = HalpPicVectorRedirect[BusInterruptVector];
+        Level = HalpPicVectorRedirect[BusInterruptLevel];
+    }
+    else
+    {
+        Vector = BusInterruptVector;
+        Level = BusInterruptLevel;
+    }
+
+    RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BusHandler));
+
+    BusHandler.BusNumber = BusNumber;
+    BusHandler.InterfaceType = InterfaceType;
+    BusHandler.ParentHandler = &BusHandler;
+
+    SystemVector = HalpGetSystemInterruptVector(&BusHandler,
+                                                &BusHandler,
+                                                Level,
+                                                Vector,
+                                                OutIrql,
+                                                OutAffinity);
+
+    DPRINT("HalGetInterruptVector: Level %X, Vector %X, SystemVector %X\n", Level, Vector, SystemVector);
+
+    return SystemVector;
 }
 
 BOOLEAN
