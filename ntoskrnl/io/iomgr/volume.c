@@ -32,15 +32,16 @@ ULONG IopFsRegistrationOps;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
-/*
- * @halfplemented
- */
+/* @halfplemented */
 VOID
 NTAPI
-IopDecrementDeviceObjectRef(IN PDEVICE_OBJECT DeviceObject,
-                            IN BOOLEAN UnloadIfUnused)
+IopDecrementDeviceObjectRef(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ BOOLEAN UnloadIfUnused,
+    _In_ BOOLEAN IsDelayedWorker)
 {
     KIRQL OldIrql;
+    ULONG Flags;
 
     /* Acquire lock */
     OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
@@ -56,23 +57,23 @@ IopDecrementDeviceObjectRef(IN PDEVICE_OBJECT DeviceObject,
     KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
 
     /* Here, DO is not referenced any longer, check if we have to unload it */
-    if (UnloadIfUnused || IoGetDevObjExtension(DeviceObject)->ExtensionFlags &
-                          (DOE_UNLOAD_PENDING | DOE_DELETE_PENDING | DOE_REMOVE_PENDING))
+    Flags = (DOE_UNLOAD_PENDING | DOE_DELETE_PENDING | DOE_REMOVE_PENDING);
+
+    if (UnloadIfUnused || (IoGetDevObjExtension(DeviceObject)->ExtensionFlags & Flags))
     {
         /* Unload the driver */
+        DPRINT("IopDecrementDeviceObjectRef: FIXME IopCompleteUnloadOrDelete()\n");
         IopUnloadDevice(DeviceObject);
+        //IopCompleteUnloadOrDelete(DeviceObject, IsDelayedWorker, OldIrql);
     }
 }
 
-/*
- * @implemented
- */
 VOID
 NTAPI
 IopDecrementDeviceObjectHandleCount(IN PDEVICE_OBJECT DeviceObject)
 {
     /* Just decrease reference count */
-    IopDecrementDeviceObjectRef(DeviceObject, FALSE);
+    IopDecrementDeviceObjectRef(DeviceObject, FALSE, FALSE);
 }
 
 /*
@@ -401,7 +402,7 @@ IopShutdownBaseFileSystems(IN PLIST_ENTRY ListHead)
         /* Reset the event */
         KeClearEvent(&Event);
 
-        IopDecrementDeviceObjectRef(DeviceObject, FALSE);
+        IopDecrementDeviceObjectRef(DeviceObject, FALSE, TRUE);
         ObDereferenceObject(DeviceObject);
     }
 }
@@ -456,7 +457,7 @@ IopLoadFileSystemDriver(IN PDEVICE_OBJECT DeviceObject)
     }
 
     /* Dereference DO - FsRec? - Comment out call, since it breaks up 2nd stage boot, needs more research. */
-//  IopDecrementDeviceObjectRef(AttachedDeviceObject, TRUE);
+//  IopDecrementDeviceObjectRef(AttachedDeviceObject, TRUE, TRUE);
 }
 
 /*

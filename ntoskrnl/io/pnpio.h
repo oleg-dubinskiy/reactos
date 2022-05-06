@@ -367,6 +367,14 @@ IopInterlockedIncrementUlong(
     _Inout_ PULONG Ulong
 );
 
+VOID
+NTAPI
+IopDecrementDeviceObjectRef(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ BOOLEAN UnloadIfUnused,
+    _In_ BOOLEAN IsDelayedWorker
+);
+
 /* === PNP mgr =============================== */
 
 /* debug.c */
