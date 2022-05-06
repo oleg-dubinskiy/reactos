@@ -388,6 +388,12 @@ IopLoadDriver(
 );
 
 /* volume.c */
+NTSTATUS
+NTAPI
+IopInvalidateVolumesForDevice(
+    _In_ PDEVICE_OBJECT DeviceObject
+);
+
 ULONG
 FASTCALL
 IopInterlockedIncrementUlong(

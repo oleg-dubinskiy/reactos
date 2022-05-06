@@ -1442,4 +1442,14 @@ DereferenceFO:
     return Status;
 }
 
+NTSTATUS
+NTAPI
+IopInvalidateVolumesForDevice(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* EOF */
