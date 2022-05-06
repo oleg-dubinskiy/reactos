@@ -1212,28 +1212,20 @@ IopUnlockMountedDeviceForRemove(
     {
         if (DeviceObject->Vpb)
         {
-            KeWaitForSingleObject(&DeviceObject->DeviceLock,
-                                  Executive,
-                                  KernelMode,
-                                  FALSE,
-                                  NULL);
-
+            KeWaitForSingleObject(&DeviceObject->DeviceLock, Executive, KernelMode, FALSE, NULL);
             IoAcquireVpbSpinLock(&OldIrql);
-            if (MinorCode == IRP_MN_REMOVE_DEVICE)
-            {
-                DeviceObject->Vpb->Flags &= ~VPB_REMOVE_PENDING;
-            }
-            IoReleaseVpbSpinLock(OldIrql);
 
+            if (MinorCode == IRP_MN_REMOVE_DEVICE)
+                DeviceObject->Vpb->Flags &= ~VPB_REMOVE_PENDING;
+
+            IoReleaseVpbSpinLock(OldIrql);
             KeSetEvent(&DeviceObject->DeviceLock, IO_NO_INCREMENT, FALSE);
         }
 
         if (MountedDevices->RemoveDeviceObject == DeviceObject)
         {
             if (MountedDevices->FileSystemDeviceObject)
-            {
                 IopDecrementDeviceObjectHandleCount(MountedDevices->FileSystemDeviceObject);
-            }
 
             break;
         }
