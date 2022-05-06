@@ -241,9 +241,7 @@ typedef enum _PLUGPLAY_VIRTUAL_BUS_TYPE
     MaxPlugPlayVirtualBusType
 } PLUGPLAY_VIRTUAL_BUS_TYPE, *PPLUGPLAY_VIRTUAL_BUS_TYPE;
 
-//
-// Plag and Play Event Categories
-//
+/* Plag and Play Event Categories */
 typedef enum _PLUGPLAY_EVENT_CATEGORY
 {
     HardwareProfileChangeEvent,
@@ -255,6 +253,7 @@ typedef enum _PLUGPLAY_EVENT_CATEGORY
     PowerEvent,
     VetoEvent,
     BlockedDriverEvent,
+    InvalidIDEvent,
     MaxPlugEventCategory
 } PLUGPLAY_EVENT_CATEGORY;
 
