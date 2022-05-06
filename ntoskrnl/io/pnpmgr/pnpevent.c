@@ -96,6 +96,16 @@ PpCompleteDeviceEvent(
 
 NTSTATUS
 NTAPI
+PiProcessQueryRemoveAndEject(
+    _In_ PPNP_DEVICE_EVENT_ENTRY * pEventEntry)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 PiProcessTargetDeviceEvent(
     _In_ PPNP_DEVICE_EVENT_ENTRY * pEventEntry)
 {
