@@ -403,6 +403,12 @@ IopDecrementDeviceObjectRef(
     _In_ BOOLEAN IsDelayedWorker
 );
 
+VOID
+NTAPI
+IopDecrementDeviceObjectHandleCount(
+    _Inout_ PDEVICE_OBJECT FileDeviceObject
+);
+
 /* === PNP mgr =============================== */
 
 /* debug.c */
