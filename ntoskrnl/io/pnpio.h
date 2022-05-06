@@ -617,6 +617,16 @@ PpSetTargetDeviceRemove(
     _In_ PUNICODE_STRING VetoName
 );
 
+BOOLEAN
+NTAPI
+IopNotifyPnpWhenChainDereferenced(
+    _In_ PDEVICE_OBJECT * RemovalDevices,
+    _In_ ULONG DevicesCount,
+    _In_ BOOLEAN IsQueryRemove,
+    _In_ BOOLEAN IsAllowRunWorker,
+    _Out_ PDEVICE_OBJECT * OutDeviceObject
+);
+
 /* pnpinit.c */
 INIT_FUNCTION
 BOOLEAN
