@@ -221,6 +221,38 @@ PipSetDevNodeState(
 
 VOID
 NTAPI
+PipRestoreDevNodeState(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    PNP_DEVNODE_STATE PreviousState;
+    PNP_DEVNODE_STATE CurrentState;
+    KIRQL OldIrql;
+
+    DPRINT("PipRestoreDevNodeState: DeviceNode %p\n", DeviceNode);
+
+    ASSERT((DeviceNode->State == DeviceNodeQueryRemoved) ||
+           (DeviceNode->State == DeviceNodeQueryStopped) ||
+           (DeviceNode->State == DeviceNodeAwaitingQueuedRemoval) ||
+           (DeviceNode->State == DeviceNodeAwaitingQueuedDeletion));
+
+    KeAcquireSpinLock(&IopPnPSpinLock, &OldIrql);
+
+    PreviousState = DeviceNode->PreviousState;
+    CurrentState = DeviceNode->State;
+
+    DeviceNode->StateHistory[DeviceNode->StateHistoryEntry] = CurrentState;
+    DeviceNode->StateHistoryEntry = ((DeviceNode->StateHistoryEntry + 1) % 20);
+
+    DeviceNode->State = PreviousState;
+    DeviceNode->PreviousState = DeviceNodeUnspecified;
+
+    KeReleaseSpinLock(&IopPnPSpinLock, OldIrql);
+
+    DPRINT("PipRestoreDevNodeState: [%wZ] %X => %X\n", &DeviceNode->InstancePath, CurrentState, PreviousState);
+}
+
+VOID
+NTAPI
 PipSetDevNodeProblem(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ ULONG Problem)

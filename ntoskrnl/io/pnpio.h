@@ -797,6 +797,12 @@ PipSetDevNodeState(
 
 VOID
 NTAPI
+PipRestoreDevNodeState(
+    _In_ PDEVICE_NODE DeviceNode
+);
+
+VOID
+NTAPI
 PipSetDevNodeProblem(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ ULONG Problem
