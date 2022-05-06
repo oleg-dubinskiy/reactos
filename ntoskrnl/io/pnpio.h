@@ -576,6 +576,21 @@ PiAllocateCriticalMemory(
     _In_ ULONG Tag
 );
 
+NTSTATUS
+NTAPI
+PpSetTargetDeviceRemove(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ BOOLEAN IsRemove,
+    _In_ BOOLEAN IsNoRestart,
+    _In_ BOOLEAN RemoveNoRestart,
+    _In_ BOOLEAN IsEjectRequest,
+    _In_ ULONG Problem,
+    _In_ PKEVENT SyncEvent,
+    _Out_ NTSTATUS * OutResult,
+    _In_ PPNP_VETO_TYPE VetoType,
+    _In_ PUNICODE_STRING VetoName
+);
+
 /* pnpinit.c */
 INIT_FUNCTION
 BOOLEAN
