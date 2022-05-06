@@ -507,6 +507,74 @@ PpHotSwapUpdateRemovalPolicy(
 
 VOID
 NTAPI
+PpHotSwapGetDevnodeRemovalPolicy(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ BOOLEAN Type,
+    _Out_ PDEVICE_REMOVAL_POLICY OutPolicy)
+{
+    PDEVICE_NODE DetachableNode;
+    DEVICE_REMOVAL_POLICY Policy;
+    ULONG RemovalPolicy;
+
+    PAGED_CODE();
+    DPRINT("PpHotSwapGetDevnodeRemovalPolicy: DeviceNode %p\n", DeviceNode);
+
+    PpDevNodeLockTree(0);
+
+    if (Type)
+        RemovalPolicy = DeviceNode->RemovalPolicy;
+    else
+        RemovalPolicy = DeviceNode->HardwareRemovalPolicy;
+
+    Policy = RemovalPolicy;
+
+    switch (RemovalPolicy)
+    {
+        case 0:
+        {
+            PiHotSwapGetDetachableNode(DeviceNode, &DetachableNode);
+
+            if (!DetachableNode)
+                Policy = RemovalPolicyExpectNoRemoval;
+            else if (DetachableNode->CapabilityFlags & 8)
+                Policy = RemovalPolicyExpectOrderlyRemoval;
+            else if (DetachableNode->CapabilityFlags & 0x10)
+                Policy = RemovalPolicyExpectSurpriseRemoval;
+            else
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+
+            break;
+        }
+        case 1:
+        case 2:
+        case 3:
+            break;
+
+        case 4:
+            Policy = RemovalPolicyExpectOrderlyRemoval;
+            break;
+
+        case 5:
+            Policy = RemovalPolicyExpectSurpriseRemoval;
+            break;
+
+        case 6:
+            Policy = RemovalPolicyExpectOrderlyRemoval;
+            break;
+
+        default:
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            break;
+    }
+
+    PpDevNodeUnlockTree(0);
+    DPRINT("PpHotSwapGetDevnodeRemovalPolicy: Policy %X\n", Policy);
+
+    *OutPolicy = Policy;
+}
+
+VOID
+NTAPI
 IopInsertLegacyBusDeviceNode(
     _In_ PDEVICE_NODE LegacyDeviceNode,
     _In_ INTERFACE_TYPE InterfaceType,
