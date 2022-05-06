@@ -328,6 +328,26 @@ typedef struct _RELATION_LIST
     PRELATION_LIST_ENTRY Entries[1];
 } RELATION_LIST, *PRELATION_LIST;
 
+typedef struct _PNP_NOTIFY_HEADER
+{
+    LIST_ENTRY Link;
+    IO_NOTIFICATION_EVENT_CATEGORY EventCategory;
+    ULONG SessionId;
+    PVOID OpaqueSession;
+    PDRIVER_NOTIFICATION_CALLBACK_ROUTINE  PnpNotificationRoutine;
+    PVOID Context;
+    PDRIVER_OBJECT DriverObject;
+    USHORT RefCount;
+    BOOLEAN Unregistered;
+    UCHAR Padded;
+    PKGUARDED_MUTEX NotifyLock;
+} PNP_NOTIFY_HEADER, *PPNP_NOTIFY_HEADER;
+typedef struct _PNP_DEFER_NOTIFY
+{
+    LIST_ENTRY Link;
+    PPNP_NOTIFY_HEADER NotifyHeader;
+} PNP_DEFER_NOTIFY, *PPNP_DEFER_NOTIFY; 
+
 /* === IO mgr ================================ */
 
 /* driver.c */
