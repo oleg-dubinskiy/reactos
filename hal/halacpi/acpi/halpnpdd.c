@@ -309,9 +309,18 @@ NTAPI
 HalpPassIrpFromFdoToPdo(IN PDEVICE_OBJECT FdoDeviceObject,
                         IN PIRP Irp)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);//HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PFDO_EXTENSION FdoDeviceExtension;
+    NTSTATUS Status;
+
+    DPRINT("HalpPassIrpFromFdoToPdo: %p, %p\n", FdoDeviceObject, Irp);
+
+    FdoDeviceExtension = FdoDeviceObject->DeviceExtension;
+    IoSkipCurrentIrpStackLocation(Irp);
+
+    Status = IoCallDriver(FdoDeviceExtension->AttachedDeviceObject, Irp);
+    DPRINT("HalpPassIrpFromFdoToPdo: AttachedDevice %p, Status %X\n", FdoDeviceExtension->AttachedDeviceObject, Status);
+
+    return Status;
 }
 
 NTSTATUS
