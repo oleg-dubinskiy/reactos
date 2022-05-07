@@ -47,7 +47,7 @@ add_library(halacpi MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/halacpi.def)
 
 set_module_type(halacpi kerneldll ENTRYPOINT HalInitSystem 8)
-target_link_libraries(halacpi libcntpr)
+target_link_libraries(halacpi libcntpr wdmguid)
 add_dependencies(halacpi asm psdk bugcodes xdk)
 add_importlibs(halacpi ntoskrnl)
 #add_pch(halacpi include/hal.h SOURCE)

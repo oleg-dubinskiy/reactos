@@ -183,6 +183,13 @@ Exit:
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+HalTranslatorDereference(IN PVOID Context)
+{
+    ;
+}
+
 NTSTATUS
 NTAPI
 HalpQueryInterface(IN PDEVICE_OBJECT DeviceObject,
@@ -193,9 +200,50 @@ HalpQueryInterface(IN PDEVICE_OBJECT DeviceObject,
                    IN PINTERFACE Interface,
                    OUT PULONG_PTR OutInformation)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);//HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PTRANSLATOR_INTERFACE TranslatorInterface = (PTRANSLATOR_INTERFACE)Interface;
+    UNICODE_STRING  GuidString;
+    NTSTATUS Status;
+
+    DPRINT("HalpQueryInterface: Device %p\n", DeviceObject);
+
+    Status = RtlStringFromGUID(InterfaceType, &GuidString);
+    ASSERT(NT_SUCCESS(Status));
+
+    DPRINT("Guid %wZ\n", &GuidString);
+    DPRINT("BuffSize %X, Ver %X, Data %X, IFace %p\n", InterfaceBufferSize, Version, InterfaceSpecificData, Interface);
+
+    if (RtlCompareMemory(&GUID_TRANSLATOR_INTERFACE_STANDARD, InterfaceType, sizeof(GUID)) != sizeof(GUID))
+    {
+        DPRINT("HalpQueryInterface: STATUS_NOT_SUPPORTED\n");
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (InterfaceBufferSize < sizeof(TRANSLATOR_INTERFACE))
+    {
+        DPRINT("Return STATUS_BUFFER_TOO_SMALL\n");
+        *OutInformation = sizeof(TRANSLATOR_INTERFACE);
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    if (InterfaceSpecificData != ULongToPtr(2))
+    {
+        DPRINT("InterfaceSpecificData != ULongToPtr(2)\n");
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    TranslatorInterface->Version = 0;
+    TranslatorInterface->Size = sizeof(TRANSLATOR_INTERFACE);
+    TranslatorInterface->Context = DeviceObject;
+
+    TranslatorInterface->InterfaceReference = HalTranslatorDereference;
+    TranslatorInterface->InterfaceDereference = HalTranslatorDereference;
+
+    TranslatorInterface->TranslateResources = HalIrqTranslateResourcesRoot;
+    TranslatorInterface->TranslateResourceRequirements = HalIrqTranslateResourceRequirementsRoot;
+
+    *OutInformation = sizeof(TRANSLATOR_INTERFACE);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
