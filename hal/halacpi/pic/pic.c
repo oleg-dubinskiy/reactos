@@ -1350,6 +1350,57 @@ HalpGetSystemInterruptVector(IN PBUS_HANDLER BusHandler,
     return Vector;
 }
 
+NTSTATUS
+NTAPI 
+HalIrqTranslateResourceRequirementsRoot(_Inout_opt_ PVOID Context,
+                                        _In_ PIO_RESOURCE_DESCRIPTOR InIoDesc,     // Source
+                                        _In_ PDEVICE_OBJECT DeviceObject,          // PhysicalDeviceObject,
+                                        _Out_ PULONG OutIoDescCount,               // TargetCount,
+                                        _Out_ PIO_RESOURCE_DESCRIPTOR*  OutIoDesc) // Target
+{
+    PIO_RESOURCE_DESCRIPTOR IoDesc;
+    KAFFINITY Affinity;
+    KIRQL Irql;
+
+    PAGED_CODE();
+    DPRINT1("HalIrqTranslateResourceRequirementsRoot: [Src] Min %X, Max %X\n",
+            InIoDesc->u.Interrupt.MinimumVector,
+            InIoDesc->u.Interrupt.MaximumVector);
+
+    ASSERT(InIoDesc->Type == CmResourceTypeInterrupt);
+
+    IoDesc = ExAllocatePoolWithTag(PagedPool, sizeof(IO_RESOURCE_DESCRIPTOR), TAG_HAL);
+    *OutIoDesc = IoDesc;
+    if (!IoDesc)
+    {
+        DPRINT1("HalIrqTranslateResourceRequirementsRoot: Allocate descriptor failed\n");
+        ASSERT(FALSE);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    *OutIoDescCount = 1;
+
+    RtlCopyMemory(*OutIoDesc, InIoDesc, sizeof(IO_RESOURCE_DESCRIPTOR));
+
+    (*OutIoDesc)->u.Interrupt.MinimumVector =
+        HalpGetRootInterruptVector(InIoDesc->u.Interrupt.MinimumVector,
+                                   InIoDesc->u.Interrupt.MinimumVector,
+                                   &Irql,
+                                   &Affinity);
+
+    (*OutIoDesc)->u.Interrupt.MaximumVector =
+        HalpGetRootInterruptVector(InIoDesc->u.Interrupt.MaximumVector,
+                                   InIoDesc->u.Interrupt.MaximumVector,
+                                   &Irql,
+                                   &Affinity);
+
+    DPRINT1("HalIrqTranslateResourceRequirementsRoot: [Trgt] Min %X, Max %X\n",
+            (*OutIoDesc)->u.Interrupt.MinimumVector,
+            (*OutIoDesc)->u.Interrupt.MaximumVector);
+
+    return STATUS_TRANSLATION_COMPLETE;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 VOID

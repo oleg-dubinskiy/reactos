@@ -264,6 +264,16 @@ HalIrqTranslateResourcesRoot(
    _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Target
 );
 
+NTSTATUS
+NTAPI 
+HalIrqTranslateResourceRequirementsRoot(
+   _Inout_opt_ PVOID Context,
+   _In_ PIO_RESOURCE_DESCRIPTOR InIoDesc,     // Source
+   _In_ PDEVICE_OBJECT DeviceObject,          // PhysicalDeviceObject,
+   _Out_ PULONG OutIoDescCount,               // TargetCount,
+   _Out_ PIO_RESOURCE_DESCRIPTOR*  OutIoDesc  // Target
+);
+
 /* processor.c */
 ULONG
 NTAPI
