@@ -11,12 +11,28 @@
 #include <ndk/rtlfuncs.h>
 #include "arbiter.h"
 
-#define NDEBUG
+//#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS ********************************************************************/
 
 /* DATA **********************************************************************/
+
+BOOLEAN ArbReplayOnError = FALSE;
+
+static PCHAR ArbpActionStrings[10] =
+{
+    "ArbiterActionTestAllocation",
+    "ArbiterActionRetestAllocation",
+    "ArbiterActionCommitAllocation",
+    "ArbiterActionRollbackAllocation",
+    "ArbiterActionQueryAllocatedResources",
+    "ArbiterActionWriteReservedResources",
+    "ArbiterActionQueryConflict",
+    "ArbiterActionQueryArbitrate",
+    "ArbiterActionAddReserved",
+    "ArbiterActionBootAllocation"
+};
 
 /* FUNCTIONS ******************************************************************/
 
@@ -27,9 +43,112 @@ ArbArbiterHandler(
     _In_ ARBITER_ACTION Action,
     _Out_ PARBITER_PARAMETERS Params)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PARBITER_INSTANCE Arbiter = Context;
+    NTSTATUS Status=0;//FIXME
+
+    //PAGED_CODE();?
+    DPRINT("ArbArbiterHandler: Context %p, Action %X\n", Context, Action);
+
+    ASSERT(Context);
+    ASSERT(Action >= ArbiterActionTestAllocation && Action <= ArbiterActionBootAllocation);
+    ASSERT(Arbiter->Signature == 'sbrA');
+
+    KeWaitForSingleObject(Arbiter->MutexEvent, Executive, KernelMode, FALSE, NULL);
+
+    DPRINT("ArbArbiterHandler: %s %S\n", ArbpActionStrings[Action], Arbiter->Name);
+
+    if (Action != ArbiterActionTestAllocation &&
+        Action != ArbiterActionRetestAllocation &&
+        Action != ArbiterActionBootAllocation)
+    {
+        if ((Action == ArbiterActionCommitAllocation ||
+             Action == ArbiterActionRollbackAllocation))
+        {
+            ASSERT(Arbiter->TransactionInProgress);
+        }
+    }
+    else if (Arbiter->TransactionInProgress)
+    {
+        ASSERT(!Arbiter->TransactionInProgress);
+    }
+
+    while (TRUE)
+    {
+        switch (Action)
+        {
+            case ArbiterActionTestAllocation:
+                ASSERT(Params->Parameters.TestAllocation.AllocateFromCount == 0);
+                ASSERT(Params->Parameters.TestAllocation.AllocateFrom == NULL);
+                Status = Arbiter->TestAllocation(Arbiter, Params->Parameters.TestAllocation.ArbitrationList);
+                break;
+
+            case ArbiterActionRetestAllocation:
+                ASSERT(FALSE); // DbgBreakPoint();
+                Status = STATUS_NOT_IMPLEMENTED;
+                break;
+
+            case ArbiterActionCommitAllocation:
+                Status = Arbiter->CommitAllocation(Arbiter);
+                break;
+
+            case ArbiterActionRollbackAllocation:
+                ASSERT(FALSE); // DbgBreakPoint();
+                Status = STATUS_NOT_IMPLEMENTED;
+                break;
+
+            case ArbiterActionQueryAllocatedResources:
+            case ArbiterActionWriteReservedResources:
+            case ArbiterActionQueryArbitrate:
+            case ArbiterActionAddReserved:
+                DPRINT1("ArbArbiterHandler: STATUS_NOT_IMPLEMENTED. Action %X\n", Action);
+                Status = STATUS_NOT_IMPLEMENTED;
+                break;
+
+            case ArbiterActionQueryConflict:
+                ASSERT(FALSE); // DbgBreakPoint();
+                Status = STATUS_NOT_IMPLEMENTED;
+                break;
+
+            case ArbiterActionBootAllocation:
+                Status = Arbiter->BootAllocation(Arbiter, Params->Parameters.BootAllocation.ArbitrationList);
+                break;
+
+            default:
+                DPRINT1("ArbArbiterHandler: Unknown Action %X\n", Action);
+                Status = STATUS_INVALID_PARAMETER;
+                break;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ArbArbiterHandler: %s for %S FAILED status %X\n", ArbpActionStrings[Action], Arbiter->Name, Status);
+            ASSERT(FALSE); // DbgBreakPoint();
+
+            if (ArbReplayOnError == TRUE)
+                continue;
+
+            break;
+        }
+
+        if (Action && Action != ArbiterActionRetestAllocation)
+        {
+            if (Action == ArbiterActionCommitAllocation ||
+                Action == ArbiterActionRollbackAllocation)
+            {
+                Arbiter->TransactionInProgress = FALSE;
+            }
+        }
+        else
+        {
+            Arbiter->TransactionInProgress = TRUE;
+        }
+
+        break;
+    }
+
+    KeSetEvent(Arbiter->MutexEvent, IO_NO_INCREMENT, FALSE);
+
+    return Status;
 }
 
 NTSTATUS
