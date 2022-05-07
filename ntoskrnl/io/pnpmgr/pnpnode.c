@@ -45,7 +45,11 @@ PipAllocateDeviceNode(IN PDEVICE_OBJECT PhysicalDeviceObject)
 
     /* Allocate it */
     DeviceNode = ExAllocatePoolWithTag(NonPagedPool, sizeof(DEVICE_NODE), TAG_IO_DEVNODE);
-    if (!DeviceNode) return DeviceNode;
+    if (!DeviceNode)
+    {
+        DPRINT1("Allocate failed for PDO %p\n", PhysicalDeviceObject);
+        return DeviceNode;
+    }
 
     /* Statistics */
     InterlockedIncrement(&IopNumberDeviceNodes);
@@ -65,6 +69,8 @@ PipAllocateDeviceNode(IN PDEVICE_OBJECT PhysicalDeviceObject)
     InitializeListHead(&DeviceNode->PendedSetInterfaceState);
     InitializeListHead(&DeviceNode->LegacyBusListEntry);
 
+    DeviceNode->State = DeviceNodeUninitialized;
+
     /* Check if there is a PDO */
     if (PhysicalDeviceObject)
     {
@@ -74,7 +80,7 @@ PipAllocateDeviceNode(IN PDEVICE_OBJECT PhysicalDeviceObject)
         PhysicalDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
     }
 
-    DPRINT("PipAllocateDeviceNode: %p, %p, IopNumberDeviceNodes %X\n", PhysicalDeviceObject, DeviceNode, IopNumberDeviceNodes);
+    DPRINT1("Alloc DeviceNode %p for PDO %p\n", DeviceNode, PhysicalDeviceObject);
 
     /* Return the node */
     return DeviceNode;
