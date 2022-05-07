@@ -4172,6 +4172,48 @@ IopUncacheInterfaceInformation(
     ASSERT(FALSE); // IoDbgBreakPointEx();
 }
 
+NTSTATUS
+NTAPI
+PipProcessStartPhase1(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ ULONG ReorderingBarrier)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PipProcessStartPhase2(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PipProcessRestartPhase1(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ BOOLEAN IsWait)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PipProcessRestartPhase2(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 BOOLEAN
 NTAPI
 PiCollapseEnumRequests(
@@ -4185,7 +4227,8 @@ PiCollapseEnumRequests(
     return FALSE;
 }
 
-NTSTATUS NTAPI
+NTSTATUS
+NTAPI
 PipProcessDevNodeTree(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ BOOLEAN EnableLoadDriver,
@@ -4196,30 +4239,38 @@ PipProcessDevNodeTree(
     _In_ SERVICE_LOAD_TYPE * DriverLoadType,
     _In_ PPIP_ENUM_REQUEST Request)
 {
-    PDEVICE_NODE StartNode;
-    PDEVICE_NODE CurrentNode;
+    PDEVICE_NODE CurrentNode = NULL;
     PDEVICE_NODE ParentNode = NULL;
-    PDEVICE_NODE node = NULL;
+    PDEVICE_NODE ResNode = NULL;
+    PDEVICE_NODE StartNode;
+    PDEVICE_OBJECT DeviceObject;
+    UNICODE_STRING DestinationString;
+    WCHAR Buffer[260];
+    PWSTR BufferInstance;
+    PWSTR RootInstancePath;
+    PWSTR Instance;
+    PWSTR Path;
+    PUSHORT pLength;
+    ULONG NodeFlags;
     ULONG EnumStatus;
+    ULONG ReenumAttempts = 0;
     NTSTATUS Status;
+    NTSTATUS status;
     BOOLEAN IsAssigned;
-    BOOLEAN IsCycle2End = FALSE;
+    BOOLEAN IsCycle2End;
     BOOLEAN IsCycle1Run;
 
     PAGED_CODE();
-    DPRINT("PipProcessDevNodeTree: [%p] LoadDrv - %X, ProcessBadDevs - %X, ReenumType - %X, IsWait - %X, OnlyIntermediateStates - %X, DrvLoadType - %X, Request - %p\n",
-           DeviceNode, EnableLoadDriver, ProcessFailedDevices, ReenumerationType,
-           IsWait, ProcessOnlyIntermediateStates, DriverLoadType, Request);
+    DPRINT("PipProcessDevNodeTree: DeviceNode %p\n", DeviceNode);
+    DPRINT("LoadDrv %X ProcessFailed %X Type %X Wait %X\n", EnableLoadDriver, ProcessFailedDevices, ReenumerationType, IsWait);
+    DPRINT("OnlyIntermed %X LoadType %X Request %X\n", ProcessOnlyIntermediateStates, (DriverLoadType ? *DriverLoadType : 0), Request);
 
-    if (Request != NULL &&
-        Request->ReorderingBarrier == 0 &&
-        ReenumerationType != PIP_REENUM_TYPE_SINGLE &&
-        ProcessOnlyIntermediateStates == FALSE &&
-        PiCollapseEnumRequests(Request) != FALSE)
+    if (Request &&
+        !Request->ReorderingBarrier &&
+        ReenumerationType != 1 &&
+        !ProcessOnlyIntermediateStates &&
+        PiCollapseEnumRequests(Request))
     {
-        DPRINT("PipProcessDevNodeTree: StartNode = IopRootDeviceNode (%p)\n",
-               IopRootDeviceNode);
-
         StartNode = IopRootDeviceNode;
     }
     else
@@ -4227,35 +4278,41 @@ PipProcessDevNodeTree(
         StartNode = DeviceNode;
     }
 
+    IsCycle2End = FALSE;
+
     do
     {
+        DPRINT("START1. CurrentNode %X\n", CurrentNode);
+
         IsCycle1Run = FALSE;
 
-        if (ProcessOnlyIntermediateStates == FALSE)
+        if (!ProcessOnlyIntermediateStates)
         {
             IsAssigned = FALSE;
-            IsCycle1Run = IopProcessAssignResources(StartNode,
-                                                    ProcessFailedDevices,
-                                                    &IsAssigned);
+
+            DPRINT("ProcessFailedDevices %X\n", ProcessFailedDevices);
+
+            IsCycle1Run = IopProcessAssignResources(StartNode, ProcessFailedDevices, &IsAssigned);
+
+            DPRINT("IsCycle1Run %X IsAssigned %X\n", IsCycle1Run, IsAssigned);
+    
             if (IsAssigned == TRUE)
             {
-                NTSTATUS status;
-
                 status = PipProcessDevNodeTree(IopRootDeviceNode,
                                                EnableLoadDriver,
-                                               FALSE,
+                                               FALSE, // ProcessFailedDevices
                                                ReenumerationType,
                                                IsWait,
-                                               TRUE,
+                                               TRUE, // ProcessOnlyIntermediateStates
                                                DriverLoadType,
                                                Request);
                 ASSERT(NT_SUCCESS(status));
             }
         }
 
-        if (IsCycle2End && !IsCycle1Run)
+        if (IsCycle2End == TRUE && IsCycle1Run == FALSE)
         {
-            DPRINT("PipProcessDevNodeTree: break process\n");
+            DPRINT("IsCycle2End == TRUE && IsCycle1Run == FALSE\n");
             break;
         }
 
@@ -4264,310 +4321,431 @@ PipProcessDevNodeTree(
 
         do
         {
+            DPRINT("[@] CurrentNode %p State %X\n", CurrentNode, CurrentNode->State);
+
             Status = STATUS_SUCCESS;
             EnumStatus = 1;
 
-            if (!(CurrentNode->Flags & (DNF_HAS_PROBLEM |
-                                        DNF_HAS_PRIVATE_PROBLEM)))
+            NodeFlags = CurrentNode->Flags;
+            if ((NodeFlags & (DNF_HAS_PROBLEM | DNF_HAS_PRIVATE_PROBLEM)) != 0)
             {
-                switch (CurrentNode->State)
+                DPRINT("CurrentNode->Flags %X\n", CurrentNode->Flags);
+                goto NodeManager;
+            }
+
+            switch (CurrentNode->State)
+            {
+                case DeviceNodeUninitialized:
                 {
-                    case DeviceNodeUninitialized:
-                        DPRINT("PipProcessDevNodeTree: [%p] DeviceNodeUninitialized\n",
-                               CurrentNode);
+                    DPRINT("[%p] DeviceNodeUninitialized\n", CurrentNode);
+                    if (ProcessOnlyIntermediateStates)
+                    {
+                        DPRINT("[%p] ProcessOnlyIntermediateStates\n", CurrentNode);
+                        //ASSERT(FALSE); // IoDbgBreakPointEx();
+                        goto NodeManager;
+                    }
 
-                        if (ProcessOnlyIntermediateStates)
-                        {
-                            ASSERT(FALSE);
-                            goto NodeManager;
-                        }
+                    if (CurrentNode->Parent == ParentNode && !ResNode)
+                    {
+                        DPRINT("PipProcessDevNodeTree: ParentNode %p\n", ParentNode);
+                        ResNode = CurrentNode;
+                    }
 
-                        if (CurrentNode->Parent == ParentNode && node == NULL)
-                        {
-                            DPRINT("PipProcessDevNodeTree: DeviceNodeUninitialized. CurrentNode->Parent == ParentNode (%p)\n",
-                                   ParentNode);
+                    if ((ProcessFailedDevices || ReenumerationType) && !ResNode)
+                    {
+                        DPRINT1("[%p] ReenumerationType %X ResNode %X\n", CurrentNode, ReenumerationType, ResNode);
+                        //ASSERT(FALSE); // IoDbgBreakPointEx();
+                        goto NodeManager;
+                    }
 
-                            node = CurrentNode;
-                        }
+                    Status = PiProcessNewDeviceNode(CurrentNode);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        DPRINT1("[%p] DeviceNodeUninitialized. Status %X\n", CurrentNode, Status);
+                        ASSERT(FALSE); // IoDbgBreakPointEx();
+                    }
+                    else
+                    {
+                        EnumStatus = 0;
+                    }
 
-                        if ((ProcessFailedDevices || ReenumerationType != 0) &&
-                            node == NULL)
-                        {
-                            DPRINT("PipProcessDevNodeTree: [%p] DeviceNodeUninitialized, ReenumerationType - %X\n",
-                                   CurrentNode, ReenumerationType);
+                    break;
+                }
+                case DeviceNodeInitialized:
+                {
+                    DPRINT("[%p] DeviceNodeInitialized\n", CurrentNode);
+                    if (ProcessOnlyIntermediateStates || (ProcessFailedDevices && !ResNode))
+                    {
+                        DPRINT("[%p] ProcessFailedDevs %X ResNode %X\n", CurrentNode, ProcessFailedDevices, ResNode);
+                        goto NodeManager;
+                    }
 
-                            ASSERT(FALSE);
-                            goto NodeManager;
-                        }
+                    Status = PipCallDriverAddDevice(CurrentNode, EnableLoadDriver, DriverLoadType);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        DPRINT("[%p] DeviceNodeInitialized. Status %X\n", CurrentNode, Status);
+                        //ASSERT(FALSE); // IoDbgBreakPointEx();
+                    }
+                    else
+                    {
+                        EnumStatus = 0;
+                        IsCycle1Run = TRUE;
+                    }
 
-                        Status = PiProcessNewDeviceNode(CurrentNode);
-
-                        if (NT_SUCCESS(Status))
-                        {
-                            EnumStatus = 0;
-                            break;
-                        }
-                        else
-                        {
-                            ASSERT(FALSE);
-                        }
-                        break;
-
-                    case DeviceNodeInitialized:
-                        DPRINT("PipProcessDevNodeTree: [%p] DeviceNodeInitialized\n",
-                               CurrentNode);
-
-                        if (ProcessOnlyIntermediateStates ||
-                            (ProcessFailedDevices && node == NULL))
-                        {
-                            DPRINT("PipProcessDevNodeTree: ProcessOnlyIntermediateStates - %X, ProcessFailedDevices - %X\n",
-                                    ProcessOnlyIntermediateStates, ProcessFailedDevices);
-
-                            goto NodeManager;
-                        }
-
-                        Status = PipCallDriverAddDevice(CurrentNode,
-                                                        EnableLoadDriver,
-                                                        DriverLoadType);
-                        if (NT_SUCCESS(Status))
-                        {
-                            EnumStatus = 0;
-                            IsCycle1Run = TRUE;
-
-                            if (Status != STATUS_SUCCESS)
-                            {
-                                DPRINT("PipProcessDevNodeTree: Status - %X\n",
-                                       Status);
-                            }
-                        }
-                        else
-                        {
-                            DPRINT("PipProcessDevNodeTree: Status - %X\n",
-                                   Status);
-                        }
-                        break;
-
-                    case DeviceNodeResourcesAssigned:
-                        DPRINT("PipProcessDevNodeTree: [%p] DeviceNodeResourcesAssigned\n",
-                               CurrentNode);
-
-                        if (ProcessOnlyIntermediateStates)
-                        {
-                            EnumStatus = 1;
-                            break;
-                        }
-
-                        if (ProcessFailedDevices && node == NULL)
-                        {
-                            node = CurrentNode;
-                        }
-
-                        ASSERT(FALSE);
-                        Status = 0;//PipProcessStartPhase1(CurrentNode, IsWait);
-                        if (NT_SUCCESS(Status))
-                        {
-                            EnumStatus = 0;
-                        }
-                        else
-                        {
-                            ASSERT(FALSE);
-                            EnumStatus = 1;
-                        }
-                        break;
-
-                    case DeviceNodeStartCompletion:
-                        DPRINT("PipProcessDevNodeTree: [%p] DeviceNodeStartCompletion\n",
-                               CurrentNode);
-
-                        ASSERT(FALSE);
-                        Status = 0;//PipProcessStartPhase2(CurrentNode);
-
-                        if (NT_SUCCESS(Status))
-                        {
-                            EnumStatus = 0;
-                        }
-                        else
-                        {
-                            Status = STATUS_PNP_RESTART_ENUMERATION;
-                            ASSERT(CurrentNode->State != DeviceNodeStartCompletion);
-                        }
-                        break;
-
-                    case DeviceNodeStartPostWork:
-                        DPRINT("PipProcessDevNodeTree: [%p] DeviceNodeStartPostWork\n",
-                               CurrentNode);
-
-                        Status = PipProcessStartPhase3(CurrentNode);
-
-                        if (NT_SUCCESS(Status))
-                        {
-                            EnumStatus = 0;
-                        }
-                        else
-                        {
-                            ASSERT(FALSE);
-                            Status = STATUS_PNP_RESTART_ENUMERATION;
-                            ASSERT(!ProcessOnlyIntermediateStates);
-                        }
-                        break;
-
-                    case DeviceNodeStarted:
-                        DPRINT("PipProcessDevNodeTree: [%p] DeviceNodeStarted\n",
-                               CurrentNode);
-
-                        EnumStatus = 2;
-
-                        if (ProcessOnlyIntermediateStates ||
-                            !(CurrentNode->Flags & DNF_REENUMERATE))
-                        {
-                            goto NodeManager;
-                        }
-
-                        DPRINT("PipProcessDevNodeTree: call IopQueryDeviceRelations (%p)\n",
-                               CurrentNode->PhysicalDeviceObject);
-
-                        CurrentNode->Flags &= ~DNF_REENUMERATE;
-
-                        Status = IopQueryDeviceRelations(BusRelations,
-                                                         CurrentNode->PhysicalDeviceObject,
-                                                         &CurrentNode->OverUsed1.PendingDeviceRelations);
-
-                        DPRINT("PipProcessDevNodeTree: DeviceNodeStarted. Status - %X\n",
-                               Status);
-
-                        if (Status == STATUS_PENDING)
-                        {
-                            EnumStatus = 1;
-                            break;
-                        }
-
-                        if (NT_SUCCESS(Status))
-                        {
-                            EnumStatus = 0;
-                            ParentNode = CurrentNode;
-                        }
-                        break;
-
-                    case DeviceNodeEnumerateCompletion:
-                        DPRINT("PipProcessDevNodeTree: [%p] DeviceNodeEnumerateCompletion\n",
-                               CurrentNode);
-
-                        Status = PipEnumerateCompleted(CurrentNode);
-
-                        EnumStatus = 2;
-                        break;
-
-                    case DeviceNodeStopped:
-                        DPRINT("PipProcessDevNodeTree: [%p] DeviceNodeStopped\n",
-                               CurrentNode);
-
-                        ASSERT(FALSE);
-                        Status = 0;//PipProcessRestartPhase1(CurrentNode, IsWait);
-
-                        if (NT_SUCCESS(Status))
-                        {
-                            EnumStatus = 0;
-                        }
-                        else
-                        {
-                            ASSERT(FALSE);
-                            EnumStatus = 1;
-                        }
-                        break;
-
-                    case DeviceNodeRestartCompletion:
-                        DPRINT("PipProcessDevNodeTree: [%p] DeviceNodeRestartCompletion\n",
-                               CurrentNode);
-
-                        ASSERT(FALSE);
-                        Status = 0;//PipProcessRestartPhase2(CurrentNode);
-
-                        if (NT_SUCCESS(Status))
-                        {
-                            EnumStatus = 0;
-                        }
-                        else
-                        {
-                            ASSERT(FALSE);
-                            Status = STATUS_PNP_RESTART_ENUMERATION;
-                            ASSERT(CurrentNode->State != DeviceNodeRestartCompletion);
-                        }
-                        break;
-
-                    case DeviceNodeDriversAdded:
-                    case DeviceNodeAwaitingQueuedDeletion:
-                    case DeviceNodeAwaitingQueuedRemoval:
-                    case DeviceNodeRemovePendingCloses:
-                    case DeviceNodeRemoved:
-                        DPRINT("PipProcessDevNodeTree: [%p] CurrentNode->State - %X\n",
-                               CurrentNode, CurrentNode->State);
-
+                    break;
+                }
+                case DeviceNodeResourcesAssigned:
+                {
+                    DPRINT("[%p] DeviceNodeResourcesAssigned\n", CurrentNode);
+                    if (ProcessOnlyIntermediateStates)
+                    {
                         EnumStatus = 1;
+                        break;
+                    }
+
+                    if (ProcessFailedDevices && !ResNode)
+                        ResNode = CurrentNode;
+
+                    Status = PipProcessStartPhase1(CurrentNode, IsWait);
+                    if (NT_SUCCESS(Status))
+                    {
+                        EnumStatus = 0;
+                        break;
+                    }
+
+                    DPRINT1("[%p] DeviceNodeResourcesAssigned. Status %X\n", CurrentNode, Status);
+                    ASSERT(FALSE); // IoDbgBreakPointEx();
+                    EnumStatus = 1;
+                    break;
+                }
+                case DeviceNodeStartCompletion:
+                {
+                    DPRINT("[%p] DeviceNodeStartCompletion\n", CurrentNode);
+                    Status = PipProcessStartPhase2(CurrentNode);
+                    if (NT_SUCCESS(Status))
+                    {
+                        EnumStatus = 0;
+                        break;
+                    }
+
+                    DPRINT1("[%p] StartCompletion State %X, Status %X\n", CurrentNode, CurrentNode->State, Status);
+                    //ASSERT(FALSE); // IoDbgBreakPointEx();
+
+                    Status = STATUS_PNP_RESTART_ENUMERATION;
+                    if (CurrentNode->State != DeviceNodeStartCompletion)
+                    {
+                        if (ProcessOnlyIntermediateStates)
+                            goto NodeManager;
+
+                        goto restartENUMERATION;
+                    }
+
+                    ASSERT(CurrentNode->State != DeviceNodeStartCompletion);
+                    break;
+                }
+                case DeviceNodeStartPostWork:
+                {
+                    DPRINT("[%p] DeviceNodeStartPostWork\n", CurrentNode);
+                    Status = PipProcessStartPhase3(CurrentNode);
+                    if (NT_SUCCESS(Status))
+                    {
+                        EnumStatus = 0;
+                        break;
+                    }
+
+                    DPRINT1("[%p] StartPostWork State %X, Status %X\n", CurrentNode, CurrentNode->State, Status);
+                    Status = STATUS_PNP_RESTART_ENUMERATION;
+                    if (!ProcessOnlyIntermediateStates)
+                        goto restartENUMERATION;
+
+                    ASSERT(!ProcessOnlyIntermediateStates);
+                    break;
+                }
+                case DeviceNodeStarted:
+                {
+                    DPRINT("[%p] DeviceNodeStarted\n", CurrentNode);
+
+                    EnumStatus = 2;
+
+                    if (ProcessOnlyIntermediateStates || !(NodeFlags & 8))
                         goto NodeManager;
 
-                    default:
-                        DPRINT("PipProcessDevNodeTree: [%p] CurrentNode->State - %X\n",
-                               CurrentNode, CurrentNode->State);
+                    DPRINT("call IopQueryDeviceRelations, PDO %p\n", CurrentNode->PhysicalDeviceObject);
+                    CurrentNode->Flags &= ~DNF_REENUMERATE;
 
-                        ASSERT(FALSE);
+                    Status = IopQueryDeviceRelations(BusRelations,
+                                                     CurrentNode->PhysicalDeviceObject,
+                                                     &CurrentNode->OverUsed1.PendingDeviceRelations);
+                    if (Status == STATUS_PENDING)
+                    {
+                        DPRINT1("[%p] DeviceNodeStarted: STATUS_PENDING\n", CurrentNode);
+                        ASSERT(FALSE); // IoDbgBreakPointEx();
                         EnumStatus = 1;
                         break;
+                    }
+
+                    if (NT_SUCCESS(Status))
+                    {
+                        EnumStatus = 0;
+                        ParentNode = CurrentNode;
+                        break;
+                    }
+
+                    DPRINT("Status %X EnumStatus %X\n", Status, EnumStatus);
+                    break;
                 }
+                case DeviceNodeEnumerateCompletion:
+                    DPRINT("[%p] DeviceNodeEnumerateCompletion\n", CurrentNode);
+                    Status = PipEnumerateCompleted(CurrentNode);
+                    EnumStatus = 2;
+                    break;
 
-                DPRINT("PipProcessDevNodeTree: Status - %X\n", Status);
-
-                if (Status == STATUS_PNP_RESTART_ENUMERATION)
+                case DeviceNodeStopped:
                 {
-                    DPRINT("PipProcessDevNodeTree: FIXME. Status == STATUS_PNP_RESTART_ENUMERATION\n");
-                    ASSERT(FALSE);
+                    DPRINT("[%p] DeviceNodeStopped\n", CurrentNode);
+                    Status = PipProcessRestartPhase1(CurrentNode, IsWait);
+                    if (NT_SUCCESS(Status))
+                    {
+                        EnumStatus = 0;
+                        break;
+                    }
+
+                    DPRINT1("[%p] DeviceNodeStopped. Status %X\n", CurrentNode, Status);
+                    ASSERT(FALSE); // IoDbgBreakPointEx();
+                    EnumStatus = 1;
+                    break;
                 }
+                case DeviceNodeRestartCompletion:
+                {
+                    DPRINT("[%p] DeviceNodeRestartCompletion\n", CurrentNode);
+                    Status = PipProcessRestartPhase2(CurrentNode);
+                    if (NT_SUCCESS(Status))
+                    {
+                        EnumStatus = 0;
+                        break;
+                    }
+
+                    DPRINT1("[%p] RestartCompletion State %X, Status %X\n", CurrentNode, CurrentNode->State, Status);
+                    Status = STATUS_PNP_RESTART_ENUMERATION;
+                    if (CurrentNode->State != DeviceNodeRestartCompletion)
+                    {
+                        if (ProcessOnlyIntermediateStates)
+                            goto NodeManager;
+
+                        goto restartENUMERATION;
+                    }
+
+                    ASSERT(CurrentNode->State != DeviceNodeRestartCompletion);
+                    break;
+                }
+                case DeviceNodeDriversAdded:
+                    DPRINT("[%p] DeviceNodeDriversAdded\n", CurrentNode);
+                    EnumStatus = 1;
+                    goto NodeManager;
+
+                case DeviceNodeAwaitingQueuedDeletion:
+                    DPRINT("[%p] DeviceNodeAwaitingQueuedDeletion\n", CurrentNode);
+                    EnumStatus = 1;
+                    goto NodeManager;
+
+                case DeviceNodeAwaitingQueuedRemoval:
+                    DPRINT("[%p] DeviceNodeAwaitingQueuedRemoval\n", CurrentNode);
+                    EnumStatus = 1;
+                    goto NodeManager;
+
+                case DeviceNodeRemovePendingCloses:
+                    DPRINT("[%p] DeviceNodeRemovePendingCloses\n", CurrentNode);
+                    EnumStatus = 1;
+                    goto NodeManager;
+
+                case DeviceNodeRemoved:
+                    DPRINT("[%p] DeviceNodeRemoved\n", CurrentNode);
+                    EnumStatus = 1;
+                    goto NodeManager;
+
+                default:
+                    DPRINT1("[%p] Unknown State %X\n", CurrentNode, CurrentNode->State);
+                    ASSERT(FALSE); // IoDbgBreakPointEx();
+                    EnumStatus = 1;
+                    break;
             }
 
-NodeManager:
-            ASSERT(EnumStatus == 0 || EnumStatus == 1 || EnumStatus == 2);
+            if (Status != STATUS_PNP_RESTART_ENUMERATION)
+                goto NodeManager;
 
-            if (EnumStatus == 0)
+            DPRINT1("STATUS_PNP_RESTART_ENUMERATION\n");
+
+            if (ProcessOnlyIntermediateStates)
+                goto NodeManager;
+
+            DPRINT("ProcessOnlyIntermediateStates - FALSE\n");
+
+restartENUMERATION:
+
+            DPRINT("PipProcessDevNodeTree: restartENUMERATION\n");
+            status = PipProcessDevNodeTree(IopRootDeviceNode,
+                                           EnableLoadDriver,
+                                           ProcessFailedDevices,
+                                           ReenumerationType,
+                                           IsWait,
+                                           TRUE, // ProcessOnlyIntermediateStates
+                                           DriverLoadType,
+                                           Request);
+            ASSERT(NT_SUCCESS(status));
+            DPRINT("PipProcessDevNodeTree: end restartENUMERATION\n");
+
+            DPRINT("FIXME PipAssertDevnodesInConsistentState\n");
+            //PipAssertDevnodesInConsistentState();
+
+            ReenumAttempts++;
+            DPRINT("PipProcessDevNodeTree: ReenumAttempts %X\n", ReenumAttempts);
+
+            if (ReenumAttempts >= STATUS_UNSUCCESSFUL)
             {
-                DPRINT("PipProcessDevNodeTree: EnumStatus - 0. continue\n");
-                continue;
-            }
-            else if (EnumStatus == 1)
-            {
-                DPRINT("PipProcessDevNodeTree: EnumStatus - 1\n");
+                RootInstancePath = NULL;
+                Instance = NULL;
             }
             else
             {
-                // EnumStatus == 2
-                DPRINT("PipProcessDevNodeTree: EnumStatus - 2\n");
-
-                if (CurrentNode->Child)
+                Instance = ExAllocatePoolWithTag(PagedPool, ((CurrentNode->Level + 1) * 2 * MAX_INSTANCE_PATH_LENGTH), 'nepP');
+                if (!Instance)
                 {
-                    DPRINT("PipProcessDevNodeTree: CurrentNode - %p, continue with Child - %p\n",
-                           CurrentNode, CurrentNode->Child);
+                    pLength = &StartNode->InstancePath.Length;
+                    ASSERT(StartNode->InstancePath.Length < MAX_INSTANCE_PATH_LENGTH);
 
-                    CurrentNode = CurrentNode->Child;
-                    continue;
+                    RtlCopyMemory(Buffer, StartNode->InstancePath.Buffer, *pLength);
+
+                    RootInstancePath = Buffer;
                 }
                 else
                 {
-                    DPRINT("PipProcessDevNodeTree: No child for CurrentNode - %p\n",
-                           CurrentNode);
+                    BufferInstance = Instance;
+                    while (TRUE)
+                    {
+                        RootInstancePath = BufferInstance;
+                        ASSERT(CurrentNode->InstancePath.Length < MAX_INSTANCE_PATH_LENGTH);
+
+                        RtlCopyMemory(BufferInstance, CurrentNode->InstancePath.Buffer, CurrentNode->InstancePath.Length);
+
+                        BufferInstance[CurrentNode->InstancePath.Length / 2] = 0;
+                        BufferInstance = &BufferInstance[(CurrentNode->InstancePath.Length / 2 + 1)];
+
+                        if (CurrentNode == StartNode)
+                            break;
+
+                        CurrentNode = CurrentNode->Parent;
+                    }
                 }
             }
 
-            while (CurrentNode != StartNode)
-            {
-                DPRINT("PipProcessDevNodeTree: CurrentNode - %p, Parent - %p, Sibling - %p\n",
-                       CurrentNode, CurrentNode->Parent, CurrentNode->Sibling);
+            ObDereferenceObject(DeviceNode->PhysicalDeviceObject);
 
-                if (CurrentNode == node)
+            PpDevNodeUnlockTree(1);
+            PpSynchronizeDeviceEventQueue();
+            PpDevNodeLockTree(1);
+            DPRINT("PipProcessDevNodeTree: ReenumAttempts %X\n", ReenumAttempts);
+
+            if (ReenumAttempts >= STATUS_UNSUCCESSFUL)
+            {
+                DPRINT("PipProcessDevNodeTree: Restarted reenumeration %d times, giving up!\n", ReenumAttempts);
+                ASSERT(ReenumAttempts < MAX_REENUMERATION_ATTEMPTS);
+                return STATUS_UNSUCCESSFUL;
+            }
+
+            RtlInitUnicodeString(&DestinationString, RootInstancePath);
+
+            DeviceObject = IopDeviceObjectFromDeviceInstance(&DestinationString);
+            if (!DeviceObject)
+            {
+                if (Instance)
+                    ExFreePoolWithTag(Instance, 0);
+
+                DPRINT("PipProcessDevNodeTree: return STATUS_SUCCESS\n");
+                return STATUS_UNSUCCESSFUL;
+            }
+
+            DPRINT("PipProcessDevNodeTree: DeviceObject %p\n", DeviceObject);
+
+            CurrentNode = IopGetDeviceNode(DeviceObject);
+            StartNode = CurrentNode;
+            DeviceNode = CurrentNode;
+
+            if (!Instance)
+            {
+                EnumStatus = 0;
+                goto NodeManager;
+            }
+
+            Path = Instance;
+            if (Path == RootInstancePath)
+            {
+                ExFreePoolWithTag(Instance, 0);
+                EnumStatus = 0;
+                goto NodeManager;
+            }
+
+            while (TRUE)
+            {
+                RtlInitUnicodeString(&DestinationString, Path);
+
+                DeviceObject = IopDeviceObjectFromDeviceInstance(&DestinationString);
+                if (DeviceObject)
+                    break;
+
+                Path += ((DestinationString.Length / 2) + 1);
+                if (Path == RootInstancePath)
+                {
+                    ExFreePoolWithTag(Instance, 0);
+                    EnumStatus = 0;
+                    goto NodeManager;
+                }
+            }
+
+            CurrentNode = IopGetDeviceNode(DeviceObject);
+            ObDereferenceObject(DeviceObject);
+
+            ExFreePoolWithTag(Instance, 0);
+            EnumStatus = 0;
+
+NodeManager:
+            DPRINT("NodeMgr [%p]->[%X] EnmSts %X\n", CurrentNode, CurrentNode->Child, EnumStatus);
+
+            switch (EnumStatus)
+            {
+                case 0:
+                    continue;
+                    break;
+
+                case 1:
+                    break;
+
+                case 2:
+                    if (CurrentNode->Child)
+                    {
+                        CurrentNode = CurrentNode->Child;
+                        continue;
+                    }
+                    break;
+
+                default:
+                    ASSERT(EnumStatus == 0 || EnumStatus == 1 || EnumStatus == 2);
+                    break;
+            }
+
+            if (CurrentNode == StartNode)
+            {
+                IsCycle2End = TRUE;
+                continue;
+            }
+
+            while (TRUE)
+            {
+                if (CurrentNode == ResNode)
                 {
                     if (ReenumerationType)
-                    {
-                        ParentNode = node->Parent;
-                    }
+                        ParentNode = ResNode->Parent;
 
-                    node = NULL;
+                    ResNode = NULL;
                 }
                 else if (CurrentNode == ParentNode)
                 {
@@ -4581,33 +4759,27 @@ NodeManager:
                 }
 
                 if (CurrentNode->Parent)
-                {
                     CurrentNode = CurrentNode->Parent;
-                }
+
+                if (CurrentNode == StartNode)
+                    break;
             }
 
             if (CurrentNode == StartNode)
-            {
-                DPRINT("PipProcessDevNodeTree: IsCycle2End = TRUE\n");
                 IsCycle2End = TRUE;
-            }
-            else
-            {
-                DPRINT("PipProcessDevNodeTree: continue\n");
-            }
         }
         while (IsCycle2End == FALSE);
     }
-    while (IsCycle1Run);
+    while (IsCycle1Run == TRUE);
 
-    if (ProcessOnlyIntermediateStates == FALSE)
+    if (!ProcessOnlyIntermediateStates)
     {
-        DPRINT("PipProcessDevNodeTree: FIXME PipAssertDevnodesInConsistentState\n");
+        DPRINT("FIXME PipAssertDevnodesInConsistentState\n");
+        //PipAssertDevnodesInConsistentState();
         ObDereferenceObject(DeviceNode->PhysicalDeviceObject);
     }
 
     DPRINT("PipProcessDevNodeTree: return STATUS_SUCCESS\n");
-
     return STATUS_SUCCESS;
 }
 
