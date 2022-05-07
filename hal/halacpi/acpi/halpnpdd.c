@@ -362,9 +362,91 @@ HalpQueryIdPdo(IN PDEVICE_OBJECT DeviceObject,
                IN BUS_QUERY_ID_TYPE IdType,
                OUT PUSHORT* BusQueryId)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);//HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PPDO_EXTENSION PdoExtension;
+    PWCHAR CurrentId;
+    PWCHAR Buffer;
+    WCHAR Id[100];
+    PDO_TYPE PdoType;
+    SIZE_T Length = 0;
+
+    PAGED_CODE();
+    DPRINT("HalpQueryIdPdo: IdType %X\n", IdType);
+
+    /* Get the PDO type */
+    PdoExtension = DeviceObject->DeviceExtension;
+    PdoType = PdoExtension->PdoType;
+
+    /* What kind of ID is being requested? */
+    switch (IdType)
+    {
+        case BusQueryDeviceID:
+        case BusQueryHardwareIDs:
+        {
+            /* What kind of PDO is this? */
+            if (PdoType == AcpiPdo)
+            {
+                /* ACPI ID */
+                CurrentId = L"ACPI_HAL\\PNP0C08";
+                RtlCopyMemory(Id, CurrentId, (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+                Length += ((wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+
+                CurrentId = L"*PNP0C08";
+                RtlCopyMemory(&Id[wcslen(Id) + 1], CurrentId, (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+                Length += ((wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+            }
+            else if (PdoType == WdPdo)
+            {
+                /* WatchDog ID */
+                CurrentId = L"ACPI_HAL\\PNP0C18";
+                RtlCopyMemory(Id, CurrentId, (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+                Length += ((wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+
+                CurrentId = L"*PNP0C18";
+                RtlCopyMemory(&Id[wcslen(Id) + 1], CurrentId, (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+                Length += ((wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+            }
+            else
+            {
+                DPRINT1("HalpQueryIdPdo: unknown PdoType %d\n", PdoType);
+                return STATUS_NOT_SUPPORTED;
+            }
+
+            break;
+        }
+        case BusQueryInstanceID:
+        {
+            /* Instance ID */
+            CurrentId = L"0";
+            RtlCopyMemory(Id, CurrentId, (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+            Length += (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL);
+            break;
+        }
+        case BusQueryCompatibleIDs:
+            /* We don't support BusQueryCompatibleIDs */
+            return STATUS_NOT_SUPPORTED;
+
+        default:
+            /* We don't support anything else */
+            DPRINT1("HalpQueryIdPdo: unknown IdType %d\n", IdType);
+            return STATUS_NOT_SUPPORTED;
+    }
+
+    Buffer = ExAllocatePoolWithTag(PagedPool, (Length + sizeof(UNICODE_NULL)), TAG_HAL);
+    if (!Buffer)
+    {
+        DPRINT1("HalpQueryIdPdo: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Copy the string and null-terminate it */
+    RtlCopyMemory(Buffer, Id, Length);
+    Buffer[Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+    /* Return string */
+    DPRINT("HalpQueryIdPdo: returning '%S'\n", Buffer);
+    *BusQueryId = Buffer;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
