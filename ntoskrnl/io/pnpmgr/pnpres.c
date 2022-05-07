@@ -2684,6 +2684,282 @@ IopFindResourceHandlerInfo(
 
 NTSTATUS
 NTAPI
+IopTranslateAndAdjustReqDesc(
+    _In_ PPNP_REQ_DESCRIPTOR ReqDescriptor,
+    _In_ PPI_RESOURCE_TRANSLATOR_ENTRY TranslatorEntry,
+    _In_ PPNP_REQ_DESCRIPTOR* OutReqDesc)
+{
+    PTRANSLATOR_INTERFACE TranslatorInterface;
+    PPNP_REQ_DESCRIPTOR NewReqResDescs;
+    PNP_REQ_RESOURCE_ENTRY* Res;
+    PIO_RESOURCE_DESCRIPTOR* target;
+    PIO_RESOURCE_DESCRIPTOR ioDescriptor;
+    PIO_RESOURCE_DESCRIPTOR NewIoDescriptors;
+    PIO_RESOURCE_DESCRIPTOR Descriptor;
+    PULONG NewIoDescCount;
+    ULONG NumbersOfIoDescs = 0;
+    ULONG ix;
+    NTSTATUS OutStatus = STATUS_SUCCESS;
+    NTSTATUS Status = STATUS_UNSUCCESSFUL;
+    BOOLEAN IsTranslate = FALSE;
+#if 1
+    PDEVICE_NODE DeviceNode;
+
+    ASSERT(ReqDescriptor->ReqEntry.PhysicalDevice);
+    DeviceNode = IopGetDeviceNode(ReqDescriptor->ReqEntry.PhysicalDevice);
+    ASSERT(DeviceNode);
+#endif
+
+    DPRINT("IopTranslateAndAdjustReqDesc: Descriptor %p Entry %p\n", ReqDescriptor, TranslatorEntry);
+
+    TranslatorInterface = TranslatorEntry->TranslatorInterface;
+
+    if (ReqDescriptor->ReqEntry.Count == 0)
+    {
+        ASSERT(FALSE);//IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    *OutReqDesc = NULL;
+
+    target = ExAllocatePoolWithTag(PagedPool, (4 * ReqDescriptor->ReqEntry.Count), 'erpP');
+    if (!target)
+    {
+        DPRINT1("IopTranslateAndAdjustReqDesc: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    DPRINT("IopTranslateAndAdjustReqDesc: target %p\n", target);
+    RtlZeroMemory(target, (4 * ReqDescriptor->ReqEntry.Count));
+
+    NewIoDescCount = ExAllocatePoolWithTag(PagedPool, (4 * ReqDescriptor->ReqEntry.Count), 'erpP');
+    if (!NewIoDescCount)
+    {
+        DPRINT1("IopTranslateAndAdjustReqDesc: STATUS_INSUFFICIENT_RESOURCES\n");
+        ExFreePoolWithTag(target, 'erpP');
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    DPRINT("IopTranslateAndAdjustReqDesc: NewIoDescCount %p\n", NewIoDescCount);
+    RtlZeroMemory(NewIoDescCount, (4 * ReqDescriptor->ReqEntry.Count));
+
+    ioDescriptor = ReqDescriptor->ReqEntry.IoDescriptor;
+
+    for (ix = 0; ix < ReqDescriptor->ReqEntry.Count; ix++, ioDescriptor++)
+    {
+        Status = TranslatorInterface->
+                 TranslateResourceRequirements(TranslatorInterface->Context,
+                                               ioDescriptor,
+                                               ReqDescriptor->ReqEntry.PhysicalDevice,
+                                               &NewIoDescCount[ix],
+                                               &target[ix]);
+
+        if (NT_SUCCESS(Status) && NewIoDescCount[ix])
+        {
+            NumbersOfIoDescs += NewIoDescCount[ix];
+            IsTranslate = TRUE;
+            DPRINT1("TranslateResourceRequirements ret ok\n", DeviceNode->InstancePath.Buffer);
+            PipDumpIoResourceDescriptor(ioDescriptor, 0);
+        }
+        else
+        {
+            DPRINT1("Translator failed to adjust resreqlist for %S\n", DeviceNode->InstancePath.Buffer);
+            DPRINT1("Status %X NewIoDescCount[ix] %p\n", Status, NewIoDescCount[ix]);
+            PipDumpIoResourceDescriptor(ioDescriptor, 0);
+
+            NewIoDescCount[ix] = 0;
+            target[ix] = ioDescriptor;
+            NumbersOfIoDescs++;
+        }
+
+        if (NT_SUCCESS(Status) && OutStatus != STATUS_TRANSLATION_COMPLETE)
+            OutStatus = Status;
+    }
+
+    if (!IsTranslate)
+    {
+        DPRINT1("Failed to translate any requirement for %S!\n", DeviceNode->InstancePath.Buffer);
+        OutStatus = Status;
+    }
+
+    ASSERT(NumbersOfIoDescs != 0);
+
+    NewIoDescriptors = ExAllocatePoolWithTag(PagedPool, (NumbersOfIoDescs * sizeof(IO_RESOURCE_DESCRIPTOR)), 'erpP');
+    if (!NewIoDescriptors)
+    {
+        DPRINT1("IopTranslateAndAdjustReqDesc: STATUS_INSUFFICIENT_RESOURCES\n");
+        OutStatus = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    DPRINT("IopTranslateAndAdjustReqDesc: NewIoDescriptors %p\n", NewIoDescriptors);
+
+    NewReqResDescs = ExAllocatePoolWithTag(PagedPool, sizeof(PNP_REQ_DESCRIPTOR), 'erpP');
+    if (!NewReqResDescs)
+    {
+        DPRINT1("IopTranslateAndAdjustReqDesc: STATUS_INSUFFICIENT_RESOURCES\n");
+        ExFreePoolWithTag(NewIoDescriptors, 'erpP');
+        OutStatus = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    DPRINT("IopTranslateAndAdjustReqDesc: NewReqResDescs %p\n", NewReqResDescs);
+    RtlCopyMemory(NewReqResDescs, ReqDescriptor, sizeof(PNP_REQ_DESCRIPTOR));
+
+    NewReqResDescs->AltList = NULL;
+    NewReqResDescs->TranslatedReqDesc = NULL;
+    NewReqResDescs->TranslatorEntry = TranslatorEntry;
+
+    Res = &NewReqResDescs->ReqEntry;
+    Res->Count = NumbersOfIoDescs;
+    Res->IoDescriptor = NewIoDescriptors;
+    Res->pCmDescriptor = &NewReqResDescs->ReqEntry.CmDescriptor;
+    InitializeListHead(&Res->Link);
+
+    Descriptor = ReqDescriptor->ReqEntry.IoDescriptor;
+    if (ReqDescriptor->ReqEntry.Count == 0)
+        ASSERT(FALSE);//IoDbgBreakPointEx();
+
+    for (ix = 0; ix < ReqDescriptor->ReqEntry.Count; ix++, NewIoDescriptors++)
+    {
+        if (NewIoDescCount[ix])
+        {
+            RtlCopyMemory(NewIoDescriptors, target[ix], (NewIoDescCount[ix] * sizeof(IO_RESOURCE_DESCRIPTOR)));
+            NewIoDescriptors += NewIoDescCount[ix];
+            continue;
+        }
+
+        RtlCopyMemory(NewIoDescriptors, Descriptor, sizeof(IO_RESOURCE_DESCRIPTOR));
+
+        switch (NewIoDescriptors->Type)
+        {
+            case CmResourceTypePort:
+                NewIoDescriptors->u.Port.MinimumAddress.LowPart = 2;
+                NewIoDescriptors->u.Port.MinimumAddress.HighPart = 0;
+                NewIoDescriptors->u.Port.MaximumAddress.LowPart = 1;
+                NewIoDescriptors->u.Port.MaximumAddress.HighPart = 0;
+                break;
+
+            case CmResourceTypeInterrupt:
+                NewIoDescriptors->u.Interrupt.MinimumVector = 2;
+                NewIoDescriptors->u.Interrupt.MaximumVector = 1;
+                break;
+
+            case CmResourceTypeMemory:
+                NewIoDescriptors->u.Memory.MinimumAddress.LowPart = 2;
+                NewIoDescriptors->u.Memory.MinimumAddress.HighPart = 0;
+                NewIoDescriptors->u.Memory.MaximumAddress.LowPart = 1;
+                NewIoDescriptors->u.Memory.MaximumAddress.HighPart = 0;
+                break;
+
+            case CmResourceTypeDma:
+                NewIoDescriptors->u.Dma.MinimumChannel = 2;
+                NewIoDescriptors->u.Dma.MaximumChannel = 1;
+                break;
+
+            case CmResourceTypeBusNumber:
+                NewIoDescriptors->u.BusNumber.MinBusNumber = 2;
+                NewIoDescriptors->u.BusNumber.MaxBusNumber = 1;
+                break;
+
+            default:
+                DPRINT1("IopTranslateAndAdjustReqDesc: unknown Type %X\n", NewIoDescriptors->Type);
+                ASSERT(FALSE);//IoDbgBreakPointEx();
+                break;
+        }
+    }
+
+    Descriptor = NewReqResDescs->ReqEntry.IoDescriptor;
+
+    if (Descriptor->Option & IO_RESOURCE_ALTERNATIVE)
+    {
+        PDEVICE_NODE DeviceNode = NULL;
+
+        if (ReqDescriptor->ReqEntry.PhysicalDevice)
+        {
+            DeviceNode = IopGetDeviceNode(ReqDescriptor->ReqEntry.PhysicalDevice);
+            ASSERT(DeviceNode);
+        }
+
+        DPRINT1("IopTranslateAndAdjustReqDesc: Pdo %X, Node %X\n", ReqDescriptor->ReqEntry.PhysicalDevice, DeviceNode);
+        DPRINT1("IopTranslateAndAdjustReqDesc: Descriptor %X\n", Descriptor);
+        PipDumpIoResourceDescriptor(Descriptor, 0);
+
+        if (DeviceNode)
+        {
+          #if DBG
+            DPRINT1("Dumping Node:\n");
+            PipDumpDeviceNodes(NULL, 1+2+4+8, 0); // !devnode from WinDbg
+            DPRINT1("\n");
+            ASSERT(FALSE);//IoDbgBreakPointEx();
+          #endif
+        }
+        else
+        {
+            ASSERT(FALSE);//IoDbgBreakPointEx();
+        }
+
+        ASSERT(FALSE);//IoDbgBreakPointEx(); // ASSERT(!(Descriptor->Option & IO_RESOURCE_ALTERNATIVE));
+    }
+
+    Descriptor++;
+
+    for (ix = 1; ix < NumbersOfIoDescs; ix++, Descriptor++)
+    {
+        PDEVICE_NODE DeviceNode = NULL;
+
+        if ((Descriptor->Option & IO_RESOURCE_ALTERNATIVE) != 0)
+            continue;
+
+        if (ReqDescriptor->ReqEntry.PhysicalDevice)
+        {
+            DeviceNode = IopGetDeviceNode(ReqDescriptor->ReqEntry.PhysicalDevice);
+            ASSERT(DeviceNode);
+        }
+
+        DPRINT1("IopTranslateAndAdjustReqDesc: Pdo %X, Node %X\n", ReqDescriptor->ReqEntry.PhysicalDevice, DeviceNode);
+        DPRINT1("IopTranslateAndAdjustReqDesc: Descriptor %Xn", Descriptor);
+        PipDumpIoResourceDescriptor(Descriptor, 0);
+
+        if (DeviceNode)
+        {
+          #if DBG
+            DPRINT1("Dumping Node:\n");
+            PipDumpDeviceNodes(NULL, 1+2+4+8, 0);
+            DPRINT1("\n");
+            ASSERT(FALSE);//IoDbgBreakPointEx();
+          #endif
+        }
+        else
+        {
+            ASSERT(FALSE);//IoDbgBreakPointEx(); // ASSERT(DeviceNode);
+        }
+
+        ASSERT(FALSE);//IoDbgBreakPointEx(); // ASSERT(Descriptor->Option & IO_RESOURCE_ALTERNATIVE);
+    }
+
+    *OutReqDesc = NewReqResDescs;
+
+Exit:
+
+    for (ix = 0; ix < ReqDescriptor->ReqEntry.Count; ix++)
+    {
+        if (NewIoDescCount[ix])
+        {
+            ASSERT(target[ix]);
+            ExFreePool(target[ix]);
+        }
+    }
+
+    if (target)
+        ExFreePoolWithTag(target, 'erpP');
+
+    if (NewIoDescCount)
+        ExFreePoolWithTag(NewIoDescCount, 'erpP');
+
+    return OutStatus;
+}
+
+NTSTATUS
+NTAPI
 IopSetupArbiterAndTranslators(
     _In_ PPNP_REQ_DESCRIPTOR ReqDescriptor)
 {
@@ -2924,11 +3200,9 @@ FindTranslator:
 
         if (!IsArbiterFound && TranslatorEntry)
         {
-            ASSERT(FALSE);TranslatedReqDesc = 0;
-            Status = 0;//IopTranslateAndAdjustReqDesc(ReqDescriptor->TranslatedReqDesc,
-                       //                           TranslatorEntry,
-                       //                           &TranslatedReqDesc);
-
+            Status = IopTranslateAndAdjustReqDesc(ReqDescriptor->TranslatedReqDesc,
+                                                  TranslatorEntry,
+                                                  &TranslatedReqDesc);
             if (!NT_SUCCESS(Status))
             {
                 DPRINT("IopSetupArbiterAndTranslators: Status - %X\n", Status);
