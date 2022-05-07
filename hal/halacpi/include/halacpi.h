@@ -133,4 +133,10 @@ HalpGetDebugPortTable(
     VOID
 );
 
+NTSTATUS
+NTAPI
+HalpQueryAcpiResourceRequirements(
+    OUT PIO_RESOURCE_REQUIREMENTS_LIST* Requirements
+);
+
 /* EOF */

@@ -39,6 +39,7 @@ BOOLEAN HalpNMIDumpFlag;
 extern BOOLEAN LessThan16Mb;
 extern BOOLEAN HalpPhysicalMemoryMayAppearAbove4GB;
 extern ULONG HalpBusType;
+extern ULONG HalpPicVectorRedirect[16];
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -972,6 +973,116 @@ HalpGetDebugPortTable(VOID)
         return FALSE;
 
     return (HalpDebugPortTable->BaseAddress.AddressSpaceID == 1);
+}
+
+VOID
+NTAPI
+HalpAcpiDetectResourceListSize(OUT PULONG ListSize)
+{
+    PAGED_CODE();
+
+    /* One element if there is a SCI */
+    *ListSize = (HalpFixedAcpiDescTable.sci_int_vector ? 1: 0);
+
+    DPRINT("HalpAcpiDetectResourceListSize: *ListSize %X\n", *ListSize);
+
+    if (HalpFixedAcpiDescTable.sci_int_vector == 0)
+    {
+        DPRINT("HalpAcpiDetectResourceListSize: sci_int_vector %X\n", HalpFixedAcpiDescTable.sci_int_vector);
+        //AcpiDumpFadt(&HalpFixedAcpiDescTable);
+    }
+}
+
+NTSTATUS
+NTAPI
+HalpBuildAcpiResourceList(IN PIO_RESOURCE_REQUIREMENTS_LIST ResourceList)
+{
+    ULONG Interrupt;
+
+    PAGED_CODE();
+    DPRINT("HalpBuildAcpiResourceList: ResourceList %p\n", ResourceList);
+
+    ASSERT(ResourceList != NULL);
+
+    /* Initialize the list */
+    ResourceList->BusNumber = -1;
+    ResourceList->AlternativeLists = 1;
+    ResourceList->InterfaceType = PNPBus;
+    ResourceList->List[0].Version = 1;
+    ResourceList->List[0].Revision = 1;
+    //ResourceList->List[0].Count = 0;
+
+    /* Is there a SCI? */
+    if (!HalpFixedAcpiDescTable.sci_int_vector)
+        return STATUS_SUCCESS;
+
+    DPRINT("HalpFADT.sci_int_vector %X\n", HalpFixedAcpiDescTable.sci_int_vector);
+
+    /* Fill out the entry for it */
+    ResourceList->List[0].Descriptors[0].Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
+    ResourceList->List[0].Descriptors[0].Type = CmResourceTypeInterrupt;
+    ResourceList->List[0].Descriptors[0].ShareDisposition = CmResourceShareShared;
+
+    /* Get the interrupt number */
+    Interrupt = HalpPicVectorRedirect[HalpFixedAcpiDescTable.sci_int_vector];
+    ResourceList->List[0].Descriptors[0].u.Interrupt.MinimumVector = Interrupt;
+    ResourceList->List[0].Descriptors[0].u.Interrupt.MaximumVector = Interrupt;
+
+    /* One more */
+    ++ResourceList->List[0].Count;
+
+    /* All good */
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+HalpQueryAcpiResourceRequirements(OUT PIO_RESOURCE_REQUIREMENTS_LIST* Requirements)
+{
+    PIO_RESOURCE_REQUIREMENTS_LIST RequirementsList;
+    ULONG Count = 0;
+    ULONG ListSize;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("HalpQueryAcpiResourceRequirements: Requirements %p\n", Requirements);
+
+    /* Get ACPI resources */
+    HalpAcpiDetectResourceListSize(&Count);
+    DPRINT("HalpQueryAcpiResourceRequirements: Resource count %X\n", Count);
+
+    /* Compute size of the list and allocate it */
+    ListSize = (FIELD_OFFSET(IO_RESOURCE_REQUIREMENTS_LIST, List[0].Descriptors) + (Count * sizeof(IO_RESOURCE_DESCRIPTOR)));
+
+    DPRINT("HalpQueryAcpiResourceRequirements: Resource list size %X\n", ListSize);
+
+    RequirementsList = ExAllocatePoolWithTag(PagedPool, ListSize, TAG_HAL);
+    if (!RequirementsList)
+    {
+        DPRINT1("HalpQueryAcpiResourceRequirements: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Initialize it */
+    RtlZeroMemory(RequirementsList, ListSize);
+    RequirementsList->ListSize = ListSize;
+
+    /* Build it */
+    Status = HalpBuildAcpiResourceList(RequirementsList);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpQueryAcpiResourceRequirements: Status %X\n", Status);
+        ExFreePoolWithTag(RequirementsList, TAG_HAL);
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    /* It worked, return it */
+    *Requirements = RequirementsList;
+
+    /* Validate the list */
+    ASSERT(RequirementsList->List[0].Count == Count);
+
+    return Status;
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
