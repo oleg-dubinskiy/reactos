@@ -1706,7 +1706,7 @@ PipCreateEntry(
 {
     PDRIVER_GROUP_LIST_ENTRY Entry;
 
-    DPRINT("PipCreateEntry: GroupString - %wZ\n", GroupString);
+    DPRINT("PipCreateEntry: Group '%S'\n", GroupString->Buffer);
 
     Entry = ExAllocatePoolWithTag(PagedPool,
                                   sizeof(DRIVER_GROUP_LIST_ENTRY) + GroupString->Length,
@@ -1737,7 +1737,7 @@ PipLookupGroupName(
     PDRIVER_GROUP_LIST_ENTRY NewEntry;
     PDRIVER_GROUP_LIST_ENTRY SameEntry;
 
-    DPRINT("PipLookupGroupName: GroupString - %wZ, IsCreateEntry - %X\n", GroupString, IsCreateEntry);
+    DPRINT("PipLookupGroupName: Group '%S', IsCreateEntry %X\n", GroupString->Buffer, IsCreateEntry);
 
     Entry = IopGroupListHead;
     if (!IopGroupListHead)
