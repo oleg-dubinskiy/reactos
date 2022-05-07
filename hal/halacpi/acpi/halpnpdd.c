@@ -41,6 +41,7 @@ typedef struct _PDO_EXTENSION
 /* GLOBALS ********************************************************************/
 
 PDRIVER_OBJECT HalpDriverObject;
+PWCHAR HalHardwareIdString = L"acpipic_up";
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -255,9 +256,52 @@ HalpQueryIdFdo(IN PDEVICE_OBJECT DeviceObject,
                IN BUS_QUERY_ID_TYPE IdType,
                OUT PUSHORT* BusQueryId)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);//HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PWCHAR Buffer;
+    PWCHAR Id;
+    SIZE_T Length;
+
+    PAGED_CODE();
+
+    /* What kind of ID is being requested? */
+    switch (IdType)
+    {
+        case BusQueryDeviceID:
+            DPRINT1("HalpQueryIdFdo: BusQueryDeviceID\n");
+            Id = HalHardwareIdString;
+            break;
+
+        case BusQueryHardwareIDs:
+            DPRINT1("HalpQueryIdFdo: BusQueryHardwareIDs\n");
+            Id = HalHardwareIdString;
+            break;
+
+        case BusQueryInstanceID:
+            DPRINT1("HalpQueryIdFdo: BusQueryInstanceID\n");
+            Id = L"0";
+            break;
+
+        default:
+            /* We don't support anything else */
+            DPRINT1("HalpQueryIdFdo: unknown IdType %X\n", IdType);
+            return STATUS_NOT_SUPPORTED;
+    }
+
+    Length = ((wcslen(Id) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+
+    Buffer = ExAllocatePoolWithTag(PagedPool, (Length + sizeof(UNICODE_NULL)), TAG_HAL);
+    if (!Buffer)
+    {
+        DPRINT1("HalpQueryIdFdo: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(Buffer, Id, Length);
+    Buffer[Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+    *BusQueryId = Buffer;
+    DPRINT1("HalpQueryIdFdo: BusQueryId - %S\n", *BusQueryId);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
