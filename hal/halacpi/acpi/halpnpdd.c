@@ -381,9 +381,97 @@ NTAPI
 HalpQueryResources(IN PDEVICE_OBJECT DeviceObject,
                    OUT PCM_RESOURCE_LIST* Resources)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);//HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PPDO_EXTENSION DeviceExtension = DeviceObject->DeviceExtension;
+    PCM_RESOURCE_LIST ResourceList;
+    PIO_RESOURCE_REQUIREMENTS_LIST RequirementsList;
+    PIO_RESOURCE_DESCRIPTOR Descriptor;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR PartialDesc;
+    ULONG ix;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("HalpQueryResources: DeviceObject %X\n", DeviceObject);
+
+    if (DeviceExtension->PdoType == WdPdo)
+    {
+        /* Watchdog doesn't */
+        DPRINT1("HalpQueryResources: PdoType == WdPdo \n");
+        return STATUS_SUCCESS;
+    }
+
+    /* Only the ACPI PDO has requirements */
+    if (DeviceExtension->PdoType != AcpiPdo)
+    {
+        /* This shouldn't happen */
+        DPRINT1("HalpQueryResources: PdoType %X\n", DeviceExtension->PdoType);
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    /* Query ACPI requirements */
+    Status = HalpQueryAcpiResourceRequirements(&RequirementsList);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpQueryResources: Status %X\n", Status);
+        return Status;
+    }
+
+    ASSERT(RequirementsList->AlternativeLists == 1);
+
+    /* Allocate the resourcel ist */
+    ResourceList = ExAllocatePoolWithTag(PagedPool, sizeof(CM_RESOURCE_LIST), TAG_HAL);
+    if (!ResourceList )
+    {
+        DPRINT1("HalpQueryResources: STATUS_INSUFFICIENT_RESOURCES\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        ExFreePoolWithTag(RequirementsList, TAG_HAL);
+        return Status;
+    }
+
+    /* Initialize it */
+    RtlZeroMemory(ResourceList, sizeof(CM_RESOURCE_LIST));
+    ResourceList->Count = 1;
+
+    /* Setup the list fields */
+    ResourceList->List[0].BusNumber = -1;
+    ResourceList->List[0].InterfaceType = PNPBus;
+    ResourceList->List[0].PartialResourceList.Version = 1;
+    ResourceList->List[0].PartialResourceList.Revision = 1;
+    ResourceList->List[0].PartialResourceList.Count = 0;
+
+    /* Setup the first descriptor */
+    PartialDesc = ResourceList->List[0].PartialResourceList.PartialDescriptors;
+
+    /* Find the requirement descriptor for the SCI */
+    for (ix = 0; ix < RequirementsList->List[0].Count; ix++)
+    {
+        /* Get this descriptor */
+        Descriptor = &RequirementsList->List[0].Descriptors[ix];
+
+        DPRINT("HalpQueryResources: Desc %X, Type %X\n", Descriptor, Descriptor->Type);
+
+        if (Descriptor->Type == CmResourceTypeInterrupt)
+        {
+            /* Copy requirements descriptor into resource descriptor */
+            PartialDesc->Type = CmResourceTypeInterrupt;
+            PartialDesc->ShareDisposition = Descriptor->ShareDisposition;
+            PartialDesc->Flags = Descriptor->Flags;
+
+            ASSERT(Descriptor->u.Interrupt.MinimumVector == Descriptor->u.Interrupt.MaximumVector);
+
+            PartialDesc->u.Interrupt.Vector = Descriptor->u.Interrupt.MinimumVector;
+            PartialDesc->u.Interrupt.Level = Descriptor->u.Interrupt.MinimumVector;
+            PartialDesc->u.Interrupt.Affinity = 0xFFFFFFFF;
+
+            ResourceList->List[0].PartialResourceList.Count++;
+            break;
+        }
+    }
+
+    /* Return resources and success */
+    *Resources = ResourceList;
+    ExFreePoolWithTag(RequirementsList, TAG_HAL);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
