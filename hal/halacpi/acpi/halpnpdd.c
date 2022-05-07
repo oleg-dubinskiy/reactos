@@ -184,12 +184,311 @@ Exit:
 
 NTSTATUS
 NTAPI
-HalpDispatchPnp(IN PDEVICE_OBJECT DeviceObject,
-                IN PIRP Irp)
+HalpQueryInterface(IN PDEVICE_OBJECT DeviceObject,
+                   IN CONST GUID* InterfaceType,
+                   IN ULONG InterfaceBufferSize,
+                   IN PVOID InterfaceSpecificData,
+                   IN USHORT Version,
+                   IN PINTERFACE Interface,
+                   OUT PULONG_PTR OutInformation)
 {
     UNIMPLEMENTED;
     ASSERT(FALSE);//HalpDbgBreakPointEx();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+HalpQueryDeviceRelations(IN PDEVICE_OBJECT DeviceObject,
+                         IN DEVICE_RELATION_TYPE RelationType,
+                         OUT PDEVICE_RELATIONS* DeviceRelations)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+HalpQueryCapabilities(IN PDEVICE_OBJECT DeviceObject,
+                      OUT PDEVICE_CAPABILITIES Capabilities)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+HalpQueryResources(IN PDEVICE_OBJECT DeviceObject,
+                   OUT PCM_RESOURCE_LIST* Resources)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+HalpQueryResourceRequirements(IN PDEVICE_OBJECT DeviceObject,
+                              OUT PIO_RESOURCE_REQUIREMENTS_LIST* Requirements)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+HalpQueryIdPdo(IN PDEVICE_OBJECT DeviceObject,
+               IN BUS_QUERY_ID_TYPE IdType,
+               OUT PUSHORT* BusQueryId)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+HalpQueryIdFdo(IN PDEVICE_OBJECT DeviceObject,
+               IN BUS_QUERY_ID_TYPE IdType,
+               OUT PUSHORT* BusQueryId)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+HalpPassIrpFromFdoToPdo(IN PDEVICE_OBJECT FdoDeviceObject,
+                        IN PIRP Irp)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+HalpDispatchPnp(IN PDEVICE_OBJECT DeviceObject,
+                IN PIRP Irp)
+{
+    PIO_STACK_LOCATION IoStackLocation;
+    PFDO_EXTENSION FdoExtension;
+    NTSTATUS Status;
+    UCHAR Minor;
+
+    PAGED_CODE();
+    DPRINT("HalpDispatchPnp: Device %p, Irp %p\n", DeviceObject, Irp);
+
+    /* Get the device extension and stack location */
+    FdoExtension = DeviceObject->DeviceExtension;
+    IoStackLocation = IoGetCurrentIrpStackLocation(Irp);
+    Minor = IoStackLocation->MinorFunction;
+
+    /* FDO? */
+    if (FdoExtension->ExtensionType == FdoExtensionType)
+    {
+        /* Query the IRP type */
+        switch (Minor)
+        {
+            case IRP_MN_QUERY_DEVICE_RELATIONS:
+
+                /* Call the worker */
+                DPRINT("HalpDispatchPnp: Querying device relations for FDO\n");
+                Status = HalpQueryDeviceRelations(DeviceObject,
+                                                  IoStackLocation->Parameters.QueryDeviceRelations.Type,
+                                                  (PVOID)&Irp->IoStatus.Information);
+                break;
+
+            case IRP_MN_QUERY_INTERFACE:
+
+                /* Call the worker */
+                DPRINT("HalpDispatchPnp: Querying interface for FDO\n");
+                Status = HalpQueryInterface(DeviceObject,
+                                            IoStackLocation->Parameters.QueryInterface.InterfaceType,
+                                            IoStackLocation->Parameters.QueryInterface.Size,
+                                            IoStackLocation->Parameters.QueryInterface.InterfaceSpecificData,
+                                            IoStackLocation->Parameters.QueryInterface.Version,
+                                            IoStackLocation->Parameters.QueryInterface.Interface,
+                                            (PVOID)&Irp->IoStatus.Information);
+                break;
+
+            case IRP_MN_QUERY_ID:
+
+                /* Call the worker */
+                DPRINT("HalpDispatchPnp: Querying ID for FDO\n");
+                Status = HalpQueryIdFdo(DeviceObject,
+                                        IoStackLocation->Parameters.QueryId.IdType,
+                                        (PVOID)&Irp->IoStatus.Information);
+                DPRINT("HalpDispatchPnp: Querying ID for FDO. Status %X, Information %X\n", Status, Irp->IoStatus.Information);
+                break;
+
+            default:
+
+                DPRINT("HalpDispatchPnp: [FDO] not supp. Minor %X\n", Minor);
+                //Status = Irp->IoStatus.Status;
+                //break;
+                return HalpPassIrpFromFdoToPdo(DeviceObject, Irp);
+        }
+
+        if (!NT_SUCCESS(Status) && Status != STATUS_NOT_SUPPORTED)
+        {
+            DPRINT1("HalpDispatchPnp: [FDO] Status %X\n", Status);
+            Irp->IoStatus.Status = Status;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+            return Status;
+        }
+        if (Status != STATUS_NOT_SUPPORTED)
+        {
+            DPRINT("HalpDispatchPnp: [FDO] Status %X\n", Status);
+            Irp->IoStatus.Status = Status;
+        }
+        else
+        {
+            DPRINT("HalpDispatchPnp: [FDO] Status %X\n", Status);
+        }
+
+        Status = HalpPassIrpFromFdoToPdo(DeviceObject, Irp);
+        DPRINT("HalpDispatchPnp:  [FDO] Status %X\n", Status);
+
+        return Status;
+    }
+
+    if (FdoExtension->ExtensionType != PdoExtensionType)
+    {
+        DPRINT1("HalpDispatchPnp: unknown ExtType %X\n", FdoExtension->ExtensionType);
+        ASSERT(FALSE);//HalpDbgBreakPointEx();
+        Status = STATUS_INVALID_DEVICE_REQUEST;
+        Irp->IoStatus.Status = Status;
+        goto Exit;
+    }
+
+    /* This is a PDO instead */
+    ASSERT(FdoExtension->ExtensionType == PdoExtensionType);
+
+    switch (Minor)
+    {
+        case IRP_MN_START_DEVICE:
+            /* We only care about a PCI PDO */
+            DPRINT1("HalpDispatchPnp: [FDO] Start Device\n");
+            /* Complete the IRP normally */
+            Status = STATUS_SUCCESS;
+            break;
+
+        case IRP_MN_QUERY_REMOVE_DEVICE:
+            DPRINT1("HalpDispatchPnp: [FDO] Query Remove Device\n");
+            Status = STATUS_UNSUCCESSFUL;
+            break;
+
+        case IRP_MN_REMOVE_DEVICE:
+            DPRINT1("HalpDispatchPnp: [FDO] Remove Device\n");
+            /* We're done */
+            Status = STATUS_SUCCESS;
+            break;
+
+        case IRP_MN_CANCEL_REMOVE_DEVICE:
+            DPRINT1("HalpDispatchPnp: [FDO] Cancel Remove Device\n");
+            Status = STATUS_SUCCESS;
+            break;
+
+        case IRP_MN_STOP_DEVICE:
+            DPRINT1("HalpDispatchPnp: [PDO] Stop Device\n");
+            Status = STATUS_SUCCESS;
+            break;
+
+        case IRP_MN_QUERY_STOP_DEVICE:
+            DPRINT1("HalpDispatchPnp: [PDO] Query Stop Device\n");
+            Status = STATUS_SUCCESS;
+            break;
+
+        case IRP_MN_CANCEL_STOP_DEVICE:
+            DPRINT1("HalpDispatchPnp: [PDO] Cancel Stop Device\n");
+            Status = STATUS_SUCCESS;
+            break;
+
+        case IRP_MN_SURPRISE_REMOVAL:
+            /* Inherit whatever status we had */
+            DPRINT1("HalpDispatchPnp: [PDO] Surprise removal IRP\n");
+            Status = Irp->IoStatus.Status;
+            break;
+
+        case IRP_MN_QUERY_DEVICE_RELATIONS:
+            /* Query the device relations */
+            DPRINT("HalpDispatchPnp: Querying PDO relations\n");
+            Status = HalpQueryDeviceRelations(DeviceObject,
+                                              IoStackLocation->Parameters.QueryDeviceRelations.Type,
+                                              (PVOID)&Irp->IoStatus.Information);
+            break;
+
+        case IRP_MN_QUERY_INTERFACE:
+            /* Call the worker */
+            DPRINT("HalpDispatchPnp: Querying interface for PDO\n");
+            Status = HalpQueryInterface(DeviceObject,
+                                        IoStackLocation->Parameters.QueryInterface.InterfaceType,
+                                        IoStackLocation->Parameters.QueryInterface.Size,
+                                        IoStackLocation->Parameters.QueryInterface.InterfaceSpecificData,
+                                        IoStackLocation->Parameters.QueryInterface.Version,
+                                        IoStackLocation->Parameters.QueryInterface.Interface,
+                                        &Irp->IoStatus.Information);
+            break;
+
+        case IRP_MN_QUERY_CAPABILITIES:
+            /* Call the worker */
+            DPRINT("HalpDispatchPnp: Querying the capabilities for the PDO\n");
+            Status = HalpQueryCapabilities(DeviceObject,
+                                           IoStackLocation->Parameters.DeviceCapabilities.Capabilities);
+            break;
+
+        case IRP_MN_QUERY_RESOURCES:
+            /* Call the worker */
+            DPRINT("HalpDispatchPnp: Querying the resources for the PDO\n");
+            Status = HalpQueryResources(DeviceObject, (PVOID)&Irp->IoStatus.Information);
+            break;
+
+        case IRP_MN_QUERY_RESOURCE_REQUIREMENTS:
+            /* Call the worker */
+            DPRINT("HalpDispatchPnp: Querying the resource requirements for the PDO\n");
+            Status = HalpQueryResourceRequirements(DeviceObject, (PVOID)&Irp->IoStatus.Information);
+            break;
+
+        case IRP_MN_QUERY_ID:
+            /* Call the worker */
+            DPRINT("HalpDispatchPnp: Query the ID for the PDO\n");
+            Status = HalpQueryIdPdo(DeviceObject,
+                                    IoStackLocation->Parameters.QueryId.IdType,
+                                    (PVOID)&Irp->IoStatus.Information);
+            break;
+
+        case IRP_MN_DEVICE_USAGE_NOTIFICATION:
+            /* Call the worker */
+            DPRINT("HalpDispatchPnp: DEVICE_USAGE for the PDO\n");
+            Status = STATUS_SUCCESS;
+            Irp->IoStatus.Status = Status;
+            break;
+
+        default:
+            /* We don't handle anything else, so inherit the old state */
+            DPRINT("HalpDispatchPnp: [PDO] not supp. Minor %X\n", Minor);
+            Status = Irp->IoStatus.Status;
+            DPRINT("HalpDispatchPnp: IRP completed with status %X\n", Status);
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+            return Status;
+    }
+
+    /* If it's not supported, inherit the old status */
+    if (Status == STATUS_NOT_SUPPORTED)
+        Status = Irp->IoStatus.Status;
+
+    /* Complete the IRP */
+    DPRINT("IRP completed with status %X\n", Status);
+    Irp->IoStatus.Status = Status;
+
+Exit:
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    return Status;
 }
 
 NTSTATUS
