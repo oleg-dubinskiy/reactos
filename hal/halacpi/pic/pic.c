@@ -1267,6 +1267,62 @@ HalpGetRootInterruptVector(ULONG Level,
     return RootVector;
 }
 
+NTSTATUS
+NTAPI
+HalIrqTranslateResourcesRoot(_Inout_opt_ PVOID Context,
+                             _In_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Source,
+                             _In_ RESOURCE_TRANSLATION_DIRECTION Direction,
+                             _In_opt_ ULONG AlternativesCount,
+                             _In_opt_ IO_RESOURCE_DESCRIPTOR Alternatives[],
+                             _In_ PDEVICE_OBJECT PhysicalDeviceObject,
+                             _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Target)
+{
+    ULONG RootVector;
+    KAFFINITY Affinity;
+    KIRQL Irql;
+
+    PAGED_CODE();
+    DPRINT1("HalIrqTranslateResourcesRoot: [%X] Source %X, Dir %X, Count %X, Alt %X\n", PhysicalDeviceObject, Source, Direction, AlternativesCount, Alternatives);
+
+    ASSERT(Source->Type == CmResourceTypeInterrupt);
+
+    RtlCopyMemory(Target, Source, sizeof(*Target));
+
+    if (Direction != 0 && Direction != 1)
+    {
+        DPRINT1("HalIrqTranslateResourcesRoot: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (Direction == 1)
+    {
+        Irql = (Source->u.Interrupt.Vector - PRIMARY_VECTOR_BASE);
+
+        Target->u.Interrupt.Vector = Irql;
+        Target->u.Interrupt.Level = Irql;
+
+        Target->u.Interrupt.Affinity = -1;
+
+        return STATUS_SUCCESS;
+    }
+
+    RootVector = HalpGetRootInterruptVector(Source->u.Interrupt.Level,
+                                            Source->u.Interrupt.Vector,
+                                            &Irql,
+                                            &Affinity);
+    if (!RootVector)
+    {
+        DPRINT1("HalIrqTranslateResourcesRoot: STATUS_UNSUCCESSFUL\n");
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    Target->u.Interrupt.Vector = RootVector;
+    Target->u.Interrupt.Level = Irql;
+    Target->u.Interrupt.Affinity = Affinity;
+
+    return STATUS_TRANSLATION_COMPLETE;
+}
+
 ULONG
 NTAPI
 HalpGetSystemInterruptVector(IN PBUS_HANDLER BusHandler,
