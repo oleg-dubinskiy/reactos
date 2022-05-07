@@ -204,13 +204,13 @@ NTAPI
 PpIrpQueryID(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ BUS_QUERY_ID_TYPE IdType,
-    _Out_ PWCHAR *OutID)
+    _Out_ PWCHAR * OutID)
 {
     IO_STACK_LOCATION IoStack;
     NTSTATUS Status;
 
     PAGED_CODE();
-    DPRINT("PpIrpQueryID: DeviceObject - %p, IdType - %X\n", DeviceObject, IdType);
+    DPRINT("PpIrpQueryID: Device %p, Type %X\n", DeviceObject, IdType);
 
     ASSERT(IdType == BusQueryDeviceID ||
            IdType == BusQueryInstanceID ||
@@ -228,18 +228,26 @@ PpIrpQueryID(
     IoStack.Parameters.QueryId.IdType = IdType;
 
     Status = IopSynchronousCall(DeviceObject, &IoStack, (PVOID *)OutID);
-
     if (!NT_SUCCESS(Status))
     {
-        ASSERT(NT_SUCCESS(Status) || (*OutID == NULL));
-        *OutID = NULL;
+        if (*OutID != NULL)
+        {
+            ASSERT(*OutID == NULL);
+            *OutID = NULL;
+        }
+
+        DPRINT("PpIrpQueryID: return Status %X\n", Status);
+        return Status;
     }
-    else if (*OutID == NULL)
+
+    if (*OutID == NULL)
     {
+        DPRINT("PpIrpQueryID: STATUS_NOT_SUPPORTED\n");
         Status = STATUS_NOT_SUPPORTED;
     }
 
-    DPRINT("PpIrpQueryID: DeviceNode - %X, IdType - %XPiFailQueryID\n");
+    DPRINT("PpIrpQueryID: FIXME PiFailQueryID\n");
+    //if ( PnPBootDriversInitialized && PiFailQueryID && RtlRandom((PULONG)&CurrentTime.LowPart) % 10 > 7 )
 
     return Status;
 }
