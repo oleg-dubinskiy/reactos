@@ -656,6 +656,65 @@ IopInsertLegacyBusDeviceNode(
     KeLeaveCriticalRegion();
 }
 
+BOOLEAN
+NTAPI
+PipAreDriversLoadedWorker(
+    _In_ PNP_DEVNODE_STATE State,
+    _In_ PNP_DEVNODE_STATE PreviousState)
+{
+    PAGED_CODE();
+
+    while (TRUE)
+    {
+        switch (State)
+        {
+            case DeviceNodeAwaitingQueuedDeletion:
+                State = PreviousState;
+                PreviousState = DeviceNodeUnspecified;
+                continue;
+
+            case DeviceNodeDriversAdded:
+            case DeviceNodeResourcesAssigned:
+            case DeviceNodeStartCompletion:
+            case DeviceNodeStartPostWork:
+            case DeviceNodeStarted:
+            case DeviceNodeQueryStopped:
+            case DeviceNodeStopped:
+            case DeviceNodeRestartCompletion:
+            case DeviceNodeEnumerateCompletion:
+            case DeviceNodeAwaitingQueuedRemoval:
+            case DeviceNodeQueryRemoved:
+            case DeviceNodeRemovePendingCloses:
+            case DeviceNodeDeletePendingCloses:
+                return TRUE;
+
+            case DeviceNodeUninitialized:
+            case DeviceNodeInitialized:
+            case DeviceNodeRemoved:
+            case DeviceNodeDeleted:
+                return FALSE;
+
+            default:
+              ASSERT(FALSE); // IoDbgBreakPointEx();
+              break;
+        }
+
+        break;
+    }
+
+    return FALSE;
+}
+
+BOOLEAN
+NTAPI
+PipAreDriversLoaded(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    PAGED_CODE();
+    return PipAreDriversLoadedWorker(DeviceNode->State,
+                                     DeviceNode->PreviousState);
+}
+
 VOID
 NTAPI
 IopDestroyDeviceNode(

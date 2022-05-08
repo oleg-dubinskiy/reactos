@@ -884,6 +884,12 @@ IopInsertLegacyBusDeviceNode(
     _In_ ULONG Bus
 );
 
+BOOLEAN
+NTAPI
+PipAreDriversLoaded(
+    _In_ PDEVICE_NODE DeviceNode
+);
+
 VOID
 NTAPI
 IopDestroyDeviceNode(
