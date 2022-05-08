@@ -37,7 +37,7 @@ NTSTATUS
 NTAPI
 IopSynchronousCall(IN PDEVICE_OBJECT DeviceObject,
                    IN PIO_STACK_LOCATION IoStackLocation,
-                   OUT PVOID * Information)
+                   OUT PVOID* Information)
 {
     PIRP Irp;
     PIO_STACK_LOCATION IrpStack;
@@ -49,12 +49,14 @@ IopSynchronousCall(IN PDEVICE_OBJECT DeviceObject,
 
     /* Call the top of the device stack */
     TopDeviceObject = IoGetAttachedDeviceReference(DeviceObject);
+    DPRINT("IopSynchronousCall: [%X] Device %p, [%X] TopDevice %p\n", DeviceObject->Characteristics, DeviceObject, TopDeviceObject->Characteristics, TopDeviceObject);
 
-    /* Allocate an IRP */
     Irp = IoAllocateIrp(TopDeviceObject->StackSize, FALSE);
     if (!Irp)
     {
-        DPRINT1("IopSynchronousCall: STATUS_INSUFFICIENT_RESOURCES\n");
+        /* Remove the reference */
+        DPRINT1("IopSynchronousCall: return STATUS_INSUFFICIENT_RESOURCES\n");
+        ObDereferenceObject(TopDeviceObject);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -62,23 +64,18 @@ IopSynchronousCall(IN PDEVICE_OBJECT DeviceObject,
     Irp->IoStatus.Status = IoStatusBlock.Status = STATUS_NOT_SUPPORTED;
     Irp->IoStatus.Information = IoStatusBlock.Information = 0;
 
-    /* Special case for IRP_MN_FILTER_RESOURCE_REQUIREMENTS */
-    if ((IoStackLocation->MajorFunction == IRP_MJ_PNP) &&
-        (IoStackLocation->MinorFunction == IRP_MN_FILTER_RESOURCE_REQUIREMENTS))
+    if (IoStackLocation->MinorFunction == IRP_MN_FILTER_RESOURCE_REQUIREMENTS)
     {
         /* Copy the resource requirements list into the IOSB */
         Irp->IoStatus.Information =
         IoStatusBlock.Information = (ULONG_PTR)IoStackLocation->Parameters.FilterResourceRequirements.IoResourceRequirementList;
     }
 
-    /* Initialize the event */
     KeInitializeEvent(&Event, SynchronizationEvent, FALSE);
 
-    /* Set them up */
     Irp->UserIosb = &IoStatusBlock;
     Irp->UserEvent = &Event;
 
-    /* Queue the IRP */
     Irp->Tail.Overlay.Thread = PsGetCurrentThread();
     IoQueueThreadIrp(Irp);
 
@@ -86,22 +83,27 @@ IopSynchronousCall(IN PDEVICE_OBJECT DeviceObject,
     IrpStack = IoGetNextIrpStackLocation(Irp);
     *IrpStack = *IoStackLocation;
 
-    /* Call the driver */
+    //DPRINT("IopSynchronousCall: [%X] IoCallDriver(%X %X)\n", TopDeviceObject->Characteristics, TopDeviceObject, Irp);
     Status = IoCallDriver(TopDeviceObject, Irp);
+    //DPRINT("IopSynchronousCall: [%X] Status %X\n", TopDeviceObject->Characteristics, Status);
     if (Status == STATUS_PENDING)
     {
-        /* Wait for it */
         KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
         Status = IoStatusBlock.Status;
+        DPRINT("IopSynchronousCall: Status %X\n", Status);
     }
 
-    /* Remove the reference */
+    ASSERT(Status != STATUS_PENDING);
+
     ObDereferenceObject(TopDeviceObject);
 
-    /* Return the information */
     if (Information)
+    {
         *Information = (PVOID)IoStatusBlock.Information;
+        DPRINT("SyncCall: IoStatusBlock.Information %X\n", IoStatusBlock.Information);
+    }
 
+    DPRINT("IopSynchronousCall: return Status %X\n", Status);
     return Status;
 }
 
