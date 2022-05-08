@@ -14,13 +14,15 @@
 #include <ntoskrnl.h>
 #include "../pnpio.h"
 
-#define NDEBUG
+//#define NDEBUG
 #include <debug.h>
 
 /* FIXME: This should be somewhere global instead of having 20 different versions */
 #define GUID_STRING_CHARS 38
 #define GUID_STRING_BYTES (GUID_STRING_CHARS * sizeof(WCHAR))
 C_ASSERT(sizeof(L"{01234567-89ab-cdef-0123-456789abcdef}") == GUID_STRING_BYTES + sizeof(UNICODE_NULL));
+
+extern ERESOURCE PpRegistryDeviceResource;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -1474,6 +1476,55 @@ IoSetDeviceInterfaceState(IN PUNICODE_STRING SymbolicLinkName,
     ObDereferenceObject(PhysicalDeviceObject);
     DPRINT("Status %x\n", Status);
     return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+IopProcessSetInterfaceState(
+    _In_ PUNICODE_STRING SymbolicLinkName,
+    _In_ BOOLEAN Enable,
+    _In_ BOOLEAN PdoNotStarted)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+IopDoDeferredSetInterfaceState(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    PLIST_ENTRY Entry;
+    PDEVNODE_INTERFACE_STATE State;
+
+    PAGED_CODE();
+    DPRINT("IopDoDeferredSetInterfaceState: DeviceNode - %p\n", DeviceNode);
+
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(&PpRegistryDeviceResource, TRUE);
+
+    PpMarkDeviceStackStartPending(DeviceNode->PhysicalDeviceObject, 0);
+
+    DPRINT("IopDoDeferredSetInterfaceState: &DeviceNode->PendedSetInterfaceState %p\n", &DeviceNode->PendedSetInterfaceState);
+
+    for (Entry = &DeviceNode->PendedSetInterfaceState;
+         !IsListEmpty(&DeviceNode->PendedSetInterfaceState);
+        )
+    {
+        State = CONTAINING_RECORD(Entry->Flink, DEVNODE_INTERFACE_STATE, Link);
+        RemoveHeadList(Entry);
+
+        IopProcessSetInterfaceState(&State->SymbolicLinkName, TRUE, FALSE);
+
+        DPRINT("IopDoDeferredSetInterfaceState: SymbolicLinkName - %wZ\n", &State->SymbolicLinkName);
+
+        ExFreePoolWithTag(State->SymbolicLinkName.Buffer, 0);
+        ExFreePoolWithTag(State, 0);
+    }
+
+    ExReleaseResourceLite(&PpRegistryDeviceResource);
+    KeLeaveCriticalRegion();
 }
 
 /* EOF */

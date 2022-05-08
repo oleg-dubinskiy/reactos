@@ -281,6 +281,12 @@ typedef struct _IOPNP_DEVICE_EXTENSION
     ULONG CompatibleIdListSize;
 } IOPNP_DEVICE_EXTENSION, *PIOPNP_DEVICE_EXTENSION;
 
+typedef struct _DEVNODE_INTERFACE_STATE
+{ 
+    LIST_ENTRY Link; 
+    UNICODE_STRING SymbolicLinkName; 
+} DEVNODE_INTERFACE_STATE, *PDEVNODE_INTERFACE_STATE; 
+
 typedef struct _PNP_DEVICE_EVENT_LIST {
     NTSTATUS Status;
     KMUTANT EventQueueMutex;
@@ -362,6 +368,13 @@ typedef struct _PNP_DEFER_NOTIFY
 } PNP_DEFER_NOTIFY, *PPNP_DEFER_NOTIFY; 
 
 /* === IO mgr ================================ */
+
+/* deviface.c */
+VOID
+NTAPI
+IopDoDeferredSetInterfaceState(
+    _In_ PDEVICE_NODE DeviceNode
+);
 
 /* driver.c */
 NTSTATUS
@@ -561,6 +574,13 @@ PipRequestDeviceAction(
     _In_ ULONG_PTR RequestArgument,
     _In_ PKEVENT CompletionEvent,
     _Inout_ NTSTATUS * CompletionStatus
+);
+
+VOID
+NTAPI
+PpMarkDeviceStackStartPending(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ BOOLEAN MarkType
 );
 
 NTSTATUS

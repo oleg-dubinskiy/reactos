@@ -953,9 +953,7 @@ ASSERT(FALSE); // IoDbgBreakPointEx();
 
         if (NT_SUCCESS(Status))
         {
-DPRINT1("IoReportDetectedDevice: FIXME IopDoDeferredSetInterfaceState()\n");
-ASSERT(FALSE); // IoDbgBreakPointEx();
-            //IopDoDeferredSetInterfaceState(DeviceNode);
+            IopDoDeferredSetInterfaceState(DeviceNode);
             PipSetDevNodeState(DeviceNode, DeviceNodeStartPostWork, NULL);
 
             *DeviceObject = Pdo;
