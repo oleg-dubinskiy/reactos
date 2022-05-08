@@ -1116,6 +1116,12 @@ PiFixupID(
     _In_ PUNICODE_STRING ServiceName
 );
 
+VOID
+NTAPI
+IopDeleteLegacyKey(
+    _In_ PDRIVER_OBJECT DriverObject
+);
+
 NTSTATUS
 NTAPI
 PipGenerateMadeupNodeName(

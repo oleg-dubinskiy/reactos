@@ -19,6 +19,7 @@
 extern RTL_AVL_TABLE PpDeviceReferenceTable;
 extern KGUARDED_MUTEX PpDeviceReferenceTableLock;
 extern INTERFACE_TYPE PnpDefaultInterfaceType;
+extern ERESOURCE PpRegistryDeviceResource;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1830,6 +1831,209 @@ PipGenerateMadeupNodeName(
     DPRINT("PipGenerateMadeupNodeName: OutMadeupName '%wZ'\n", OutMadeupName);
 
     return STATUS_SUCCESS;
+}
+
+VOID
+NTAPI
+IopDeleteLegacyKey(
+    _In_ PDRIVER_OBJECT DriverObject)
+{
+    PKEY_VALUE_FULL_INFORMATION ValueInfo;
+    UNICODE_STRING EnumKeyName = RTL_CONSTANT_STRING(IO_REG_KEY_ENUM);
+    UNICODE_STRING ControlName = RTL_CONSTANT_STRING(L"Control");
+    UNICODE_STRING LogConfName = RTL_CONSTANT_STRING(L"LogConf");
+    UNICODE_STRING MadeupName;
+    UNICODE_STRING KeyName;
+    WCHAR Buffer[MAX_DEVICE_ID_LEN];
+    PUNICODE_STRING ServiceKeyName;
+    PDEVICE_OBJECT DeviceObject;
+    HANDLE EnumHandle = NULL;
+    HANDLE MadeupHandle = NULL;
+    HANDLE LegacyHandle = NULL;
+    HANDLE KeyHandle;
+    PWSTR Ptr;
+    ULONG Size;
+    LONG Offset;
+    BOOLEAN IsNeedCleanup;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("IopDeleteLegacyKey: DriverObject %p\n", DriverObject);
+
+    ServiceKeyName = &DriverObject->DriverExtension->ServiceKeyName;
+
+    KeEnterCriticalRegion();
+    ExAcquireResourceSharedLite(&PpRegistryDeviceResource, TRUE);
+
+    Status = IopOpenRegistryKeyEx(&EnumHandle, NULL, &EnumKeyName, KEY_ALL_ACCESS);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDeleteLegacyKey: Status %X\n", Status);
+        goto Exit;
+    }
+
+    Status = PipGenerateMadeupNodeName(ServiceKeyName, &MadeupName);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDeleteLegacyKey: Status %X\n", Status);
+        goto Exit;
+    }
+
+    RtlStringCchPrintfExW(Buffer,
+                          MAX_DEVICE_ID_LEN,
+                          &Ptr,
+                          0,
+                          0,
+                          L"%s\\%s",
+                          L"Root",
+                          MadeupName.Buffer);
+
+    Size = ((ULONG_PTR)Ptr - (ULONG_PTR)Buffer);
+    ASSERT(Size <= (sizeof(Buffer) - 10)); // 390;
+
+    RtlFreeUnicodeString(&MadeupName);
+
+    MadeupName.Length = Size;
+    MadeupName.MaximumLength = sizeof(Buffer);
+    MadeupName.Buffer = Buffer;
+
+    RtlUpcaseUnicodeString(&MadeupName, &MadeupName, FALSE);
+    DPRINT("IopDeleteLegacyKey: MadeupName '%wZ'\n", &MadeupName);
+
+    Status = IopOpenRegistryKeyEx(&MadeupHandle, EnumHandle, &MadeupName, KEY_ALL_ACCESS);
+    if (!NT_SUCCESS(Status))
+        goto Exit;
+
+    MadeupName.Buffer[MadeupName.Length / sizeof(WCHAR)] = '\\';
+    MadeupName.Length += sizeof(WCHAR);
+
+    RtlStringCchPrintfExW(&Buffer[MadeupName.Length / sizeof(WCHAR)],
+                          ((sizeof(Buffer) - MadeupName.Length) / sizeof(WCHAR)),
+                          &Ptr,
+                          0,
+                          0,
+                          L"%04u",
+                          0);
+
+    Offset = (((ULONG_PTR)Ptr - (ULONG_PTR)Buffer - MadeupName.Length) / sizeof(WCHAR));
+
+    if (Offset != -1)
+        Size = (Offset * sizeof(WCHAR));
+    else
+        Size = (sizeof(Buffer) - MadeupName.Length);
+
+    KeyName.Length = Size;
+    KeyName.MaximumLength = (sizeof(Buffer) - MadeupName.Length);
+    KeyName.Buffer = &Buffer[MadeupName.Length / sizeof(WCHAR)];
+
+    DPRINT("IopDeleteLegacyKey: KeyName '%wZ'\n", &KeyName);
+
+    MadeupName.Length += Size;
+
+    Status = IopOpenRegistryKeyEx(&LegacyHandle, MadeupHandle, &KeyName, KEY_ALL_ACCESS);
+    if (!NT_SUCCESS(Status))
+        goto Exit;
+
+    Status = IopGetRegistryValue(LegacyHandle, L"Legacy", &ValueInfo);
+    if (NT_SUCCESS(Status))
+    {
+        ULONG Legacy = 1;
+
+        if ((ValueInfo->Type == REG_DWORD) && (ValueInfo->DataLength >= sizeof(ULONG)))
+        {
+            Legacy = *(PULONG)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset);
+            DPRINT("IopDeleteLegacyKey: Legacy %X\n", Legacy);
+        }
+
+        ExFreePoolWithTag(ValueInfo, 0);
+
+        if (!Legacy)
+            goto Exit;
+    }
+
+    IsNeedCleanup = FALSE;
+
+    DeviceObject = IopDeviceObjectFromDeviceInstance(&MadeupName);
+    DPRINT("IopDeleteLegacyKey: DeviceObject %X\n", DeviceObject);
+
+    if (DeviceObject)
+    {
+        PDEVICE_NODE DeviceNode;
+        PDEVICE_NODE CurrentNode;
+        PDEVICE_NODE PrevNode;
+
+        DeviceNode = IopGetDeviceNode(DeviceObject);
+
+        DPRINT("IopDeleteLegacyKey: [%X] '%wZ', '%wZ'\n", DeviceNode, &DeviceNode->InstancePath, &DeviceNode->ServiceName);
+
+        if (DeviceNode)
+        {
+            DPRINT("IopDeleteLegacyKey: DeviceNode->Flags %X\n", DeviceNode->Flags);
+
+            if (DeviceNode->Flags & DNF_MADEUP)
+            {
+                if (!(DeviceNode->Flags & (DNF_HAS_PROBLEM | DNF_HAS_PRIVATE_PROBLEM)))
+                {
+                    PipSetDevNodeState(DeviceNode, DeviceNodeRemoved, NULL);
+                    PipSetDevNodeProblem(DeviceNode, CM_PROB_DEVICE_NOT_THERE);
+                }
+
+                IopReleaseDeviceResources(DeviceNode, FALSE);
+                ASSERT(DeviceNode);
+
+                for (CurrentNode = DeviceNode; CurrentNode != NULL; )
+                {
+                    PrevNode = CurrentNode;
+
+                    CurrentNode = PrevNode->OverUsed2.NextResourceDeviceNode;
+
+                    PrevNode->OverUsed2.NextResourceDeviceNode = NULL;
+                    PrevNode->OverUsed1.LegacyDeviceNode = NULL;
+                }
+
+                DeviceNode->Flags &= ~DNF_MADEUP;
+                IoDeleteDevice(DeviceObject);
+
+                IsNeedCleanup = TRUE;
+            }
+        }
+
+        ObDereferenceObject(DeviceObject);
+    }
+
+    Status = IopOpenRegistryKeyEx(&KeyHandle, LegacyHandle, &ControlName, KEY_ALL_ACCESS);
+    if (NT_SUCCESS(Status))
+    {
+        ZwDeleteKey(KeyHandle);
+        ZwClose(KeyHandle);
+    }
+
+    Status = IopOpenRegistryKeyEx(&KeyHandle, LegacyHandle, &LogConfName, KEY_ALL_ACCESS);
+    if (NT_SUCCESS(Status))
+    {
+        ZwDeleteKey(KeyHandle);
+        ZwClose(KeyHandle);
+    }
+
+    if (IsNeedCleanup)
+        IopCleanupDeviceRegistryValues(&MadeupName);
+
+    ZwDeleteKey(LegacyHandle);
+    ZwDeleteKey(MadeupHandle);
+
+Exit:
+
+    ExReleaseResourceLite(&PpRegistryDeviceResource);
+    KeLeaveCriticalRegion();
+
+    if (LegacyHandle)
+        ZwClose(LegacyHandle);
+
+    if (MadeupHandle)
+        ZwClose(MadeupHandle);
+
+    if (EnumHandle)
+        ZwClose(EnumHandle);
 }
 
 /* EOF */

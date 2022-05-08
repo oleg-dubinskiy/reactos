@@ -2294,18 +2294,14 @@ IopInitializeBootDrivers(
                     {
                         if (DriverObject->DeviceObject)
                         {
-                            DPRINT("IopInitializeBootDrivers: FIXME IopDeleteLegacyKey()\n");
-                            ASSERT(FALSE);
-                            //IopDeleteLegacyKey(DriverObject);
+                            IopDeleteLegacyKey(DriverObject);
                         }
                         else
                         {
                             DriverExtension = DriverObject->DriverExtension;
                             if (!DriverExtension->ServiceKeyName.Buffer)
                             {
-                                DPRINT("IopInitializeBootDrivers: FIXME IopDeleteLegacyKey()\n");
-                                ASSERT(FALSE);
-                                //IopDeleteLegacyKey(DriverObject);
+                                IopDeleteLegacyKey(DriverObject);
                             }
                             else
                             {
@@ -2313,9 +2309,7 @@ IopInitializeBootDrivers(
                                                                   NULL,
                                                                   FALSE))
                                 {
-                                    DPRINT("IopInitializeBootDrivers: FIXME IopDeleteLegacyKey()\n");
-                                    ASSERT(FALSE);
-                                    //IopDeleteLegacyKey(DriverObject);
+                                    IopDeleteLegacyKey(DriverObject);
                                 }
                                 else
                                 {
