@@ -1623,14 +1623,127 @@ PipInsertDriverList(
     InsertHeadList(Entry->Blink, Link);
 }
 
+BOOLEAN
+NTAPI
+PipAddDevicesToBootDriverWorker(PUNICODE_STRING InstanceName)
+{
+    PDEVICE_OBJECT DeviceObject;
+
+    DPRINT("PipAddDevicesToBootDriverWorker: '%wZ'\n", InstanceName);
+
+    DeviceObject = IopDeviceObjectFromDeviceInstance(InstanceName);
+    if (!DeviceObject)
+        return TRUE;
+
+    PipRequestDeviceAction(DeviceObject, PipEnumAddBootDevices, 0, 0, NULL, NULL);
+
+    ObDereferenceObject(DeviceObject);
+    return TRUE;
+}
+
 NTSTATUS
 NTAPI
 PipAddDevicesToBootDriver(
     _In_ PDRIVER_OBJECT DriverObject)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    UNICODE_STRING EnumRootKeyName = RTL_CONSTANT_STRING(IO_REG_KEY_ENUMROOT);
+    UNICODE_STRING EnumName = RTL_CONSTANT_STRING(L"Enum");
+    PKEY_VALUE_FULL_INFORMATION ValueInfo;
+    HANDLE EnumHandle = NULL;
+    HANDLE Handle = NULL;
+    HANDLE KeyHandle;
+    ULONG ResultLength;
+    ULONG Index;
+    ULONG Count = 0;
+    NTSTATUS Status;
+    USHORT Length;
+    BOOLEAN Result;
+
+    DPRINT("PipApplyFunctionToServiceInstances: Service '%wZ'\n", &DriverObject->DriverExtension->ServiceKeyName);
+
+    Status = PipOpenServiceEnumKeys(&DriverObject->DriverExtension->ServiceKeyName, KEY_READ, NULL, &KeyHandle, FALSE);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = IopGetRegistryValue(KeyHandle, L"Count", &ValueInfo);
+
+    if (!NT_SUCCESS(Status))
+    {
+        if (Status != STATUS_OBJECT_NAME_NOT_FOUND)
+            goto Exit;
+
+        Status = STATUS_SUCCESS;
+    }
+    else
+    {
+        if ((ValueInfo->Type == REG_DWORD) && (ValueInfo->DataLength >= sizeof(ULONG)))
+        {
+            Count = *(PULONG)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset);
+        }
+
+        ExFreePoolWithTag(ValueInfo, 'uspP');
+    }
+
+    if (Count == 0)
+        goto Exit;
+
+    Status = IopOpenRegistryKeyEx(&EnumHandle, 0, &EnumRootKeyName, KEY_READ);
+    if (!NT_SUCCESS(Status))
+        goto Exit;
+
+    ValueInfo = ExAllocatePoolWithTag(PagedPool, 0x200, 'uspP');
+    if (!ValueInfo)
+    {
+        DPRINT1("PipApplyFunctionToServiceInstances: Allocate ValueInfo failed\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    for (Index = 0; ; Index++)
+    {
+        Status = ZwEnumerateValueKey(KeyHandle, Index, KeyValueFullInformation, ValueInfo, 0x200, &ResultLength);
+        if (!NT_SUCCESS(Status))
+        {
+            if (Status == STATUS_NO_MORE_ENTRIES)
+            {
+                Status = STATUS_SUCCESS;
+                break;
+            }
+
+            continue;
+        }
+
+        if (ValueInfo->Type != REG_SZ)
+            continue;
+
+        PnpRegSzToString((PWCHAR)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset),
+                         ValueInfo->DataLength,
+                         &Length);
+
+        EnumName.Length = Length;
+        EnumName.MaximumLength = ValueInfo->DataLength;
+        EnumName.Buffer = (PWSTR)((char *)ValueInfo + ValueInfo->DataOffset);
+
+        if (!Length)
+            continue;
+
+        Status = IopOpenRegistryKeyEx(&Handle, EnumHandle, &EnumName, KEY_ALL_ACCESS);
+        if (!NT_SUCCESS(Status))
+            continue;
+
+        Result = PipAddDevicesToBootDriverWorker(&EnumName);
+        ZwClose(Handle);
+
+        if (Result == FALSE)
+            break;
+    }
+
+    ZwClose(EnumHandle);
+    ExFreePoolWithTag(ValueInfo, 'uspP');
+
+Exit:
+    ZwClose(KeyHandle);
+    return Status;
 }
 
 VOID
