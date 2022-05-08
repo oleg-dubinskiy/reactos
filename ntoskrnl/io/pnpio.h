@@ -1116,4 +1116,11 @@ PiFixupID(
     _In_ PUNICODE_STRING ServiceName
 );
 
+NTSTATUS
+NTAPI
+PipGenerateMadeupNodeName(
+    _In_ PUNICODE_STRING ServiceKeyName,
+    _Out_ PUNICODE_STRING OutMadeupName
+);
+
 #endif  /* _PNPIO_H */

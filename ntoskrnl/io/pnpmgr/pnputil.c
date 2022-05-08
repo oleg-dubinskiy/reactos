@@ -1797,4 +1797,39 @@ PiFixupID(
     return 0;
 }
 
+NTSTATUS
+NTAPI
+PipGenerateMadeupNodeName(
+    _In_ PUNICODE_STRING ServiceKeyName,
+    _Out_ PUNICODE_STRING OutMadeupName)
+{
+    UNICODE_STRING LegacyPrefix = RTL_CONSTANT_STRING(L"LEGACY_");
+
+    OutMadeupName->Length = 0;
+    OutMadeupName->MaximumLength = (LegacyPrefix.Length + ServiceKeyName->Length + sizeof(WCHAR));
+
+    OutMadeupName->Buffer = ExAllocatePoolWithTag(PagedPool, OutMadeupName->MaximumLength, 'uspP');
+    if (!OutMadeupName->Buffer)
+    {
+        DPRINT("PipCreateMadeupNode: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlAppendUnicodeStringToString(OutMadeupName, &LegacyPrefix);
+    RtlAppendUnicodeStringToString(OutMadeupName, ServiceKeyName);
+
+    RtlUpcaseUnicodeString(OutMadeupName, OutMadeupName, FALSE);
+
+    if (!PiFixupID(OutMadeupName->Buffer, MAX_DEVICE_ID_LEN, FALSE, 0, NULL))
+    {
+        ASSERT(FALSE);//IoDbgBreakPointEx();
+        RtlFreeUnicodeString(OutMadeupName);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    DPRINT("PipGenerateMadeupNodeName: OutMadeupName '%wZ'\n", OutMadeupName);
+
+    return STATUS_SUCCESS;
+}
+
 /* EOF */
