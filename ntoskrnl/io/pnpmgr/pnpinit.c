@@ -867,9 +867,7 @@ PipCreateMadeupNode(
     _In_ BOOLEAN IsLocked)
 {
     PKEY_VALUE_FULL_INFORMATION ValueInfo;
-    UNICODE_STRING EnumRootKeyName = RTL_CONSTANT_STRING(
-        L"\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Enum\\Root");
-    UNICODE_STRING LegacyPrefix = RTL_CONSTANT_STRING(L"LEGACY_");
+    UNICODE_STRING EnumRootKeyName = RTL_CONSTANT_STRING(IO_REG_KEY_ENUMROOT);
     UNICODE_STRING MadeupName;
     UNICODE_STRING ValueName;
     UNICODE_STRING InstanceName;
@@ -883,12 +881,12 @@ PipCreateMadeupNode(
     PWSTR ServiceName;
     ULONG Disposition  = 0;
     ULONG Data;
+    ULONG Size;
     BOOLEAN IsInternalLocked = FALSE;
     NTSTATUS Status;
 
     PAGED_CODE();
-    DPRINT("PipCreateMadeupNode: ServiceKeyName - %wZ, IsLocked - %X\n",
-           ServiceKeyName, IsLocked);
+    DPRINT("PipCreateMadeupNode: Service '%wZ', IsLocked %X\n", ServiceKeyName, IsLocked);
 
     if (!IsLocked)
     {
@@ -897,10 +895,7 @@ PipCreateMadeupNode(
         IsInternalLocked = TRUE;
     }
 
-    Status = IopOpenRegistryKeyEx(&EnumRootHandle,
-                                  NULL,
-                                  &EnumRootKeyName,
-                                  KEY_ALL_ACCESS);
+    Status = IopOpenRegistryKeyEx(&EnumRootHandle, NULL, &EnumRootKeyName, KEY_ALL_ACCESS);
     if (!NT_SUCCESS(Status))
     {
         DPRINT("PipCreateMadeupNode: Status - %X\n", Status);
@@ -908,25 +903,15 @@ PipCreateMadeupNode(
         goto ErrorExit;
     }
 
-    MadeupName.Length = 0;
-    MadeupName.MaximumLength = LegacyPrefix.Length +
-                               ServiceKeyName->Length +
-                               sizeof(WCHAR);
-
-    MadeupName.Buffer = ExAllocatePoolWithTag(PagedPool,
-                                              MadeupName.MaximumLength,
-                                              'uspP');
-    if (!MadeupName.Buffer)
+    Status = PipGenerateMadeupNodeName(ServiceKeyName, &MadeupName);
+    if (!NT_SUCCESS(Status))
     {
-        DPRINT("PipCreateMadeupNode: STATUS_INSUFFICIENT_RESOURCES\n");
+        DPRINT1("IopDeleteLegacyKey: Status %X\n", Status);
         ZwClose(EnumRootHandle);
-        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto ErrorExit;
     }
 
-    RtlAppendUnicodeStringToString(&MadeupName, &LegacyPrefix);
-    RtlAppendUnicodeStringToString(&MadeupName, ServiceKeyName);
-    DPRINT("PipCreateMadeupNode: &MadeupName - %wZ\n", &MadeupName);
+    DPRINT("PipCreateMadeupNode: &MadeupName '%wZ'\n", &MadeupName);
 
     Status = IopCreateRegistryKeyEx(&MadeupHandle,
                                     EnumRootHandle,
@@ -938,7 +923,7 @@ PipCreateMadeupNode(
 
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("PipCreateMadeupNode: Status - %X\n", Status);
+        DPRINT1("PipCreateMadeupNode: Status %X\n", Status);
         ASSERT(FALSE);
         RtlFreeUnicodeString(&MadeupName);
         goto ErrorExit;
@@ -946,14 +931,11 @@ PipCreateMadeupNode(
 
     Data = 1;
     RtlInitUnicodeString(&ValueName, L"NextInstance");
-    ZwSetValueKey(MadeupHandle,
-                  &ValueName,
-                  0,
-                  REG_DWORD,
-                  &Data,
-                  sizeof(Data));
+
+    ZwSetValueKey(MadeupHandle, &ValueName, 0, REG_DWORD, &Data, sizeof(Data));
 
     RtlInitUnicodeString(&InstanceName, L"0000");
+
     Status = IopCreateRegistryKeyEx(&InstanceHandle,
                                     MadeupHandle,
                                     &InstanceName,
@@ -964,7 +946,7 @@ PipCreateMadeupNode(
 
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("PipCreateMadeupNode: Status - %X\n", Status);
+        DPRINT1("PipCreateMadeupNode: Status %X\n", Status);
         ASSERT(FALSE);
         RtlFreeUnicodeString(&MadeupName);
         goto ErrorExit;
@@ -972,38 +954,33 @@ PipCreateMadeupNode(
 
     RtlInitUnicodeString(&RootName, L"Root\\");
 
-    Status = PnpConcatenateUnicodeStrings(&TmpString,
-                                          &RootName,
-                                          &MadeupName);
+    Status = PnpConcatenateUnicodeStrings(&TmpString, &RootName, &MadeupName);
     RtlFreeUnicodeString(&MadeupName);
 
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("PipCreateMadeupNode: Status - %X\n", Status);
+        DPRINT1("PipCreateMadeupNode: Status %X\n", Status);
         ASSERT(FALSE);
         goto ErrorExit;
     }
 
     RtlInitUnicodeString(&InstanceName, L"\\0000");
 
-    Status = PnpConcatenateUnicodeStrings(OutMadeupPath,
-                                          &TmpString,
-                                          &InstanceName);
+    Status = PnpConcatenateUnicodeStrings(OutMadeupPath, &TmpString, &InstanceName);
     RtlFreeUnicodeString(&TmpString);
 
-    DPRINT("PipCreateMadeupNode: OutMadeupPath - %wZ, Status - %X\n",
-           OutMadeupPath, Status);
+    DPRINT("PipCreateMadeupNode: OutMadeupPath %wZ, Status %X\n", OutMadeupPath, Status);
 
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("PipCreateMadeupNode: Status - %X\n", Status);
+        DPRINT1("PipCreateMadeupNode: Status %X\n", Status);
         ASSERT(FALSE);
         goto ErrorExit;
     }
 
     if (Disposition != REG_CREATED_NEW_KEY)
     {
-        DPRINT("PipCreateMadeupNode: Disposition  - %X\n", Disposition);
+        DPRINT("PipCreateMadeupNode: Disposition %X\n", Disposition);
         goto Exit;
     }
 
@@ -1017,7 +994,7 @@ PipCreateMadeupNode(
                                     NULL);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("PipCreateMadeupNode: Status - %X\n", Status);
+        DPRINT1("PipCreateMadeupNode: Status - %X\n", Status);
         ASSERT(FALSE);
     }
     else
@@ -1025,21 +1002,14 @@ PipCreateMadeupNode(
         Data = 0;
         RtlInitUnicodeString(&ValueName, L"NewlyCreated");
 
-        ZwSetValueKey(ControlHandle,
-                      &ValueName,
-                      0,
-                      REG_DWORD,
-                      &Data,
-                      sizeof(Data));
-
+        ZwSetValueKey(ControlHandle, &ValueName, 0, REG_DWORD, &Data, sizeof(Data));
         ZwClose(ControlHandle);
     }
 
     *OutInstanceHandle = InstanceHandle;
 
-    ServiceName = ExAllocatePoolWithTag(PagedPool,
-                                        ServiceKeyName->Length + sizeof(WCHAR),
-                                        'uspP');
+    Size = (ServiceKeyName->Length + sizeof(WCHAR));
+    ServiceName = ExAllocatePoolWithTag(PagedPool, Size, 'uspP');
 
     if (!ServiceName)
     {
@@ -1049,10 +1019,8 @@ PipCreateMadeupNode(
     else
     {
         RtlInitUnicodeString(&ValueName, L"Service");
-        RtlCopyMemory(ServiceName,
-                      ServiceKeyName->Buffer,
-                      ServiceKeyName->Length);
 
+        RtlCopyMemory(ServiceName, ServiceKeyName->Buffer, ServiceKeyName->Length);
         ServiceName[ServiceKeyName->Length / sizeof(WCHAR)] = UNICODE_NULL;
 
         ZwSetValueKey(InstanceHandle,
@@ -1060,7 +1028,7 @@ PipCreateMadeupNode(
                       0,
                       REG_SZ,
                       ServiceName,
-                      ServiceKeyName->Length + sizeof(WCHAR));
+                      (ServiceKeyName->Length + sizeof(WCHAR)));
     }
 
     Data = 1;
@@ -1108,13 +1076,11 @@ PipCreateMadeupNode(
                                     FALSE);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("PipCreateMadeupNode: Status - %X\n", Status);
+        DPRINT1("PipCreateMadeupNode: Status %X\n", Status);
         ASSERT(FALSE);
 
         if (ServiceName)
-        {
             ExFreePoolWithTag(ServiceName, 'uspP');
-        }
 
         goto Exit;
     }
@@ -1122,13 +1088,11 @@ PipCreateMadeupNode(
     ValueInfo = NULL;
     TmpString.Length = 0;
 
-    Status = IopGetRegistryValue(ServiceHandle,
-                                 L"DisplayName",
-                                 &ValueInfo);
+    Status = IopGetRegistryValue(ServiceHandle, L"DisplayName", &ValueInfo);
 
     if (NT_SUCCESS(Status) && ValueInfo->Type == REG_SZ)
     {
-        DPRINT("PipCreateMadeupNode: Status - %X\n", Status);
+        DPRINT("PipCreateMadeupNode: Status %X\n", Status);
 
         if (ValueInfo->DataLength > sizeof(WCHAR))
         {
@@ -1140,35 +1104,24 @@ PipCreateMadeupNode(
 
             TmpString.Length = length;
             TmpString.MaximumLength = ValueInfo->DataLength;
-
-            TmpString.Buffer = (PWSTR)((ULONG_PTR)ValueInfo +
-                                       ValueInfo->DataOffset);
+            TmpString.Buffer = (PWSTR)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset);
         }
     }
     else
     {
         if (NT_SUCCESS(Status))
-        {
-            DPRINT("PipCreateMadeupNode: Not valid Type - %X\n",
-                   ValueInfo->Type);
-        }
+            DPRINT1("PipCreateMadeupNode: Not valid Type %X\n", ValueInfo->Type);
         else
-        {
-            DPRINT("PipCreateMadeupNode: Status - %X\n", Status);
-        }
+            DPRINT1("PipCreateMadeupNode: Status %X\n", Status);
     }
 
     ZwClose(ServiceHandle);
 
     if (ValueInfo)
-    {
         ExFreePoolWithTag(ValueInfo, 'uspP');
-    }
 
     if (ServiceName)
-    {
         ExFreePoolWithTag(ServiceName, 'uspP');
-    }
 
 Exit:
 
@@ -1187,11 +1140,9 @@ Exit:
     //RtlFreeUnicodeString(&TmpString);
 
     if (NT_SUCCESS(Status))
-    {
         return Status;
-    }
 
-    DPRINT("PipCreateMadeupNode: Status - %X\n", Status);
+    DPRINT1("PipCreateMadeupNode: Status %X\n", Status);
 
     ZwClose(*OutInstanceHandle);
     RtlFreeUnicodeString(OutMadeupPath);
