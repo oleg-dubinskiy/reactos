@@ -21,6 +21,11 @@
 #define MAX_INSTANCE_PATH_LENGTH    260
 #define MAX_REENUMERATION_ATTEMPTS  32
 
+#define MAX_DEVICE_ID_LEN           200
+#define MAX_SEPARATORS_INSTANCEID   0
+#define MAX_SEPARATORS_DEVICEID     1
+#define MAX_SEPARATORS_MULTI_SZ    -1
+
 #define PIP_SUBKEY_FLAG_SKIP_ERROR  1
 #define PIP_SUBKEY_FLAG_DELETE_KEY  2
 
@@ -1099,6 +1104,16 @@ IopOpenRegistryKeyEx(
     _In_ HANDLE RootKeyHandle,
     _In_ PUNICODE_STRING KeyName,
     _In_ ACCESS_MASK DesiredAccess
+);
+
+ULONG
+NTAPI
+PiFixupID(
+    _In_ PWCHAR Id,
+    _In_ ULONG MaxIdLen,
+    _In_ BOOLEAN IsMultiSz,
+    _In_ ULONG MaxSeparators,
+    _In_ PUNICODE_STRING ServiceName
 );
 
 #endif  /* _PNPIO_H */

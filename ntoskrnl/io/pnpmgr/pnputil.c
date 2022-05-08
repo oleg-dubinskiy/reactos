@@ -1708,4 +1708,93 @@ IopOpenRegistryKeyEx(
     return Status;
 }
 
+ULONG
+NTAPI
+PiFixupID(
+    _In_ PWCHAR Id,
+    _In_ ULONG MaxIdLen,
+    _In_ BOOLEAN IsMultiSz,
+    _In_ ULONG MaxSeparators,
+    _In_ PUNICODE_STRING ServiceName)
+{
+    PWCHAR PtrPrevChar = NULL;
+    PWCHAR PtrChar;
+    PWCHAR StringEnd;
+    WCHAR Char;
+    ULONG SeparatorsCount = MAX_SEPARATORS_INSTANCEID;
+
+    PAGED_CODE();
+    DPRINT("PiFixupID: Id - '%S'\n", Id);
+
+    StringEnd = (Id + MAX_DEVICE_ID_LEN);
+
+    for (PtrChar = Id; PtrChar < StringEnd; PtrChar++)
+    {
+        Char = *PtrChar;
+
+        if (Char == UNICODE_NULL)
+        {
+            if (!IsMultiSz || (PtrPrevChar && PtrChar == PtrPrevChar + 1))
+            {
+                if (PtrChar < StringEnd &&
+                    (MaxSeparators == MAX_SEPARATORS_MULTI_SZ ||
+                     MaxSeparators == SeparatorsCount))
+                {
+                    return (PtrChar - Id) + 1;
+                }
+
+                break;
+            }
+
+            StringEnd += MAX_DEVICE_ID_LEN;
+            PtrPrevChar = PtrChar;
+        }
+        else if (Char == ' ')
+        {
+            *PtrChar = '_';
+        }
+        else if (Char < ' ' || Char > 0x7Fu || Char == ',')
+        {
+            DPRINT("PiFixupID: Invalid character - %02X\n", *PtrChar);
+
+            if (ServiceName)
+            {
+                DPRINT("PiFixupID: FIXME Log\n");
+                ASSERT(FALSE);
+                return 0;
+            }
+
+            return 0;
+        }
+        else if (Char == '\\')
+        {
+            SeparatorsCount++;
+
+            if (SeparatorsCount > MaxSeparators)
+            {
+                DPRINT("PiFixupID: SeparatorsCount - %X, MaxSeparators - %X\n",
+                       SeparatorsCount, MaxSeparators);
+
+                if (ServiceName)
+                {
+                    DPRINT("PiFixupID: FIXME Log\n");
+                    ASSERT(FALSE);
+                }
+
+                return 0;
+            }
+        }
+    }
+
+    DPRINT("PiFixupID: ID (%p) not valid\n", Id);
+
+    if (ServiceName)
+    {
+        DPRINT("PiFixupID: FIXME Log\n");
+        ASSERT(FALSE);
+    }
+
+    return 0;
+}
+
 /* EOF */
