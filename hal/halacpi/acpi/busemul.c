@@ -9,7 +9,11 @@
 
 ULONG HalpPicVectorRedirect[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
 
+ULONG HalpMinPciBus;
+ULONG HalpMaxPciBus;
+
 extern BUS_HANDLER HalpFakePciBusHandler;
+extern BOOLEAN HalpPCIConfigInitialized;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -190,9 +194,37 @@ HalGetBusDataByOffset(IN BUS_DATA_TYPE BusDataType,
                       IN ULONG Offset,
                       IN ULONG Length)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return 0;
+    BUS_HANDLER BusHandler;
+
+    /* Look as the bus type */
+    if (BusDataType == Cmos)
+        return HalpGetCmosData(0, SlotNumber, Buffer, Length);
+
+    if (BusDataType == EisaConfiguration)
+    {
+        /* FIXME: TODO */
+        ASSERT(FALSE);
+        return 0;
+    }
+
+    if (BusDataType != PCIConfiguration)
+        /* Invalid bus */
+        return 0;
+
+    if (!HalpPCIConfigInitialized)
+        /* Invalid bus */
+        return 0;
+
+    if ((BusNumber < HalpMinPciBus) || (BusNumber > HalpMaxPciBus))
+        /* Invalid bus */
+        return 0;
+
+    /* Setup fake PCI Bus handler */
+    RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BUS_HANDLER));
+    BusHandler.BusNumber = BusNumber;
+
+    /* Call PCI function */
+    return HalpGetPCIData(&BusHandler, &BusHandler, SlotNumber, Buffer, Offset, Length);
 }
 
 ULONG
