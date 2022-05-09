@@ -165,6 +165,173 @@ HalpGetChipHacks(_In_ USHORT VendorID,
     return Status;
 }
 
+VOID
+NTAPI
+HalpPiix4Detect(_In_ BOOLEAN IsInitialize)
+{
+    BOOLEAN IsBroken440BX = FALSE;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    UNICODE_STRING DestinationString;
+    PCI_COMMON_CONFIG PciHeader;
+    PCI_SLOT_NUMBER SlotNumber;
+    HANDLE KeyHandle = NULL;
+    HANDLE Handle = NULL;
+    ULONG Disposition;
+    ULONG BusNumber;
+    ULONG Device;
+    ULONG Function;
+    ULONG BytesRead;
+    ULONG ChipHacks;
+    NTSTATUS Status;
+
+    DPRINT("HalpPiix4Detect: IsInitialize %X\n", IsInitialize);
+
+    if (IsInitialize)
+    {
+        PAGED_CODE();
+
+        RtlInitUnicodeString(&DestinationString, L"\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET");
+        InitializeObjectAttributes(&ObjectAttributes, &DestinationString, OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+        Status = ZwOpenKey(&KeyHandle, KEY_READ, &ObjectAttributes);
+        if (!NT_SUCCESS(Status))
+        {
+            KeFlushWriteBuffer();
+            return;
+        }
+
+        RtlInitUnicodeString(&DestinationString, L"Control\\HAL");
+        InitializeObjectAttributes(&ObjectAttributes, &DestinationString, OBJ_CASE_INSENSITIVE, KeyHandle, NULL);
+
+        Status = ZwCreateKey(&Handle, KEY_READ, &ObjectAttributes, 0, NULL, 0, &Disposition);
+        if (!NT_SUCCESS(Status))
+            goto Exit;
+    }
+
+    for (BusNumber = 0; BusNumber < 0xFF; BusNumber++)
+    {
+        SlotNumber.u.AsULONG = 0;
+
+        for (Device = 0; Device < 0x20; Device++)
+        {
+            for (Function = 0; Function < 8; Function++)
+            {
+                DPRINT("HalpPiix4Detect: Bus %X, Dev %X, Func %X, Slot %X\n", BusNumber, Device, Function, SlotNumber.u.AsULONG);
+
+                SlotNumber.u.bits.DeviceNumber = Device;
+                SlotNumber.u.bits.FunctionNumber = Function;
+
+                BytesRead = HalGetBusData(PCIConfiguration, BusNumber, SlotNumber.u.AsULONG, &PciHeader, 0x40);
+                if (!BytesRead)
+                    goto Finish;
+
+                if (PciHeader.VendorID == 0xFFFF)
+                    continue;
+
+                DPRINT("HalpPiix4Detect: VendorID %X, DeviceID %X\n", PciHeader.VendorID, PciHeader.DeviceID);
+
+                if (IsInitialize)
+                {
+                    if (PciHeader.VendorID == 0x8086 &&
+                        (PciHeader.DeviceID == 0x7190 || PciHeader.DeviceID == 0x7192) &&
+                        PciHeader.RevisionID <= 2)
+                    {
+                        DPRINT1("HalpPiix4Detect: PciHeader.RevisionID %X\n", PciHeader.RevisionID);
+                        ASSERT(0); // HalpDbgBreakPointEx();
+                    }
+
+                    Status = HalpGetChipHacks(PciHeader.VendorID, PciHeader.DeviceID, PciHeader.RevisionID, &ChipHacks);
+                    if (NT_SUCCESS(Status))
+                    {
+                        DPRINT1("HalpPiix4Detect: ChipHacks %X\n", ChipHacks);
+
+                        if (ChipHacks & 1)
+                        {
+                            ASSERT(0); // HalpDbgBreakPointEx();
+                            HalpBrokenAcpiTimer = 1;
+                        }
+                        if (ChipHacks & 2)
+                        {
+                            ASSERT(0); // HalpDbgBreakPointEx();
+                        }
+                        if (ChipHacks & 8)
+                        {
+                            ASSERT(0); // HalpDbgBreakPointEx();
+                        }
+                    }
+                }
+                else
+                {
+                    DPRINT("HalpPiix4Detect: VendorID %X, DeviceID %X\n", PciHeader.VendorID, PciHeader.DeviceID);
+                }
+
+                if (PciHeader.VendorID == 0x8086 && PciHeader.DeviceID == 0x7110)
+                {
+                    DPRINT1("HalpPiix4Detect: VendorID %X, DeviceID %X\n", PciHeader.VendorID, PciHeader.DeviceID);
+                    ASSERT(0); // HalpDbgBreakPointEx();
+                    goto Finish;
+                }
+
+                if (PciHeader.BaseClass == 0xC && PciHeader.SubClass == 3)
+                {
+                    if (PciHeader.ProgIf == 0x10)
+                    {
+                        HalpStopOhciInterrupt(BusNumber, SlotNumber.u.AsULONG);
+                    }
+                    else
+                    {
+                        if (PciHeader.VendorID == 0x8086)
+                        {
+                            HalpStopUhciInterrupt(BusNumber, SlotNumber.u.AsULONG, TRUE);
+                        }
+                        else
+                        {
+                            if (PciHeader.VendorID == 0x1106)
+                                HalpStopUhciInterrupt(BusNumber, SlotNumber.u.AsULONG, FALSE);
+                        }
+                    }
+                }
+
+                if (Function == 0)
+                {
+                    if ((PciHeader.HeaderType & PCI_MULTIFUNCTION) == 0)
+                        break;
+                }
+            }
+        }
+    }
+
+Finish:
+
+    if (!IsInitialize)
+    {
+        KeFlushWriteBuffer();
+        return;
+    }
+
+    if (Handle)
+    {
+        ZwClose(Handle);
+        Handle = 0;
+    }
+
+    if (!IsBroken440BX)
+        goto Exit;
+
+    DPRINT1("HalpPiix4Detect: IsBroken440BX TRUE\n");
+    ASSERT(0); // HalpDbgBreakPointEx();
+
+Exit:
+
+    if (Handle)
+        ZwClose(Handle);
+
+    if (KeyHandle)
+        ZwClose(KeyHandle);
+
+    KeFlushWriteBuffer();
+}
+
 NTSTATUS
 NTAPI
 HalacpiInitPowerManagement(
