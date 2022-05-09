@@ -199,6 +199,109 @@ ArbpBuildAlternative(
 
 NTSTATUS
 NTAPI
+ArbpBuildAllocationStack(
+     _In_ PARBITER_INSTANCE Arbiter,
+     _In_ PLIST_ENTRY ArbitrationList,
+     _In_ ULONG EntriesCount)
+{
+    PARBITER_ALLOCATION_STATE NewStack;
+    PARBITER_ALLOCATION_STATE CurrentState;
+    PARBITER_ALTERNATIVE Alternative;
+    PIO_RESOURCE_DESCRIPTOR CurrentIoDesc;
+    PARBITER_LIST_ENTRY ArbEntry;
+    ULONG AlternativesLenght = 0;
+    ULONG AllocationSize;
+    ULONG Count;
+    NTSTATUS Status;
+
+    //PAGED_CODE();
+    DPRINT("[%p] ArbitrationList %p, EntriesCount %X\n", Arbiter, ArbitrationList, EntriesCount);
+
+    Count = (EntriesCount + 1);
+
+    for (ArbEntry = CONTAINING_RECORD(ArbitrationList->Flink, ARBITER_LIST_ENTRY, ListEntry);
+         &ArbEntry->ListEntry != ArbitrationList;
+         ArbEntry = CONTAINING_RECORD(ArbEntry->ListEntry.Flink, ARBITER_LIST_ENTRY, ListEntry))
+    {
+        if (ArbEntry->AlternativeCount)
+        {
+            AlternativesLenght += (ArbEntry->AlternativeCount * sizeof(ARBITER_ALTERNATIVE));
+            DPRINT("ArbpBuildAllocationStack: Count %X, Lenght %X\n", ArbEntry->AlternativeCount, AlternativesLenght);
+        }
+        else
+        {
+            Count--;
+            DPRINT("ArbpBuildAllocationStack: Count-- %X\n", Count);
+        }
+    }
+
+    AllocationSize = (AlternativesLenght + Count * sizeof(ARBITER_ALLOCATION_STATE));
+    DPRINT("ArbpBuildAllocationStack: Count %X, AllocationSize %X\n", Count, AllocationSize);
+
+    if (Arbiter->AllocationStackMaxSize < AllocationSize)
+    {
+        NewStack = ExAllocatePoolWithTag(PagedPool, AllocationSize, 'AbrA');
+        if (!NewStack)
+        {
+            DPRINT1("ArbpBuildAllocationStack: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        DPRINT("ArbpBuildAllocationStack: NewStack %p\n", NewStack);
+
+        ExFreePoolWithTag(Arbiter->AllocationStack, 0);
+        Arbiter->AllocationStack = NewStack;
+    }
+
+    RtlZeroMemory(Arbiter->AllocationStack, AllocationSize);
+    DPRINT("ArbpBuildAllocationStack: AllocationStack %p, AllocationSize %X\n", Arbiter->AllocationStack, AllocationSize);
+
+    CurrentState = Arbiter->AllocationStack;
+    Alternative = (PARBITER_ALTERNATIVE)&CurrentState[EntriesCount + 1];
+
+    for (ArbEntry = CONTAINING_RECORD(ArbitrationList->Flink, ARBITER_LIST_ENTRY, ListEntry);
+         &ArbEntry->ListEntry != ArbitrationList;
+         ArbEntry = CONTAINING_RECORD(ArbEntry->ListEntry.Flink, ARBITER_LIST_ENTRY, ListEntry))
+    {
+        DPRINT("ArbpBuildAllocationStack: CurrentState %p, AlternativeCount %X\n", CurrentState, ArbEntry->AlternativeCount);
+        if (!ArbEntry->AlternativeCount)
+            goto Next;
+
+        DPRINT("ArbpBuildAllocationStack: Start %I64X, End %I64X\n", CurrentState->Start, CurrentState->End);
+
+        CurrentState->Entry = ArbEntry;
+        CurrentState->AlternativeCount = ArbEntry->AlternativeCount;
+        CurrentState->Alternatives = Alternative;
+
+        CurrentState->Start = 1;
+        ASSERT(CurrentState->End == 0);
+
+        for (CurrentIoDesc = &ArbEntry->Alternatives[0];
+             CurrentIoDesc < &ArbEntry->Alternatives[ArbEntry->AlternativeCount];
+             CurrentIoDesc++)
+        {
+            Status = ArbpBuildAlternative(Arbiter, CurrentIoDesc, Alternative);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("ArbpBuildAllocationStack: Status %X\n", Status);
+                return Status;
+            }
+
+            Alternative->Priority = 0;
+            Alternative++;
+        }
+
+Next:
+        CurrentState++;
+    }
+
+    CurrentState->Entry = NULL;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 ArbTestAllocation(
     _In_ PARBITER_INSTANCE Arbiter,
     _In_ PLIST_ENTRY ArbitrationList)
