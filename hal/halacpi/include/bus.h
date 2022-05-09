@@ -340,4 +340,13 @@ HalpRegisterPciDebuggingDeviceInfo(
     VOID
 );
 
+ULONG
+NTAPI
+HalpGetCmosData(
+    IN ULONG BusNumber,
+    IN ULONG SlotNumber,
+    IN PVOID Buffer,
+    IN ULONG Length
+);
+
 /* EOF */
