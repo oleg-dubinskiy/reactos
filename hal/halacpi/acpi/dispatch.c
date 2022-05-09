@@ -127,6 +127,26 @@ HaliSetWakeEnable(_In_ BOOLEAN Enable)
     HalpWakeupState[0] = Enable;
 }
 
+VOID
+NTAPI
+HaliSetWakeAlarm(_In_ ULONGLONG AlartTime,
+                 _In_ PTIME_FIELDS WakeTimeFields)
+{
+    DPRINT("HaliSetWakeAlarm: AlartTime %I64X\n", AlartTime);
+
+    if (!AlartTime)
+    {
+        DPRINT1("HaliSetWakeAlarm: AlartTime is 0\n");
+        ASSERT(0); // HalpDbgBreakPointEx();
+        return;
+    }
+
+    ASSERT(WakeTimeFields);
+
+    DPRINT1("HaliSetWakeAlarm: ... \n");
+    ASSERT(0); // HalpDbgBreakPointEx();
+}
+
 NTSTATUS
 NTAPI
 HalpGetChipHacks(_In_ USHORT VendorID,
