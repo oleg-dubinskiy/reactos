@@ -306,10 +306,88 @@ ArbTestAllocation(
     _In_ PARBITER_INSTANCE Arbiter,
     _In_ PLIST_ENTRY ArbitrationList)
 {
-    PAGED_CODE();
+    PARBITER_LIST_ENTRY ArbEntry;
+    PIO_RESOURCE_DESCRIPTOR CurrentIoDesc;
+    PVOID Owner;
+    PVOID PrevOwner;
+    ULONG EntriesCount;
+    LONG Score;
+    NTSTATUS Status;
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    //PAGED_CODE();
+    DPRINT("ArbTestAllocation: Arbiter %p, ArbitrationList %p\n", Arbiter, ArbitrationList);
+    ASSERT(Arbiter);
+
+    Status = RtlCopyRangeList(Arbiter->PossibleAllocation, Arbiter->Allocation);
+    if (!NT_SUCCESS(Status))
+    {
+        RtlFreeRangeList(Arbiter->PossibleAllocation);
+        return Status;
+    }
+
+    EntriesCount = 0;
+    PrevOwner = NULL;
+
+    for (ArbEntry = CONTAINING_RECORD(ArbitrationList->Flink, ARBITER_LIST_ENTRY, ListEntry);
+         &ArbEntry->ListEntry != ArbitrationList;
+         ArbEntry = CONTAINING_RECORD(ArbEntry->ListEntry.Flink, ARBITER_LIST_ENTRY, ListEntry))
+    {
+        EntriesCount++;
+
+        Owner = ArbEntry->PhysicalDeviceObject;
+        if (PrevOwner != Owner)
+        {
+            PrevOwner = ArbEntry->PhysicalDeviceObject;
+
+            Status = RtlDeleteOwnersRanges(Arbiter->PossibleAllocation, Owner);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("ArbTestAllocation: Status %X\n", Status);
+                RtlFreeRangeList(Arbiter->PossibleAllocation);
+                return Status;
+            }
+        }
+
+        ArbEntry->WorkSpace = 0;
+
+        if (!Arbiter->ScoreRequirement)
+            continue;
+
+        for (CurrentIoDesc = &ArbEntry->Alternatives[0];
+             CurrentIoDesc > &ArbEntry->Alternatives[ArbEntry->AlternativeCount];
+             CurrentIoDesc++)
+        {
+            Score = Arbiter->ScoreRequirement(CurrentIoDesc);
+            if (Score < 0)
+            {
+                RtlFreeRangeList(Arbiter->PossibleAllocation);
+                return STATUS_DEVICE_CONFIGURATION_ERROR;
+            }
+
+            ArbEntry->WorkSpace += Score;
+        }
+    }
+
+    DPRINT("ArbTestAllocation: FIXME ArbSortArbitrationList\n");
+    Status = 0;//ArbSortArbitrationList(ArbitrationList);
+    if (!NT_SUCCESS(Status))
+    {
+        RtlFreeRangeList(Arbiter->PossibleAllocation);
+        return Status;
+    }
+
+    Status = ArbpBuildAllocationStack(Arbiter, ArbitrationList, EntriesCount);
+    if (!NT_SUCCESS(Status))
+    {
+        RtlFreeRangeList(Arbiter->PossibleAllocation);
+        return Status;
+    }
+
+    Status = Arbiter->AllocateEntry(Arbiter, Arbiter->AllocationStack);
+    if (!NT_SUCCESS(Status))
+        RtlFreeRangeList(Arbiter->PossibleAllocation);
+
+    return Status;
 }
 
 NTSTATUS
