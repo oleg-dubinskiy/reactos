@@ -453,10 +453,120 @@ ArbAllocateEntry(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    PAGED_CODE();
+    BOOLEAN IsRepeat = FALSE;
+    PARBITER_ALLOCATION_STATE Allocation;
+    PARBITER_ALTERNATIVE CurrentAlternative;
+    PCHAR Str;
+    NTSTATUS Status;
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    //PAGED_CODE();
+    DPRINT("ArbAllocateEntry: Arbiter %p, ArbState %p\n", Arbiter, ArbState);
+
+    Allocation = ArbState;
+
+StartAllocate:
+
+    while (Allocation >= ArbState && Allocation->Entry)
+    {
+        Status = Arbiter->PreprocessEntry(Arbiter, Allocation);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ArbAllocateEntry: Status %X\n", Status);
+            return Status;
+        }
+
+        if (IsRepeat == FALSE)
+            goto NextAllocation;
+
+        CurrentAlternative = Allocation->CurrentAlternative;
+        Allocation[1].CurrentAlternative = 0;
+
+        IsRepeat = FALSE;
+
+        DPRINT("ArbAllocateEntry: CurrentAlternative->Length %X\n", CurrentAlternative->Length);
+
+        if (CurrentAlternative->Length)
+        {
+            Arbiter->BacktrackAllocation(Arbiter, Allocation);
+
+            if ((Allocation->Start - 1) <= Allocation->CurrentMinimum &&
+                (Allocation->Start - 1) >= CurrentAlternative->Minimum)
+            {
+                Allocation->CurrentMaximum = (Allocation->Start - 1);
+                goto NextSuitable;
+            }
+
+NextAllocation:
+
+            while (Arbiter->GetNextAllocationRange(Arbiter, Allocation))
+            {
+                if (!(Allocation->CurrentAlternative->Flags & 1))
+                    Str = "non-shared";
+                else
+                    Str = "shared";
+
+                DPRINT("ArbAllocateEntry: Testing %I64X-%I64X %s\n",
+                        Allocation->CurrentMinimum, Allocation->CurrentMaximum, Str);
+
+NextSuitable:
+                if (Arbiter->FindSuitableRange(Arbiter, Allocation))
+                {
+                    if (Allocation->CurrentAlternative->Length)
+                    {
+                        if ((Allocation->CurrentAlternative->Flags & 1) == 0)
+                            Str = "non-shared";
+                        else
+                            Str = "shared";
+
+                        DPRINT("ArbAllocateEntry: Possible for %p (%I64x-%I64x) %s\n",
+                               Allocation->Entry->PhysicalDeviceObject, Allocation->Start, Allocation->End, Str);
+
+                        Arbiter->AddAllocation(Arbiter, Allocation);
+                    }
+                    else
+                    {
+                        if ((Allocation->CurrentAlternative->Flags & 1) == 0)
+                            Str = "non-shared";
+                        else
+                            Str = "shared";
+
+                        DPRINT("ArbAllocateEntry: Zero length for %p (%I64x-%I64x) %s\n",
+                               Allocation->Entry->PhysicalDeviceObject, Allocation->Start, Allocation->End, Str);
+
+                        Allocation->Entry->Result = 2;
+                    }
+
+                    Allocation++;
+                    goto StartAllocate;
+                }
+            }
+        }
+
+        if (Allocation == ArbState)
+        {
+            DPRINT("ArbAllocateEntry: Allocation == ArbState\n");
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        DPRINT("ArbAllocateEntry: Allocation failed %p (backtracking)\n", Allocation->Entry->PhysicalDeviceObject);
+
+        IsRepeat = TRUE;
+        Allocation--;
+    }
+
+    for (Allocation = ArbState; Allocation->Entry; Allocation++)
+    {
+        Status = Arbiter->PackResource(Allocation->CurrentAlternative->Descriptor,
+                                       Allocation->Start,
+                                       Allocation->Entry->Assignment);
+        ASSERT(NT_SUCCESS(Status));
+
+        Allocation->Entry->SelectedAlternative = Allocation->CurrentAlternative->Descriptor;
+
+        DPRINT("ArbAllocateEntry: Assigned %I64X-%I64X\n", Allocation->Start, Allocation->End);
+    }
+
+    return STATUS_SUCCESS;
 }
 
 BOOLEAN
