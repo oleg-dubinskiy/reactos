@@ -147,6 +147,16 @@ HaliSetWakeAlarm(_In_ ULONGLONG AlartTime,
     ASSERT(0); // HalpDbgBreakPointEx();
 }
 
+VOID
+NTAPI
+HalpPowerStateCallback(_In_ PVOID CallbackContext,
+                       _In_ PVOID Argument1,
+                       _In_ PVOID Argument2)
+{
+    UNIMPLEMENTED;
+    ASSERT(0); // HalpDbgBreakPointEx();
+}
+
 NTSTATUS
 NTAPI
 HalpGetChipHacks(_In_ USHORT VendorID,
