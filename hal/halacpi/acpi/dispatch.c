@@ -108,6 +108,14 @@ HalAcpiTimerCarry(VOID)
     TimerInfo.AcpiTimeValue.QuadPart = Value.QuadPart;
 }
 
+VOID
+NTAPI
+HalAcpiBrokenPiix4TimerCarry()
+{
+    /* Nothing */
+    ;
+}
+
 NTSTATUS
 NTAPI
 HalpGetChipHacks(_In_ USHORT VendorID,
