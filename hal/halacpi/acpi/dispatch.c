@@ -29,6 +29,7 @@ ACPI_PM_DISPATCH_TABLE HalAcpiDispatchTable =
 
 HALP_TIMER_INFO TimerInfo;
 BOOLEAN HalpBrokenAcpiTimer = FALSE;
+BOOLEAN HalpWakeupState[2];
 
 extern FADT HalpFixedAcpiDescTable;
 extern ULONG HalpWAETDeviceFlags;
@@ -114,6 +115,16 @@ HalAcpiBrokenPiix4TimerCarry()
 {
     /* Nothing */
     ;
+}
+
+VOID
+NTAPI
+HaliSetWakeEnable(_In_ BOOLEAN Enable)
+{
+    DPRINT("HaliSetWakeEnable: Enable %X\n", Enable);
+
+    HalpWakeupState[1] = 0;
+    HalpWakeupState[0] = Enable;
 }
 
 NTSTATUS
