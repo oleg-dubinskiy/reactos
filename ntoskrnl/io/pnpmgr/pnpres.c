@@ -4894,7 +4894,7 @@ NTAPI
 IopProcessAssignResources(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ BOOLEAN IncludeFailedDevices,
-    _Inout_ BOOLEAN *OutIsAssigned)
+    _Inout_ BOOLEAN * OutIsAssigned)
 {
     PPIP_ASSIGN_RESOURCES_CONTEXT AssignContext;
     DEVICETREE_TRAVERSE_CONTEXT Context;
@@ -4937,7 +4937,7 @@ IopProcessAssignResources(
         AssignContext = ExAllocatePoolWithTag(PagedPool, AssignContextSize, 'ddpP');
         if (!AssignContext)
         {
-            ASSERT(FALSE);
+            DPRINT1("IopProcessAssignResources: Not enough memory\n");
             Result = FALSE;
             break;
         }
@@ -4962,9 +4962,11 @@ IopProcessAssignResources(
         ResRequest = ExAllocatePoolWithTag(PagedPool, (DeviceCount * sizeof(PNP_RESOURCE_REQUEST)), 'ddpP');
         if (!ResRequest)
         {
-            ASSERT(FALSE);
+            DPRINT1("IopProcessAssignResources: Not enough memory\n");
             goto Next;
         }
+
+        RtlZeroMemory(ResRequest, (DeviceCount * sizeof(PNP_RESOURCE_REQUEST)));//need?
 
         for (ix = 0; ix < DeviceCount; ix++)
         {
@@ -4978,8 +4980,7 @@ IopProcessAssignResources(
         else
             IsAssignBootConfig = TRUE;
 
-        DPRINT("IopProcessAssignResources: IsAssignBootConfig %X\n", IsAssignBootConfig);
-        ASSERT(FALSE);
+        IopAssignResourcesToDevices(DeviceCount, ResRequest, IsAssignBootConfig, OutIsAssigned);
 
 #if 0
         for (ix = 0; ix < DeviceCount; ix++)
