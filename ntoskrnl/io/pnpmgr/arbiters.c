@@ -169,10 +169,21 @@ IopIrqPackResource(
     _In_ ULONGLONG Start,
     _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor)
 {
-    PAGED_CODE();
+    ASSERT(CmDescriptor);
+    ASSERT(Start < ((ULONG)-1));
+    ASSERT(IoDescriptor);
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    ASSERT(IoDescriptor->Type == CmResourceTypeInterrupt);
+
+    CmDescriptor->Type = CmResourceTypeInterrupt;
+    CmDescriptor->Flags = IoDescriptor->Flags;
+    CmDescriptor->ShareDisposition = IoDescriptor->ShareDisposition;
+
+    CmDescriptor->u.Interrupt.Affinity = -1;
+    CmDescriptor->u.Interrupt.Vector = (ULONG)Start;
+    CmDescriptor->u.Interrupt.Level = (ULONG)Start;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
