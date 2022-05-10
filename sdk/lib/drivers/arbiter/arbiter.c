@@ -407,10 +407,18 @@ NTAPI
 ArbCommitAllocation(
     _In_ PARBITER_INSTANCE Arbiter)
 {
-    PAGED_CODE();
+    PRTL_RANGE_LIST Allocation;
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    //PAGED_CODE();
+    DPRINT("ArbCommitAllocation: Arbiter %p\n", Arbiter);
+
+    RtlFreeRangeList(Arbiter->Allocation);
+
+    Allocation = Arbiter->PossibleAllocation;
+    Arbiter->PossibleAllocation = Arbiter->Allocation;
+    Arbiter->Allocation = Allocation;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
