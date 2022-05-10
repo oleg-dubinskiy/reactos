@@ -20,7 +20,8 @@ extern KSEMAPHORE PpRegistrySemaphore;
 extern INTERFACE_TYPE PnpDefaultInterfaceType;
 extern BOOLEAN IopBootConfigsReserved;
 extern LIST_ENTRY IopLegacyBusInformationTable[MaximumInterfaceType];
- 
+extern ERESOURCE PpRegistryDeviceResource;
+
 /* FUNCTIONS *****************************************************************/
 
 FORCEINLINE
@@ -4425,6 +4426,57 @@ IopCommitConfiguration(
     }
 
     IopCheckDataStructures(IopRootDeviceNode);
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+IopWriteAllocatedResourcesToRegistry(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ PCM_RESOURCE_LIST CmResource,
+    _In_ ULONG DataSize)
+{
+    UNICODE_STRING AllocConfigName = RTL_CONSTANT_STRING(L"AllocConfig");
+    UNICODE_STRING ControlName = RTL_CONSTANT_STRING(L"Control");
+    HANDLE InstanceHandle;
+    HANDLE KeyHandle;
+    NTSTATUS Status;
+
+    DPRINT("IopWriteAllocatedResourcesToRegistry: [%p] CmResource %p, DataSize %X\n", DeviceNode, CmResource, DataSize);
+
+    KeEnterCriticalRegion();
+    ExAcquireResourceSharedLite(&PpRegistryDeviceResource, TRUE);
+
+    Status = PnpDeviceObjectToDeviceInstance(DeviceNode->PhysicalDeviceObject, &InstanceHandle, KEY_ALL_ACCESS);
+    if (!NT_SUCCESS(Status))
+        goto Exit;
+
+    Status = IopCreateRegistryKeyEx(&KeyHandle,
+                                    InstanceHandle,
+                                    &ControlName,
+                                    KEY_ALL_ACCESS,
+                                    REG_OPTION_VOLATILE,
+                                    NULL);
+    ZwClose(InstanceHandle);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopWriteAllocatedResourcesToRegistry: Status %X\n", Status);
+        goto Exit;
+    }
+
+    if (CmResource)
+        Status = ZwSetValueKey(KeyHandle, &AllocConfigName, 0, REG_RESOURCE_LIST, CmResource, DataSize);
+    else
+        Status = ZwDeleteValueKey(KeyHandle, &AllocConfigName);
+
+    ZwClose(KeyHandle);
+
+Exit:
+
+    ExReleaseResourceLite(&PpRegistryDeviceResource);
+    KeLeaveCriticalRegion();
+
     return Status;
 }
 
