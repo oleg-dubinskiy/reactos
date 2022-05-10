@@ -569,6 +569,102 @@ NextSuitable:
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+ArbpUpdatePriority(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PARBITER_ALTERNATIVE Alternatives)
+{
+    PARBITER_ORDERING Ordering;
+    PARBITER_ORDERING EndOrdering;
+    ULONGLONG Start;
+    ULONGLONG End;
+    LONG Priority;
+    ULONG Index;
+    BOOLEAN IsPreferred;
+
+    //PAGED_CODE();
+
+    Priority = Alternatives->Priority;
+    DPRINT("ArbpUpdatePriority: %p, %p, Count %X, Priority %X\n", Arbiter, Alternatives, Arbiter->OrderingList.Count, Priority);
+
+    if (Priority == 0x7FFFFFFE || Priority == 0x7FFFFFFD)
+    {
+        Alternatives->Priority = 0x7FFFFFFF;
+        return;
+    }
+
+    IsPreferred = (Alternatives->Descriptor->Option & IO_RESOURCE_PREFERRED);
+
+    if (Priority == 0)
+    {
+        Ordering = Arbiter->OrderingList.Orderings;
+    }
+    else
+    {
+        if (Alternatives->Flags & 2)
+        {
+            Alternatives->Priority = 0x7FFFFFFF;
+            return;
+        }
+
+        if (Priority > 0)
+            Index = (ULONG)(Priority - 1);
+        else
+            Index = (ULONG)(-1 - Priority);
+
+        if (Index >= Arbiter->OrderingList.Count)
+        {
+            DPRINT1("ArbpUpdatePriority: Index %X, Count %X\n", Index, Arbiter->OrderingList.Count);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+        }
+
+        Ordering = &Arbiter->OrderingList.Orderings[Index + 1];
+    }
+
+    EndOrdering = &Arbiter->OrderingList.Orderings[Arbiter->OrderingList.Count];
+
+    for (; Ordering < EndOrdering; Ordering++)
+    {
+        /* Is intersect? */
+        if ((Alternatives->Minimum >= Ordering->Start || Alternatives->Maximum >= Ordering->Start) &&
+            (Alternatives->Minimum <= Ordering->Start || Alternatives->Minimum <= Ordering->End))
+        {
+            if (Alternatives->Maximum >= Ordering->End)
+                End = Ordering->End;
+            else
+                End = Alternatives->Maximum;
+
+            if (Alternatives->Minimum <= Ordering->Start)
+                Start = Ordering->Start;
+            else
+                Start = Alternatives->Minimum;
+
+            /* Is intersect size? */
+            if ((End - Start + 1) >= Alternatives->Length)
+            {
+                LONG NewPriority;
+
+                NewPriority = (LONG)((Ordering - Arbiter->OrderingList.Orderings) + 1);
+
+                if (IsPreferred)
+                    Alternatives->Priority = -NewPriority;
+                else
+                    Alternatives->Priority = NewPriority;
+
+                return;
+            }
+        }
+    }
+
+    if (IsPreferred)
+        Alternatives->Priority = (0x7FFFFFFE - 1);
+    else
+        Alternatives->Priority = 0x7FFFFFFE;
+
+    return;
+}
+
 BOOLEAN
 NTAPI
 ArbGetNextAllocationRange(
