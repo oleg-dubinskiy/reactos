@@ -4681,6 +4681,270 @@ Exit:
 
 NTSTATUS
 NTAPI
+IopBuildCmResourceList(
+    _In_ PPNP_RESOURCE_REQUEST RequestTable)
+{
+    UNICODE_STRING ResourceMapKeyName = RTL_CONSTANT_STRING(IO_REG_KEY_RESOURCEMAP);
+    UNICODE_STRING Pnp_ManagerName = RTL_CONSTANT_STRING(L"PnP Manager");
+    UNICODE_STRING PnpManagerName = RTL_CONSTANT_STRING(L"PnpManager");
+    UNICODE_STRING Destination;
+    OBJECT_NAME_INFORMATION_EX ObjNameInfo;
+    PPNP_REQ_LIST ReqList;
+    PPNP_REQ_ALT_LIST AltList;
+    PCM_RESOURCE_LIST CmTranslated;
+    PCM_RESOURCE_LIST CmRaw;
+    PIO_RESOURCE_DESCRIPTOR DevicePrivateIoDesc;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR RawDesc;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR TranslatedDesc;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR AssignlDesc;
+    ULONG_PTR RawDescEnd;
+    ULONG_PTR TranslatedDescEnd;
+    PPNP_REQ_DESCRIPTOR * AltListDescriptors;
+    PPNP_REQ_DESCRIPTOR Descriptor;
+    PPNP_REQ_DESCRIPTOR TranslatedReqDesc;
+    PDEVICE_NODE DeviceNode;
+    HANDLE Handle;
+    ULONG CountDescriptors;
+    ULONG DescriptorsCount;
+    ULONG DescCount = 0;
+    ULONG DescSize;
+    SIZE_T DataSize;
+    ULONG Dummy = 0;
+    ULONG ix;
+    NTSTATUS Status = STATUS_UNSUCCESSFUL;
+
+    PAGED_CODE();
+
+    ReqList = RequestTable->ReqList;
+    AltList = *(PPNP_REQ_ALT_LIST *)ReqList->AltList1;
+
+    CountDescriptors = AltList->CountDescriptors;
+
+    for (ix = 0, AltListDescriptors = AltList->ReqDescriptors;
+         ix < CountDescriptors;
+         ix++, AltListDescriptors++)
+    {
+        DPRINT("IopBuildCmResourceList: (*AltListDescriptors)->DescriptorsCount %X\n", (*AltListDescriptors)->DescriptorsCount);
+        DescCount += (*AltListDescriptors)->DescriptorsCount + 1;
+    }
+
+    DataSize = (sizeof(CM_RESOURCE_LIST) + (DescCount - 1) * sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+    DescSize = (DescCount * sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+    DPRINT("IopBuildCmResourceList: RequestTable %p, DescCount %X DataSize %X\n", RequestTable, DescCount, DataSize);
+
+    CmTranslated = ExAllocatePoolWithTag(PagedPool, DataSize, 'erpP');
+    if (!CmTranslated)
+    {
+        DPRINT1("IopBuildCmResourceList: STATUS_INSUFFICIENT_RESOURCES\n");
+        RequestTable->ResourceAssignment = NULL;
+        RequestTable->TranslatedResourceAssignment = NULL;
+        RequestTable->Status = STATUS_INSUFFICIENT_RESOURCES;
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    DPRINT("IopBuildCmResourceList: CmTranslated %p\n", CmTranslated);
+
+    CmRaw = ExAllocatePoolWithTag(PagedPool, DataSize, 'erpP');
+    if (!CmRaw)
+    {
+        DPRINT1("IopBuildCmResourceList: STATUS_INSUFFICIENT_RESOURCES\n");
+        ExFreePoolWithTag(CmTranslated, 'erpP');
+        RequestTable->Status = STATUS_INSUFFICIENT_RESOURCES;
+        RequestTable->ResourceAssignment = NULL;
+        RequestTable->TranslatedResourceAssignment = NULL;
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    DPRINT("IopBuildCmResourceList: CmRaw %p\n", CmRaw);
+
+    CmTranslated->Count = 1;
+    CmTranslated->List[0].InterfaceType = ReqList->InterfaceType;
+    CmTranslated->List[0].BusNumber = ReqList->BusNumber;
+    CmTranslated->List[0].PartialResourceList.Count = DescCount;
+    CmTranslated->List[0].PartialResourceList.Version = 1;
+    CmTranslated->List[0].PartialResourceList.Revision = 1;
+
+    TranslatedDesc = CmTranslated->List[0].PartialResourceList.PartialDescriptors;
+    TranslatedDescEnd = ((ULONG_PTR)CmTranslated->List[0].PartialResourceList.PartialDescriptors + DescSize);
+
+    CmRaw->Count = 1;
+    CmRaw->List[0].InterfaceType = ReqList->InterfaceType;
+    CmRaw->List[0].BusNumber = ReqList->BusNumber;
+    CmRaw->List[0].PartialResourceList.Count = DescCount;
+    CmRaw->List[0].PartialResourceList.Version = 1;
+    CmRaw->List[0].PartialResourceList.Revision = 1;
+
+    RawDesc = CmRaw->List[0].PartialResourceList.PartialDescriptors;
+    RawDescEnd = ((ULONG_PTR)CmRaw->List[0].PartialResourceList.PartialDescriptors + DescSize);
+
+    if (AltList->CountDescriptors == 0)
+    {
+        DPRINT1("IopBuildCmResourceList: AltList->CountDescriptors is 0\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+    }
+
+    for (ix = 0; ix < CountDescriptors; ix++)
+    {
+        Descriptor = AltList->ReqDescriptors[ix];
+        TranslatedReqDesc = Descriptor->TranslatedReqDesc;
+
+        if (TranslatedReqDesc->ReqEntry.Reserved4 == 2)
+        {
+            RtlCopyMemory(RawDesc, TranslatedReqDesc->ReqEntry.pCmDescriptor, sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+        }
+        else
+        {
+            Status = IopParentToRawTranslation(TranslatedReqDesc);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("Parent To Raw translation failed. Status %X\n", Status);
+                ExFreePoolWithTag(CmTranslated, 'erpP');
+                ExFreePoolWithTag(CmRaw, 'erpP');
+                RequestTable->Status = STATUS_INSUFFICIENT_RESOURCES;
+                RequestTable->ResourceAssignment = NULL;
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(RawDesc, Descriptor->ReqEntry.pCmDescriptor, sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+        }
+
+        RawDesc++;
+
+        if (TranslatedReqDesc->ReqEntry.Reserved4 == 2)
+        {
+            RtlCopyMemory(TranslatedDesc, TranslatedReqDesc->ReqEntry.pCmDescriptor, sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+        }
+        else
+        {
+            if (!Descriptor->ReqEntry.PhysicalDevice)
+            {
+                DPRINT("IopBuildCmResourceList: Descriptor->ReqEntry.PhysicalDevice == NULL\n");
+                ASSERT(Descriptor->ReqEntry.PhysicalDevice);
+
+                ExFreePoolWithTag(CmTranslated, 'erpP');
+                ExFreePoolWithTag(CmRaw, 'erpP');
+                RequestTable->Status = STATUS_INSUFFICIENT_RESOURCES;
+                RequestTable->ResourceAssignment = NULL;
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            DeviceNode = IopGetDeviceNode(Descriptor->ReqEntry.PhysicalDevice);
+            ASSERT(DeviceNode);
+
+            Status = IopChildToRootTranslation(DeviceNode,
+                                               Descriptor->InterfaceType,
+                                               Descriptor->BusNumber,
+                                               Descriptor->ReqEntry.AllocationType,
+                                               &Descriptor->ReqEntry.CmDescriptor,
+                                               &AssignlDesc);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("IopBuildCmResourceList: Child to Root translation failed\n");
+                ExFreePoolWithTag(CmTranslated, 'erpP');
+                ExFreePoolWithTag(CmRaw, 'erpP');
+                RequestTable->Status = STATUS_INSUFFICIENT_RESOURCES;
+                RequestTable->ResourceAssignment = NULL;
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(TranslatedDesc, AssignlDesc, sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+            ExFreePoolWithTag(AssignlDesc, 'erpP');
+        }
+
+        TranslatedDesc++;
+
+        DevicePrivateIoDesc = Descriptor->DevicePrivateIoDesc;
+
+        for (DescriptorsCount = Descriptor->DescriptorsCount;
+             DescriptorsCount != 0;
+             DescriptorsCount--)
+        {
+            RawDesc->Type = 0x81;
+            RawDesc->ShareDisposition = 1;
+
+            TranslatedDesc->Type = 0x81;
+            TranslatedDesc->ShareDisposition = 1;
+
+            RawDesc->Flags = DevicePrivateIoDesc->Flags;
+            TranslatedDesc->Flags = DevicePrivateIoDesc->Flags;
+
+            RawDesc->u.DevicePrivate.Data[0] = DevicePrivateIoDesc->u.DevicePrivate.Data[0];
+            RawDesc->u.DevicePrivate.Data[1] = DevicePrivateIoDesc->u.DevicePrivate.Data[1];
+            RawDesc->u.DevicePrivate.Data[2] = DevicePrivateIoDesc->u.DevicePrivate.Data[2];
+            RawDesc++;
+
+            TranslatedDesc->u.DevicePrivate.Data[0] = DevicePrivateIoDesc->u.DevicePrivate.Data[0];
+            TranslatedDesc->u.DevicePrivate.Data[1] = DevicePrivateIoDesc->u.DevicePrivate.Data[1];
+            TranslatedDesc->u.DevicePrivate.Data[2] = DevicePrivateIoDesc->u.DevicePrivate.Data[2];
+            TranslatedDesc++;
+
+            DevicePrivateIoDesc++;
+
+            ASSERT((ULONG_PTR)RawDesc <= (ULONG_PTR)RawDescEnd);
+            ASSERT((ULONG_PTR)TranslatedDesc <= (ULONG_PTR)TranslatedDescEnd);
+        }
+
+        ASSERT((ULONG_PTR)RawDesc <= (ULONG_PTR)RawDescEnd);
+        ASSERT((ULONG_PTR)TranslatedDesc <= (ULONG_PTR)TranslatedDescEnd);
+    }
+
+    Status = IopCreateRegistryKeyEx(&Handle,
+                                    NULL,
+                                    &ResourceMapKeyName,
+                                    (KEY_READ | KEY_WRITE),
+                                    REG_OPTION_VOLATILE,
+                                    NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopBuildCmResourceList: Status %X\n", Status);
+        goto Exit;
+    }
+
+    Status = ObQueryNameString(RequestTable->PhysicalDevice,
+                               (POBJECT_NAME_INFORMATION)&ObjNameInfo,
+                               sizeof(ObjNameInfo),
+                               &Dummy);
+    if (!NT_SUCCESS(Status))
+    {
+        ZwClose(Handle);
+        goto Exit;
+    }
+
+    ObjNameInfo.Name.MaximumLength = sizeof(ObjNameInfo.Buffer);
+    if (ObjNameInfo.Name.Length == 0)
+    {
+        DPRINT1("IopBuildCmResourceList: ObjNameInfo.Name.Length is 0\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        ObjNameInfo.Name.Buffer = ObjNameInfo.Buffer;
+    }
+
+    Destination = ObjNameInfo.Name;
+    RtlAppendUnicodeToString(&Destination, L".Raw");
+
+    Status = IopWriteResourceList(Handle, &Pnp_ManagerName, &PnpManagerName, &Destination, CmRaw, DataSize);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopBuildCmResourceList: Status %X\n", Status);
+        ZwClose(Handle);
+        goto Exit;
+    }
+
+    Destination = ObjNameInfo.Name;
+    RtlAppendUnicodeToString(&Destination, L".Translated");
+
+    IopWriteResourceList(Handle, &Pnp_ManagerName, &PnpManagerName, &Destination, CmTranslated, DataSize);
+    ZwClose(Handle);
+
+Exit:
+
+    RequestTable->ResourceAssignment = CmRaw;
+    RequestTable->TranslatedResourceAssignment = CmTranslated;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 IopReleaseDeviceResources(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ BOOLEAN IsAllocateBootResources)
