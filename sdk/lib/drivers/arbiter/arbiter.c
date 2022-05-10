@@ -671,10 +671,163 @@ ArbGetNextAllocationRange(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    PAGED_CODE();
+    PARBITER_ALTERNATIVE lowestAlternative;
+    PARBITER_ALTERNATIVE CurrentAlternative;
+    PARBITER_ORDERING Ordering;
+    ULONGLONG Minimum;
+    ULONGLONG Maximum;
+    ULONGLONG End;
+    ULONGLONG Start;
+    ULONG Index;
+    BOOLEAN Result;
 
-    UNIMPLEMENTED;
-    return FALSE;
+    DPRINT("ArbGetNextAllocationRange: Arbiter %p, ArbState %p\n", Arbiter, ArbState);
+
+    while (TRUE)
+    {
+        if (ArbState->CurrentAlternative)
+        {
+            DPRINT("ArbGetNextAllocationRange: CurrentAlternative %X, Priority %X\n", ArbState->CurrentAlternative, ArbState->Alternatives->Priority);
+            ArbpUpdatePriority(Arbiter, ArbState->CurrentAlternative);
+        }
+        else
+        {
+            DPRINT("ArbGetNextAllocationRange: Alternatives %X, Count %X\n", ArbState->Alternatives, ArbState->AlternativeCount);
+
+            for (CurrentAlternative = ArbState->Alternatives;
+                 CurrentAlternative < &ArbState->Alternatives[ArbState->AlternativeCount];
+                 CurrentAlternative++)
+            {
+                CurrentAlternative->Priority = 0;
+                ArbpUpdatePriority(Arbiter, CurrentAlternative);
+            }
+        }
+
+        lowestAlternative = ArbState->Alternatives;
+
+        for (CurrentAlternative = (ArbState->Alternatives + 1);
+             CurrentAlternative < &ArbState->Alternatives[ArbState->AlternativeCount - 1];
+             CurrentAlternative++)
+        {
+            DPRINT("ArbGetNextAllocationRange: lowestAlternative %p, lowestAlternative->Priority %X\n", lowestAlternative, lowestAlternative->Priority);
+
+            if (CurrentAlternative->Priority < lowestAlternative->Priority)
+                lowestAlternative = CurrentAlternative;
+        }
+
+        if (lowestAlternative->Priority == 0x7FFFFFFF)
+        {
+            if (lowestAlternative->Flags & 2)
+                DPRINT("ArbGetNextAllocationRange: Fixed alternative exhausted\n");
+            else
+                DPRINT("ArbGetNextAllocationRange: Alternative exhausted\n");
+
+            DPRINT("ArbGetNextAllocationRange: Priority == 0x7FFFFFFF, return FALSE\n");
+            Result = FALSE;
+            break;
+        }
+
+        DPRINT("ArbGetNextAllocationRange: LowestAlternative - [%X] %I64X-%I64X, %X, %X\n",
+               lowestAlternative->Priority, lowestAlternative->Minimum, lowestAlternative->Maximum, lowestAlternative->Length, lowestAlternative->Alignment);
+
+        if (lowestAlternative->Priority == 0x7FFFFFFE || lowestAlternative->Priority == 0x7FFFFFFD)
+        {
+            DPRINT("ArbGetNextAllocationRange: Allowing reserved ranges. Priority %X\n", lowestAlternative->Priority);
+
+            Minimum = lowestAlternative->Minimum;
+            Maximum = lowestAlternative->Maximum;
+        }
+        else
+        {
+            if (lowestAlternative->Priority > 0)
+                Index = (ULONG)(lowestAlternative->Priority - 1);
+            else
+                Index = (ULONG)(-1 - lowestAlternative->Priority);
+
+            DPRINT("ArbGetNextAllocationRange: lowestAlternative->Priority %X, Index %X\n", lowestAlternative->Priority, Index);
+
+            if (Index >= Arbiter->OrderingList.Count)
+            {
+                DPRINT1("ArbGetNextAllocationRange: Index %X, Count %X\n", Index, Arbiter->OrderingList.Count);
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+            }
+
+            Ordering = &Arbiter->OrderingList.Orderings[Index];
+
+            /* Is intersect? */
+            if (IsRangesIntersection(lowestAlternative->Minimum, lowestAlternative->Maximum, Ordering->Start, Ordering->End))
+            {
+                if (lowestAlternative->Maximum > Ordering->End)
+                    End = Ordering->End;
+                else
+                    End = lowestAlternative->Maximum;
+
+                if (lowestAlternative->Minimum <= Ordering->Start)
+                    Start = Ordering->Start;
+                else
+                    Start = lowestAlternative->Minimum;
+
+                /* Test intersect size */
+                if ((End - Start + 1) < lowestAlternative->Length)
+                {
+                    DPRINT1("ArbGetNextAllocationRange: Intersect - %I64X-%I64X, Length %X\n", Start, End, lowestAlternative->Length);
+                    ASSERT(FALSE); // IoDbgBreakPointEx(); // INTERSECT
+                }
+            }
+
+            if (lowestAlternative->Minimum <= Ordering->Start)
+                Minimum = Ordering->Start;
+            else
+                Minimum = lowestAlternative->Minimum;
+
+            if (lowestAlternative->Maximum >= Ordering->End)
+                Maximum = Ordering->End;
+            else
+                Maximum = lowestAlternative->Maximum;
+        }
+
+        if (lowestAlternative->Length)
+        {
+            ULONG Length = (lowestAlternative->Length - 1);
+            ULONG Alignment = (lowestAlternative->Alignment - 1);
+
+            Minimum += Alignment;
+            Minimum -= (Minimum % lowestAlternative->Alignment);
+
+            if (Length > (Maximum - Minimum))
+            {
+                DPRINT("ArbGetNextAllocationRange: Range cannot be aligned ... Skipping\n");
+                ArbState->CurrentAlternative = lowestAlternative;
+                continue;
+            }
+
+            Maximum -= Length;
+            Maximum = Maximum - (Maximum % lowestAlternative->Alignment) + Length;
+        }
+        else
+        {
+            Minimum = lowestAlternative->Minimum;
+            Maximum = lowestAlternative->Maximum;
+        }
+
+        if (Minimum != ArbState->CurrentMinimum ||
+            Maximum != ArbState->CurrentMaximum ||
+            ArbState->CurrentAlternative != lowestAlternative)
+        {
+            ArbState->CurrentMinimum = Minimum;
+            ArbState->CurrentMaximum = Maximum;
+
+            ArbState->CurrentAlternative = lowestAlternative;
+
+            DPRINT("ArbGetNextAllocationRange: Allocation (%I64X-%I64X), return TRUE\n", Minimum, Maximum);
+            Result = TRUE;
+            break;
+        }
+
+        DPRINT("ArbGetNextAllocationRange: Skipping identical allocation range\n");
+    }
+
+    return Result;
 }
 
 BOOLEAN
