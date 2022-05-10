@@ -569,6 +569,29 @@ NextSuitable:
     return STATUS_SUCCESS;
 }
 
+static inline
+BOOLEAN
+IsRangesIntersection(
+    _In_ ULONGLONG Start1,
+    _In_ ULONGLONG End1,
+    _In_ ULONGLONG Start2,
+    _In_ ULONGLONG End2)
+{
+    /* Not intersection when:
+       (Start1 - End1) .. (Start2 - End2) or
+       (Start2 - End2) .. (Start1 - End1)
+    */
+    if (((Start2 > Start1 && Start2 > End1) ||
+         (Start1 > Start2 && Start1 > End2)))
+    {
+        /* No intersection */
+        return FALSE;
+    }
+
+    /* Range1 and Range2 overlap */
+    return TRUE;
+}
+
 VOID
 NTAPI
 ArbpUpdatePriority(
@@ -627,8 +650,7 @@ ArbpUpdatePriority(
     for (; Ordering < EndOrdering; Ordering++)
     {
         /* Is intersect? */
-        if ((Alternatives->Minimum >= Ordering->Start || Alternatives->Maximum >= Ordering->Start) &&
-            (Alternatives->Minimum <= Ordering->Start || Alternatives->Minimum <= Ordering->End))
+        if (IsRangesIntersection(Alternatives->Minimum, Alternatives->Maximum, Ordering->Start, Ordering->End))
         {
             if (Alternatives->Maximum >= Ordering->End)
                 End = Ordering->End;
@@ -640,7 +662,7 @@ ArbpUpdatePriority(
             else
                 Start = Alternatives->Minimum;
 
-            /* Is intersect size? */
+            /* Intersect size? */
             if ((End - Start + 1) >= Alternatives->Length)
             {
                 LONG NewPriority;
