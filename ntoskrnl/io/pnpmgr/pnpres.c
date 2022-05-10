@@ -4945,6 +4945,69 @@ Exit:
 
 NTSTATUS
 NTAPI
+IopBuildCmResourceLists(
+    _In_ PPNP_RESOURCE_REQUEST RequestTable,
+    _In_ PPNP_RESOURCE_REQUEST RequestTableEnd)
+{
+    PDEVICE_NODE DeviceNode;
+    ULONG TableSize;
+    ULONG ListSize;
+    ULONG Count;
+    ULONG ix;
+
+    PAGED_CODE();
+
+    if (RequestTable >= RequestTableEnd)
+    {
+        DPRINT1("IopBuildCmResourceLists: Table %p, TableEnd %p\n", RequestTable, RequestTableEnd);
+        return STATUS_SUCCESS;
+    }
+
+    TableSize = ((ULONG_PTR)RequestTableEnd - (ULONG_PTR)RequestTable);
+    Count = ((TableSize - 1) / sizeof(PNP_RESOURCE_REQUEST) + 1);
+
+    DPRINT("IopBuildCmResourceLists: Table %p, TableEnd %p, Count %X\n", RequestTable, RequestTableEnd, Count);
+
+    for (ix = 0; ix < Count; ix++)
+    {
+        DPRINT("IopBuildCmResourceLists: RequestTable[%X].ResourceAssignment %p\n", ix, RequestTable[ix].ResourceAssignment);
+        RequestTable[ix].ResourceAssignment = 0;
+
+        if ((RequestTable[ix].Flags & (0x20 | 0x08)))
+            continue;
+
+        if (RequestTable[ix].Flags & 0x10)
+        {
+            RequestTable[ix].Status = STATUS_UNSUCCESSFUL;
+            continue;
+        }
+
+        RequestTable[ix].Status = STATUS_SUCCESS;
+
+        IopBuildCmResourceList(&RequestTable[ix]);
+
+        if (!RequestTable[ix].ResourceAssignment)
+            continue;
+
+        if (!RequestTable[ix].PhysicalDevice)
+        {
+            ASSERT(RequestTable[ix].PhysicalDevice);
+            continue;
+        }
+
+        DeviceNode = IopGetDeviceNode(RequestTable[ix].PhysicalDevice);
+        ASSERT(DeviceNode);
+
+        ListSize = PnpDetermineResourceListSize(RequestTable[ix].ResourceAssignment);
+        IopWriteAllocatedResourcesToRegistry(DeviceNode, RequestTable[ix].ResourceAssignment, ListSize);
+    }
+
+    DPRINT("IopBuildCmResourceLists: return STATUS_SUCCESS\n");
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 IopReleaseDeviceResources(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ BOOLEAN IsAllocateBootResources)
