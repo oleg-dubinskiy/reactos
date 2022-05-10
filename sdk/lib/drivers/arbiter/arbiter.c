@@ -836,10 +836,63 @@ ArbFindSuitableRange(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    PAGED_CODE();
+    ULONG Flags = 0;
+    NTSTATUS Status;
 
-    UNIMPLEMENTED;
-    return FALSE;
+    //PAGED_CODE();
+    DPRINT("ArbFindSuitableRange: Arbiter %p, ArbState %p\n", Arbiter, ArbState);
+
+    ASSERT(ArbState->CurrentAlternative);
+
+    if (ArbState->CurrentMinimum > ArbState->CurrentMaximum)
+        return FALSE;
+
+    if (!ArbState->CurrentAlternative->Length)
+    {
+        ArbState->End = ArbState->CurrentMinimum;
+        ArbState->Start = ArbState->CurrentMinimum;
+        return TRUE;
+    }
+
+    if (ArbState->Entry->RequestSource == ArbiterRequestLegacyReported ||
+        ArbState->Entry->RequestSource == ArbiterRequestLegacyAssigned)
+    {
+        ArbState->RangeAvailableAttributes |= 1;
+    }
+
+    if (ArbState->Flags & 8)
+        Flags = RTL_RANGE_LIST_NULL_CONFLICT_OK;
+
+    if (ArbState->CurrentAlternative->Flags & 1)
+        Flags |= RTL_RANGE_LIST_SHARED_OK;
+
+    Status = RtlFindRange(Arbiter->PossibleAllocation,
+                          ArbState->CurrentMinimum,
+                          ArbState->CurrentMaximum,
+                          ArbState->CurrentAlternative->Length,
+                          ArbState->CurrentAlternative->Alignment,
+                          Flags,
+                          ArbState->RangeAvailableAttributes,
+                          Arbiter->ConflictCallbackContext,
+                          Arbiter->ConflictCallback, // (PRTL_CONFLICT_RANGE_CALLBACK)
+                          &ArbState->Start);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("ArbFindSuitableRange: FIXME! Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return FALSE;
+#if 0
+        if (ArbShareDriverExclusive(Arbiter, ArbState))
+            return TRUE;
+
+        return Arbiter->OverrideConflict(Arbiter, ArbState);
+#endif
+    }
+
+    ArbState->End = (ArbState->Start + ArbState->CurrentAlternative->Length - 1);
+
+    return TRUE;
 }
 
 VOID
