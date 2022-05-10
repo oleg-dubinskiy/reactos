@@ -4525,6 +4525,161 @@ IopParentToRawTranslation(
 }
 
 NTSTATUS
+NTAPI 
+IopChildToRootTranslation(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ INTERFACE_TYPE InterfaceType,
+    _In_ ULONG BusNumber,
+    _In_ ARBITER_REQUEST_SOURCE AllocationType,
+    _In_ PCM_PARTIAL_RESOURCE_DESCRIPTOR InCmDesc,
+    _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR *OutAssigedCmDesc)
+{
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR AssignedCmDesc;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR TempCmDesc;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR TranslatedCmDesc;
+    PPI_RESOURCE_TRANSLATOR_ENTRY TranslatorEntry;
+    PTRANSLATOR_INTERFACE TranslatorInterface;
+    PDEVICE_OBJECT PhysicalDeviceObject;
+    PLIST_ENTRY HeadTranslators;
+    PLIST_ENTRY Entry;
+    NTSTATUS Status = STATUS_SUCCESS;
+    BOOLEAN IsComlete = FALSE;
+    BOOLEAN IsNotFoundLegacyBus;
+
+    IsNotFoundLegacyBus = AllocationType == ArbiterRequestHalReported;
+    DPRINT("IopChildToRootTranslation: [%p] Iface %X Bus %X AllocType %X InCmDesc %p, HalRequest %X\n",
+           DeviceNode, InterfaceType, BusNumber, AllocationType, InCmDesc, IsNotFoundLegacyBus);
+
+    AssignedCmDesc = ExAllocatePoolWithTag(PagedPool, sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR), 'erpP');
+    if (!AssignedCmDesc)
+    {
+        DPRINT1("IopChildToRootTranslation: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    DPRINT("IopChildToRootTranslation: AssignedCmDesc %p\n", AssignedCmDesc);
+
+    TranslatedCmDesc = ExAllocatePoolWithTag(PagedPool, sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR), 'erpP');
+    if (!TranslatedCmDesc)
+    {
+        DPRINT1("IopChildToRootTranslation: STATUS_INSUFFICIENT_RESOURCES\n");
+        ExFreePoolWithTag(AssignedCmDesc, 'erpP');
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    DPRINT("IopChildToRootTranslation: TranslatedCmDesc %p\n", TranslatedCmDesc);
+
+    RtlCopyMemory(AssignedCmDesc, InCmDesc, sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+
+    if (DeviceNode)
+    {
+        PhysicalDeviceObject = DeviceNode->PhysicalDeviceObject;
+    }
+    else
+    {
+        PhysicalDeviceObject = NULL;
+        DeviceNode = IopFindLegacyBusDeviceNode(InterfaceType, BusNumber);
+    }
+
+    while (DeviceNode && !IsComlete)
+    {
+        if (DeviceNode == IopRootDeviceNode && !IsNotFoundLegacyBus)
+        {
+            DPRINT("Node == IopRootDeviceNode && IsNotFoundLegacyBus == FALSE\n");
+
+            IsNotFoundLegacyBus = TRUE;
+
+            DeviceNode = IopFindLegacyBusDeviceNode(InterfaceType, BusNumber);
+
+            if ((DeviceNode == IopRootDeviceNode) && (InterfaceType == Internal))
+                DeviceNode = IopFindLegacyBusDeviceNode(Isa, 0);
+
+            DPRINT("[%p] Service '%wZ', Instance '%wZ'\n", DeviceNode, &DeviceNode->ServiceName, &DeviceNode->InstancePath);
+            continue;
+        }
+
+        DPRINT("[%p] Service '%wZ', Instance '%wZ'\n", DeviceNode, &DeviceNode->ServiceName, &DeviceNode->InstancePath);
+
+        if (IsListEmpty(&DeviceNode->DeviceTranslatorList))
+            DPRINT("empty DeviceTranslatorList(%X)\n", &DeviceNode->DeviceTranslatorList);
+
+        HeadTranslators = &DeviceNode->DeviceTranslatorList;
+        DPRINT("IopChildToRootTranslation: HeadTranslators %X\n", HeadTranslators);
+
+        for (Entry = HeadTranslators->Flink; (Entry != HeadTranslators); Entry = Entry->Flink)
+        {
+            TranslatorEntry = CONTAINING_RECORD(Entry, PI_RESOURCE_TRANSLATOR_ENTRY, DeviceTranslatorList);
+
+            if (TranslatorEntry->ResourceType != InCmDesc->Type)
+            {
+                DPRINT("Entry %X TranslatorEntry %p, Type %X\n", Entry, TranslatorEntry, TranslatorEntry->ResourceType);
+                continue;
+            }
+
+            if (!TranslatorEntry->TranslatorInterface)
+            {
+                DPRINT1("No TranslatorInterface for this entry\n");
+                break;
+            }
+
+            TranslatorInterface = TranslatorEntry->TranslatorInterface;
+
+            DPRINT("Found TranslatorEntry %p (Type %X)\n", TranslatorEntry, TranslatorEntry->ResourceType);
+            DPRINT("TranslatorInterface %p, PDO %p, Context %X\n", TranslatorInterface, PhysicalDeviceObject, TranslatorInterface->Context);
+
+            Status = TranslatorInterface->TranslateResources(TranslatorInterface->Context,
+                                                             AssignedCmDesc,
+                                                             0,
+                                                             0,
+                                                             NULL,
+                                                             PhysicalDeviceObject,
+                                                             TranslatedCmDesc);
+            if (NT_SUCCESS(Status))
+            {
+                DPRINT("IopChildToRootTranslation: Translation ok. (%X, %X)\n", DeviceNode, DeviceNode->PhysicalDeviceObject);
+
+                DPRINT("IopChildToRootTranslation: [Assigned]   Resource Type %X Data %X %X %X\n",
+                       AssignedCmDesc->Type, AssignedCmDesc->u.Generic.Start.LowPart, AssignedCmDesc->u.Generic.Start.HighPart,
+                       AssignedCmDesc->u.Generic.Length);
+
+                DPRINT("IopChildToRootTranslation: [Translated] Resource Type %X Data %X %X %X\n",
+                       TranslatedCmDesc->Type, TranslatedCmDesc->u.Generic.Start.LowPart, TranslatedCmDesc->u.Generic.Start.HighPart,
+                       TranslatedCmDesc->u.Generic.Length);
+
+                TempCmDesc = AssignedCmDesc;
+                AssignedCmDesc = TranslatedCmDesc;
+                TranslatedCmDesc = TempCmDesc;
+
+                if (Status == STATUS_TRANSLATION_COMPLETE)
+                    IsComlete = TRUE;
+
+                break;
+            }
+
+            DPRINT("Child to Root Translation failed. Node %X PDO %X Type %X Data %X %X %X\n",
+                   DeviceNode, DeviceNode->PhysicalDeviceObject, AssignedCmDesc->Type, AssignedCmDesc->u.Generic.Start.LowPart,
+                   AssignedCmDesc->u.Generic.Start.HighPart, AssignedCmDesc->u.Generic.Length);
+
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+
+            ExFreePoolWithTag(AssignedCmDesc, 'erpP');
+            goto Exit;
+        }
+
+        DeviceNode = DeviceNode->Parent;
+    }
+
+    *OutAssigedCmDesc = AssignedCmDesc;
+
+Exit:
+
+    ExFreePoolWithTag(TranslatedCmDesc, 'erpP');
+
+    DPRINT("IopChildToRootTranslation: return %X\n", Status);
+    return Status;
+}
+
+NTSTATUS
 NTAPI
 IopReleaseDeviceResources(
     _In_ PDEVICE_NODE DeviceNode,
