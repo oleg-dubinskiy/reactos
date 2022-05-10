@@ -4482,6 +4482,50 @@ Exit:
 
 NTSTATUS
 NTAPI
+IopParentToRawTranslation(
+    _In_ PPNP_REQ_DESCRIPTOR ReqDesc)
+{
+    PPNP_REQ_DESCRIPTOR Descriptor;
+    NTSTATUS Status;
+
+    DPRINT("IopParentToRawTranslation: ReqDesc %p\n", ReqDesc);
+
+    Status = STATUS_SUCCESS;
+
+    if (ReqDesc->ReqEntry.Count &&
+        ReqDesc->ReqEntry.CmDescriptor.Type == 7)
+    {
+        DPRINT("Invalid ReqDesc for parent-to-raw translation\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (ReqDesc->AltList)
+        return Status;
+
+    Descriptor = ReqDesc->TranslatedReqDesc;
+
+    Status = ReqDesc->TranslatorEntry->TranslatorInterface->
+             TranslateResources(ReqDesc->ArbiterEntry->ArbiterInterface->Context,
+                                ReqDesc->ReqEntry.pCmDescriptor,
+                                ArbiterActionRetestAllocation,
+                                Descriptor->ReqEntry.Count,
+                                Descriptor->ReqEntry.IoDescriptor,
+                                Descriptor->ReqEntry.PhysicalDevice,
+                                Descriptor->ReqEntry.pCmDescriptor);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopParentToRawTranslation: Status %X\n", Status);
+        return Status;
+    }
+
+    ASSERT(Status != STATUS_TRANSLATION_COMPLETE);
+
+    Status = IopParentToRawTranslation(Descriptor);
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 IopReleaseDeviceResources(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ BOOLEAN IsAllocateBootResources)
