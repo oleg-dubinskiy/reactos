@@ -5037,44 +5037,32 @@ IopAllocateResources(
     BOOLEAN IsMultiAlloc;
 
     PAGED_CODE();
-    DPRINT("IopAllocateResources: DeviceCount - %X, ResContext %p, IsLocked %X, IsBootConfig %X\n",
-           *OutDeviceCount, *ResContext, IsLocked, IsBootConfig);
+    DPRINT("IopAllocateResources: Count %X, Context %p, Locked %X, BootConfig %X\n", *OutDeviceCount, *ResContext, IsLocked, IsBootConfig);
 
     if (!IsLocked)
     {
         KeEnterCriticalRegion();
-        KeWaitForSingleObject(&PpRegistrySemaphore,
-                              DelayExecution,
-                              KernelMode,
-                              FALSE,
-                              NULL);
+        KeWaitForSingleObject(&PpRegistrySemaphore, DelayExecution, KernelMode, FALSE, NULL);
     }
 
     DeviceCount = *OutDeviceCount;
     RequestTable = *ResContext;
     RequestTableEnd = &RequestTable[DeviceCount];
 
-    Status = IopGetResourceRequirementsForAssignTable(RequestTable,
-                                                      RequestTableEnd,
-                                                      &DeviceCount);
+    Status = IopGetResourceRequirementsForAssignTable(RequestTable, RequestTableEnd, &DeviceCount);
 
-    DPRINT("IopAllocateResources: DeviceCount - %X, Status - %X\n",
-           DeviceCount, Status);
+    DPRINT("IopAllocateResources: DeviceCount %X, Status %X\n", DeviceCount, Status);
 
     if (!DeviceCount)
     {
-        DPRINT("IopAllocateResources: DeviceCount - 0\n");
+        DPRINT("IopAllocateResources: DeviceCount is 0\n");
         goto Exit;
     }
 
     if (*OutDeviceCount == 1 && (RequestTable->Flags & 0x80)) // ?reallocated Resources?
-    {
         IsMultiAlloc = FALSE;
-    }
     else
-    {
         IsMultiAlloc = TRUE;
-    }
 
     if (IsBootConfig == FALSE)
     {
@@ -5087,20 +5075,17 @@ IopAllocateResources(
 
             if (NT_SUCCESS(Current->Status) && !Current->ResourceRequirements)
             {
-                DPRINT("IopAllocateResources: Processing no resource requiring device %wZ\n",
-                       &DeviceNode->InstancePath);
+                DPRINT("IopAllocateResources: Processing device '%wZ'\n", &DeviceNode->InstancePath);
             }
             else
             {
-                DPRINT("IopAllocateResources: Ignoring resource consuming device %wZ\n",
-                       &DeviceNode->InstancePath);
+                DPRINT("IopAllocateResources: Ignoring device '%wZ'\n", &DeviceNode->InstancePath);
 
                 Current->Flags |= 0x20;
                 Current->Status = STATUS_RETRY;
             }
 
-            DPRINT("IopAllocateResources: DeviceNode - %p, DeviceNode->BootResources - %p\n",
-                   DeviceNode, DeviceNode->BootResources);
+            DPRINT("IopAllocateResources: [%p] BootResources %p\n", DeviceNode, DeviceNode->BootResources);
         }
 
         IopFreeResourceRequirementsForAssignTable(RequestTable, RequestTableEnd);
@@ -5116,16 +5101,11 @@ IopAllocateResources(
             ASSERT(Current->PhysicalDevice);
             DeviceNode = IopGetDeviceNode(Current->PhysicalDevice);
 
-            DPRINT("IopAllocateResources: IopBootConfigsReserved == NULL. Device - %wZ\n",
-                   &DeviceNode->InstancePath);
-
-            DPRINT("IopAllocateResources: DeviceNode - %p, DeviceNode->BootResources - %p\n",
-                   DeviceNode, DeviceNode->BootResources);
+            DPRINT("IopAllocateResources: IopBootConfigsReserved is NULL for '%wZ'\n", &DeviceNode->InstancePath);
+            DPRINT("IopAllocateResources: [%p] BootResources %p\n", DeviceNode, DeviceNode->BootResources);
 
             if (DeviceNode->Flags & DNF_HAS_BOOT_CONFIG)
-            {
                 break;
-            }
         }
 
         if (Current != RequestTableEnd)
@@ -5141,8 +5121,7 @@ IopAllocateResources(
                     !(DeviceNode->Flags & DNF_HAS_BOOT_CONFIG) &&
                     Current->ResourceRequirements)
                 {
-                    DPRINT("IopAllocateResources: Delaying non BOOT config device %wZ\n",
-                           &DeviceNode->InstancePath);
+                    DPRINT("IopAllocateResources: Delaying non BOOT config device '%wZ'\n", &DeviceNode->InstancePath);
 
                     ASSERT(FALSE);
 
@@ -5168,28 +5147,26 @@ IopAllocateResources(
         PPNP_RESOURCE_REQUEST LastResRequest;
         PPNP_RESOURCE_REQUEST CurrentResRequest;
 
-        DPRINT("IopAllocateResources: DeviceCount - %X, *OutDeviceCount - %X\n",
-               DeviceCount, *OutDeviceCount);
+        DPRINT("IopAllocateResources: Count %X, *OutDeviceCount %X\n", DeviceCount, *OutDeviceCount);
 
-        LastResRequest = RequestTableEnd - 1;
+        LastResRequest = (RequestTableEnd - 1);
 
         for (CurrentResRequest = RequestTable;
              CurrentResRequest < RequestTableEnd;
              )
         {
-            if (CurrentResRequest->Flags & 0x20)
-            {
-                RtlCopyMemory(&TempResRequest, CurrentResRequest, sizeof(TempResRequest));
-                RtlCopyMemory(CurrentResRequest, LastResRequest, sizeof(PNP_RESOURCE_REQUEST));
-                RtlCopyMemory(LastResRequest, &TempResRequest, sizeof(TempResRequest));
-
-                RequestTableEnd--;
-                LastResRequest--;
-            }
-            else
+            if (!(CurrentResRequest->Flags & 0x20))
             {
                 CurrentResRequest++;
+                continue;
             }
+
+            RtlCopyMemory(&TempResRequest, CurrentResRequest, sizeof(TempResRequest));
+            RtlCopyMemory(CurrentResRequest, LastResRequest, sizeof(PNP_RESOURCE_REQUEST));
+            RtlCopyMemory(LastResRequest, &TempResRequest, sizeof(TempResRequest));
+
+            RequestTableEnd--;
+            LastResRequest--;
         }
     }
 
@@ -5198,7 +5175,7 @@ IopAllocateResources(
 
     if (DeviceCount > 1)
     {
-        DPRINT("IopAllocateResources: FIXME IopRearrangeAssignTable. Count - %X\n", Count);
+        DPRINT("IopAllocateResources: FIXME IopRearrangeAssignTable. Count %X\n", Count);
         //IopRearrangeAssignTable(RequestTable, DeviceCount);
     }
 
@@ -5209,11 +5186,8 @@ IopAllocateResources(
         ASSERT(Current->PhysicalDevice);
         DeviceNode = IopGetDeviceNode(Current->PhysicalDevice);
 
-        DPRINT("IopAllocateResources: Trying to allocate resources for %S\n",
-               DeviceNode->InstancePath.Buffer);
-
-        DPRINT("IopAllocateResources: DeviceNode - %p, DeviceNode->BootResources - %p\n",
-               DeviceNode, DeviceNode->BootResources);
+        DPRINT("IopAllocateResources: Trying alloc for '%S'\n", DeviceNode->InstancePath.Buffer);
+        DPRINT("IopAllocateResources: [%p] BootResources %p\n", DeviceNode, DeviceNode->BootResources);
 
         DPRINT("\n");
         PipDumpResourceRequirementsList(DeviceNode->ResourceRequirements, 1);
@@ -5222,54 +5196,51 @@ IopAllocateResources(
         DPRINT("\n");
 
         Status = IopFindBestConfiguration(Current, 1, &List);
-        DPRINT("IopAllocateResources: Status - %X\n", Status);
+        DPRINT("IopAllocateResources: Status %X\n", Status);
     
         if (NT_SUCCESS(Status))
         {
             Status = IopCommitConfiguration(&List);
-
-            if (NT_SUCCESS(Status))
+            if (!NT_SUCCESS(Status))
             {
+                DPRINT1("IopAllocateResources: Status %X\n", Status);
                 ASSERT(FALSE);
-                //IopBuildCmResourceLists(Current, &Current[1]);
 
-                DPRINT("IopAllocateResources: DeviceNode - %p, DeviceNode->BootResources - %p\n",
-                       DeviceNode, DeviceNode->BootResources);
-            }
-            else
-            {
-                ASSERT(FALSE);
                 Current->Status = STATUS_CONFLICTING_ADDRESSES;
+                break;
             }
+
+            IopBuildCmResourceLists(Current, &Current[1]);
+            DPRINT("IopAllocateResources: [%p] BootResources %p\n", DeviceNode, DeviceNode->BootResources);
 
             break;
         }
-        else if (Status == STATUS_INSUFFICIENT_RESOURCES)
+
+        if (Status == STATUS_INSUFFICIENT_RESOURCES)
         {
             DPRINT("IopAllocateResources: Failed to allocate Pool.\n");
             ASSERT(FALSE);
             break;
         }
-        else if (IsMultiAlloc)
-        {
-            DeviceNode->Flags |= DNF_NEEDS_REBALANCE;
 
-            DPRINT("IopAllocateResources: FIXME IopRebalance\n");
-            ASSERT(FALSE);
-            Status = 0;//IopRebalance(Current, 1, Current);
-
-            DeviceNode->Flags &= ~DNF_NEEDS_REBALANCE;
-
-            if (OutIsAssigned)
-            {
-                *OutIsAssigned = TRUE;
-                break;
-            }
-        }
-        else
+        if (!IsMultiAlloc)
         {
             ASSERT(FALSE);
             Current->Status = STATUS_CONFLICTING_ADDRESSES;
+            break;
+        }
+
+        DeviceNode->Flags |= DNF_NEEDS_REBALANCE;
+
+        DPRINT("IopAllocateResources: FIXME IopRebalance\n");
+        ASSERT(FALSE);
+        Status = 0;//IopRebalance(Current, 1, Current);
+
+        DeviceNode->Flags &= ~DNF_NEEDS_REBALANCE;
+
+        if (OutIsAssigned)
+        {
+            *OutIsAssigned = TRUE;
             break;
         }
     }
@@ -5278,7 +5249,7 @@ IopAllocateResources(
 
     for (; Current < RequestTableEnd; Current++)
     {
-        DPRINT("IopAllocateResources: Current - %p\n", Current);
+        DPRINT("IopAllocateResources: Current %p\n", Current);
 
         if (Status == STATUS_INSUFFICIENT_RESOURCES)
         {
@@ -5301,13 +5272,10 @@ IopAllocateResources(
 
     for (ix = 0; ix < Count; ix++)
     {
-        DPRINT("IopAllocateResources: Flags - %X, ResourceAssignment - %X, ix - %X\n",
-               RequestTable[ix].Flags, RequestTable[ix].ResourceAssignment, ix);
+        DPRINT("IopAllocateResources: [%X] Flags %X, ResourceAssignment %X\n", ix, RequestTable[ix].Flags, RequestTable[ix].ResourceAssignment);
 
         if (RequestTable[ix].Flags & (0x20|0x08))
-        {
             continue;
-        }
 
         if (!RequestTable[ix].Status &&
             RequestTable[ix].AllocationType == ArbiterRequestPnpEnumerated)
@@ -5317,15 +5285,13 @@ IopAllocateResources(
             //IopReleaseFilteredBootResources(&RequestTable[ix], &RequestTable[ix + 1]);
         }
 
-        if (RequestTable[ix].Flags & 0x10 ||
-            RequestTable[ix].ResourceAssignment == NULL)
-        {
-            DPRINT("IopAllocateResources: RequestTable->Flags - %X, RequestTable->ResourceAssignment - %X\n",
-                   RequestTable[ix].Flags, RequestTable[ix].ResourceAssignment);
+        if (!(RequestTable[ix].Flags & 0x10) && RequestTable[ix].ResourceAssignment)
+            continue;
 
-            ASSERT(FALSE);
-            RequestTable[ix].Status = STATUS_CONFLICTING_ADDRESSES;
-        }
+        DPRINT("IopAllocateResources: Flags %X, ResourceAssignment %X\n", RequestTable[ix].Flags, RequestTable[ix].ResourceAssignment);
+
+        ASSERT(FALSE);
+        RequestTable[ix].Status = STATUS_CONFLICTING_ADDRESSES;
     }
 
     IopFreeResourceRequirementsForAssignTable(RequestTable, RequestTableEnd);
