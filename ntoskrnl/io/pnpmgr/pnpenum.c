@@ -4082,9 +4082,38 @@ PipProcessStartPhase1(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ ULONG ReorderingBarrier)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);//IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_OBJECT DeviceObject;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("PipProcessStartPhase1: [%p] ReorderingBarrier %X\n", DeviceNode, ReorderingBarrier);
+
+    ASSERT(DeviceNode->State == DeviceNodeResourcesAssigned);
+
+    DeviceObject = DeviceNode->PhysicalDeviceObject;
+    IopUncacheInterfaceInformation(DeviceObject);
+
+    DPRINT("PipProcessStartPhase1: Dump ResourceList\n");
+    PipDumpCmResourceList(DeviceNode->ResourceList, 1);
+
+    DPRINT("PipProcessStartPhase1: Dump ResourceListTranslated\n");
+    PipDumpCmResourceList(DeviceNode->ResourceListTranslated, 1);
+
+    if (DeviceNode->DockInfo.DockStatus == DOCK_NOTDOCKDEVICE)
+    {
+        Status = IopStartDevice(DeviceNode);
+        DPRINT1("PipProcessStartPhase1: Status %X\n", Status);
+    }
+    else
+    {
+        DPRINT("PipProcessStartPhase1: FIXME PpProfile...()`s\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+    }
+
+    PipSetDevNodeState(DeviceNode, DeviceNodeStartCompletion, FALSE);
+    DeviceNode->CompletionStatus = Status;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
