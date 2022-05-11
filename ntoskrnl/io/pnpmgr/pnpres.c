@@ -5130,6 +5130,26 @@ Exit:
 
 NTSTATUS
 NTAPI
+IopRestoreResourcesInternal(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+IopReleaseResourcesInternal(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 IopReleaseDeviceResources(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ BOOLEAN IsAllocateBootResources)
