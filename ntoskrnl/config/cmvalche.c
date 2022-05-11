@@ -658,8 +658,91 @@ CmpQueryKeyValueData(IN PCM_KEY_CONTROL_BLOCK Kcb,
             /* We're done! */
             break;
 
-        /* Other information class */
+        case KeyValuePartialInformationAlign64:
+        {
+            DPRINT("CmpQueryKeyValueData: ValueIsCached %X, Length %X\n", ValueIsCached, Length);
+
+            /* Check if this is a small key and compute key size */
+            IsSmall = CmpIsKeyValueSmall(&KeySize, CellData->u.KeyValue.DataLength);
+
+            /* Calculate the total size required */
+            Size = FIELD_OFFSET(KEY_VALUE_PARTIAL_INFORMATION_ALIGN64, Data) + KeySize;
+
+            /* And this is the least we can work with */
+            MinimumSize = FIELD_OFFSET(KEY_VALUE_PARTIAL_INFORMATION_ALIGN64, Data);
+
+            /* Tell the caller the size we'll finally need, and set success */
+            *ResultLength = Size;
+            *Status = STATUS_SUCCESS;
+
+            /* Check if the caller is giving us too little */
+            if (Length < MinimumSize)
+            {
+                /* Then fail right now */
+                DPRINT1("CmpQueryKeyValueData: Length %X, MinimumSize %X\n", Length, MinimumSize);
+                *Status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            /* Fill out the basic information */
+            Info->KeyValuePartialInformationAlign64.Type = CellData->u.KeyValue.Type;
+            Info->KeyValuePartialInformationAlign64.DataLength = KeySize;
+
+            /* Now check if the key had any data */
+            if (KeySize <= 0)
+                break;
+
+            /* Was it a small key? */
+            if (IsSmall)
+            {
+                /* Then the data is directly into the cell */
+                Buffer = &CellData->u.KeyValue.Data;
+            }
+            else
+            {
+                /* Otherwise, we must retrieve it from the value cache */
+                Result = CmpGetValueDataFromCache(Kcb,
+                                                  CachedValue,
+                                                  CellData,
+                                                  ValueIsCached,
+                                                  &Buffer,
+                                                  &BufferAllocated,
+                                                  &CellToRelease);
+                if (Result != SearchSuccess)
+                {
+                    /* We failed, nothing should be allocated */
+                    DPRINT1("CmpQueryKeyValueData: Result %X, SearchSuccess %X\n", Result, SearchSuccess);
+                    ASSERT(Buffer == NULL);
+                    ASSERT(BufferAllocated == FALSE);
+                    *Status = STATUS_INSUFFICIENT_RESOURCES;
+                }
+            }
+
+            /* Only the data remains to be copied */
+            SizeLeft = Length - MinimumSize;
+            Size = KeySize;
+
+            /* Check if the caller has no space for it */
+            if (SizeLeft < Size)
+            {
+                /* Truncate what we'll copy, and tell the caller */
+                Size = SizeLeft;
+                *Status = STATUS_BUFFER_OVERFLOW;
+            }
+
+            /* Sanity check */
+            ASSERT((IsSmall ? (Size <= CM_KEY_VALUE_SMALL) : TRUE));
+
+            /* Make sure we have a valid buffer */
+            if (!Buffer)
+                break;
+
+            /* Copy the data into the aligned offset */
+            RtlCopyMemory(Info->KeyValuePartialInformationAlign64.Data, Buffer, Size);
+            break;
+        }
         default:
+            /* Other information class */
 
             /* We got some class that we don't support */
             DPRINT1("Caller requested unknown class: %lx\n", KeyValueInformationClass);
