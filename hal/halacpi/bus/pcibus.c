@@ -18,6 +18,7 @@
 /* GLOBALS *******************************************************************/
 
 KSPIN_LOCK HalpPCIConfigLock;
+ULONG HalpMinPciBus;
 ULONG HalpMaxPciBus;
 BOOLEAN HalpPCIConfigInitialized;
 

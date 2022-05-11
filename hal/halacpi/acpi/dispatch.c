@@ -35,6 +35,7 @@ PVOID HalpWakeVector = NULL;
 
 extern FADT HalpFixedAcpiDescTable;
 extern ULONG HalpWAETDeviceFlags;
+extern ULONG HalpMaxPciBus;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -537,8 +538,7 @@ VOID
 NTAPI
 HaliSetMaxLegacyPciBusNumber(_In_ ULONG MaxLegacyPciBusNumber)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);// HalpDbgBreakPointEx();
+    HalpMaxPciBus = max(HalpMaxPciBus, MaxLegacyPciBusNumber);
 }
 
 BOOLEAN
