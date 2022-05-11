@@ -4072,8 +4072,73 @@ NTAPI
 IopUncacheInterfaceInformation(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
+    PPI_RESOURCE_ARBITER_ENTRY ArbiterEntry;
+    PPI_RESOURCE_TRANSLATOR_ENTRY TranslatorEntry;
+    PDEVICE_NODE DeviceNode;
+    PLIST_ENTRY ArbiterListHead;
+    PLIST_ENTRY TranslatorListHead;
+    PLIST_ENTRY Entry;
+
+    ASSERT(DeviceObject);
+    DeviceNode = IopGetDeviceNode(DeviceObject);
+
+    DPRINT("IopUncacheInterfaceInformation: DeviceObject %p, DeviceNode %p\n", DeviceObject, DeviceNode);
+
+    ArbiterListHead = &DeviceNode->DeviceArbiterList;
+
+    for (Entry = DeviceNode->DeviceArbiterList.Flink;
+         Entry != ArbiterListHead;
+        )
+    {
+        DPRINT("IopUncacheInterfaceInformation: Entry %p\n", Entry);
+
+        ArbiterEntry = CONTAINING_RECORD(Entry, PI_RESOURCE_ARBITER_ENTRY, DeviceArbiterList);
+        DPRINT("IopUncacheInterfaceInformation: ArbiterEntry %p\n", ArbiterEntry);
+
+        if (ArbiterEntry->ArbiterInterface)
+        {
+            DPRINT("IopUncacheInterfaceInformation: ArbiterEntry->ArbiterInterface %p\n", ArbiterEntry->ArbiterInterface);
+            ArbiterEntry->ArbiterInterface->InterfaceDereference(ArbiterEntry->ArbiterInterface->Context);
+            ExFreePoolWithTag(ArbiterEntry->ArbiterInterface, '  pP');
+        }
+
+        Entry = Entry->Flink;
+        DPRINT("IopUncacheInterfaceInformation: Entry %p\n", Entry);
+        ExFreePoolWithTag(ArbiterEntry, 0);//'erpP'
+    }
+
+
+    TranslatorListHead = &DeviceNode->DeviceTranslatorList;
+    DPRINT("IopUncacheInterfaceInformation: TranslatorListHead %p\n", TranslatorListHead);
+
+    for (Entry = DeviceNode->DeviceTranslatorList.Flink;
+         Entry != TranslatorListHead;
+        )
+    {
+        DPRINT("IopUncacheInterfaceInformation: Entry %p\n", Entry);
+
+        TranslatorEntry = CONTAINING_RECORD(Entry, PI_RESOURCE_TRANSLATOR_ENTRY, DeviceTranslatorList);
+        DPRINT("IopUncacheInterfaceInformation: TranslatorEntry %p\n", TranslatorEntry);
+
+        if (TranslatorEntry->TranslatorInterface)
+        {
+            DPRINT("IopUncacheInterfaceInformation: TranslatorEntry->TranslatorInterface %p\n", TranslatorEntry->TranslatorInterface);
+            TranslatorEntry->TranslatorInterface->InterfaceDereference(TranslatorEntry->TranslatorInterface->Context);
+            ExFreePoolWithTag(TranslatorEntry->TranslatorInterface, '  pP');
+        }
+
+        Entry = Entry->Flink;
+        DPRINT("IopUncacheInterfaceInformation: Entry %p\n", Entry);
+        ExFreePoolWithTag(TranslatorEntry, 0);//'erpP'
+    }
+
+    InitializeListHead(ArbiterListHead);
+    InitializeListHead(TranslatorListHead);
+
+    DeviceNode->NoArbiterMask = 0;
+    DeviceNode->NoTranslatorMask = 0;
+    DeviceNode->QueryArbiterMask = 0;
+    DeviceNode->QueryTranslatorMask = 0;
 }
 
 NTSTATUS
