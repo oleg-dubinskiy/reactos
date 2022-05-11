@@ -5148,6 +5148,78 @@ IopReleaseResourcesInternal(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+VOID
+NTAPI
+IopReleaseFilteredBootResources(
+    _In_ PPNP_RESOURCE_REQUEST RequestTable,
+    _In_ PPNP_RESOURCE_REQUEST RequestTableEnd)
+{
+    PDEVICE_NODE DeviceNode;
+    ULONG Count;
+    ULONG Size;
+    ULONG ix;
+    NTSTATUS Status;
+    BOOLEAN Result;
+
+    PAGED_CODE();
+
+    if (RequestTable >= RequestTableEnd)
+    {
+        DPRINT1("IopReleaseFilteredBootResources: Table %p, TableEnd %p\n", RequestTable, RequestTableEnd);
+        return;
+    }
+
+    DPRINT("IopReleaseFilteredBootResources: Table %p, TableEnd %p\n", RequestTable, RequestTableEnd);
+
+    Size = ((ULONG_PTR)RequestTableEnd - (ULONG_PTR)RequestTable);
+    Count = ((Size - 1) / sizeof(PNP_RESOURCE_REQUEST)) + 1;
+
+    for (ix = 0; ix < Count; ix++)
+    {
+        if (!RequestTable[ix].ResourceAssignment)
+            continue;
+
+        ASSERT(RequestTable[ix].PhysicalDevice);
+        DeviceNode = IopGetDeviceNode(RequestTable[ix].PhysicalDevice);
+        ASSERT(DeviceNode);
+
+        Result = IopNeedToReleaseBootResources(DeviceNode, RequestTable[ix].ResourceAssignment);
+        if (Result == FALSE)
+            continue;
+
+        IopReleaseResourcesInternal(DeviceNode);
+        PipRequestDeviceAction(NULL, PipEnumAssignResources, 0, 0, NULL, NULL);
+
+        IopAllocateBootResourcesInternal(ArbiterRequestPnpEnumerated,
+                                         RequestTable[ix].PhysicalDevice,
+                                         RequestTable[ix].ResourceAssignment);
+
+        DeviceNode->Flags &= ~DNF_BOOT_CONFIG_RESERVED;
+        DeviceNode->ResourceList = RequestTable[ix].ResourceAssignment;
+
+        DPRINT1("IopReleaseFilteredBootResources: FIXME IopRestoreResourcesInternal\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+
+        Status = 0;//IopRestoreResourcesInternal(DeviceNode);
+        if (NT_SUCCESS(Status))
+        {
+            DeviceNode->ResourceList = NULL;
+            continue;
+        }
+
+        DPRINT1("IopReleaseFilteredBootResources: Possible boot conflict on '%ws'\n", DeviceNode->InstancePath.Buffer);
+        ASSERT(Status == STATUS_SUCCESS);
+
+        RequestTable[ix].Flags = 0x10;
+        RequestTable[ix].Status = Status;
+
+        ExFreePoolWithTag(RequestTable[ix].ResourceAssignment, 0);
+
+        RequestTable[ix].ResourceAssignment = NULL;
+        DeviceNode->ResourceList = NULL;
+    }
+}
+
 NTSTATUS
 NTAPI
 IopReleaseDeviceResources(
