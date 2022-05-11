@@ -31,7 +31,12 @@ typedef enum _WMI_CLOCK_TYPE
     WMICT_CPUCYCLE
 } WMI_CLOCK_TYPE;
 
+extern PDEVICE_OBJECT WmipServiceDeviceObject;
+
 /* FUNCTIONS *****************************************************************/
+
+NTSTATUS FASTCALL WmiTraceEvent(IN PVOID InputBuffer, IN KPROCESSOR_MODE PreviousMode);
+NTSTATUS FASTCALL WmiTraceFastEvent(IN PWNODE_HEADER Wnode);
 
 BOOLEAN
 NTAPI
@@ -143,19 +148,94 @@ if (WnodeHeader->Flags)
 }
 #endif
 
-/*
- * @unimplemented
- */
+/* halfplemented */
 NTSTATUS
 NTAPI
-IoWMIWriteEvent(IN PVOID WnodeEventItem)
+IoWMIWriteEvent(_In_ PVOID WnodeEventItem)
 {
-    DPRINT1("IoWMIWriteEvent() called for WnodeEventItem %p, returning success\n",
-        WnodeEventItem);
+    PWNODE_HEADER WnodeHeader = WnodeEventItem;
+    ULONG BufferSize;
+    ULONG Index;
+    NTSTATUS Status;
+
+    DPRINT1("IoWMIWriteEvent: WnodeEventItem %p\n", WnodeEventItem);
+
+    if (!WmipServiceDeviceObject )
+    {
+        DPRINT1("IoWMIWriteEvent: WmipServiceDeviceObject is NULL!\n");
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    if (!WnodeHeader)
+    {
+         DPRINT1("IoWMIWriteEvent: Got NULL Item!\n");
+         return STATUS_INVALID_PARAMETER;
+    }
+
+  #if DBG
+    IopWmiDumpWnodeHeader(WnodeHeader);
+  #endif
+
+    BufferSize = WnodeHeader->BufferSize;
+
+    if ((BufferSize & 0xC0000000) == 0x80000000) // ?
+        return WmiTraceFastEvent(WnodeHeader);
+
+    if ((WnodeHeader->Flags & 0x00020000) ||
+        (WnodeHeader->Flags & 0x00040000))
+    {
+        if (BufferSize < 0x30)
+        {
+            DPRINT1("IoWMIWriteEvent: STATUS_BUFFER_TOO_SMALL (%X)\n", BufferSize);
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+
+        if (WnodeHeader->Flags & 0x20000)
+        {
+            if (BufferSize > 0xFFFF)
+            {
+                DPRINT1("IoWMIWriteEvent: STATUS_BUFFER_OVERFLOW (%X)\n", BufferSize);
+                return STATUS_BUFFER_OVERFLOW;
+            }
+
+            WnodeHeader->BufferSize = (BufferSize | 0xC00A0000); // ?
+        }
+        else if (BufferSize & 0x80000000)
+        {
+            DPRINT1("IoWMIWriteEvent: STATUS_BUFFER_OVERFLOW (%X)\n", BufferSize);
+            return STATUS_BUFFER_OVERFLOW;
+        }
+
+        Index = (WnodeHeader->HistoricalContext & 0xFFFF);
+        if (Index == 0xFFFF)
+            Index = 0xFFFF;
+
+if (Index && (Index < 0x40) /*&& WmipLoggerContext[Index]*/)
+    DPRINT1("IoWMIWriteEvent: FIXME WmipLoggerContext[]!\n");
+
+        if (Index && (Index < 0x40) && /*&& WmipLoggerContext[Index]*/ FALSE)
+        {
+            Status = WmiTraceEvent(WnodeHeader, 0);
+        }
+        else
+        {
+            DPRINT1("IoWMIWriteEvent: STATUS_INVALID_HANDLE\n");
+            Status = STATUS_INVALID_HANDLE;
+        }
+
+        if (WnodeHeader->Flags & 0x20000)
+        {
+            WnodeHeader->BufferSize = BufferSize;
+            return Status;
+        }
+    }
+
+    DPRINT1("IoWMIWriteEvent: WnodeHeader->Flags %X\n", WnodeHeader->Flags);
+    DPRINT1("IoWMIWriteEvent: FIXME\n");
+    ASSERT(FALSE); // DbgBreakPoint();
 
     /* Free the buffer if we are returning success */
-    if (WnodeEventItem != NULL)
-        ExFreePool(WnodeEventItem);
+    //ExFreePool(WnodeEventItem);
 
     return STATUS_SUCCESS;
 }

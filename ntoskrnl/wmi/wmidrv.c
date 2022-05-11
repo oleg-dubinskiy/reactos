@@ -96,8 +96,8 @@ WmipOpenCloseCleanup(
     return STATUS_SUCCESS;
 }
 
-static
 NTSTATUS
+FASTCALL
 WmiTraceEvent(
     PVOID InputBuffer,
     KPROCESSOR_MODE PreviousMode)
