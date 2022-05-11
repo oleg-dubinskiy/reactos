@@ -5006,6 +5006,128 @@ IopBuildCmResourceLists(
     return STATUS_SUCCESS;
 }
 
+BOOLEAN
+NTAPI
+IopNeedToReleaseBootResources(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ PCM_RESOURCE_LIST CmResources)
+{
+    PCM_RESOURCE_LIST BootResources;
+    PCM_FULL_RESOURCE_DESCRIPTOR BootResourcesList;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR CmBootDescriptor;
+    ULONG BootDescCount;
+    ULONG SpecificDataSize;
+    ULONG ix;
+    ULONG jx;
+    ULONG kx;
+    BOOLEAN IsFind = FALSE;
+    BOOLEAN Result = FALSE;
+
+    PAGED_CODE();
+
+    if (CmResources->Count != 1)
+    {
+        DPRINT1("IopNeedToReleaseBootResources: [%p] Instance '%wZ', Service '%wZ'\n", DeviceNode, &DeviceNode->InstancePath, &DeviceNode->ServiceName);
+        return FALSE;
+    }
+
+    BootResources = DeviceNode->BootResources;
+    if (!BootResources)
+    {
+        DPRINT1("IopNeedToReleaseBootResources: [%p] Instance '%wZ', Service '%wZ'\n", DeviceNode, &DeviceNode->InstancePath, &DeviceNode->ServiceName);
+        return FALSE;
+    }
+
+    if (!BootResources->Count)
+    {
+        DPRINT1("IopNeedToReleaseBootResources: [%p] Instance '%wZ', Service '%wZ'\n", DeviceNode, &DeviceNode->InstancePath, &DeviceNode->ServiceName);
+        return FALSE;
+    }
+
+    DPRINT("IopNeedToReleaseBootResources: [%p], CmResources %p, BootResources %p\n", DeviceNode, CmResources, BootResources);
+
+    BootResourcesList = &BootResources->List[0];
+    DPRINT("IopNeedToReleaseBootResources: BootResourcesList %p\n", BootResourcesList);
+
+    for (ix = 0; ix < BootResources->Count; ix++)
+    {
+        BootDescCount = BootResourcesList->PartialResourceList.Count;
+        CmBootDescriptor = &BootResourcesList->PartialResourceList.PartialDescriptors[0];
+
+        DPRINT("IopNeedToReleaseBootResources: ix-[%X] CmBootDescriptor %p\n", ix, CmBootDescriptor);
+
+        for (jx = 0; jx < BootDescCount; jx++)
+        {
+            DPRINT("IopNeedToReleaseBootResources: jx-[%X] CmBootDescriptor %p, Type %X\n", jx, CmBootDescriptor, CmBootDescriptor->Type);
+
+            SpecificDataSize = 0;
+
+            switch (CmBootDescriptor->Type)
+            {
+                case CmResourceTypeNull:
+                    DPRINT("IopNeedToReleaseBootResources: CmResourceTypeNull\n");
+                    break;
+
+                case CmResourceTypeDeviceSpecific:
+                    SpecificDataSize = CmBootDescriptor->u.DeviceSpecificData.DataSize;
+                    DPRINT("IopNeedToReleaseBootResources: SpecificDataSize %X\n", SpecificDataSize);
+                    break;
+
+                default:
+                {
+                    if (CmBootDescriptor->Type >= 7)
+                    {
+                        DPRINT("IopNeedToReleaseBootResources: CmBootDescriptor->Type %X\n", CmBootDescriptor->Type);
+                        break;
+                    }
+
+                    CmDescriptor = &CmResources->List[0].PartialResourceList.PartialDescriptors[0];
+
+                    for (kx = 0; kx < CmResources->List[0].PartialResourceList.Count; kx++)
+                    {
+                        ULONG DataSize = 0;
+
+                        DPRINT("IopNeedToReleaseBootResources: kx-[%X] CmDescriptor %p, Type %X\n", kx, CmDescriptor, CmDescriptor->Type);
+
+                        if (CmDescriptor->Type == CmResourceTypeDeviceSpecific)
+                        {
+                            DataSize = CmDescriptor->u.DeviceSpecificData.DataSize;
+                        }
+                        else if (CmDescriptor->Type == CmBootDescriptor->Type)
+                        {
+                            IsFind = TRUE;
+                            break;
+                        }
+
+                        CmDescriptor++;
+                        CmDescriptor = (PCM_PARTIAL_RESOURCE_DESCRIPTOR)((ULONG_PTR)CmDescriptor + DataSize);
+                    }
+
+                    if (IsFind == FALSE)
+                    {
+                        Result = TRUE;
+                        goto Exit;
+                    }
+
+                    break;
+                }
+            }
+
+            CmBootDescriptor++;
+            CmBootDescriptor = (PCM_PARTIAL_RESOURCE_DESCRIPTOR)((ULONG_PTR)CmBootDescriptor + SpecificDataSize);
+        }
+
+        BootResourcesList = (PCM_FULL_RESOURCE_DESCRIPTOR)CmBootDescriptor;
+        DPRINT("IopNeedToReleaseBootResources: BootResourcesList %p\n", BootResourcesList);
+    }
+
+Exit:
+
+    DPRINT("IopNeedToReleaseBootResources: return %X\n", Result);
+    return Result;
+}
+
 NTSTATUS
 NTAPI
 IopReleaseDeviceResources(
