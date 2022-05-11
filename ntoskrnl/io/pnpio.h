@@ -997,6 +997,14 @@ IopReportBootResources(
 
 NTSTATUS
 NTAPI
+IopAllocateBootResourcesInternal(
+    _In_ ARBITER_REQUEST_SOURCE AllocationType,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PCM_RESOURCE_LIST CmResource
+);
+
+NTSTATUS
+NTAPI
 IopReleaseDeviceResources(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ BOOLEAN IsAllocateBootResources
