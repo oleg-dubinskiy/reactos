@@ -101,6 +101,48 @@ IoWMISuggestInstanceName(IN PDEVICE_OBJECT PhysicalDeviceObject OPTIONAL,
     return STATUS_NOT_IMPLEMENTED;
 }
 
+#if DBG
+VOID
+NTAPI
+IopWmiDumpWnodeHeader(_In_ PWNODE_HEADER WnodeHeader)
+{
+    //UNICODE_STRING GuidString;
+    //NTSTATUS Status;
+
+    //DPRINT1("IopWmiDumpWnodeHeader: WnodeHeader %p\n", WnodeHeader);
+
+if (WnodeHeader->BufferSize)
+    DPRINT1("BufferSize    %X\n", WnodeHeader->BufferSize);
+if (WnodeHeader->ProviderId)
+    DPRINT1("ProviderId    %X\n", WnodeHeader->ProviderId);
+if (WnodeHeader->Version)
+    DPRINT1("Version       %X\n", WnodeHeader->Version);
+if (WnodeHeader->Linkage)
+    DPRINT1("Linkage       %X\n", WnodeHeader->Linkage);
+if (WnodeHeader->CountLost)
+    DPRINT1("CountLost     %X\n", WnodeHeader->CountLost);
+if (WnodeHeader->ClientContext)
+    DPRINT1("ClientContext %X\n", WnodeHeader->ClientContext);
+if (WnodeHeader->Flags)
+    DPRINT1("Flags         %X\n", WnodeHeader->Flags);
+
+#if 0
+    GuidString.Buffer = NULL;
+
+    Status = RtlStringFromGUID(&WnodeHeader->Guid, &GuidString);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("\nIopWmiDprintWnodeHeader: RtlStringFromGUID() failed %X\n", Status);
+        return;
+    }
+
+    DPRINT1("Guid          '%S'\n", &GuidString.Buffer);
+
+    RtlFreeUnicodeString(&GuidString);
+#endif
+}
+#endif
+
 /*
  * @unimplemented
  */
