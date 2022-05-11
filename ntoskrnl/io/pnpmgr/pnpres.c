@@ -2717,7 +2717,7 @@ IopTranslateAndAdjustReqDesc(
 
     if (ReqDescriptor->ReqEntry.Count == 0)
     {
-        ASSERT(FALSE);//IoDbgBreakPointEx();
+        ASSERT(FALSE); // IoDbgBreakPointEx();
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -2817,7 +2817,7 @@ IopTranslateAndAdjustReqDesc(
 
     Descriptor = ReqDescriptor->ReqEntry.IoDescriptor;
     if (ReqDescriptor->ReqEntry.Count == 0)
-        ASSERT(FALSE);//IoDbgBreakPointEx();
+        ASSERT(FALSE); // IoDbgBreakPointEx();
 
     for (ix = 0; ix < ReqDescriptor->ReqEntry.Count; ix++, NewIoDescriptors++)
     {
@@ -2863,7 +2863,7 @@ IopTranslateAndAdjustReqDesc(
 
             default:
                 DPRINT1("IopTranslateAndAdjustReqDesc: unknown Type %X\n", NewIoDescriptors->Type);
-                ASSERT(FALSE);//IoDbgBreakPointEx();
+                ASSERT(FALSE); // IoDbgBreakPointEx();
                 break;
         }
     }
@@ -2890,15 +2890,15 @@ IopTranslateAndAdjustReqDesc(
             DPRINT1("Dumping Node:\n");
             PipDumpDeviceNodes(NULL, 1+2+4+8, 0); // !devnode from WinDbg
             DPRINT1("\n");
-            ASSERT(FALSE);//IoDbgBreakPointEx();
+            ASSERT(FALSE); // IoDbgBreakPointEx();
           #endif
         }
         else
         {
-            ASSERT(FALSE);//IoDbgBreakPointEx();
+            ASSERT(FALSE); // IoDbgBreakPointEx();
         }
 
-        ASSERT(FALSE);//IoDbgBreakPointEx(); // ASSERT(!(Descriptor->Option & IO_RESOURCE_ALTERNATIVE));
+        ASSERT(FALSE); // IoDbgBreakPointEx(); // ASSERT(!(Descriptor->Option & IO_RESOURCE_ALTERNATIVE));
     }
 
     Descriptor++;
@@ -2926,15 +2926,15 @@ IopTranslateAndAdjustReqDesc(
             DPRINT1("Dumping Node:\n");
             PipDumpDeviceNodes(NULL, 1+2+4+8, 0);
             DPRINT1("\n");
-            ASSERT(FALSE);//IoDbgBreakPointEx();
+            ASSERT(FALSE); // IoDbgBreakPointEx();
           #endif
         }
         else
         {
-            ASSERT(FALSE);//IoDbgBreakPointEx(); // ASSERT(DeviceNode);
+            ASSERT(FALSE); // IoDbgBreakPointEx(); // ASSERT(DeviceNode);
         }
 
-        ASSERT(FALSE);//IoDbgBreakPointEx(); // ASSERT(Descriptor->Option & IO_RESOURCE_ALTERNATIVE);
+        ASSERT(FALSE); // IoDbgBreakPointEx(); // ASSERT(Descriptor->Option & IO_RESOURCE_ALTERNATIVE);
     }
 
     *OutReqDesc = NewReqResDescs;
@@ -5494,9 +5494,7 @@ IopAllocateResources(
         if (!RequestTable[ix].Status &&
             RequestTable[ix].AllocationType == ArbiterRequestPnpEnumerated)
         {
-            DPRINT("IopAllocateResources: FIXME IopReleaseFilteredBootResources\n");
-            ASSERT(FALSE);
-            //IopReleaseFilteredBootResources(&RequestTable[ix], &RequestTable[ix + 1]);
+            IopReleaseFilteredBootResources(&RequestTable[ix], &RequestTable[ix + 1]);
         }
 
         if (!(RequestTable[ix].Flags & 0x10) && RequestTable[ix].ResourceAssignment)
