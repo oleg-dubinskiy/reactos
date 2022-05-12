@@ -10,7 +10,7 @@
 /* INCLUDES ******************************************************************/
 
 #include <ntoskrnl.h>
-#define NDEBUG
+//#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS *******************************************************************/
@@ -874,6 +874,24 @@ NtInitiatePowerAction(IN POWER_ACTION SystemAction,
 {
     UNIMPLEMENTED;
     return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+PopChangeCapability(_In_ PBOOLEAN StateSupport,
+                    _In_ BOOLEAN IsSupport)
+{
+    DPRINT("PopChangeCapability: IsSupport %X\n", IsSupport);
+
+    if (*StateSupport == IsSupport)
+        return;
+
+    DPRINT("PopChangeCapability: *StateSupport %X\n", *StateSupport);
+
+    *StateSupport = IsSupport;
+
+    DPRINT("PopChangeCapability: FIXME PopResetCurrentPolicies()\n");
+    DPRINT("PopChangeCapability: FIXME PopSetNotificationWork()\n");
 }
 
 /*
