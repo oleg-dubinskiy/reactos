@@ -253,9 +253,25 @@ HalSetBusDataByOffset(IN BUS_DATA_TYPE BusDataType,
                       IN ULONG Offset,
                       IN ULONG Length)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return 0;
+    BUS_HANDLER BusHandler;
+
+    /* Look as the bus type */
+    if (BusDataType == Cmos)
+        /* Call CMOS Function */
+        return HalpSetCmosData(0, SlotNumber, Buffer, Length);
+
+    if (BusDataType != PCIConfiguration)
+        return 0;
+
+    if (!HalpPCIConfigInitialized)
+        return 0;
+
+    /* Setup fake PCI Bus handler */
+    RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BUS_HANDLER));
+    BusHandler.BusNumber = BusNumber;
+
+    /* Call PCI function */
+    return HalpSetPCIData(&BusHandler, &BusHandler, SlotNumber, Buffer, Offset, Length);
 }
 
 ULONG
