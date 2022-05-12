@@ -94,6 +94,61 @@ HalpGetCmosData(IN ULONG BusNumber,
     return (Length - Len);
 }
 
+ULONG
+NTAPI
+HalpSetCmosData(IN ULONG BusNumber,
+                IN ULONG SlotNumber,
+                IN PVOID Buffer,
+                IN ULONG Length)
+{
+    PUCHAR Ptr = (PUCHAR)Buffer;
+    ULONG Address = SlotNumber;
+    ULONG Len = Length;
+
+    /* Do nothing if we don't have a length */
+    if (!Length)
+        return 0;
+
+    /* Acquire CMOS Lock */
+    HalpAcquireCmosSpinLock();
+
+    /* Check if this is simple CMOS */
+    if (BusNumber == 0)
+    {
+        /* Loop the buffer up to 0xFF */
+        while ((Len > 0) && (Address < 0x100))
+        {
+            /* Write the data */
+            HalpWriteCmos((UCHAR)Address, *Ptr);
+
+            /* Update position and length */
+            Ptr++;
+            Address++;
+            Len--;
+        }
+    }
+    else if (BusNumber == 1)
+    {
+        /* Loop the buffer up to 0xFFFF */
+        while ((Len > 0) && (Address < 0x10000))
+        {
+            /* Write the data */
+            HalpWriteCmos((UCHAR)Address, *Ptr);
+
+            /* Update position and length */
+            Ptr++;
+            Address++;
+            Len--;
+        }
+    }
+
+    /* Release CMOS Lock */
+    HalpReleaseCmosSpinLock();
+
+    /* Return length read */
+    return (Length - Len);
+}
+
 VOID
 NTAPI
 HalpInitializeCmos(VOID)

@@ -349,4 +349,13 @@ HalpGetCmosData(
     IN ULONG Length
 );
 
+ULONG
+NTAPI
+HalpSetCmosData(
+    IN ULONG BusNumber,
+    IN ULONG SlotNumber,
+    IN PVOID Buffer,
+    IN ULONG Length
+);
+
 /* EOF */
