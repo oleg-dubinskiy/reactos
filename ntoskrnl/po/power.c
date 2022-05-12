@@ -27,8 +27,23 @@ BOOLEAN PopAcpiPresent = FALSE;
 POP_POWER_ACTION PopAction;
 WORK_QUEUE_ITEM PopShutdownWorkItem;
 SYSTEM_POWER_CAPABILITIES PopCapabilities;
+ERESOURCE PopPolicyLock;
+PKTHREAD PopPolicyLockThread = NULL;
 
 /* PRIVATE FUNCTIONS *********************************************************/
+
+VOID
+NTAPI
+PopAcquirePolicyLock(VOID)
+{
+    PAGED_CODE();
+
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(&PopPolicyLock, TRUE);
+
+    ASSERT(PopPolicyLockThread == NULL);
+    PopPolicyLockThread = KeGetCurrentThread();
+}
 
 static WORKER_THREAD_ROUTINE PopPassivePowerCall;
 _Use_decl_annotations_
@@ -451,6 +466,8 @@ PoInitSystem(IN ULONG BootPhase)
 
     /* Initialize support for dope */
     KeInitializeSpinLock(&PopDopeGlobalLock);
+
+    ExInitializeResourceLite(&PopPolicyLock);
 
     /* Initialize support for shutdown waits and work-items */
     PopInitShutdownList();
