@@ -14,6 +14,22 @@ typedef struct _HALP_TIMER_INFO
 } HALP_TIMER_INFO, *PHALP_TIMER_INFO;
 #include <poppack.h>
 
+typedef struct _HALP_STATE_DATA {
+    UCHAR Data0;
+    UCHAR Data1;
+    UCHAR Data2;
+} HALP_STATE_DATA, *PHALP_STATE_DATA;
+
+typedef union _HALP_STATE_CONTEXT {
+  struct {
+    ULONG Data1  :4;  // 0 BitPosition
+    ULONG Data2  :4;  // 4 BitPosition
+    ULONG Flags  :8;  // 8 BitPosition
+    ULONG Pad    :16; // 16 BitPosition
+  };
+  ULONG AsULONG;
+} HALP_STATE_CONTEXT, *PHALP_STATE_CONTEXT;
+
 typedef VOID
 (NTAPI * PHAL_ACPI_TIMER_INIT)(
     _In_ PULONG TimerPort,
@@ -23,8 +39,8 @@ typedef VOID
 typedef VOID
 (NTAPI * PHAL_ACPI_MACHINE_STATE_INIT)(
     _In_ ULONG Par1,
-    _In_ PVOID Par2,
-    _Out_ PVOID OutPar3
+    _In_ PHALP_STATE_DATA StateData,
+    _Out_ ULONG* OutInterruptModel
 );
 
 typedef ULONG
@@ -111,8 +127,8 @@ VOID
 NTAPI
 HaliAcpiMachineStateInit(
     _In_ ULONG Par1,
-    _In_ PVOID Par2,
-    _Out_ PVOID OutPar3
+    _In_ PHALP_STATE_DATA StateData,
+    _Out_ ULONG* OutInterruptModel
 );
 
 ULONG
