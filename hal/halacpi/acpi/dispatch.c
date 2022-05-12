@@ -659,8 +659,8 @@ NTAPI
 HaliSetVectorState(_In_ ULONG Par1,
                    _In_ ULONG Par2)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);// HalpDbgBreakPointEx();
+    /* Nothing for PIC */
+    return;
 }
 
 ULONG
