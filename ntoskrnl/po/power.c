@@ -74,6 +74,7 @@ PKTHREAD PopPolicyLockThread = NULL;
 SYSTEM_POWER_POLICY PopAcPolicy;
 SYSTEM_POWER_POLICY PopDcPolicy;
 PSYSTEM_POWER_POLICY PopPolicy;
+POWER_STATE_HANDLER PopPowerStateHandlers[7];
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -894,9 +895,7 @@ PopChangeCapability(_In_ PBOOLEAN StateSupport,
     DPRINT("PopChangeCapability: FIXME PopSetNotificationWork()\n");
 }
 
-/*
- * @unimplemented
- */
+/* halfplemented */
 NTSTATUS
 NTAPI
 NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
@@ -907,14 +906,13 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
 {
     NTSTATUS Status;
     KPROCESSOR_MODE PreviousMode = KeGetPreviousMode();
+    SYSTEM_POWER_STATE State = PowerSystemUnspecified;
+    PVOID LoggingInfo = NULL;
+    BOOLEAN IsCheckForWork = FALSE;
 
     PAGED_CODE();
 
-    DPRINT("NtPowerInformation(PowerInformationLevel 0x%x, InputBuffer 0x%p, "
-           "InputBufferLength 0x%x, OutputBuffer 0x%p, OutputBufferLength 0x%x)\n",
-           PowerInformationLevel,
-           InputBuffer, InputBufferLength,
-           OutputBuffer, OutputBufferLength);
+    DPRINT("NtPowerInformation: %X, %p, %X, %p, %X\n", PowerInformationLevel, InputBuffer, InputBufferLength, OutputBuffer, OutputBufferLength);
 
     if (PreviousMode != KernelMode)
     {
@@ -929,6 +927,8 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
         }
         _SEH2_END;
     }
+
+    PopAcquirePolicyLock();
 
     switch (PowerInformationLevel)
     {
@@ -958,7 +958,6 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
 
             break;
         }
-
         case SystemPowerCapabilities:
         {
             PSYSTEM_POWER_CAPABILITIES PowerCapabilities = (PSYSTEM_POWER_CAPABILITIES)OutputBuffer;
@@ -984,7 +983,6 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
 
             break;
         }
-
         case ProcessorInformation:
         {
             PPROCESSOR_POWER_INFORMATION PowerInformation = (PPROCESSOR_POWER_INFORMATION)OutputBuffer;
@@ -1013,18 +1011,150 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
 
             break;
         }
-
         case SystemPowerLoggingEntry:
         {
             UNIMPLEMENTED;
             break;
         }
+        case SystemPowerStateHandler:
+        {
+            PPOWER_STATE_HANDLER PowerStateHandler = (PPOWER_STATE_HANDLER)InputBuffer;
+            POWER_STATE_HANDLER_TYPE StateType = PowerStateHandler->Type;
+            PBOOLEAN Capabilities = NULL;
 
+            Status = STATUS_SUCCESS;
+
+            if (PreviousMode != KernelMode)
+            {
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            if (OutputBuffer)
+            {
+                DPRINT1("NtPowerInformation: STATUS_INVALID_PARAMETER. OutputBuffer %p\n", OutputBuffer);
+                Status = STATUS_INVALID_PARAMETER;
+                break;
+            }
+
+            if (OutputBufferLength)
+            {
+                DPRINT1("NtPowerInformation: STATUS_INVALID_PARAMETER. OutputBufferLength %X\n", OutputBufferLength);
+                Status = STATUS_INVALID_PARAMETER;
+                break;
+            }
+
+            if (!InputBuffer)
+            {
+                DPRINT1("NtPowerInformation: STATUS_INVALID_PARAMETER. InputBuffer is NULL\n");
+                Status = STATUS_INVALID_PARAMETER;
+                break;
+            }
+
+            if (InputBufferLength < sizeof(*PowerStateHandler))
+            {
+                DPRINT1("NtPowerInformation: STATUS_INVALID_PARAMETER. InputBufferLength %X\n", InputBufferLength);
+                Status = STATUS_INVALID_PARAMETER;
+                break;
+            }
+
+            if (StateType >= PowerStateMaximum)
+            {
+                DPRINT1("NtPowerInformation: STATUS_INVALID_PARAMETER. StateType %X\n", StateType);
+                Status = STATUS_INVALID_PARAMETER;
+                break;
+            }
+
+            if (PopPowerStateHandlers[StateType].Handler)
+            {
+                DPRINT1("NtPowerInformation: FIXME PopShutdownHandler()\n");
+                ASSERT(FALSE);
+            }
+
+            PopPowerStateHandlers[StateType].Type = StateType;
+            PopPowerStateHandlers[StateType].RtcWake = PowerStateHandler->RtcWake;
+            PopPowerStateHandlers[StateType].Handler = PowerStateHandler->Handler;
+            PopPowerStateHandlers[StateType].Context = PowerStateHandler->Context;
+
+            PopPowerStateHandlers[StateType].Spare[0] = 0;
+            PopPowerStateHandlers[StateType].Spare[1] = 0;
+            PopPowerStateHandlers[StateType].Spare[2] = 0;
+
+            switch (StateType)
+            {
+                case PowerStateSleeping1:
+                    DPRINT1("NtPowerInformation: FIXME PowerStateSleeping1\n");
+                    State = PowerSystemSleeping1;
+                    break;
+
+                case PowerStateSleeping2:
+                    DPRINT1("NtPowerInformation: FIXME PowerStateSleeping2\n");
+                    State = PowerSystemSleeping2;
+                    break;
+
+                case PowerStateSleeping3:
+                    DPRINT1("NtPowerInformation: FIXME PowerStateSleeping3\n");
+                    State = PowerSystemSleeping3;
+                    break;
+
+                case PowerStateSleeping4:
+                    DPRINT1("NtPowerInformation: FIXME PowerStateSleeping4\n");
+                    State = PowerSystemHibernate;
+                    break;
+
+                case PowerStateShutdownOff:
+                    DPRINT1("NtPowerInformation: PowerStateShutdownOff\n");
+                    Capabilities = &PopCapabilities.SystemS5;
+                    break;
+
+                default:
+                    DPRINT1("NtPowerInformation: Unsupported Type %X\n", StateType);
+                    break;
+            }
+
+            if (!PopPowerStateHandlers[StateType].RtcWake)
+                State = PowerSystemUnspecified;
+
+            if (State > PopCapabilities.RtcWake)
+                PopCapabilities.RtcWake = State;
+
+            if (Capabilities)
+                PopChangeCapability(Capabilities, TRUE);
+
+            break;
+        }
         default:
             Status = STATUS_NOT_IMPLEMENTED;
-            DPRINT1("PowerInformationLevel 0x%x is UNIMPLEMENTED! Have a nice day.\n",
-                    PowerInformationLevel);
+            DPRINT1("NtPowerInformation: Level %X is UNIMPLEMENTED\n", PowerInformationLevel);
             break;
+    }
+
+    if (IsCheckForWork == TRUE)
+    {
+        PopReleasePolicyLock(FALSE);
+        DPRINT1("NtPowerInformation: FIXME PopCheckForWork()\n");
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    //PopReleasePolicyLock(InputBuffer != NULL);
+    if (InputBuffer != NULL)
+    {
+        DPRINT("NtPowerInformation: FIXME PopReleasePolicyLock(TRUE)\n");PopReleasePolicyLock(FALSE);
+        //ASSERT(FALSE);
+        //PopReleasePolicyLock(TRUE);
+    }
+    else
+    {
+        PopReleasePolicyLock(FALSE);
+    }
+
+Exit:
+
+    if (LoggingInfo != NULL)
+    {
+        DPRINT1("NtPowerInformation: FIXME free LoggingInfo\n");
+        ASSERT(FALSE);//ExFreePoolWithTag(LoggingInfo, 0);
     }
 
     return Status;
