@@ -883,6 +883,12 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
             break;
         }
 
+        case SystemPowerLoggingEntry:
+        {
+            UNIMPLEMENTED;
+            break;
+        }
+
         default:
             Status = STATUS_NOT_IMPLEMENTED;
             DPRINT1("PowerInformationLevel 0x%x is UNIMPLEMENTED! Have a nice day.\n",
