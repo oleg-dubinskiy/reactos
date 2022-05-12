@@ -45,6 +45,25 @@ PopAcquirePolicyLock(VOID)
     PopPolicyLockThread = KeGetCurrentThread();
 }
 
+VOID
+NTAPI
+PopReleasePolicyLock(
+    _In_ BOOLEAN IsQueuePolicyWorker)
+{
+    ASSERT(PopPolicyLockThread == KeGetCurrentThread());
+
+    PopPolicyLockThread = NULL;
+    ExReleaseResourceLite(&PopPolicyLock);
+
+    if (IsQueuePolicyWorker)
+    {
+        DPRINT("PopReleasePolicyLock: FIXME! IsQueuePolicyWorker is TRUE.\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+    }
+
+    KeLeaveCriticalRegion();
+}
+
 static WORKER_THREAD_ROUTINE PopPassivePowerCall;
 _Use_decl_annotations_
 static
