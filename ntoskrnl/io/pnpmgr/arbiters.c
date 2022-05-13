@@ -61,10 +61,21 @@ IopBusNumberPackResource(
     _In_ ULONGLONG Start,
     _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor)
 {
-    PAGED_CODE();
+    DPRINT("BusNumberPack: [%p] Start %X\n", IoDescriptor, (ULONG)Start);
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    ASSERT(CmDescriptor);
+    ASSERT(Start < ((ULONG)-1));
+    ASSERT(IoDescriptor);
+    ASSERT(IoDescriptor->Type == CmResourceTypeBusNumber);
+
+    CmDescriptor->Type = CmResourceTypeBusNumber;
+    CmDescriptor->ShareDisposition = IoDescriptor->ShareDisposition;
+    CmDescriptor->Flags = IoDescriptor->Flags;
+
+    CmDescriptor->u.BusNumber.Start = Start;
+    CmDescriptor->u.BusNumber.Length = IoDescriptor->u.BusNumber.Length;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
