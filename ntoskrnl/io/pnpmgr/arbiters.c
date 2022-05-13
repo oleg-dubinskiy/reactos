@@ -584,12 +584,18 @@ BOOLEAN
 NTAPI
 IopMemFindSuitableRange(
     _In_ PARBITER_INSTANCE Arbiter,
-    _In_ PARBITER_ALLOCATION_STATE State)
+    _In_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    PAGED_CODE();
+    BOOLEAN Result;
 
-    UNIMPLEMENTED;
-    return FALSE;
+    DPRINT("IopMemFindSuitableRange: Arbiter %p, ArbState %p\n", Arbiter, ArbState);
+
+    if (ArbState->Entry->Flags & 1)
+        ArbState->RangeAvailableAttributes |= 1;
+
+    Result = ArbFindSuitableRange(Arbiter, ArbState);
+
+    return Result;
 }
 
 NTSTATUS

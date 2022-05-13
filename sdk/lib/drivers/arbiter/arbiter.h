@@ -249,4 +249,11 @@ ArbArbiterHandler(
     _Out_ PARBITER_PARAMETERS Params
 );
 
+BOOLEAN
+NTAPI
+ArbFindSuitableRange(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_ALLOCATION_STATE ArbState
+);
+
 /* EOF */
