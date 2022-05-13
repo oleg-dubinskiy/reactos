@@ -6511,4 +6511,53 @@ IopCreateCmResourceList(
     return NewCmResourceList;
 }
 
+PCM_RESOURCE_LIST
+NTAPI
+IopCombineCmResourceList(
+    _In_ PCM_RESOURCE_LIST BootList,
+    _In_ PCM_RESOURCE_LIST AddList)
+{
+    PCM_RESOURCE_LIST NewList = NULL;
+    ULONG BootListSize;
+    ULONG AddListSize;
+    ULONG Size;
+
+    PAGED_CODE();
+    DPRINT("IopCombineCmResourceList: BootList %p, AddList %p\n", BootList, AddList);
+
+    if (!BootList)
+        return AddList;
+
+    if (!AddList)
+        return BootList;
+
+    BootListSize = PnpDetermineResourceListSize(BootList);
+    AddListSize = PnpDetermineResourceListSize(AddList);
+
+    if (!BootListSize)
+        return NULL;
+
+    if (!AddListSize)
+        return NULL;
+
+    Size = (AddListSize - sizeof(ULONG));
+    ASSERT((BootListSize + Size) != 0);
+
+    NewList = ExAllocatePoolWithTag(PagedPool, (BootListSize + Size), 'erpP');
+    if (!NewList)
+    {
+        DPRINT1("IopCombineCmResourceList: NewList is NULL!\n");
+        return NULL;
+    }
+
+    DPRINT("IopCombineCmResourceList: NewList %p\n", NewList);
+
+    RtlCopyMemory(NewList, BootList, BootListSize);
+    RtlCopyMemory((PVOID)((ULONG_PTR)NewList + BootListSize), AddList->List, Size);
+
+    NewList->Count += AddList->Count;
+
+    return NewList;
+}
+
 /* EOF */
