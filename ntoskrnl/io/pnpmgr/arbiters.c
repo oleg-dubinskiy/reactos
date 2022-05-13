@@ -656,13 +656,67 @@ IopMemInitialize(VOID)
 
 BOOLEAN
 NTAPI
-IopPortFindSuitableRange(
+IopPortIsAliasedRangeAvailable(
     _In_ PARBITER_INSTANCE Arbiter,
     _In_ PARBITER_ALLOCATION_STATE State)
 {
     PAGED_CODE();
+    return TRUE;
+}
 
-    UNIMPLEMENTED;
+BOOLEAN
+NTAPI
+IopPortFindSuitableRange(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PARBITER_ALLOCATION_STATE ArbState)
+{
+    UCHAR AttributeAvailableMask = 0;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("IopPortFindSuitableRange: Arbiter %p\n", Arbiter);
+
+
+    if (!ArbState->CurrentAlternative->Length)
+    {
+        ArbState->End = ArbState->Start;
+        return TRUE;
+    }
+
+    if (ArbState->Entry->RequestSource == ArbiterRequestLegacyReported ||
+        ArbState->Entry->RequestSource == ArbiterRequestLegacyAssigned ||
+        ArbState->Entry->Flags & 1)
+    {
+        AttributeAvailableMask = 1;
+    }
+
+    while (ArbState->CurrentMinimum <= ArbState->CurrentMaximum)
+    {
+        Status = RtlFindRange(Arbiter->PossibleAllocation,
+                              ArbState->CurrentMinimum,
+                              ArbState->CurrentMaximum,
+                              ArbState->CurrentAlternative->Length,
+                              ArbState->CurrentAlternative->Alignment,
+                              (ArbState->CurrentAlternative->Flags & 1),
+                              AttributeAvailableMask,
+                              Arbiter->ConflictCallbackContext,
+                              Arbiter->ConflictCallback,
+                              &ArbState->Start);
+
+        if (!NT_SUCCESS(Status))
+        {
+             DPRINT1("IopPortFindSuitableRange: Status %X\n", Status);
+             ASSERT(FALSE); // IoDbgBreakPointEx();
+        }
+
+        ArbState->End = (ArbState->Start + ArbState->CurrentAlternative->Length - 1);
+
+        if (IopPortIsAliasedRangeAvailable(Arbiter, ArbState))
+            return TRUE;
+
+        ArbState->Start += ArbState->CurrentAlternative->Length;
+    }
+
     return FALSE;
 }
 
