@@ -439,8 +439,21 @@ IopGenericPackResource(
 {
     PAGED_CODE();
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    ASSERT(CmDescriptor);
+    ASSERT(IoDescriptor);
+    ASSERT(IoDescriptor->Type == CmResourceTypePort ||
+           IoDescriptor->Type == CmResourceTypeMemory);
+
+    CmDescriptor->Type = IoDescriptor->Type;
+    CmDescriptor->Flags = IoDescriptor->Flags;
+    CmDescriptor->ShareDisposition = IoDescriptor->ShareDisposition;
+
+    CmDescriptor->u.Generic.Start.QuadPart = Start;
+    CmDescriptor->u.Generic.Length = IoDescriptor->u.Generic.Length;
+
+    DPRINT("IopGenericPackResource: [%p] Start %I64X, Len %X\n", IoDescriptor, Start, CmDescriptor->u.Generic.Length);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
