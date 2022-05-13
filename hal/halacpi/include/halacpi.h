@@ -139,4 +139,10 @@ HalpQueryAcpiResourceRequirements(
     OUT PIO_RESOURCE_REQUIREMENTS_LIST* Requirements
 );
 
+VOID
+NTAPI
+HalTranslatorDereference(
+    IN PVOID Context
+);
+
 /* EOF */

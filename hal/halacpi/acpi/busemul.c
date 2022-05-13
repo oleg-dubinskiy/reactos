@@ -28,10 +28,30 @@ HalacpiGetInterruptTranslator(
     _Out_ PTRANSLATOR_INTERFACE Translator,
     _Out_ PULONG BridgeBusNumber)
 {
-    DPRINT1("HalacpiGetInterruptTranslator: %X, %X\n", ParentInterfaceType, ParentBusNumber);
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PAGED_CODE();
+
+    ASSERT(Version == 0);
+    ASSERT(Size >= sizeof(TRANSLATOR_INTERFACE));
+
+    if (BridgeInterfaceType != -1 &&
+        BridgeInterfaceType != 1 &&
+        BridgeInterfaceType != 2)
+    {
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    RtlZeroMemory(Translator, sizeof(TRANSLATOR_INTERFACE));
+
+    Translator->Size = sizeof(TRANSLATOR_INTERFACE);
+    Translator->Version = 0;
+
+    Translator->InterfaceReference = HalTranslatorDereference;
+    Translator->InterfaceDereference = HalTranslatorDereference;
+
+    Translator->TranslateResources = HalacpiIrqTranslateResourcesIsa;
+    Translator->TranslateResourceRequirements = HalacpiIrqTranslateResourceRequirementsIsa;
+
+    return STATUS_SUCCESS;
 }
 
 BOOLEAN
