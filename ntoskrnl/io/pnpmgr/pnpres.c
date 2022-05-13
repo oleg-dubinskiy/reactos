@@ -2976,47 +2976,38 @@ IopSetupArbiterAndTranslators(
     UCHAR IoDescriptorType;
     BOOLEAN IsFindTranslator = TRUE;
     BOOLEAN IsTranslatorFound = FALSE;
-    BOOLEAN IsFindBus;
     BOOLEAN IsArbiterFound = FALSE;
+    BOOLEAN IsFindBus;
     BOOLEAN Result;
 
     PhysicalDevice = ReqDescriptor->ReqEntry.PhysicalDevice;
     AllocationType = ReqDescriptor->ReqEntry.AllocationType;
     IoDescriptorType = ReqDescriptor->TranslatedReqDesc->ReqEntry.IoDescriptor->Type;
 
-    DPRINT("IopSetupArbiterAndTranslators: ReqDescriptor - %p, PhysicalDevice - %p, descriptor type - %X\n",
-           ReqDescriptor, PhysicalDevice, IoDescriptorType);
+    DPRINT("IopSetupArbiterAndTranslators: ReqDesc %p Pdo %p Type %X\n", ReqDescriptor, PhysicalDevice, IoDescriptorType);
 
-    if (AllocationType == ArbiterRequestHalReported &&
-        ReqDescriptor->InterfaceType == Internal)
-    {
+    if ((AllocationType == ArbiterRequestHalReported) && (ReqDescriptor->InterfaceType == Internal))
         IsFindBus = FALSE;
-    }
     else
-    {
         IsFindBus = TRUE;
-    }
 
-    if (PhysicalDevice &&
-        AllocationType != ArbiterRequestHalReported)
+    if (PhysicalDevice && (AllocationType != ArbiterRequestHalReported))
     {
         DeviceNode = IopGetDeviceNode(PhysicalDevice);
+        ASSERT(DeviceNode);
     }
     else
     {
         DeviceNode = IopRootDeviceNode;
     }
 
-    for (; DeviceNode; DeviceNode = DeviceNode->Parent)
+    while (DeviceNode != NULL)
     {
-        if (DeviceNode == IopRootDeviceNode &&
-            !IsTranslatorFound &&
-            IsFindBus)
+        if ((DeviceNode == IopRootDeviceNode) && !IsTranslatorFound && IsFindBus)
         {
             IsFindBus = FALSE;
 
-            DeviceNode = IopFindLegacyBusDeviceNode(ReqDescriptor->InterfaceType,
-                                                    ReqDescriptor->BusNumber);
+            DeviceNode = IopFindLegacyBusDeviceNode(ReqDescriptor->InterfaceType, ReqDescriptor->BusNumber);
 
             if (DeviceNode == IopRootDeviceNode &&
                 ReqDescriptor->AltList->ReqList->InterfaceType == Internal)
@@ -3027,8 +3018,7 @@ IopSetupArbiterAndTranslators(
             continue;
         }
 
-        if (!IsArbiterFound &&
-            DeviceNode->PhysicalDeviceObject != PhysicalDevice)
+        if (!IsArbiterFound && DeviceNode->PhysicalDeviceObject != PhysicalDevice)
         {
             Result = IopFindResourceHandlerInfo(IOP_RES_HANDLER_TYPE_ARBITER,
                                                 DeviceNode,
@@ -3037,13 +3027,9 @@ IopSetupArbiterAndTranslators(
             if (!Result)
             {
                 if (IoDescriptorType <= IOP_MAX_MAIN_RESOURCE_TYPE)
-                {
-                    TypesBitMask = 1 << IoDescriptorType;
-                }
+                    TypesBitMask = (1 << IoDescriptorType);
                 else
-                {
                     TypesBitMask = 0;
-                }
 
                 DeviceNode->QueryArbiterMask |= TypesBitMask;
 
@@ -3053,6 +3039,7 @@ IopSetupArbiterAndTranslators(
                                                           &Interface);
                 if (!NT_SUCCESS(Status))
                 {
+                    DPRINT("IopSetupArbiterAndTranslators: Status %X\n", Status);
                     DeviceNode->NoArbiterMask |= TypesBitMask;
 
                     if (IoDescriptorType <= IOP_MAX_MAIN_RESOURCE_TYPE)
@@ -3064,13 +3051,14 @@ IopSetupArbiterAndTranslators(
                     Interface = NULL;
                 }
 
-                ResArbiterEntry = ExAllocatePoolWithTag(PagedPool,
-                                                        sizeof(PI_RESOURCE_ARBITER_ENTRY),
-                                                        'erpP');
+                ResArbiterEntry = ExAllocatePoolWithTag(PagedPool, sizeof(PI_RESOURCE_ARBITER_ENTRY), 'erpP');
                 if (!ResArbiterEntry)
                 {
+                    DPRINT1("IopSetupArbiterAndTranslators: STATUS_INSUFFICIENT_RESOURCES\n");
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
+
+                DPRINT("IopSetupArbiterAndTranslators: ResArbiterEntry %p\n", ResArbiterEntry);
 
                 ResArbiterEntry->ResourcesChanged = 0;
                 ResArbiterEntry->State = 0;
@@ -3081,44 +3069,32 @@ IopSetupArbiterAndTranslators(
                 InitializeListHead(&ResArbiterEntry->BestResourceList);
                 InitializeListHead(&ResArbiterEntry->DeviceArbiterList);
 
-                InsertTailList(&DeviceNode->DeviceArbiterList,
-                               &ResArbiterEntry->DeviceArbiterList);
+                InsertTailList(&DeviceNode->DeviceArbiterList, &ResArbiterEntry->DeviceArbiterList);
 
                 ResArbiterEntry->ResourceType = IoDescriptorType;
                 ResArbiterEntry->Level = DeviceNode->Level;
                 ResArbiterEntry->ArbiterInterface = Interface;
 
                 if (!Interface)
-                {
                     ResArbiterEntry = NULL;
-                }
             }
 
             if (ResArbiterEntry)
             {
                 if (ResArbiterEntry->ArbiterInterface->Flags & 1) // FIXME
                 {
-                    ASSERT(FALSE);
-
-                    Status = 0;//IopCallArbiter(ResArbiterEntry,
-                               //             ArbiterActionQueryArbitrate,
-                               //             ReqDescriptor->TranslatedReqDesc,
-                               //             NULL,
-                               //             NULL);
-
+                    ASSERT(FALSE);Status = STATUS_NOT_IMPLEMENTED;
+                    //Status = IopCallArbiter(ResArbiterEntry, ArbiterActionQueryArbitrate, ReqDescriptor->TranslatedReqDesc, NULL, NULL);
                     if (!NT_SUCCESS(Status))
-                    {
                         IsArbiterFound = FALSE;
-                    }
                 }
                 else
                 {
                     IsArbiterFound = TRUE;
 
+                    ReqDescriptor->ArbiterEntry = ResArbiterEntry;
                     ResArbiterEntry->State = 0;
                     ResArbiterEntry->ResourcesChanged = 0;
-
-                    ReqDescriptor->ArbiterEntry = ResArbiterEntry;
                 }
             }
         }
@@ -3126,9 +3102,7 @@ IopSetupArbiterAndTranslators(
 FindTranslator:
 
         if (!IsFindTranslator)
-        {
-            continue;
-        }
+            goto Next;
 
         Result = IopFindResourceHandlerInfo(IOP_RES_HANDLER_TYPE_TRANSLATOR,
                                             DeviceNode,
@@ -3139,13 +3113,9 @@ FindTranslator:
             BOOLEAN IsFind = FALSE;
 
             if (IoDescriptorType <= IOP_MAX_MAIN_RESOURCE_TYPE)
-            {
-                TypesBitMask = 1 << IoDescriptorType;
-            }
+                TypesBitMask = (1 << IoDescriptorType);
             else
-            {
                 TypesBitMask = 0;
-            }
 
             Status = IopQueryResourceHandlerInterface(IOP_RES_HANDLER_TYPE_TRANSLATOR,
                                                       DeviceNode->PhysicalDeviceObject,
@@ -3156,80 +3126,77 @@ FindTranslator:
 
             if (!NT_SUCCESS(Status))
             {
+                DPRINT("IopSetupArbiterAndTranslators: Status %X\n", Status);
                 DeviceNode->NoTranslatorMask |= TypesBitMask;
 
                 if (IoDescriptorType > IOP_MAX_MAIN_RESOURCE_TYPE)
-                {
                     Interface = NULL;
-                }
                 else
-                {
                     IsFind = TRUE;
-                }
             }
 
             if (!IsFind)
             {
-                TranslatorEntry = ExAllocatePoolWithTag(PagedPool,
-                                                        sizeof(PI_RESOURCE_TRANSLATOR_ENTRY),
-                                                        'erpP');
+                TranslatorEntry = ExAllocatePoolWithTag(PagedPool, sizeof(PI_RESOURCE_TRANSLATOR_ENTRY), 'erpP');
                 if (!TranslatorEntry)
                 {
+                    DPRINT1("IopSetupArbiterAndTranslators: STATUS_INSUFFICIENT_RESOURCES\n");
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
+
+                DPRINT("IopSetupArbiterAndTranslators: TranslatorEntry %p\n", TranslatorEntry);
 
                 TranslatorEntry->ResourceType = IoDescriptorType;
                 TranslatorEntry->TranslatorInterface = Interface;
                 TranslatorEntry->DeviceNode = DeviceNode;
 
                 InitializeListHead(&TranslatorEntry->DeviceTranslatorList);
+                InsertTailList(&DeviceNode->DeviceTranslatorList, &TranslatorEntry->DeviceTranslatorList);
 
-                InsertTailList(&DeviceNode->DeviceTranslatorList,
-                               &TranslatorEntry->DeviceTranslatorList);
+                DPRINT("IopSetupArbiterAndTranslators: (%p, %p) (%p, %p)\n",
+                       DeviceNode, &DeviceNode->DeviceTranslatorList, TranslatorEntry, &TranslatorEntry->DeviceTranslatorList);
 
                 if (!Interface)
                 {
                     TranslatorEntry = NULL;
+                    DPRINT("SetupArbiterAndTranslators: Iface NULL\n");
+                }
+                else
+                {
+                    DPRINT("SetupArbiterAndTranslators: Iface %p\n", Interface);
                 }
             }
         }
 
         if (TranslatorEntry)
-        {
             IsTranslatorFound = TRUE;
-        }
 
-        if (!IsArbiterFound && TranslatorEntry)
+        if (IsArbiterFound || !TranslatorEntry)
+            goto Next;
+
+        Status = IopTranslateAndAdjustReqDesc(ReqDescriptor->TranslatedReqDesc, TranslatorEntry, &TranslatedReqDesc);
+        if (!NT_SUCCESS(Status))
         {
-            Status = IopTranslateAndAdjustReqDesc(ReqDescriptor->TranslatedReqDesc,
-                                                  TranslatorEntry,
-                                                  &TranslatedReqDesc);
-            if (!NT_SUCCESS(Status))
-            {
-                DPRINT("IopSetupArbiterAndTranslators: Status - %X\n", Status);
-                return Status;
-            }
-
-            ASSERT(TranslatedReqDesc);
-
-            IoDescriptorType = TranslatedReqDesc->ReqEntry.IoDescriptor->Type;
-            TranslatedReqDesc->TranslatedReqDesc = ReqDescriptor->TranslatedReqDesc;
-            ReqDescriptor->TranslatedReqDesc = TranslatedReqDesc;
-
-            if (Status == STATUS_TRANSLATION_COMPLETE)
-            {
-                IsFindTranslator = FALSE;
-            }
+            DPRINT1("IopSetupArbiterAndTranslators: TranslationAndAdjusted failed (%X)\n", Status);
+            return Status;
         }
+
+        ASSERT(TranslatedReqDesc);
+
+        IoDescriptorType = TranslatedReqDesc->ReqEntry.IoDescriptor->Type;
+        TranslatedReqDesc->TranslatedReqDesc = ReqDescriptor->TranslatedReqDesc;
+        ReqDescriptor->TranslatedReqDesc = TranslatedReqDesc;
+
+        if (Status == STATUS_TRANSLATION_COMPLETE)
+            IsFindTranslator = FALSE;
+Next:
+        DeviceNode = DeviceNode->Parent;
     }
 
     if (IsArbiterFound)
-    {
         return STATUS_SUCCESS;
-    }
 
-    DPRINT("IopSetupArbiterAndTranslators: no arbiter for resource type - %X \n",
-           IoDescriptorType);
+    DPRINT("IopSetupArbiterAndTranslators: no arbiter for resource type %X \n", IoDescriptorType);
 
     ASSERT(IsArbiterFound);
 
