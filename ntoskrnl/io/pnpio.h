@@ -1010,6 +1010,13 @@ IopReleaseDeviceResources(
     _In_ BOOLEAN IsAllocateBootResources
 );
 
+VOID
+NTAPI
+IopAllocateLegacyBootResources(
+    _In_ INTERFACE_TYPE InterfaceType,
+    _In_ ULONG BusNumber
+);
+
 /* pnputil.c */
 NTSTATUS
 NTAPI

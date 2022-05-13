@@ -6560,4 +6560,103 @@ IopCombineCmResourceList(
     return NewList;
 }
 
+VOID
+NTAPI
+IopAllocateLegacyBootResources(
+    _In_ INTERFACE_TYPE InterfaceType,
+    _In_ ULONG BusNumber)
+{
+    PCM_RESOURCE_LIST RemainList;
+    PCM_RESOURCE_LIST NewCmList;
+    PCM_RESOURCE_LIST PrevBootResources;
+    PCM_RESOURCE_LIST CmList;
+    PPNP_RESERVED_RESOURCES_CONTEXT Entry = NULL;
+    PPNP_RESERVED_RESOURCES_CONTEXT NextEntry;
+
+    DPRINT("IopAllocateLegacyBootResources: %X, %X, %X, %X\n", InterfaceType, BusNumber, IopInitHalDeviceNode, IopInitHalResources);
+
+    if (!IopInitHalDeviceNode)
+        goto PnpEnum;
+
+    if (!IopInitHalResources)
+        goto PnpEnum;
+
+    RemainList = NULL;
+
+    NewCmList = IopCreateCmResourceList(IopInitHalResources, InterfaceType, BusNumber, &RemainList);
+    if (!NewCmList)
+    {
+        ASSERT(RemainList && RemainList == IopInitHalResources);
+        goto PnpEnum;
+    }
+
+    if (RemainList)
+    {
+        ASSERT(IopInitHalResources != NewCmList);
+        ASSERT(IopInitHalResources != RemainList);
+    }
+    else
+    {
+        ASSERT(NewCmList == IopInitHalResources);
+    }
+
+    if (RemainList)
+        ExFreePoolWithTag(IopInitHalResources, 0);
+
+    IopInitHalResources = RemainList;
+    PrevBootResources = IopInitHalDeviceNode->BootResources;
+
+    IopInitHalDeviceNode->Flags |= DNF_HAS_BOOT_CONFIG;
+
+    DPRINT("IopAllocateLegacyBootResources: Alloc HAL reported res. Iface %X, Bus %X\n", InterfaceType, BusNumber);
+
+    IopAllocateBootResources(ArbiterRequestHalReported, IopInitHalDeviceNode->PhysicalDeviceObject, NewCmList);
+
+    IopInitHalDeviceNode->BootResources = IopCombineCmResourceList(PrevBootResources, NewCmList);
+    ASSERT(IopInitHalDeviceNode->BootResources);
+
+    if (PrevBootResources)
+        ExFreePoolWithTag(PrevBootResources, 0);
+
+PnpEnum:
+
+    for (NextEntry = IopInitReservedResourceList;
+         NextEntry != NULL;
+        )
+    {
+        CmList = NextEntry->ReservedResource;
+
+        DPRINT("IopAllocateLegacyBootResources: Next %X, Iface %X, Bus %X\n", NextEntry, CmList->List[0].InterfaceType, CmList->List[0].BusNumber);
+        DPRINT("IopAllocateLegacyBootResources: [%X] ReservedRes %X NextReservedCtx %X\n", NextEntry->DeviceObject, NextEntry->ReservedResource, NextEntry->NextReservedContext);
+
+        if (CmList->List[0].InterfaceType != InterfaceType ||
+            CmList->List[0].BusNumber != BusNumber)
+        {
+            Entry = NextEntry;
+            NextEntry = NextEntry->NextReservedContext;
+            continue;
+        }
+
+        DPRINT("IopAllocateLegacyBootResources: Alloc boot cfg. (made-up device) Iface %X, Bus %X\n", InterfaceType, BusNumber);
+        IopAllocateBootResources(ArbiterRequestPnpEnumerated, NextEntry->DeviceObject, CmList);
+
+        if (!NextEntry->DeviceObject)
+            ExFreePoolWithTag(CmList, 0);
+
+        if (Entry)
+            Entry->NextReservedContext = NextEntry->NextReservedContext;
+        else
+            IopInitReservedResourceList = NextEntry->NextReservedContext;
+
+        ExFreePoolWithTag(NextEntry, 0);
+
+        if (Entry)
+            NextEntry = Entry->NextReservedContext;
+        else
+            NextEntry = IopInitReservedResourceList;
+    }
+
+    DPRINT("IopAllocateLegacyBootResources exit\n");
+}
+
 /* EOF */
