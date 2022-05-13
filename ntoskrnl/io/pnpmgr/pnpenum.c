@@ -31,6 +31,7 @@ extern BOOLEAN PnPBootDriversInitialized;
 extern BOOLEAN PiCriticalDeviceDatabaseEnabled;
 extern BOOLEAN PnpSystemInit;
 extern BOOLEAN PpPnpShuttingDown;
+extern BOOLEAN IopBootConfigsReserved;
 
 /* DATA **********************************************************************/
 
@@ -4186,9 +4187,73 @@ NTAPI
 PipProcessStartPhase2(
     _In_ PDEVICE_NODE DeviceNode)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);//IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG Problem;
+    NTSTATUS CompletionStatus;
+
+    PAGED_CODE();
+    DPRINT("PipProcessStartPhase2: [%p] CompletionStatus %X\n", DeviceNode, DeviceNode->CompletionStatus);
+
+    CompletionStatus = DeviceNode->CompletionStatus;
+
+    if (DeviceNode->DockInfo.DockStatus)
+    {
+        DPRINT1("PipProcessStartPhase2: FIXME! [%p] DockStatus %X\n", DeviceNode, DeviceNode->DockInfo.DockStatus);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+    }
+
+    if (!NT_SUCCESS(CompletionStatus))
+    {
+        DPRINT1("PipProcessStartPhase2: CompletionStatus %X\n", CompletionStatus);
+
+        DeviceNode->DebugStatus = DeviceNode->CompletionStatus;
+
+        if (CompletionStatus == STATUS_PNP_REBOOT_REQUIRED)
+        {
+            DPRINT1("PipProcessStartPhase2:Problem is CM_PROB_NEED_RESTART\n");
+            Problem = CM_PROB_NEED_RESTART;
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+        }
+        else
+        {
+            DPRINT1("PipProcessStartPhase2:Problem is CM_PROB_FAILED_START\n");
+            Problem = CM_PROB_FAILED_START;
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+        }
+
+        DPRINT1("PipProcessStartPhase2: Remove DeviceNode %p\n", DeviceNode);
+        PipRequestDeviceRemoval(DeviceNode, FALSE, Problem);
+
+        if (DeviceNode->DockInfo.DockStatus)
+        {
+            DPRINT1("PipProcessStartPhase2: FIXME! [%p] DockStatus %X\n", DeviceNode, DeviceNode->DockInfo.DockStatus);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            ASSERT(DeviceNode->DockInfo.DockStatus == DOCK_QUIESCENT);
+            //IoRequestDeviceEject(DeviceNode->PhysicalDeviceObject);
+        }
+
+        DPRINT1("PipProcessStartPhase2: return %X\n", CompletionStatus);
+        return CompletionStatus;
+    }
+
+    IopDoDeferredSetInterfaceState(DeviceNode);
+
+    if (IopBootConfigsReserved)
+        goto Exit;
+
+    if (DeviceNode->InterfaceType == InterfaceTypeUndefined)
+        goto Exit;
+
+    if (DeviceNode->InterfaceType == 1)
+        IopAllocateLegacyBootResources(2, DeviceNode->BusNumber);
+
+    IopAllocateLegacyBootResources(DeviceNode->InterfaceType, DeviceNode->BusNumber);
+
+Exit:
+
+    ASSERT(DeviceNode->State == DeviceNodeStartCompletion);
+    PipSetDevNodeState(DeviceNode, DeviceNodeStartPostWork, NULL);
+
+    return CompletionStatus;
 }
 
 NTSTATUS
