@@ -336,6 +336,23 @@ IopDecDisableableDepends(
 
 NTSTATUS
 NTAPI
+IopResourceRequirementsChanged(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG RequestArgument)
+{
+    PAGED_CODE();
+    DPRINT("IopResourceRequirementsChanged: DeviceObject %p, RequestArgument %X\n", DeviceObject, RequestArgument);
+
+    return PipRequestDeviceAction(DeviceObject,
+                                  PipEnumIoResourceChanged,
+                                  0,//ReorderingBarrier
+                                  RequestArgument,
+                                  NULL,
+                                  NULL);
+}
+
+NTSTATUS
+NTAPI
 PiProcessQueryDeviceState(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
@@ -347,11 +364,8 @@ PiProcessQueryDeviceState(
     DPRINT("PiProcessQueryDeviceState: DeviceObject - %p\n", DeviceObject);
 
     Status = IopQueryDeviceState(DeviceObject, &State);
-
     if (!NT_SUCCESS(Status))
-    {
         return STATUS_SUCCESS;
-    }
 
     DeviceNode = IopGetDeviceNode(DeviceObject);
 
@@ -392,10 +406,11 @@ PiProcessQueryDeviceState(
 
     if (State & PNP_DEVICE_RESOURCE_REQUIREMENTS_CHANGED)
     {
-        DPRINT("PiProcessQueryDeviceState: FIXME IopResourceRequirementsChanged\n");
-        ASSERT(FALSE);
+        IopResourceRequirementsChanged(DeviceObject, ((State & PNP_DEVICE_FAILED) != 0));
+        return Status;
     }
-    else if (State & PNP_DEVICE_FAILED)
+
+    if (State & PNP_DEVICE_FAILED)
     {
         DPRINT("PiProcessQueryDeviceState: FIXME PipRequestDeviceRemoval\n");
         ASSERT(FALSE);
