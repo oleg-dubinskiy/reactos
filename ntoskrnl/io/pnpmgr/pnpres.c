@@ -21,6 +21,9 @@ extern INTERFACE_TYPE PnpDefaultInterfaceType;
 extern BOOLEAN IopBootConfigsReserved;
 extern LIST_ENTRY IopLegacyBusInformationTable[MaximumInterfaceType];
 extern ERESOURCE PpRegistryDeviceResource;
+extern PDEVICE_NODE IopRootDeviceNode;
+extern PDEVICE_NODE IopInitHalDeviceNode;
+extern PCM_RESOURCE_LIST IopInitHalResources;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -6357,6 +6360,155 @@ IopReportBootResources(
     DPRINT("IopReportBootResources: List %p\n", IopInitReservedResourceList);
 
     return STATUS_SUCCESS;
+}
+
+PCM_RESOURCE_LIST
+NTAPI
+IopCreateCmResourceList(
+    _In_ PCM_RESOURCE_LIST CmResourceList,
+    _In_ INTERFACE_TYPE InterfaceType,
+    _In_ ULONG BusNumber,
+    _Out_ PCM_RESOURCE_LIST* OutResourceList)
+{
+    PCM_RESOURCE_LIST NewCmResourceList;
+    PCM_RESOURCE_LIST RemainingCmList;
+    PCM_FULL_RESOURCE_DESCRIPTOR CmFullDesc;
+    PCM_FULL_RESOURCE_DESCRIPTOR RemainFullDesc;
+    PCM_FULL_RESOURCE_DESCRIPTOR NewFullDesc;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR CmPartialDesc;
+    ULONG SizePartialDesc = sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR);
+    ULONG AllListsLenght = sizeof(ULONG);
+    ULONG FullDescSize;
+    ULONG Lenght = 0;
+    ULONG DescSize;
+    ULONG ix;
+    ULONG jx;
+
+    PAGED_CODE();
+    DPRINT("IopCreateCmResourceList: %p, Iface %X, Bus %X\n", CmResourceList, InterfaceType, BusNumber);
+
+    if (CmResourceList->Count == 0)
+    {
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        *OutResourceList = CmResourceList;
+        return NULL;
+    }
+
+    CmFullDesc = &CmResourceList->List[0];
+
+    for (ix = 0; ix < CmResourceList->Count; ix++)
+    {
+        DPRINT("IopCreateCmResourceList: [%X] %X, %X, %X, %X, %X\n", ix,
+               CmFullDesc->InterfaceType, CmFullDesc->BusNumber, CmFullDesc->PartialResourceList.Version,
+               CmFullDesc->PartialResourceList.Revision, CmFullDesc->PartialResourceList.Count);
+
+        FullDescSize = SizePartialDesc;
+        CmPartialDesc = CmFullDesc->PartialResourceList.PartialDescriptors;
+
+        for (jx = 0; jx < CmFullDesc->PartialResourceList.Count; jx++)
+        {
+            if (CmPartialDesc->Type == CmResourceTypeDeviceSpecific)
+                DescSize = (SizePartialDesc + CmPartialDesc->u.DeviceSpecificData.DataSize);
+            else
+                DescSize = SizePartialDesc;
+
+            FullDescSize += DescSize;
+            CmPartialDesc = PipGetNextCmPartialDescriptor(CmPartialDesc);
+        }
+
+        AllListsLenght += FullDescSize;
+
+        if (CmFullDesc->InterfaceType == InterfaceType &&
+            CmFullDesc->BusNumber == BusNumber)
+        {
+            Lenght += FullDescSize;
+        }
+
+        CmFullDesc = (PCM_FULL_RESOURCE_DESCRIPTOR)CmPartialDesc;
+    }
+
+    if (Lenght == 0)
+    {
+        DPRINT("IopCreateCmResourceList: Lenght == 0\n");
+        *OutResourceList = CmResourceList;
+        return NULL;
+    }
+
+    DPRINT("IopCreateCmResourceList: AllLen %X, Len %X, (AllLen-Len) %X\n", AllListsLenght, Lenght, (AllListsLenght - Lenght));
+
+    if (AllListsLenght == (Lenght + sizeof(ULONG)))
+    {
+        *OutResourceList = NULL;
+        return CmResourceList;
+    }
+
+    NewCmResourceList = ExAllocatePoolWithTag(PagedPool, (Lenght + sizeof(ULONG)), 'erpP');
+    if (!NewCmResourceList)
+    {
+        DPRINT1("IopCreateCmResourceList: Not enough memory\n");
+        *OutResourceList = NULL;
+        return NULL;
+    }
+
+    DPRINT("IopCreateCmResourceList: NewCmResourceList %p\n", NewCmResourceList);
+
+    ASSERT((AllListsLenght - Lenght) != 0);
+
+    RemainingCmList = ExAllocatePoolWithTag(PagedPool, AllListsLenght - Lenght, 'erpP');
+    *OutResourceList = RemainingCmList;
+    if (!RemainingCmList)
+    {
+        DPRINT1("IopCreateCmResourceList: Not enough memory\n");
+        ExFreePoolWithTag(NewCmResourceList, 0);
+        return NULL;
+    }
+
+    DPRINT("IopCreateCmResourceList: *OutResourceList %p\n", *OutResourceList);
+
+    CmFullDesc = &CmResourceList->List[0];
+
+    NewCmResourceList->Count = 0;
+    NewFullDesc = &NewCmResourceList->List[0];
+
+    RemainingCmList->Count = 0;
+    RemainFullDesc = &RemainingCmList->List[0];
+
+    for (ix = 0; ix < CmResourceList->Count; ix++)
+    {
+        FullDescSize = SizePartialDesc;
+        CmPartialDesc = CmFullDesc->PartialResourceList.PartialDescriptors;
+
+        for (jx = 0; jx < CmFullDesc->PartialResourceList.Count; jx++)
+        {
+            if (CmPartialDesc->Type == CmResourceTypeDeviceSpecific)
+                DescSize = (SizePartialDesc + CmPartialDesc->u.DeviceSpecificData.DataSize);
+            else
+                DescSize = SizePartialDesc;
+
+            FullDescSize += DescSize;
+            CmPartialDesc = (PCM_PARTIAL_RESOURCE_DESCRIPTOR)((ULONG_PTR)CmPartialDesc + DescSize);
+        }
+
+        if (CmFullDesc->InterfaceType == InterfaceType &&
+            CmFullDesc->BusNumber == BusNumber)
+        {
+            RtlCopyMemory(NewFullDesc, CmFullDesc, FullDescSize);
+
+            NewFullDesc = (PCM_FULL_RESOURCE_DESCRIPTOR)((ULONG_PTR)NewFullDesc + FullDescSize);
+            NewCmResourceList->Count++;
+        }
+        else
+        {
+            RtlCopyMemory(RemainFullDesc, CmFullDesc, FullDescSize);
+
+            RemainFullDesc = (PCM_FULL_RESOURCE_DESCRIPTOR)((ULONG_PTR)RemainFullDesc + FullDescSize);
+            RemainingCmList->Count++;
+        }
+
+        CmFullDesc = (PCM_FULL_RESOURCE_DESCRIPTOR)CmPartialDesc;
+    }
+
+    return NewCmResourceList;
 }
 
 /* EOF */
