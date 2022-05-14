@@ -6117,6 +6117,71 @@ IopRemoveLegacyDeviceNode(
     IoDeleteDevice(PhysicalDeviceObject);
 }
 
+PCM_RESOURCE_LIST
+NTAPI
+IopCombineLegacyResources(
+    _In_ PDEVICE_NODE LegacyDeviceNode)
+{
+    PCM_FULL_RESOURCE_DESCRIPTOR PrevIoList;
+    PCM_FULL_RESOURCE_DESCRIPTOR IoList;
+    PCM_RESOURCE_LIST CmResources = NULL;
+    PDEVICE_NODE DeviceNode;
+    SIZE_T SizeCmResources = 0;
+    ULONG SizeIoList;
+
+    PAGED_CODE()
+    DPRINT1("IopCombineLegacyResources: [%X]\n", LegacyDeviceNode);
+
+    if (!LegacyDeviceNode)
+        return NULL;
+
+    for (DeviceNode = LegacyDeviceNode;
+         DeviceNode;
+         DeviceNode = DeviceNode->OverUsed2.NextResourceDeviceNode)
+    {
+        if (DeviceNode->ResourceList)
+            SizeCmResources += PnpDetermineResourceListSize(DeviceNode->ResourceList);
+    }
+
+    if (!SizeCmResources)
+        return NULL;
+
+    CmResources = ExAllocatePoolWithTag(PagedPool, SizeCmResources, 'erpP');
+    if (!CmResources)
+    {
+        DPRINT1("IopCombineLegacyResources: Not enough memory\n");
+        return NULL;
+    }
+
+    DPRINT("IopCombineLegacyResources: CmResources %p\n", CmResources);
+
+    CmResources->Count = 0;
+    IoList = CmResources->List;
+
+    for (DeviceNode = LegacyDeviceNode;
+         DeviceNode != NULL;
+         DeviceNode = DeviceNode->OverUsed2.NextResourceDeviceNode)
+    {
+        if (!DeviceNode->ResourceList)
+            continue;
+
+        SizeCmResources = PnpDetermineResourceListSize(DeviceNode->ResourceList);
+        if (!SizeCmResources)
+            continue;
+
+        PrevIoList = IoList;
+
+        SizeIoList = (SizeCmResources - FIELD_OFFSET(CM_RESOURCE_LIST, List));
+        IoList = (PCM_FULL_RESOURCE_DESCRIPTOR)((ULONG_PTR)IoList + SizeIoList);
+
+        RtlCopyMemory(PrevIoList, DeviceNode->ResourceList->List, SizeIoList);
+
+        CmResources->Count += DeviceNode->ResourceList->Count;
+    }
+
+    return CmResources;
+}
+
 NTSTATUS
 NTAPI
 IopAssignResourcesToDevices(
