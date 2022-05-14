@@ -1040,6 +1040,13 @@ IopLegacyResourceAllocation(
     _Inout_ PCM_RESOURCE_LIST * AllocatedResources
 );
 
+PDEVICE_NODE
+NTAPI
+IopFindLegacyBusDeviceNode(
+    _In_ INTERFACE_TYPE InterfaceType,
+    _In_ ULONG LegacyBusNumber
+);
+
 /* pnputil.c */
 NTSTATUS
 NTAPI

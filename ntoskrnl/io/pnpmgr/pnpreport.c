@@ -251,6 +251,67 @@ IoReportResourceUsageInternal(_In_ ARBITER_REQUEST_SOURCE AllocationType,
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+NTAPI
+IopDuplicateDetection(_In_ INTERFACE_TYPE LegacyBusType,
+                      _In_ ULONG BusNumber,
+                      _In_ ULONG SlotNumber,
+                      _Out_ PDEVICE_NODE * OutDeviceNode)
+{
+    PLEGACY_DEVICE_DETECTION_INTERFACE LegacyDetectInterface;
+    PDEVICE_OBJECT PhysicalDeviceObject;
+    PDEVICE_NODE LegacyNode;
+    NTSTATUS Status;
+
+    DPRINT("IopDuplicateDetection: LegacyBusType %X BusNumber %X SlotNumber %X\n", LegacyBusType, BusNumber, SlotNumber);
+
+    *OutDeviceNode = NULL;
+
+    LegacyNode = IopFindLegacyBusDeviceNode(LegacyBusType, BusNumber);
+    if (!LegacyNode)
+    {
+        DPRINT1("IopDuplicateDetection: STATUS_INVALID_DEVICE_REQUEST\n");
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    Status = IopQueryResourceHandlerInterface(IOP_RES_HANDLER_TYPE_LEGACY,
+                                              LegacyNode->PhysicalDeviceObject,
+                                              0,
+                                              (PVOID *)&LegacyDetectInterface);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDuplicateDetection: STATUS_INVALID_DEVICE_REQUEST\n");
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    if (!LegacyDetectInterface)
+    {
+        DPRINT1("IopDuplicateDetection: STATUS_INVALID_DEVICE_REQUEST\n");
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    Status = LegacyDetectInterface->LegacyDeviceDetection(LegacyDetectInterface->Context,
+                                                          LegacyBusType,
+                                                          BusNumber,
+                                                          SlotNumber,
+                                                          &PhysicalDeviceObject);
+    if (NT_SUCCESS(Status) && PhysicalDeviceObject)
+    {
+        *OutDeviceNode = IopGetDeviceNode(PhysicalDeviceObject);
+        Status = STATUS_SUCCESS;
+    }
+    else
+    {
+        DPRINT1("IopDuplicateDetection: STATUS_INVALID_DEVICE_REQUEST\n");
+        Status = STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    LegacyDetectInterface->InterfaceDereference(LegacyDetectInterface->Context);
+    ExFreePool(LegacyDetectInterface);
+
+    return Status;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 NTSTATUS
@@ -406,10 +467,7 @@ IoReportDetectedDevice(IN PDRIVER_OBJECT DriverObject,
     }
     else
     {
-DeviceNode=0;
-DPRINT1("IoReportDetectedDevice: FIXME IopDuplicateDetection()\n");
-ASSERT(FALSE); // IoDbgBreakPointEx();
-        Status = 0;//IopDuplicateDetection(LegacyBusType, BusNumber, SlotNumber, &DeviceNode);
+        Status = IopDuplicateDetection(LegacyBusType, BusNumber, SlotNumber, &DeviceNode);
         if (NT_SUCCESS(Status) && DeviceNode)
         {
             Pdo = DeviceNode->PhysicalDeviceObject;
