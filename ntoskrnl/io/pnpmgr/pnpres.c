@@ -6393,6 +6393,145 @@ IopFindLegacyDeviceNode(
 }
 
 NTSTATUS
+NTAPI 
+IopLegacyResourceAllocation(
+    _In_ ARBITER_REQUEST_SOURCE AllocationType,
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_OBJECT DeviceObject OPTIONAL,
+    _In_ PIO_RESOURCE_REQUIREMENTS_LIST IoResources,
+    _Inout_ PCM_RESOURCE_LIST * AllocatedResources)
+{
+    PPNP_RESOURCE_REQUEST RequestTable;
+    PCM_RESOURCE_LIST LegacyCmResources;
+    PNP_RESOURCE_REQUEST RequestEntry;
+    PCM_RESOURCE_LIST CmResources;
+    PDEVICE_NODE LegacyDeviceNode;
+    PDEVICE_OBJECT LegacyPDO;
+    PDEVICE_NODE DeviceNode;
+    ULONG DeviceCount;
+    ULONG ListSize;
+    SIZE_T Size;
+    NTSTATUS Status;
+
+    DPRINT1("IopLegacyResourceAllocation: AllocType %X [%X]:[%X] \n", AllocationType, DriverObject, DeviceObject);
+
+    ASSERT(DriverObject);
+    KeEnterCriticalRegion();
+    KeWaitForSingleObject(&PpRegistrySemaphore, DelayExecution, KernelMode, FALSE, NULL);
+
+    Status = IopFindLegacyDeviceNode(DriverObject, DeviceObject, &DeviceNode, &LegacyPDO);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("IopLegacyResourceAllocation: Status %X\n", Status);
+        goto Exit;
+    }
+
+    LegacyDeviceNode = NULL;
+
+    if (!DeviceNode->Parent && IoResources)
+    {
+        if (IoResources->InterfaceType == InterfaceTypeUndefined)
+            IoResources->InterfaceType = PnpDefaultInterfaceType;
+
+        DeviceNode->Parent = IopRootDeviceNode;
+    }
+
+    if ((DeviceNode->Parent && !IoResources) ||
+        DeviceNode->ResourceList ||
+        DeviceNode->BootResources)
+    {
+        IopReleaseResources(DeviceNode);
+    }
+
+    if (!IoResources)
+    {
+        LegacyDeviceNode = DeviceNode->OverUsed1.LegacyDeviceNode;
+        IopRemoveLegacyDeviceNode(DeviceObject, DeviceNode);
+        goto Finish;
+    }
+
+    RtlZeroMemory(&RequestEntry, sizeof(RequestEntry));
+
+    RequestEntry.ResourceRequirements = IoResources;
+    RequestEntry.PhysicalDevice = LegacyPDO;
+    RequestEntry.AllocationType = AllocationType;
+    RequestEntry.Flags = 0x80;
+
+    RequestTable = &RequestEntry;
+    DeviceCount = 1;
+
+    IopAllocateResources(&DeviceCount, &RequestTable, TRUE, TRUE, NULL);
+    Status = RequestEntry.Status;
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLegacyResourceAllocation: Status %X\n", Status);
+        IopRemoveLegacyDeviceNode(DeviceObject, DeviceNode);
+        goto Exit;
+    }
+
+    DeviceNode->ResourceListTranslated = RequestEntry.TranslatedResourceAssignment;
+
+    CmResources = *AllocatedResources;
+    if (!CmResources)
+        CmResources = RequestEntry.ResourceAssignment;
+
+    Size = PnpDetermineResourceListSize(CmResources);
+
+    DeviceNode->ResourceList = ExAllocatePoolWithTag(PagedPool, Size, 'erpP');
+    if (!DeviceNode->ResourceList)
+    {
+        DPRINT1("IopLegacyResourceAllocation: STATUS_INSUFFICIENT_RESOURCES\n");
+
+        DeviceNode->ResourceList = RequestEntry.ResourceAssignment;
+
+        IopReleaseResources(DeviceNode);
+        IopRemoveLegacyDeviceNode(DeviceObject, DeviceNode);
+
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    DPRINT("IopLegacyResourceAllocation: DeviceNode->ResourceList %p\n", DeviceNode->ResourceList);
+
+    if (*AllocatedResources)
+    {
+        ASSERT(RequestEntry.ResourceAssignment);
+        ExFreePool(RequestEntry.ResourceAssignment);
+    }
+    else
+    {
+        *AllocatedResources = RequestEntry.ResourceAssignment;
+    }
+
+    RtlCopyMemory(DeviceNode->ResourceList, *AllocatedResources, Size);
+    LegacyDeviceNode = DeviceNode->OverUsed1.LegacyDeviceNode;
+
+Finish:
+
+    if (LegacyDeviceNode)
+    {
+        LegacyCmResources = IopCombineLegacyResources(LegacyDeviceNode);
+        if (LegacyCmResources)
+        {
+            ListSize = PnpDetermineResourceListSize(LegacyCmResources);
+            IopWriteAllocatedResourcesToRegistry(LegacyDeviceNode, LegacyCmResources, ListSize);
+            ExFreePool(LegacyCmResources);
+        }
+    }
+
+    if ((AllocationType != ArbiterRequestPnpDetected) && IoResources)
+        IopSetLegacyResourcesFlag(DriverObject);
+
+Exit:
+
+    KeReleaseSemaphore(&PpRegistrySemaphore, IO_NO_INCREMENT, 1, FALSE);
+    KeLeaveCriticalRegion();
+
+    DPRINT1("IopLegacyResourceAllocation: return Status %X\n", Status);
+    return Status;
+}
+
+NTSTATUS
 NTAPI
 IopAssignResourcesToDevices(
     _In_ ULONG DeviceCount,

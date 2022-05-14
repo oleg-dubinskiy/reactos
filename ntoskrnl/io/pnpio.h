@@ -1030,6 +1030,16 @@ IopReallocateResources(
     _In_ PDEVICE_NODE DeviceNode
 );
 
+NTSTATUS
+NTAPI 
+IopLegacyResourceAllocation(
+    _In_ ARBITER_REQUEST_SOURCE AllocationType,
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_OBJECT DeviceObject OPTIONAL,
+    _In_ PIO_RESOURCE_REQUIREMENTS_LIST IoResources,
+    _Inout_ PCM_RESOURCE_LIST * AllocatedResources
+);
+
 /* pnputil.c */
 NTSTATUS
 NTAPI

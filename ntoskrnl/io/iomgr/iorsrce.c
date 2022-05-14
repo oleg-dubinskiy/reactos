@@ -913,34 +913,6 @@ IoReportResourceUsage(PUNICODE_STRING DriverClassName,
     return STATUS_SUCCESS;
 }
 
-NTSTATUS
-NTAPI
-IopLegacyResourceAllocation(IN ARBITER_REQUEST_SOURCE AllocationType,
-                            IN PDRIVER_OBJECT DriverObject,
-                            IN PDEVICE_OBJECT DeviceObject OPTIONAL,
-                            IN PIO_RESOURCE_REQUIREMENTS_LIST ResourceRequirements,
-                            IN OUT PCM_RESOURCE_LIST *AllocatedResources)
-{
-    NTSTATUS Status;
-
-    DPRINT1("IopLegacyResourceAllocation is halfplemented!\n");
-
-    Status = IopFixupResourceListWithRequirements(ResourceRequirements,
-                                                  AllocatedResources);
-    if (!NT_SUCCESS(Status))
-    {
-        if (Status == STATUS_CONFLICTING_ADDRESSES)
-        {
-            DPRINT1("Denying an attempt to claim resources currently in use by another device!\n");
-        }
-
-        return Status;
-    }
-
-    /* TODO: Claim resources in registry */
-    return STATUS_SUCCESS;
-}
-
 /*
  * @implemented
  */
