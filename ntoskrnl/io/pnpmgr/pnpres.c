@@ -5348,6 +5348,67 @@ IopQueryRebalanceWorker(
     IopTestForReconfiguration(DeviceNode, RebalancePhase, OutCount, ppDevice);
 }
 
+VOID
+NTAPI
+IopQueryRebalance(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ ULONG RebalancePhase,
+    _Inout_ ULONG* OutCount,
+    _Inout_ PDEVICE_OBJECT** ppDevice)
+{
+    PDEVICE_NODE node;
+    PDEVICE_OBJECT* DevicesArrayN;
+    PDEVICE_OBJECT* NewDevicesArray;
+    PDEVICE_OBJECT* NewDevicesArrayEnd;
+    PDEVICE_OBJECT* array;
+    ULONG Count;
+    ULONG Size;
+
+    DPRINT("IopQueryRebalance: Phase %X Count %X\n", RebalancePhase, (OutCount?*OutCount:0));
+
+    ASSERT(OutCount);
+
+    DevicesArrayN = *ppDevice;
+    IopQueryRebalanceWorker(DeviceNode, RebalancePhase, OutCount, ppDevice);
+
+    Count = *OutCount;
+    if (!Count)
+        return;
+
+    if (RebalancePhase != 0)
+        return;
+
+    Size = (Count * sizeof(PDEVICE_OBJECT));
+
+    NewDevicesArray = ExAllocatePoolWithTag(PagedPool, Size, 'erpP');
+    if (!NewDevicesArray)
+    {
+        DPRINT1("IopQueryRebalance: Not enough memory\n");
+        *OutCount = 0;
+        return;
+    }
+
+    DPRINT("IopQueryRebalance: NewDevicesArray %p\n", NewDevicesArray);
+
+    RtlCopyMemory(NewDevicesArray, DevicesArrayN, Size);
+
+    *OutCount = 0;
+    *ppDevice = DevicesArrayN;
+
+    NewDevicesArrayEnd = &NewDevicesArray[Count];
+
+    for (array = NewDevicesArray; array < NewDevicesArrayEnd; array++)
+    {
+        ASSERT(*array);
+        node = IopGetDeviceNode(*array);
+        ASSERT(node);
+
+        IopQueryRebalanceWorker(node, 1, OutCount, ppDevice);
+    }
+
+    ExFreePoolWithTag(NewDevicesArray, 'erpP');
+}
+
 NTSTATUS
 NTAPI
 IopAllocateResources(
