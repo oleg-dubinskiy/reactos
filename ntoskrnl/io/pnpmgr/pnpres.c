@@ -5318,6 +5318,36 @@ IopTestForReconfiguration(
     DeviceNode->Flags &= ~(DNF_BOOT_CONFIG_RESERVED | DNF_HAS_BOOT_CONFIG);
 }
 
+VOID
+NTAPI
+IopQueryRebalanceWorker(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ ULONG RebalancePhase,
+    _Inout_ ULONG* OutCount,
+    _Inout_ PDEVICE_OBJECT** ppDevice)
+{
+    PDEVICE_NODE node;
+
+    DPRINT("IopQueryRebalanceWorker: [%X] Phase %X Count %X\n", DeviceNode, RebalancePhase, *OutCount);
+
+    ASSERT(DeviceNode);
+
+    if (DeviceNode->State != DeviceNodeStarted)
+        return;
+
+    if (DeviceNode->Flags & (DNF_LEGACY_DRIVER | DNF_HAS_PROBLEM | DNF_HAS_PRIVATE_PROBLEM))
+        return;
+
+    for (node = DeviceNode->Child;
+         node;
+         node = node->Sibling)
+    {
+        IopQueryRebalanceWorker(node, RebalancePhase, OutCount, ppDevice);
+    }
+
+    IopTestForReconfiguration(DeviceNode, RebalancePhase, OutCount, ppDevice);
+}
+
 NTSTATUS
 NTAPI
 IopAllocateResources(
