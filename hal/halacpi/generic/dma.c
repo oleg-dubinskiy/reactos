@@ -1243,8 +1243,31 @@ HalGetScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
                          IN PSCATTER_GATHER_LIST ScatterGather,
                          IN BOOLEAN WriteToDevice)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
+    PSCATTER_GATHER_CONTEXT AdapterControlContext;
+    ULONG ix;
+
+    AdapterControlContext = (PSCATTER_GATHER_CONTEXT)ScatterGather->Reserved;
+
+    for (ix = 0; ix < ScatterGather->NumberOfElements; ix++)
+    {
+         IoFlushAdapterBuffers(AdapterObject,
+                               AdapterControlContext->Mdl,
+                               AdapterControlContext->MapRegisterBase,
+                               AdapterControlContext->CurrentVa,
+                               ScatterGather->Elements[ix].Length,
+                               AdapterControlContext->WriteToDevice);
+
+         AdapterControlContext->CurrentVa += ScatterGather->Elements[ix].Length;
+    }
+
+    IoFreeMapRegisters(AdapterObject,
+                       AdapterControlContext->MapRegisterBase,
+                       AdapterControlContext->MapRegisterCount);
+
+    DPRINT("S/G DMA has finished!\n");
+
+    ExFreePoolWithTag(AdapterControlContext, TAG_DMA);
+    ExFreePoolWithTag(ScatterGather, TAG_DMA);
 }
 
 /* HalpDmaGetDmaAlignment
