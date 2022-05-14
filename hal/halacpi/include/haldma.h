@@ -1,6 +1,8 @@
 
 #pragma once
 
+#define MAX_MAP_REGISTERS  64
+
 /* DMA Page Register Structure
    080     DMA        RESERVED
    081     DMA        Page Register (channel 2)
@@ -34,6 +36,106 @@ typedef struct _DMA_PAGE
    UCHAR Reserved4[3];
    UCHAR Channel4;
 } DMA_PAGE, *PDMA_PAGE;
+
+/* DMA Mask Register Structure
+  
+   MSB                             LSB
+      x   x   x   x     x   x   x   x
+      \---/   -   -     -----   -----
+        |     |   |       |       |     00 - Channel 0 select
+        |     |   |       |       \---- 01 - Channel 1 select
+        |     |   |       |             10 - Channel 2 select
+        |     |   |       |             11 - Channel 3 select
+        |     |   |       |
+        |     |   |       |             00 - Verify transfer
+        |     |   |       \------------ 01 - Write transfer
+        |     |   |                     10 - Read transfer
+        |     |   |
+        |     |   \--------------------  0 - Autoinitialized
+        |     |                          1 - Non-autoinitialized
+        |     |
+        |     \------------------------  0 - Address increment select
+        |
+        |                               00 - Demand mode
+        \------------------------------ 01 - Single mode
+                                        10 - Block mode
+                                        11 - Cascade mode
+*/
+typedef union _DMA_MODE
+{
+   struct
+   {
+      UCHAR Channel: 2;
+      UCHAR TransferType: 2;
+      UCHAR AutoInitialize: 1;
+      UCHAR AddressDecrement: 1;
+      UCHAR RequestMode: 2;
+   };
+   UCHAR Byte;
+} DMA_MODE, *PDMA_MODE;
+
+/* DMA Extended Mode Register Structure
+  
+   MSB                             LSB
+      x   x   x   x     x   x   x   x
+      -   -   -----     -----   -----
+      |   |     |         |       |     00 - Channel 0 select
+      |   |     |         |       \---- 01 - Channel 1 select
+      |   |     |         |             10 - Channel 2 select
+      |   |     |         |             11 - Channel 3 select
+      |   |     |         |
+      |   |     |         |             00 - 8-bit I/O, by bytes
+      |   |     |         \------------ 01 - 16-bit I/O, by words, address shifted
+      |   |     |                       10 - 32-bit I/O, by bytes
+      |   |     |                       11 - 16-bit I/O, by bytes
+      |   |     |
+      |   |     \---------------------- 00 - Compatible
+      |   |                             01 - Type A
+      |   |                             10 - Type B
+      |   |                             11 - Burst
+      |   |
+      |   \---------------------------- 0 - Terminal Count is Output
+      |
+      \---------------------------------0 - Disable Stop Register
+                                        1 - Enable Stop Register
+*/
+typedef union _DMA_EXTENDED_MODE
+{
+   struct
+   {
+      UCHAR ChannelNumber: 2;
+      UCHAR TransferSize: 2;
+      UCHAR TimingMode: 2;
+      UCHAR TerminalCountIsOutput: 1;
+      UCHAR EnableStopRegister: 1;
+   };
+   UCHAR Byte;
+} DMA_EXTENDED_MODE, *PDMA_EXTENDED_MODE;
+
+/* DMA Extended Mode Register Transfer Sizes */
+#define B_8BITS 0
+#define W_16BITS 1
+#define B_32BITS 2
+#define B_16BITS 3
+
+/* DMA Extended Mode Register Timing */
+#define COMPATIBLE_TIMING 0
+#define TYPE_A_TIMING 1
+#define TYPE_B_TIMING 2
+#define BURST_TIMING 3
+
+/* Request Modes */
+#define DEMAND_REQUEST_MODE 0x00
+#define SINGLE_REQUEST_MODE 0x01
+#define BLOCK_REQUEST_MODE 0x02
+#define CASCADE_REQUEST_MODE 0x03
+
+#define DMA_SETMASK 4
+#define DMA_CLEARMASK 0
+#define DMA_READ 4
+#define DMA_WRITE 8
+#define DMA_SINGLE_TRANSFER 0x40
+#define DMA_AUTO_INIT 0x10
 
 /* Channel Stop Registers for each Channel */
 typedef struct _DMA_CHANNEL_STOP
@@ -175,12 +277,51 @@ typedef struct _EISA_CONTROL
    DMA_CHANNEL_STOP DmaChannelStop[8];  /* 4E0h-4FFh */
 } EISA_CONTROL, *PEISA_CONTROL;
 
-PDMA_ADAPTER NTAPI
-HalpGetDmaAdapter(
-    IN PVOID Context,
-    IN PDEVICE_DESCRIPTION DeviceDescription,
-    OUT PULONG NumberOfMapRegisters
-);
+typedef struct _ROS_MAP_REGISTER_ENTRY
+{
+   PVOID VirtualAddress;
+   PHYSICAL_ADDRESS PhysicalAddress;
+   ULONG Counter;
+} ROS_MAP_REGISTER_ENTRY, *PROS_MAP_REGISTER_ENTRY;
+
+typedef struct _ADAPTER_OBJECT
+{
+   /* New style DMA object definition.
+      The fact that it is at the beginning of the ADAPTER_OBJECT structure allows
+      us to easily implement the fallback implementation of IoGetDmaAdapter.
+   */
+   DMA_ADAPTER DmaHeader;
+
+   /* For normal adapter objects pointer to master adapter that takes care
+      of channel allocation. For master adapter set to NULL.
+   */
+   struct _ADAPTER_OBJECT* MasterAdapter;
+
+   ULONG MapRegistersPerChannel;
+   PVOID AdapterBaseVa;
+   PROS_MAP_REGISTER_ENTRY MapRegisterBase;
+   ULONG NumberOfMapRegisters;
+   ULONG CommittedMapRegisters;
+   PWAIT_CONTEXT_BLOCK CurrentWcb;
+   KDEVICE_QUEUE ChannelWaitQueue;
+   PKDEVICE_QUEUE RegisterWaitQueue;
+   LIST_ENTRY AdapterQueue;
+   KSPIN_LOCK SpinLock;
+   PRTL_BITMAP MapRegisters;
+   PUCHAR PagePort;
+   UCHAR ChannelNumber;
+   UCHAR AdapterNumber;
+   USHORT DmaPortAddress;
+   DMA_MODE AdapterMode;
+   BOOLEAN NeedsMapRegisters;
+   BOOLEAN MasterDevice;
+   BOOLEAN Width16Bits;
+   BOOLEAN ScatterGather;
+   BOOLEAN IgnoreCount;
+   BOOLEAN Dma32BitAddresses;
+   BOOLEAN Dma64BitAddresses;
+   LIST_ENTRY AdapterList;
+} ADAPTER_OBJECT;
 
 typedef struct _HALP_DMA_MASTER_ADAPTER
 {
@@ -192,5 +333,11 @@ typedef struct _HALP_DMA_MASTER_ADAPTER
     ULONG Unknown2;
     ULONG Unknown3;
 } HALP_DMA_MASTER_ADAPTER, *PHALP_DMA_MASTER_ADAPTER;
+
+ULONG
+NTAPI
+HalpDmaGetDmaAlignment(
+    IN PADAPTER_OBJECT AdapterObject
+);
 
 /* EOF */

@@ -9,8 +9,47 @@
 
 static BOOLEAN HalpEisaDma = FALSE;
 static KEVENT HalpDmaLock; // NT use HalpNewAdapter?
+static PADAPTER_OBJECT HalpEisaAdapter[8];
+
+static DMA_OPERATIONS HalpDmaOperations = {
+    sizeof(DMA_OPERATIONS),
+    (PPUT_DMA_ADAPTER)HalPutDmaAdapter,
+    (PALLOCATE_COMMON_BUFFER)HalAllocateCommonBuffer,
+    (PFREE_COMMON_BUFFER)HalFreeCommonBuffer,
+    (PALLOCATE_ADAPTER_CHANNEL)IoAllocateAdapterChannel, /* Initialized in HalpInitDma() */
+    (PFLUSH_ADAPTER_BUFFERS)IoFlushAdapterBuffers, /* Initialized in HalpInitDma() */
+    (PFREE_ADAPTER_CHANNEL)IoFreeAdapterChannel, /* Initialized in HalpInitDma() */
+    (PFREE_MAP_REGISTERS)IoFreeMapRegisters, /* Initialized in HalpInitDma() */
+    (PMAP_TRANSFER)IoMapTransfer, /* Initialized in HalpInitDma() */
+    (PGET_DMA_ALIGNMENT)HalpDmaGetDmaAlignment,
+    (PREAD_DMA_COUNTER)HalReadDmaCounter,
+    /* FIXME: Implement the S/G funtions. */
+    (PGET_SCATTER_GATHER_LIST)HalGetScatterGatherList,
+    (PPUT_SCATTER_GATHER_LIST)HalPutScatterGatherList,
+    NULL /*(PCALCULATE_SCATTER_GATHER_LIST_SIZE)HalCalculateScatterGatherListSize*/,
+    NULL /*(PBUILD_SCATTER_GATHER_LIST)HalBuildScatterGatherList*/,
+    NULL /*(PBUILD_MDL_FROM_SCATTER_GATHER_LIST)HalBuildMdlFromScatterGatherList*/
+};
+
+static const ULONG_PTR HalpEisaPortPage[8] = {
+   FIELD_OFFSET(DMA_PAGE, Channel0),
+   FIELD_OFFSET(DMA_PAGE, Channel1),
+   FIELD_OFFSET(DMA_PAGE, Channel2),
+   FIELD_OFFSET(DMA_PAGE, Channel3),
+   0,
+   FIELD_OFFSET(DMA_PAGE, Channel5),
+   FIELD_OFFSET(DMA_PAGE, Channel6),
+   FIELD_OFFSET(DMA_PAGE, Channel7)
+};
+
+HALP_DMA_MASTER_ADAPTER MasterAdapter24;
+HALP_DMA_MASTER_ADAPTER MasterAdapter32;
 
 extern ULONG HalpBusType;
+extern KSPIN_LOCK HalpDmaAdapterListLock;
+extern BOOLEAN LessThan16Mb;
+extern BOOLEAN HalpPhysicalMemoryMayAppearAbove4GB;
+extern LIST_ENTRY HalpDmaAdapterList;
 
 /* FUNCTIONS *****************************************************************/
 
