@@ -720,8 +720,94 @@ NTAPI
 IopDestroyDeviceNode(
     _In_ PDEVICE_NODE DeviceNode)
 {
-    DPRINT("IopDestroyDeviceNode: DeviceNode - %p\n", DeviceNode);
-    ASSERT(FALSE);
+    PDEVICE_OBJECT Pdo;
+    PDEVICE_OBJECT dbgDeviceObject;
+    PLIST_ENTRY Entry;
+
+    PAGED_CODE();
+
+    if (!DeviceNode)
+    {
+        DPRINT1("IopDestroyDeviceNode: DeviceNode is NULL\n");
+        return;
+    }
+
+    Pdo = DeviceNode->PhysicalDeviceObject;
+    DPRINT1("IopDestroyDeviceNode: DeviceNode %p, Pdo %p\n", DeviceNode, Pdo);
+
+    if ((Pdo->Flags & DO_BUS_ENUMERATED_DEVICE) && DeviceNode->Parent)
+    {
+        DPRINT1("KeBugCheckEx(PNP_DETECTED_FATAL_ERROR)\n");
+        ASSERT(FALSE);//IoDbgBreakPointEx();
+        KeBugCheckEx(PNP_DETECTED_FATAL_ERROR, 5, (ULONG_PTR)DeviceNode->PhysicalDeviceObject, 0, 0);
+    }
+
+    if (DeviceNode->Flags & DNF_LEGACY_RESOURCE_DEVICENODE)
+    {
+        IopLegacyResourceAllocation(ArbiterRequestUndefined, IopRootDriverObject, Pdo, NULL, NULL);
+        return;
+    }
+
+    ASSERT(DeviceNode->Child == NULL &&
+           DeviceNode->Sibling == NULL &&
+           DeviceNode->LastChild == NULL);
+
+    ASSERT(DeviceNode->DockInfo.SerialNumber == NULL &&
+          IsListEmpty(&DeviceNode->DockInfo.ListEntry));
+
+    ASSERT(DeviceNode->Parent == NULL);
+
+#if DBG
+    if (DeviceNode->PrevCmResource)
+        ExFreePool(DeviceNode->PrevCmResource);
+
+    if (DeviceNode->DbgParam2)
+        ExFreePool(DeviceNode->DbgParam2);
+#endif
+
+    ASSERT((DeviceNode->UserFlags & DNUF_NOT_DISABLEABLE) == 0);
+    ASSERT(DeviceNode->DisableableDepends == 0);
+
+    if (DeviceNode->InstancePath.Length)
+    {
+        dbgDeviceObject = IopDeviceObjectFromDeviceInstance(&DeviceNode->InstancePath);
+        if (dbgDeviceObject)
+        {
+            ASSERT(dbgDeviceObject != DeviceNode->PhysicalDeviceObject);
+            ObDereferenceObject(dbgDeviceObject);
+        }
+    }
+
+    if (DeviceNode->DuplicatePDO)
+        ObDereferenceObject(DeviceNode->DuplicatePDO);
+
+    if (DeviceNode->ServiceName.Length)
+        ExFreePool(DeviceNode->ServiceName.Buffer);
+
+    if (DeviceNode->InstancePath.Length)
+        ExFreePool(DeviceNode->InstancePath.Buffer);
+
+    if (DeviceNode->ResourceRequirements)
+        ExFreePool(DeviceNode->ResourceRequirements);
+
+    IopUncacheInterfaceInformation(DeviceNode->PhysicalDeviceObject);
+
+    while (!IsListEmpty(&DeviceNode->PendedSetInterfaceState))
+    {
+        Entry = RemoveHeadList(&DeviceNode->PendedSetInterfaceState);
+
+        DPRINT1("IopDestroyDeviceNode: FIXME! DeviceNode %p, Entry %p\n", DeviceNode, Entry);
+        ASSERT(FALSE);//IoDbgBreakPointEx();
+
+        //ExFreePool(?); // ? DEVNODE_INTERFACE_STATE.SymbolicLinkName.Buffer
+        ExFreePool(Entry);
+    }
+
+    ((PEXTENDED_DEVOBJ_EXTENSION)(DeviceNode->PhysicalDeviceObject->DeviceObjectExtension))->DeviceNode = NULL;
+
+    ExFreePoolWithTag(DeviceNode, TAG_IO_DEVNODE);
+
+    InterlockedDecrement(&IopNumberDeviceNodes);
 }
 
 VOID
