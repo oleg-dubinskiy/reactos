@@ -1990,13 +1990,13 @@ HKLM,"SYSTEM\CurrentControlSet\Services\Ndis","ImagePath",0x00020000,"system32\d
 HKLM,"SYSTEM\CurrentControlSet\Services\Ndis","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\Ndis","Type",0x00010001,0x00000001
 
-; NetLogon
-;HKLM,"SYSTEM\CurrentControlSet\Services\NetLogon","DisplayName",0x00000000,%NETLOGON_SERVICE%
-;HKLM,"SYSTEM\CurrentControlSet\Services\NetLogon","Description",0x00000000,%NETLOGON_SERVICE_DESCRIPTION%
-;HKLM,"SYSTEM\CurrentControlSet\Services\NetLogon","ErrorControl",0x00010001,0x00000001
-;HKLM,"SYSTEM\CurrentControlSet\Services\Netlogon","ImagePath",0x00020000,"%SystemRoot%\system32\lsass.exe"
-;HKLM,"SYSTEM\CurrentControlSet\Services\NetLogon","Start",0x00010001,0x00000003
-;HKLM,"SYSTEM\CurrentControlSet\Services\Netlogon","Type",0x00010001,0x00000020
+; AMD PCNET совместимый адаптер, driver
+HKLM,"SYSTEM\CurrentControlSet\Services\pcntpci5","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\pcntpci5","Group",0x00000000,"NDIS"
+HKLM,"SYSTEM\CurrentControlSet\Services\pcntpci5","ImagePath",0x00020000,"system32\drivers\pcntpci5.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\pcntpci5","Start",0x00010001,0x00000003
+HKLM,"SYSTEM\CurrentControlSet\Services\pcntpci5","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\pcntpci5","Tag",0x00010001,0x0000000a
 
 ; NTFS filesystem driver
 HKLM,"SYSTEM\CurrentControlSet\Services\Ntfs","ErrorControl",0x00010001,0x00000000
@@ -2035,6 +2035,22 @@ HKLM,"SYSTEM\CurrentControlSet\Services\Packet","Group",0x00000000,"PNP_TDI"
 HKLM,"SYSTEM\CurrentControlSet\Services\Packet","ImagePath",0x00020000,"system32\drivers\packet.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\Packet","Start",0x00010001,0x00000004
 HKLM,"SYSTEM\CurrentControlSet\Services\Packet","Type",0x00010001,0x00000001
+
+; Serial driver
+HKLM,"SYSTEM\CurrentControlSet\Services\serial","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\serial","Group",0x00000000,"Extended base"
+HKLM,"SYSTEM\CurrentControlSet\Services\serial","Start",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\serial","Tag",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\serial","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\serial","ImagePath",0x00020000,"system32\drivers\serial.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\serial","UpperFilters",0x00010000, "serenum"
+
+; Serenum driver
+HKLM,"SYSTEM\CurrentControlSet\Services\serenum","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\serenum","Start",0x00010001,0x00000003
+HKLM,"SYSTEM\CurrentControlSet\Services\serenum","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\serenum","Group",0x00000000,"PNP Filter"
+HKLM,"SYSTEM\CurrentControlSet\Services\serenum","ImagePath",0x00020000,"system32\drivers\serenum.sys"
 
 ; i8042prt driver
 HKLM,"SYSTEM\CurrentControlSet\Services\i8042prt","ErrorControl",0x00010001,0x00000001
@@ -2084,16 +2100,6 @@ HKLM,"SYSTEM\CurrentControlSet\Services\mouhid","ImagePath",0x00020000,"system32
 HKLM,"SYSTEM\CurrentControlSet\Services\mouhid","Start",0x00010001,0x00000003
 HKLM,"SYSTEM\CurrentControlSet\Services\mouhid","Type",0x00010001,0x00000001
 
-; USB hub driver
-HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","ErrorControl",0x00010001,0x00000001
-HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Group",0x00000000,"Base"
-HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","ImagePath",0x00020000,"system32\drivers\usbhub.sys"
-HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Start",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Type",0x00010001,0x00000001
-HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Tag",0x00010001,00000013
-HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","DisplayName",0x00000000,"USB2 Enabled Hub"
-HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Description",0x00000000,"USB HUB Driver"
-
 ; EHCI controller driver
 HKLM,"SYSTEM\CurrentControlSet\Services\usbehci","ErrorControl",0x00010001,0x00000001
 HKLM,"SYSTEM\CurrentControlSet\Services\usbehci","Group",0x00000000,"Base"
@@ -2121,6 +2127,16 @@ HKLM,"SYSTEM\CurrentControlSet\Services\usbuhci","Start",0x00010001,00000003
 HKLM,"SYSTEM\CurrentControlSet\Services\usbuhci","Type",0x00010001,0x00000001
 HKLM,"SYSTEM\CurrentControlSet\Services\usbuhci","Tag",0x00010001,00000012
 HKLM,"SYSTEM\CurrentControlSet\Services\usbuhci","DisplayName",0x00000000,"USB Universal Host Controller Miniport Driver"
+
+; USB hub driver
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Group",0x00000000,"Base"
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","ImagePath",0x00020000,"system32\drivers\usbhub.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Tag",0x00010001,00000013
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","DisplayName",0x00000000,"USB2 Enabled Hub"
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Description",0x00000000,"USB HUB Driver"
 
 ; USB storage driver
 HKLM,"SYSTEM\CurrentControlSet\Services\usbstor","ErrorControl",0x00010001,0x00000001
@@ -2169,6 +2185,14 @@ HKLM,"SYSTEM\CurrentControlSet\Services\atapi","Type",0x00010001,0x00000001
 HKLM,"SYSTEM\CurrentControlSet\Services\atapi","Tag",0x00010001,00000021
 HKLM,"SYSTEM\CurrentControlSet\Services\atapi","DisplayName",0x00000000,"Standard IDE/ESDI Hard Disk Controller"
 
+; AHCI driver
+;HKLM,"SYSTEM\CurrentControlSet\Services\AHCIX","ErrorControl",0x00010001,0x00000000
+;HKLM,"SYSTEM\CurrentControlSet\Services\AHCIX","Group",0x00000000,"SCSI Miniport"
+;HKLM,"SYSTEM\CurrentControlSet\Services\AHCIX","ImagePath",0x00020000,"system32\drivers\ahcix.sys"
+;HKLM,"SYSTEM\CurrentControlSet\Services\AHCIX","Start",0x00010001,0x00000000
+;HKLM,"SYSTEM\CurrentControlSet\Services\AHCIX","Type",0x00010001,0x00000001
+;HKLM,"SYSTEM\CurrentControlSet\Services\AHCIX","Tag",0x00010001,0x00000010
+
 ; PCIIde miniport driver
 HKLM,"SYSTEM\CurrentControlSet\Services\PCIIde","ErrorControl",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\PCIIde","Group",0x00000000,"System Bus Extender"
@@ -2177,6 +2201,40 @@ HKLM,"SYSTEM\CurrentControlSet\Services\PCIIde","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\PCIIde","Type",0x00010001,0x00000001
 HKLM,"SYSTEM\CurrentControlSet\Services\PCIIde","Tag",0x00010001,0x00000007
 
+; Intel PCI IDE miniport driver
+HKLM,"SYSTEM\CurrentControlSet\Services\IntelIde","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\IntelIde","Group",0x00000000,"System Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\IntelIde","ImagePath",0x00020000,"system32\drivers\intelide.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\IntelIde","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\IntelIde","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\IntelIde","Tag",0x00010001,0x00000005
+
+; AMD AHCI Compatible RAID Controller driver
+HKLM,"SYSTEM\CurrentControlSet\Services\ahcix86","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\ahcix86","Group",0x00000000,"SCSI Miniport"
+HKLM,"SYSTEM\CurrentControlSet\Services\ahcix86","ImagePath",0x00020000,"system32\drivers\ahcix86.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\ahcix86","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\ahcix86","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\ahcix86","Tag",0x00010001,0x00000003
+HKLM,"SYSTEM\CurrentControlSet\Services\ahcix86","DisplayName",0x00000000,"AMD AHCI Compatible RAID Controller"
+
+; iaStor driver
+HKLM,"SYSTEM\CurrentControlSet\Services\iaStor","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\iaStor","Group",0x00000000,"SCSI Miniport"
+HKLM,"SYSTEM\CurrentControlSet\Services\iaStor","ImagePath",0x00020000,"system32\drivers\iaStor.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\iaStor","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\iaStor","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\iaStor","Tag",0x00010001,0x00000019
+HKLM,"SYSTEM\CurrentControlSet\Services\iaStor","DisplayName",0x00000000,"Intel AHCI Controller"
+
+; jraid driver
+;HKLM,"SYSTEM\CurrentControlSet\Services\jraid","ErrorControl",0x00010001,0x00000001
+;HKLM,"SYSTEM\CurrentControlSet\Services\jraid","Group",0x00000000,"SCSI Miniport"
+;HKLM,"SYSTEM\CurrentControlSet\Services\jraid","ImagePath",0x00020000,"system32\drivers\jraid.sys"
+;HKLM,"SYSTEM\CurrentControlSet\Services\jraid","Start",0x00010001,0x00000000
+;HKLM,"SYSTEM\CurrentControlSet\Services\jraid","Type",0x00010001,0x00000001
+;HKLM,"SYSTEM\CurrentControlSet\Services\jraid","Tag",0x00010001,0x00000021
+
 ; MountMgr driver
 HKLM,"SYSTEM\CurrentControlSet\Services\MountMgr","ErrorControl",0x00010001,0x00000001
 HKLM,"SYSTEM\CurrentControlSet\Services\MountMgr","Group",0x00000000,"System Bus Extender"
@@ -2184,6 +2242,77 @@ HKLM,"SYSTEM\CurrentControlSet\Services\MountMgr","ImagePath",0x00020000,"system
 HKLM,"SYSTEM\CurrentControlSet\Services\MountMgr","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\MountMgr","Tag",0x00010001,0x00000008
 HKLM,"SYSTEM\CurrentControlSet\Services\MountMgr","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\MountMgr","NoAutoMount", 0x00010001,0x00000000
+
+; FtDisk driver
+HKLM,"SYSTEM\CurrentControlSet\Services\ftdisk","Group",0x00000000,"System Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\ftdisk","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\ftdisk","Group",0x00000000,"System Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\ftdisk","ImagePath",0x00020000,"system32\drivers\ftdisk.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\ftdisk","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\ftdisk","Tag",0x00010001,0x00000009
+HKLM,"SYSTEM\CurrentControlSet\Services\ftdisk","Type",0x00010001,0x00000001
+
+; PartMgr driver
+HKLM,"SYSTEM\CurrentControlSet\Services\partmgr","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\partmgr","Group",0x00000000,"System Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\partmgr","ImagePath",0x00020000,"system32\drivers\partmgr.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\partmgr","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\partmgr","Tag",0x00010001,0x00000011
+HKLM,"SYSTEM\CurrentControlSet\Services\partmgr","Type",0x00010001,0x00000001
+
+; dmboot driver
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmboot","setup",0x00010001,0x00000001
+
+; dmio driver
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmio","ErrorControl",0x00010001,0x00000001
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmio","Group",0x00000000,"System Bus Extender"
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmio","ImagePath",0x00020000,"system32\drivers\dmio.sys"
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmio","Start",0x00010001,0x00000000
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmio","Tag",0x00010001,0x0000000d
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmio","Type",0x00010001,0x00000001
+
+; dmload driver
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmload","ErrorControl",0x00010001,0x00000001
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmload","Group",0x00000000,"System Bus Extender"
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmload","ImagePath",0x00020000,"system32\drivers\dmload.sys"
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmload","Start",0x00010001,0x00000000
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmload","Tag",0x00010001,0x0000000c
+;HKLM,"SYSTEM\CurrentControlSet\Services\dmload","Type",0x00010001,0x00000001
+
+; volsnap driver
+;HKLM,"SYSTEM\CurrentControlSet\Services\volsnap","ErrorControl",0x00010001,0x00000001
+;HKLM,"SYSTEM\CurrentControlSet\Services\volsnap","Group",0x00000000,"System Bus Extender"
+;HKLM,"SYSTEM\CurrentControlSet\Services\volsnap","ImagePath",0x00020000,"system32\drivers\volsnap.sys"
+;HKLM,"SYSTEM\CurrentControlSet\Services\volsnap","Start",0x00010001,0x00000000
+;HKLM,"SYSTEM\CurrentControlSet\Services\volsnap","Type",0x00010001,0x00000001
+
+; VBE SVGA driver
+HKLM,"SYSTEM\CurrentControlSet\Services\VBE","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\VBE","Group",0x00000000,"Video Save"
+HKLM,"SYSTEM\CurrentControlSet\Services\VBE","ImagePath",0x00020000,"system32\drivers\vbemp.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\VBE","Start",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\VBE","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\VBE","Tag",0x00010001,0x00000001
+
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","InstalledDisplayDrivers",0x00010000,"framebuf"
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","DefaultSettings.VRefresh",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","DefaultSettings.BitsPerPel",0x00010001,8
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","DefaultSettings.XResolution",0x00010001,640
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","DefaultSettings.YResolution",0x00010001,480
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","DefaultSettings.FixedOutput",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","DefaultSettings.Flags",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","DefaultSettings.Orientation",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","DefaultSettings.XPanning",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","DefaultSettings.YPanning",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","Attach.RelativeX",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","Attach.RelativeY",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","Attach.ToDesktop",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","Attach.PrimaryDevice",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","Device Description",0x00020000,"Generic VESA Adapter"
+
+; This is not true but it allows to use 3rd party drivers while having the VBE driver installed
+HKLM,"SYSTEM\CurrentControlSet\Hardware Profiles\Current\System\CurrentControlSet\Services\VBE\Device0","VgaCompatible",0x00010001,1
 
 ; ACPI driver
 HKLM,"SYSTEM\CurrentControlSet\Services\acpi","ErrorControl",0x00010001,0x00000001
@@ -2192,6 +2321,7 @@ HKLM,"SYSTEM\CurrentControlSet\Services\acpi","ImagePath",0x00020000,"system32\d
 HKLM,"SYSTEM\CurrentControlSet\Services\acpi","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\acpi","Tag",0x00010001,0x00000001
 HKLM,"SYSTEM\CurrentControlSet\Services\acpi","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\acpi","DisplayName",0x00000000,"ACPI Driver"
 
 ; isapnp driver
 HKLM,"SYSTEM\CurrentControlSet\Services\isapnp","ErrorControl",0x00010001,0x00000003
@@ -2201,7 +2331,7 @@ HKLM,"SYSTEM\CurrentControlSet\Services\isapnp","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\isapnp","Tag",0x00010001,0x00000003
 HKLM,"SYSTEM\CurrentControlSet\Services\isapnp","Type",0x00010001,0x00000001
 HKLM,"SYSTEM\CurrentControlSet\Services\isapnp","HasBootConfig",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\isapnp","DisplayName",0x00000000,"Драйвер PnP ISA/EISA шины"
+HKLM,"SYSTEM\CurrentControlSet\Services\isapnp","DisplayName",0x00000000,"PnP ISA/EISA Bus Driver"
 ;HKLM,"SYSTEM\CurrentControlSet\Services\isapnp\Parameters", FIXME
 
 ; PCI Bus driver
@@ -2391,6 +2521,20 @@ HKLM,"SYSTEM\CurrentControlSet\Services\Pci\Parameters","10DE002E",0x00030003,00
 HKLM,"SYSTEM\CurrentControlSet\Services\Pci\Parameters","10DE002F",0x00030003,00,00,00,a0,00,00,00,00
 HKLM,"SYSTEM\CurrentControlSet\Services\Pci\Parameters","101300D6101880D6",0x00030003,00,00,00,00,00,00,00,00
 
+; Драйвер батареи с ACPI-управлением
+HKLM,"SYSTEM\CurrentControlSet\Services\CmBatt","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\CmBatt","ImagePath",0x00020000,"system32\drivers\cmbatt.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\CmBatt","Start",0x00010001,0x00000003
+HKLM,"SYSTEM\CurrentControlSet\Services\CmBatt","Type",0x00010001,0x00000001
+
+; Драйвер составной батареи
+HKLM,"SYSTEM\CurrentControlSet\Services\Compbatt","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\Compbatt","Group",0x00000000,"System Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\Compbatt","ImagePath",0x00020000,"system32\drivers\compbatt.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\Compbatt","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\Compbatt","Tag",0x00010001,0x00000006
+HKLM,"SYSTEM\CurrentControlSet\Services\Compbatt","Type",0x00010001,0x00000001
+
 ; Plug and Play manager
 HKLM,"SYSTEM\CurrentControlSet\Services\PlugPlay","DisplayName",0x00000000,%PLUGPLAY_SERVICE%
 HKLM,"SYSTEM\CurrentControlSet\Services\PlugPlay","Description",0x00000000,%PLUGPLAY_SERVICE_DESCRIPTION%
@@ -2563,6 +2707,13 @@ HKLM,"SYSTEM\CurrentControlSet\Services\DcomLaunch\Parameters","ServiceDll",0x00
 ;HKLM,"SYSTEM\CurrentControlSet\Services\sndblst","Start",0x00010001,0x00000003
 ;HKLM,"SYSTEM\CurrentControlSet\Services\sndblst","Type",0x00010001,0x00000001
 
+; Cdfs (ISO96660) filesystem driver
+HKLM,"SYSTEM\CurrentControlSet\Services\Cdfs","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\Cdfs","Group",0x00000000,"File System"
+HKLM,"SYSTEM\CurrentControlSet\Services\Cdfs","ImagePath",0x00020000,"system32\drivers\cdfs.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\Cdfs","Start",0x00010001,0x00000003
+HKLM,"SYSTEM\CurrentControlSet\Services\Cdfs","Type",0x00010001,0x00000002
+
 ; Virtual FAT filesystem driver
 HKLM,"SYSTEM\CurrentControlSet\Services\fastfat","ErrorControl",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\fastfat","Group",0x00000000,"Boot File System"
@@ -2593,11 +2744,11 @@ HKLM,"SYSTEM\CurrentControlSet\Services\Ext2fs\Parameters","Ext3ForceWriting",0x
 HKLM,"SYSTEM\CurrentControlSet\Services\Ext2fs\Parameters","AutoMount",0x00010001,0x00000001
 
 ; BTRFS Filesystem driver
-HKLM,"SYSTEM\CurrentControlSet\Services\btrfs","ErrorControl",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\btrfs","Group",0x00000000,"Boot File System"
-HKLM,"SYSTEM\CurrentControlSet\Services\btrfs","ImagePath",0x00020000,"system32\drivers\btrfs.sys"
-HKLM,"SYSTEM\CurrentControlSet\Services\btrfs","Start",0x00010001,0x00000003
-HKLM,"SYSTEM\CurrentControlSet\Services\btrfs","Type",0x00010001,0x00000002
+;HKLM,"SYSTEM\CurrentControlSet\Services\btrfs","ErrorControl",0x00010001,0x00000000
+;HKLM,"SYSTEM\CurrentControlSet\Services\btrfs","Group",0x00000000,"Boot File System"
+;HKLM,"SYSTEM\CurrentControlSet\Services\btrfs","ImagePath",0x00020000,"system32\drivers\btrfs.sys"
+;HKLM,"SYSTEM\CurrentControlSet\Services\btrfs","Start",0x00010001,0x00000003
+;HKLM,"SYSTEM\CurrentControlSet\Services\btrfs","Type",0x00010001,0x00000002
 
 ; REISER Filesystem driver
 HKLM,"SYSTEM\CurrentControlSet\Services\Reiserfs","ErrorControl",0x00010001,0x00000000
