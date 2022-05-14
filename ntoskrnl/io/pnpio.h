@@ -995,6 +995,13 @@ IopReportBootResources(
     _In_ PCM_RESOURCE_LIST CmResource
 );
 
+VOID
+NTAPI
+IopAllocateLegacyBootResources(
+    _In_ INTERFACE_TYPE InterfaceType,
+    _In_ ULONG BusNumber
+);
+
 NTSTATUS
 NTAPI
 IopAllocateBootResourcesInternal(

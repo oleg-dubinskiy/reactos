@@ -2484,9 +2484,7 @@ Next:
         if (ix == 2) // ServiceGroupName - "Boot Bus Extender"
         {
             DPRINT("IopInitializeBootDrivers: ix == 2. IopAllocateLegacyBootResources(0, 0)\n");
-            DPRINT1("IopInitializeBootDrivers: FIXME IopAllocateLegacyBootResources()\n");
-            ASSERT(FALSE); // IoDbgBreakPointEx();
-            //IopAllocateLegacyBootResources(0, 0);
+            IopAllocateLegacyBootResources(0, 0);
             IopAllocateBootResourcesRoutine = IopAllocateBootResources;
 
             ASSERT(IopInitHalResources == NULL);
