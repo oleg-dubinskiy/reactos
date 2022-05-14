@@ -1358,6 +1358,63 @@ IoFreeMapRegisters(IN PADAPTER_OBJECT AdapterObject,
     ASSERT(0);//HalpDbgBreakPointEx();
 }
 
+/* HalpCopyBufferMap
+      Helper function for copying data from/to map register buffers.
+ 
+   see IoFlushAdapterBuffers, IoMapTransfer
+*/
+VOID
+NTAPI
+HalpCopyBufferMap(IN PMDL Mdl,
+                  IN PROS_MAP_REGISTER_ENTRY MapRegisterBase,
+                  IN PVOID CurrentVa,
+                  IN ULONG Length,
+                  IN BOOLEAN WriteToDevice)
+{
+    ULONG CurrentLength;
+    ULONG_PTR CurrentAddress;
+    ULONG ByteOffset;
+    PVOID VirtualAddress;
+
+    VirtualAddress = MmGetSystemAddressForMdlSafe(Mdl, HighPagePriority);
+    if (!VirtualAddress)
+    {
+        /* NOTE: On real NT a mechanism with reserved pages is implemented
+           to handle this case in a slow, but graceful non-fatal way.
+        */
+         KeBugCheckEx(HAL_MEMORY_ALLOCATION, PAGE_SIZE, 0, (ULONG_PTR)__FILE__, 0);
+    }
+
+    CurrentAddress = (ULONG_PTR)VirtualAddress +
+                     (ULONG_PTR)CurrentVa -
+                     (ULONG_PTR)MmGetMdlVirtualAddress(Mdl);
+
+    for (; Length > 0; Length -= CurrentLength)
+    {
+        ByteOffset = BYTE_OFFSET(CurrentAddress);
+        CurrentLength = PAGE_SIZE - ByteOffset;
+
+        if (CurrentLength > Length)
+            CurrentLength = Length;
+
+        if (WriteToDevice)
+        {
+            RtlCopyMemory((PVOID)((ULONG_PTR)MapRegisterBase->VirtualAddress + ByteOffset),
+                          (PVOID)CurrentAddress,
+                          CurrentLength);
+        }
+        else
+        {
+            RtlCopyMemory((PVOID)CurrentAddress,
+                          (PVOID)((ULONG_PTR)MapRegisterBase->VirtualAddress + ByteOffset),
+                          CurrentLength);
+        }
+
+        CurrentAddress += CurrentLength;
+        MapRegisterBase++;
+    }
+}
+
 /* IoMapTransfer
       Map a DMA for transfer and do the DMA if it's a slave.
 
