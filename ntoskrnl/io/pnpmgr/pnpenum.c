@@ -4970,9 +4970,52 @@ NTAPI
 PiProcessResourceRequirementsChanged(
     _In_ PPIP_ENUM_REQUEST Request)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_NODE DeviceNode;
+    SERVICE_LOAD_TYPE DriverLoadType;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    ASSERT(Request->DeviceObject);
+
+    DeviceNode = IopGetDeviceNode(Request->DeviceObject);
+    DPRINT("PiProcessResourceRequirementsChanged: %p, %p, %X\n", Request, DeviceNode, DeviceNode->State);
+
+    if (DeviceNode->State == DeviceNodeDeletePendingCloses)
+        return STATUS_DELETE_PENDING;
+
+    if (DeviceNode->State == DeviceNodeDeleted)
+        return STATUS_DELETE_PENDING;
+
+    DeviceNode->Flags = ((DeviceNode->Flags & ~DNF_NO_RESOURCE_REQUIRED) | DNF_RESOURCE_REQUIREMENTS_CHANGED);
+
+    PipClearDevNodeProblem(DeviceNode);
+
+    if (DeviceNode->State != DeviceNodeStarted)
+        return STATUS_UNSUCCESSFUL;
+
+    if (Request->RequestArgument)
+        DeviceNode->Flags &= ~DNF_NON_STOPPED_REBALANCE;
+    else
+        DeviceNode->Flags |= DNF_NON_STOPPED_REBALANCE;
+
+    IopReallocateResources(DeviceNode);
+
+    DriverLoadType = DemandLoad;
+    Status = PipProcessDevNodeTree(IopRootDeviceNode,
+                                   PnPBootDriversInitialized,
+                                   FALSE,
+                                   0,
+                                   (Request->CompletionEvent != NULL),
+                                   TRUE,
+                                   &DriverLoadType,
+                                   Request);
+    if (NT_SUCCESS(Status))
+        return Status;
+
+    DPRINT("PiProcessResourceRequirementsChanged: Status %X\n", Status);
+    ASSERT(NT_SUCCESS(Status));
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
