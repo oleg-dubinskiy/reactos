@@ -127,6 +127,11 @@ typedef union _DMA_EXTENDED_MODE
 #define TYPE_B_TIMING 2
 #define BURST_TIMING 3
 
+/* Transfer Types */
+#define VERIFY_TRANSFER 0x00
+#define READ_TRANSFER 0x01
+#define WRITE_TRANSFER 0x02
+
 /* Request Modes */
 #define DEMAND_REQUEST_MODE 0x00
 #define SINGLE_REQUEST_MODE 0x01
