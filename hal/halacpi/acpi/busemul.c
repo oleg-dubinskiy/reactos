@@ -19,6 +19,29 @@ extern FADT HalpFixedAcpiDescTable;
 /* PRIVATE FUNCTIONS **********************************************************/
 
 NTSTATUS
+NTAPI
+TranslateGlobalVectorToIsaVector(
+    _In_ ULONG GlobalVector,
+    _Out_ PULONG IsaVector)
+{
+    UCHAR ix;
+
+    DPRINT("TranslateGlobalToIsa: Global %X, Isa %X\n", GlobalVector, IsaVector);
+
+    for (ix = 0; ix < 0x10; ix++)
+    {
+        if (HalpPicVectorRedirect[ix] == GlobalVector)
+        {
+            DPRINT("TranslateGlobalVectorToIsaVector: Vector %X\n", ix);
+            *IsaVector = ix;
+            return STATUS_SUCCESS;
+        }
+    }
+
+    return STATUS_NOT_FOUND;
+}
+
+NTSTATUS
 NTAPI 
 HalacpiIrqTranslateResourcesIsa(
      _Inout_opt_ PVOID Context,
