@@ -257,6 +257,39 @@ HalpGrowMapBuffers(IN PADAPTER_OBJECT AdapterObject,
     return TRUE;
 }
 
+/* HalpGrowMapBufferWorker
+      Helper routine of HalAllocateAdapterChannel for allocating map registers at PASSIVE_LEVEL in work item.
+*/
+VOID
+NTAPI
+HalpGrowMapBufferWorker(IN PVOID DeferredContext)
+{
+    PGROW_WORK_ITEM WorkItem = (PGROW_WORK_ITEM)DeferredContext;
+    KIRQL OldIrql;
+    BOOLEAN Succeeded;
+
+    /* Try to allocate new map registers for the adapter.
+       NOTE: The NT implementation actually tries to allocate more map registers than needed as an optimization.
+    */
+    KeWaitForSingleObject(&HalpDmaLock, WrExecutive, KernelMode, FALSE, NULL);
+
+    Succeeded = HalpGrowMapBuffers(WorkItem->AdapterObject->MasterAdapter, (WorkItem->NumberOfMapRegisters << PAGE_SHIFT));
+    KeSetEvent(&HalpDmaLock, IO_NO_INCREMENT, FALSE);
+
+    if (Succeeded)
+    {
+        /* Flush the adapter queue now that new map registers are ready.
+           The easiest way to do that is to call IoFreeMapRegisters to not free any registers.
+           Note that we use the magic (PVOID)2 map register base to bypass the parameter checking.
+        */
+        OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
+        IoFreeMapRegisters(WorkItem->AdapterObject, UlongToPtr(2), 0);
+        KfLowerIrql(OldIrql);
+    }
+
+    ExFreePool(WorkItem);
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /* HalAllocateAdapterChannel
