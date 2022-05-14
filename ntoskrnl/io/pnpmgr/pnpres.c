@@ -5189,6 +5189,135 @@ IopReleaseDeviceResources(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+VOID
+NTAPI
+IopTestForReconfiguration(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ ULONG RebalancePhase,
+    _Inout_ ULONG* OutCount,
+    _Inout_ PDEVICE_OBJECT** ppDevice)
+{
+    PDEVICE_NODE child;
+    BOOLEAN IsResourceChanged = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("IopTestForReconfiguration: [%X] Phase %X Count %X\n", DeviceNode, RebalancePhase, *OutCount);
+
+    if (RebalancePhase == 0)
+    {
+        if ((DeviceNode->Flags & DNF_RESOURCE_REQUIREMENTS_CHANGED) &&
+           !(DeviceNode->Flags & DNF_NON_STOPPED_REBALANCE))
+        {
+            **ppDevice = DeviceNode->PhysicalDeviceObject;
+
+            (*ppDevice)++;
+            (*OutCount)++;
+
+            return;
+        }
+
+        if (DeviceNode->State == DeviceNodeStarted)
+        {
+            Status = IopQueryReconfiguration(IRP_MN_QUERY_STOP_DEVICE, DeviceNode->PhysicalDeviceObject);
+
+            if (NT_SUCCESS(Status) && (Status == STATUS_RESOURCE_REQUIREMENTS_CHANGED))
+            {
+                DeviceNode->Flags |= DNF_RESOURCE_REQUIREMENTS_CHANGED;
+                IsResourceChanged = TRUE;
+            }
+
+            IopQueryReconfiguration(IRP_MN_CANCEL_STOP_DEVICE, DeviceNode->PhysicalDeviceObject);
+
+            if (IsResourceChanged)
+            {
+                **ppDevice = DeviceNode->PhysicalDeviceObject;
+                (*ppDevice)++;
+                (*OutCount)++;
+            }
+        }
+
+        return;
+    }
+
+    /* RebalancePhase != 0 */ 
+
+    if (DeviceNode->State == DeviceNodeStarted)
+    {
+        for (child = DeviceNode->Child;
+             child;
+             child = child->Sibling)
+        {
+            if (child->State != DeviceNodeUninitialized &&
+                child->State != DeviceNodeInitialized &&
+                child->State != DeviceNodeDriversAdded &&
+                child->State != DeviceNodeQueryStopped &&
+                child->State != DeviceNodeRemovePendingCloses &&
+                child->State != DeviceNodeRemoved &&
+                !(child->Flags & DNF_NEEDS_REBALANCE))
+            {
+                break;
+            }
+        }
+
+        if (child)
+        {
+            DPRINT("IopTestForReconfiguration: Child %ws not stopped for %ws\n", child->InstancePath.Buffer, DeviceNode->InstancePath.Buffer);
+            return;
+        }
+    }
+    else
+    {
+        if (DeviceNode->State != DeviceNodeDriversAdded)
+            return;
+
+        if (!(DeviceNode->Flags & DNF_HAS_BOOT_CONFIG))
+            return;
+
+        if (DeviceNode->Flags & DNF_MADEUP)
+            return;
+    }
+
+    Status = IopQueryReconfiguration(IRP_MN_QUERY_STOP_DEVICE, DeviceNode->PhysicalDeviceObject);
+    if (!NT_SUCCESS(Status))
+    {
+        IopQueryReconfiguration(IRP_MN_CANCEL_STOP_DEVICE, DeviceNode->PhysicalDeviceObject);
+        return;
+    }
+
+    DPRINT("IopTestForReconfiguration: %ws succeeded QueryStop\n", DeviceNode->InstancePath.Buffer);
+
+    if (DeviceNode->State == DeviceNodeStarted)
+    {
+        PipSetDevNodeState(DeviceNode, DeviceNodeQueryStopped, NULL);
+
+        **ppDevice = DeviceNode->PhysicalDeviceObject;
+        ObReferenceObject(DeviceNode->PhysicalDeviceObject);
+
+        (*ppDevice)++;
+        (*OutCount)++;
+
+        return;
+    }
+
+    ASSERT(!(DeviceNode->Flags & DNF_HAS_BOOT_CONFIG));
+
+    Status = IopQueryReconfiguration(IRP_MN_STOP_DEVICE, DeviceNode->PhysicalDeviceObject);
+    ASSERT(NT_SUCCESS(Status));
+
+    ASSERT((DeviceNode->Flags & DNF_MADEUP) == 0);
+
+    IopReleaseResourcesInternal(DeviceNode);
+    DeviceNode->Flags &= ~(DNF_BOOT_CONFIG_RESERVED | DNF_HAS_BOOT_CONFIG);
+
+    if (DeviceNode->BootResources)
+    {
+        ExFreePoolWithTag(DeviceNode->BootResources, 0);
+        DeviceNode->BootResources = 0;
+    }
+
+    DeviceNode->Flags &= ~(DNF_BOOT_CONFIG_RESERVED | DNF_HAS_BOOT_CONFIG);
+}
+
 NTSTATUS
 NTAPI
 IopAllocateResources(
