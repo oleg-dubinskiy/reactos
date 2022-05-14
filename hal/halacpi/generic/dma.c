@@ -53,23 +53,19 @@ extern LIST_ENTRY HalpDmaAdapterList;
 
 /* FUNCTIONS *****************************************************************/
 
-/**
- * @name HalpGetDmaAdapter
- *
- * Internal routine to allocate PnP DMA adapter object. It's exported through
- * HalDispatchTable and used by IoGetDmaAdapter.
- *
- * @see HalGetAdapter
- */
+/* HalpGetDmaAdapter
+     Internal routine to allocate PnP DMA adapter object.
+     It's exported through HalDispatchTable and used by IoGetDmaAdapter.
+ 
+   see HalGetAdapter
+*/
 PDMA_ADAPTER
 NTAPI
 HalpGetDmaAdapter(IN PVOID Context,
                   IN PDEVICE_DESCRIPTION DeviceDescriptor,
                   OUT PULONG NumberOfMapRegisters)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return NULL;
+    return &HalGetAdapter(DeviceDescriptor, NumberOfMapRegisters)->DmaHeader;
 }
 
 NTSTATUS
