@@ -6200,6 +6200,66 @@ IopSetLegacyResourcesFlag(
 
 NTSTATUS
 NTAPI
+IopSetLegacyDeviceInstance(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    UNICODE_STRING RootLegacyName = RTL_CONSTANT_STRING(L"ROOT\\LEGACY");
+    UNICODE_STRING InstanceStr;
+    PDEVICE_OBJECT LegacyDeviceObject;
+    PDEVICE_NODE LegacyDeviceNode;
+    PUNICODE_STRING ServiceStr;
+    HANDLE Handle;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT1("IopSetLegacyDeviceInstance: [%X]:[%X]\n", DriverObject, DeviceNode);
+
+    DeviceNode->OverUsed1.LegacyDeviceNode = NULL;
+    ServiceStr = (PUNICODE_STRING)&DriverObject->DriverExtension->ServiceKeyName;
+
+    InstanceStr.Length = 0;
+    InstanceStr.Buffer = NULL;
+
+    Status = PipServiceInstanceToDeviceInstance(NULL, ServiceStr, 0, &InstanceStr, &Handle, KEY_READ);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopSetLegacyDeviceInstance: Status %X\n", Status);
+        return Status;
+    }
+
+    if (!InstanceStr.Length)
+    {
+        DPRINT1("IopSetLegacyDeviceInstance: InstanceStr.Length is 0\n");
+        return Status;
+    }
+
+    if (!RtlPrefixUnicodeString(&RootLegacyName, &InstanceStr, TRUE))
+    {
+        RtlFreeUnicodeString(&InstanceStr);
+        goto Exit;
+    }
+
+    DeviceNode->InstancePath = InstanceStr;
+    LegacyDeviceObject = IopDeviceObjectFromDeviceInstance(&InstanceStr);
+
+    if (LegacyDeviceObject)
+        goto Exit;
+
+    LegacyDeviceNode = IopGetDeviceNode(LegacyDeviceObject);
+    ASSERT(LegacyDeviceNode);
+
+    DeviceNode->OverUsed2.NextResourceDeviceNode = LegacyDeviceNode->OverUsed2.NextResourceDeviceNode;
+    LegacyDeviceNode->OverUsed2.NextResourceDeviceNode = DeviceNode;
+    DeviceNode->OverUsed1.LegacyDeviceNode = LegacyDeviceNode;
+
+Exit:
+    Status = ZwClose(Handle);
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 IopAssignResourcesToDevices(
     _In_ ULONG DeviceCount,
     _In_ PPNP_RESOURCE_REQUEST ResContext,
