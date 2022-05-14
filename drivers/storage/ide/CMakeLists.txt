@@ -1,5 +1,6 @@
 
 add_subdirectory(atapi)
+add_subdirectory(intelide)
 add_subdirectory(pciide)
 add_subdirectory(pciidex)
-add_subdirectory(uniata)
+#add_subdirectory(uniata)
