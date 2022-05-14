@@ -1578,15 +1578,23 @@ HKLM,"SYSTEM\CurrentControlSet\Control\GraphicsDrivers\UseNewKey",,0x00000012
 ; the following dwords are the tag entries for the load order.
 
 HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Boot Bus Extender", 0x00000001, \
-05,00,00,00, \
+07,00,00,00, \
 01,00,00,00, \
 02,00,00,00, \
 03,00,00,00, \
 04,00,00,00, \
 05,00,00,00, \
-; ACPI
-; PCI
-; isapnp
+06,00,00,00, \
+07,00,00,00
+
+;07,00,00,00, 
+;01,00,00,00, - acpi
+;02,00,00,00, - pci
+;03,00,00,00, - isapnp
+;04,00,00,00, - 
+;05,00,00,00, - 
+;06,00,00,00, - 
+;07,00,00,00  - 
 
 HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","System Bus Extender", 0x00000001, \
 12,00,00,00, \
@@ -1608,23 +1616,32 @@ HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","System Bus Extender", 0x
 10,00,00,00, \
 11,00,00,00, \
 12,00,00,00
-; compbatt
-; pcmcia
-; pciide
-; aliIde, cmdide, intelide, toside, viaide
-; mountmgr
-; ftdisk
-; dmload
-; dmio
-; partmgr
-; fdc
-; volsnap
+
+;12,00,00,00, - 
+;06,00,00,00, - Compbatt
+;03,00,00,00, - 
+;04,00,00,00, - 
+;01,00,00,00, - 
+;08,00,00,00, - MountMgr
+;09,00,00,00, - Ftdisk
+;0a,00,00,00, - 
+;0b,00,00,00, - 
+;0c,00,00,00, - dmload
+;0d,00,00,00, - dmio
+;0e,00,00,00, - 
+;02,00,00,00, - 
+;05,00,00,00, - intelide
+;07,00,00,00, - pciide
+;0f,00,00,00, - sdbus
+;10,00,00,00, - ACPIEC
+;11,00,00,00, - PartMgr
+;12,00,00,00  - volsnap
 
 HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","SCSI Miniport", 0x00000001, \
 40,00,00,00, \
 00,01,00,00, \
 01,01,00,00, \
-19,00,00,00, \ 
+19,00,00,00, \
 01,00,00,00, \
 02,00,00,00, \
 03,00,00,00, \
@@ -1686,7 +1703,6 @@ HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","SCSI Miniport", 0x000000
 3e,00,00,00, \
 3f,00,00,00, \
 21,00,00,00
-;atapi
 
 HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Primary Disk", 0x00000001, \
 05,00,00,00, \
@@ -1695,7 +1711,6 @@ HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Primary Disk", 0x0000000
 03,00,00,00, \
 04,00,00,00, \
 05,00,00,00
-; ramdisk
 
 HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","SCSI Class", 0x00000001, \
 04,00,00,00, \
@@ -1703,14 +1718,12 @@ HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","SCSI Class", 0x00000001,
 02,00,00,00, \
 03,00,00,00, \
 04,00,00,00
-; disk
 
 HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","SCSI CDROM Class", 0x00000001, \
 03,00,00,00, \
 01,00,00,00, \
 02,00,00,00, \
 03,00,00,00
-; cdrom
 
 HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Base", 0x00000001, \
 15,00,00,00, \
@@ -1735,37 +1748,48 @@ HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Base", 0x00000001, \
 13,00,00,00, \
 14,00,00,00, \
 15,00,00,00
-; KSecDD Null scsiscan 
-; Beep
-; usbehci
-; usbohci usbuhci
-; usbhub
-; USBSTOR
-; usbccgp
 
-;=== FIXME ===================================================================
-09 "FSFilter Infrastructure", \
-10 "FSFilter System", \
-11 "FSFilter Bottom", \
-12 "FSFilter Copy Protection", \
-13 "FSFilter Security Enhancer", \
-14 "FSFilter Open File", \
-15 "FSFilter Physical Quota Management", \
-16 "FSFilter Encryption", \
-17 "FSFilter Compression", \
-18 "FSFilter HSM", \
-19 "FSFilter Cluster File System", \
-20 "FSFilter System Recovery", \
-21 "FSFilter Quota Management", \
-22 "FSFilter Content Screener", \
-23 "FSFilter Continuous Backup", \
-24 "FSFilter Replication", \
-25 "FSFilter Anti-Virus", \
-26 "FSFilter Undelete", \
-27 "FSFilter Activity Monitor", \
-28 "FSFilter Top", \
-29 "Filter", \
-;=== FIXME ===================================================================
+;0e,00,00,00,
+;01,00,00,00, Null
+;02,00,00,00, Beep
+;03,00,00,00, 
+;04,00,00,00,
+;05,00,00,00,
+;06,00,00,00,
+;07,00,00,00,
+;08,00,00,00,
+;09,00,00,00,
+;0a,00,00,00,
+;0b,00,00,00,
+;0c,00,00,00,
+;0d,00,00,00,
+;0f,00,00,00,
+;10,00,00,00,
+;11,00,00,00,usbehci
+;12,00,00,00,usbohci usbuhci
+;13,00,00,00,usbhub
+;14,00,00,00,USBSTOR
+;15,00,00,00 usbccgp
+
+HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Video Save", 0x00000001, \
+02,00,00,00, \
+01,00,00,00, \
+02,00,00,00
+
+HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Keyboard Class", 0x00000001, \
+01,00,00,00, \
+01,00,00,00
+
+HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Keyboard Port", 0x00000001, \
+04,00,00,00, \
+01,00,00,00, \
+02,00,00,00, \
+03,00,00,00, \
+04,00,00,00
+
+HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Pointer Class", 0x00000001, \
+01,00,00,00, \
+01,00,00,00
 
 HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Pointer Port", 0x00000001, \
 04,00,00,00, \
@@ -1773,79 +1797,6 @@ HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Pointer Port", 0x0000000
 02,00,00,00, \
 03,00,00,00, \
 04,00,00,00
-; mouhid
-
-HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Keyboard Port", 0x00000001, \
-06,00,00,00, \
-01,00,00,00, \
-02,00,00,00, \
-03,00,00,00, \
-04,00,00,00, \
-05,00,00,00, \
-06,00,00,00
-; i8042prt
-; kbdhid
-
-HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Pointer Class", 0x00000001, \
-02,00,00,00, \
-01,00,00,00, \
-02,00,00,00
-; mouclass
-
-HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Keyboard Class", 0x00000001, \
-01,00,00,00, \
-02,00,00,00, \
-02,00,00,00
-; kbdclass
-
-HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Video Init", 0x00000001, \
-01,00,00,00, \
-01,00,00,00
-
-HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Video", 0x00000001, \
-01,00,00,00, \
-01,00,00,00
-
-HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Video Save", 0x00000001, \
-01,00,00,00, \
-01,00,00,00
-; VgaSave
-; RDPCDD 
-
-HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Streams Drivers", 0x00000001, \
-01,00,00,00, \
-01,00,00,00
-
-HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","PNP_TDI", 0x00000001, \
-0d,00,00,00, \
-05,00,00,00, \
-01,00,00,00, \
-02,00,00,00, \
-03,00,00,00, \
-04,00,00,00, \
-06,00,00,00, \
-07,00,00,00, \
-08,00,00,00, \
-09,00,00,00, \
-0a,00,00,00, \
-0b,00,00,00, \
-0c,00,00,00, \
-0d,00,00,00
-
-HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","NetBIOSGroup", 0x00000001, \
-01,00,00,00, \
-02,00,00,00, \
-02,00,00,00
-
-HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","SpoolerGroup", 0x00000001, \
-01,00,00,00, \
-02,00,00,00, \
-02,00,00,00
-
-HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList","Parallel arbitrator", 0x00000001, \
-01,00,00,00, \
-01,00,00,00
-
 
 ; Session Manager stuff
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager","BootExecute", 0x00010000, \
