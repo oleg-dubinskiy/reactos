@@ -408,6 +408,198 @@ HalAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
     return STATUS_SUCCESS;
 }
 
+PADAPTER_OBJECT
+NTAPI
+HalpAllocateAdapterEx(IN ULONG MapRegisters,
+                      IN PVOID AdapterBaseVa,
+                      IN BOOLEAN IsDma32Bit)
+{
+    PHALP_DMA_MASTER_ADAPTER pMasterAdapter;
+    PROS_MAP_REGISTER_ENTRY MapRegisterBase;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    PADAPTER_OBJECT MasterAdapter;
+    PADAPTER_OBJECT AdapterObject;
+    HANDLE Handle;
+    PVOID Object;
+    ULONG MapRegisterBaseSize;
+    ULONG MapBufferMaxPages;
+    ULONG SizeOfBitMap;
+    ULONG AdapterSize;
+    BOOLEAN IsMasterAdapter;
+    NTSTATUS Status;
+  
+    PAGED_CODE();
+    DPRINT1("HalpAllocateAdapterEx: %X, %X, %X\n", MapRegisters, AdapterBaseVa, IsDma32Bit);
+
+    if (AdapterBaseVa == LongToPtr(-1))
+    {
+        IsMasterAdapter = TRUE;
+    }
+    else
+    {
+        IsMasterAdapter = FALSE;
+
+        if (MapRegisters)
+        {
+            if (!HalpPhysicalMemoryMayAppearAbove4GB || !IsDma32Bit)
+                pMasterAdapter = &MasterAdapter24;
+            else
+                pMasterAdapter = &MasterAdapter32;
+
+            if (!pMasterAdapter->MasterAdapter)
+            {
+                MasterAdapter = HalpAllocateAdapterEx(MapRegisters, LongToPtr(-1), IsDma32Bit);
+                if (!MasterAdapter)
+                    return NULL;
+
+                MasterAdapter->Dma32BitAddresses = IsDma32Bit;
+                MasterAdapter->MasterDevice = IsDma32Bit;
+
+                if (!HalpPhysicalMemoryMayAppearAbove4GB || !IsDma32Bit)
+                    pMasterAdapter = &MasterAdapter24;
+                else
+                    pMasterAdapter = &MasterAdapter32;
+
+                pMasterAdapter->MasterAdapter = MasterAdapter;
+            }
+        }
+    }
+
+    InitializeObjectAttributes(&ObjectAttributes,
+                               NULL,
+                               (OBJ_KERNEL_HANDLE | OBJ_PERMANENT),
+                               NULL,
+                               NULL);
+    if (IsMasterAdapter)
+    {
+        if (!HalpPhysicalMemoryMayAppearAbove4GB || !IsDma32Bit)
+            pMasterAdapter = &MasterAdapter24;
+        else
+            pMasterAdapter = &MasterAdapter32;
+
+        MapBufferMaxPages = pMasterAdapter->MapBufferMaxPages;
+        SizeOfBitMap = MapBufferMaxPages;
+
+        AdapterSize = sizeof(ADAPTER_OBJECT) + ((((MapBufferMaxPages + 7) >> 3) + 11) & ~3);
+    }
+    else
+    {
+        AdapterSize = sizeof(ADAPTER_OBJECT);
+    }
+
+    Status = ObCreateObject(KernelMode,
+                            IoAdapterObjectType,
+                            &ObjectAttributes,
+                            KernelMode,
+                            NULL,
+                            AdapterSize,
+                            0,
+                            0,
+                            &Object);
+
+    AdapterObject = (PADAPTER_OBJECT)Object;
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpAllocateAdapterEx: Status %X\n", Status);
+        return NULL;
+    }
+
+    Status = ObReferenceObjectByPointer(AdapterObject,
+                                        (FILE_READ_DATA | FILE_WRITE_DATA),
+                                        IoAdapterObjectType,
+                                        KernelMode);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpAllocateAdapterEx: Status %X\n", Status);
+        return NULL;
+    }
+
+    RtlZeroMemory(AdapterObject, sizeof(ADAPTER_OBJECT));
+
+    Status = ObInsertObject(AdapterObject,
+                            NULL,
+                            (FILE_READ_DATA | FILE_WRITE_DATA),
+                            0,
+                            NULL,
+                            &Handle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpAllocateAdapterEx: Status %X\n", Status);
+        return NULL;
+    }
+
+    ZwClose(Handle);
+
+    AdapterObject->DmaHeader.Version = 1;
+    AdapterObject->DmaHeader.Size = AdapterSize;
+    AdapterObject->DmaHeader.DmaOperations = &HalpDmaOperations;
+
+    AdapterObject->MapRegistersPerChannel = 1;
+    AdapterObject->AdapterBaseVa = AdapterBaseVa;
+    AdapterObject->ChannelNumber = 0xFF;
+    AdapterObject->Dma32BitAddresses = IsDma32Bit;
+
+    if (MapRegisters)
+    {
+        if (!HalpPhysicalMemoryMayAppearAbove4GB || !IsDma32Bit)
+            pMasterAdapter = &MasterAdapter24;
+        else
+            pMasterAdapter = &MasterAdapter32;
+
+        AdapterObject->MasterAdapter = pMasterAdapter->MasterAdapter;
+    }
+    else
+    {
+        AdapterObject->MasterAdapter = NULL;
+    }
+
+    DPRINT1("HalpAllocateAdapterEx: MasterAdapter %p\n", AdapterObject->MasterAdapter);
+
+    KeInitializeDeviceQueue(&AdapterObject->ChannelWaitQueue);
+
+    if (!IsMasterAdapter)
+    {
+        DPRINT1("HalpAllocateAdapterEx: return %p\n", AdapterObject);
+        return AdapterObject;
+    }
+
+    KeInitializeSpinLock(&AdapterObject->SpinLock);
+    InitializeListHead(&AdapterObject->AdapterQueue);
+
+    AdapterObject->MapRegisters = (PRTL_BITMAP)&AdapterObject[1].DmaHeader.DmaOperations;
+
+    RtlInitializeBitMap((PRTL_BITMAP)&AdapterObject[1].DmaHeader.DmaOperations,
+                        &AdapterObject[1].MapRegistersPerChannel,
+                        SizeOfBitMap);
+
+    RtlSetAllBits(AdapterObject->MapRegisters);
+
+    AdapterObject->NumberOfMapRegisters = 0;
+    AdapterObject->CommittedMapRegisters = 0;
+
+    MapRegisterBaseSize = (12 * SizeOfBitMap);
+    MapRegisterBase = ExAllocatePoolWithTag(0, MapRegisterBaseSize, ' laH');
+
+    AdapterObject->MapRegisterBase = MapRegisterBase;
+    if (!MapRegisterBase)
+    {
+        ObDereferenceObject(AdapterObject);
+        return NULL;
+    }
+
+    RtlZeroMemory(MapRegisterBase, MapRegisterBaseSize);
+
+    if (!HalpGrowMapBuffers(AdapterObject, 0x10000))
+    {
+        ObDereferenceObject(AdapterObject);
+        return NULL;
+    }
+
+    DPRINT1("HalpAllocateAdapterEx: return %p\n", AdapterObject);
+    return AdapterObject;
+}
+
 /* HalGetAdapter
       Allocate an adapter object for DMA device.
 
