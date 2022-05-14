@@ -1190,6 +1190,30 @@ HalGetScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
                                      HalpScatterGatherAdapterControl);
 }
 
+/* HalPutScatterGatherList
+      Frees a scatter-gather list allocated from HalGetScatterGatherList
+
+   AdapterObject
+      Adapter object representing the bus master or system dma controller.
+   ScatterGather
+      The scatter/gather list to be freed.
+   WriteToDevice
+      Indicates direction of DMA operation.
+
+   return None
+
+   see HalGetScatterGatherList
+*/
+ VOID
+ NTAPI
+ HalPutScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
+                         IN PSCATTER_GATHER_LIST ScatterGather,
+                         IN BOOLEAN WriteToDevice)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+}
+
 /* HalReadDmaCounter
      Read DMA operation progress counter.
 */
