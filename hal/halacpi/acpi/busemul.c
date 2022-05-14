@@ -280,12 +280,29 @@ HalpAssignSlotResources(IN PUNICODE_STRING RegistryPath,
                         IN INTERFACE_TYPE BusType,
                         IN ULONG BusNumber,
                         IN ULONG SlotNumber,
-                        IN OUT PCM_RESOURCE_LIST * AllocatedResources)
+                        IN OUT PCM_RESOURCE_LIST *AllocatedResources)
 {
-    DPRINT1("HalpAssignSlotResources: ... \n");
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    BUS_HANDLER BusHandler;
+
+    DPRINT("HalpAssignSlotResources: BusType %X, BusNumber %X, SlotNumber %X\n", BusType, BusNumber, SlotNumber);
+    PAGED_CODE();
+
+    /* Only PCI is supported */
+    if (BusType != PCIBus) return STATUS_NOT_IMPLEMENTED;
+
+    /* Setup fake PCI Bus handler */
+    RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BUS_HANDLER));
+    BusHandler.BusNumber = BusNumber;
+
+    /* Call the PCI function */
+    return HalpAssignPCISlotResources(&BusHandler,
+                                      &BusHandler,
+                                      RegistryPath,
+                                      DriverClassName,
+                                      DriverObject,
+                                      DeviceObject,
+                                      SlotNumber,
+                                      AllocatedResources);
 }
 
 BOOLEAN
@@ -529,6 +546,7 @@ HalAssignSlotResources(IN PUNICODE_STRING RegistryPath,
     if (BusType != PCIBus)
     {
         /* Call our internal handler */
+        DPRINT("HalAssignSlotResources: BusType %X, BusNumber %X, SlotNumber %X\n", BusType, BusNumber, SlotNumber);
         return HalpAssignSlotResources(RegistryPath,
                                        DriverClassName,
                                        DriverObject,
@@ -541,6 +559,7 @@ HalAssignSlotResources(IN PUNICODE_STRING RegistryPath,
     else
     {
         /* Call the PCI registered function */
+        DPRINT("HalAssignSlotResources: BusType %X, BusNumber %X, SlotNumber %X\n", BusType, BusNumber, SlotNumber);
         return HalPciAssignSlotResources(RegistryPath,
                                          DriverClassName,
                                          DriverObject,
