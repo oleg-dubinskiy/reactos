@@ -1189,4 +1189,15 @@ PipGenerateMadeupNodeName(
     _Out_ PUNICODE_STRING OutMadeupName
 );
 
+NTSTATUS
+NTAPI
+PipServiceInstanceToDeviceInstance(
+    _In_ HANDLE ServiceKeyHandle,
+    _In_ PUNICODE_STRING ServiceKeyName,
+    _In_ ULONG InstanceNum,
+    _Out_ PUNICODE_STRING OutInstanceName,
+    _Out_ PHANDLE OutHandle,
+    _In_ ACCESS_MASK DesiredAccess
+);
+
 #endif  /* _PNPIO_H */
