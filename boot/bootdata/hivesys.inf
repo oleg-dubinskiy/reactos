@@ -357,6 +357,20 @@ HKLM,"SYSTEM\CurrentControlSet\Control\Class\{36FC9E60-C465-11CF-8056-4445535400
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{36FC9E60-C465-11CF-8056-444553540000}","Icon",0x00000000,"-20"
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{36FC9E60-C465-11CF-8056-444553540000}","NoInstallClass",0x00000000,"1"
 
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E966-E325-11CE-BFC1-08002BE10318}",,0x00000000,"Computer"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E966-E325-11CE-BFC1-08002BE10318}","Class",0x00000000,"Computer"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E966-E325-11CE-BFC1-08002BE10318}","Icon",0x00000000,"-27"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E966-E325-11CE-BFC1-08002BE10318}","Installer32",0x00000000,"SysSetup.Dll,ComputerClassInstaller"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E966-E325-11CE-BFC1-08002BE10318}","NoInstallClass",0x00000000,"1"
+
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E967-E325-11CE-BFC1-08002BE10318}",,0x00000000,"Disk Drives"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E967-E325-11CE-BFC1-08002BE10318}","Class",0x00000000,"DiskDrive"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E967-E325-11CE-BFC1-08002BE10318}","Icon",0x00000000,"-53"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E967-E325-11CE-BFC1-08002BE10318}","Installer32",0x00000000,"StorProp.Dll,DiskClassInstaller"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E967-E325-11CE-BFC1-08002BE10318}","NoInstallClass",0x00000000,"1"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E967-E325-11CE-BFC1-08002BE10318}","SilentInstall",0x00000000,"1"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E967-E325-11CE-BFC1-08002BE10318}","UpperFilters",0x00010000,"partmgr"
+
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E96B-E325-11CE-BFC1-08002BE10318}",,0x00000000,"Keyboard"
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E96B-E325-11CE-BFC1-08002BE10318}","Class",0x00000000,"Keyboard"
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E96B-E325-11CE-BFC1-08002BE10318}","Icon",0x00000000,"-3"
@@ -370,6 +384,12 @@ HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E96F-E325-11CE-BFC1-08002BE103
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E96F-E325-11CE-BFC1-08002BE10318}","Installer32",0x00000000,"SysSetup.Dll,MouseClassInstaller"
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E96F-E325-11CE-BFC1-08002BE10318}","NoInstallClass",0x00000000,"1"
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E96F-E325-11CE-BFC1-08002BE10318}","UpperFilters",0x00010000,"mouclass"
+
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}",,0x00000000,"Network adapters"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}","Class",0x00000000,"Net"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}","Icon",0x00000000,"-5"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}","Installer32",0x00000000,"NetCfgx.dll,NetClassInstaller"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}","EnumPropPages32",0x00000000,"NetCfgx.dll,NetPropPageProvider"
 
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E973-E325-11CE-BFC1-08002BE10318}",,0x00000000,"Network Client"
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{4D36E973-E325-11CE-BFC1-08002BE10318}","Class",0x00000000,"NetClient"
@@ -400,6 +420,10 @@ HKLM,"SYSTEM\CurrentControlSet\Control\Class\{9D6D66A6-0B0C-4563-9077-A0E9A7955A
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{9D6D66A6-0B0C-4563-9077-A0E9A7955AE4}","Class",0x00000000,"Ramdisk"
 HKLM,"SYSTEM\CurrentControlSet\Control\Class\{9D6D66A6-0B0C-4563-9077-A0E9A7955AE4}","Icon",0x00000000,"-5"
 
+; Device classes key
+HKLM,"SYSTEM\CurrentControlSet\Control\DeviceClasses",,0x00000012
+HKLM,"SYSTEM\CurrentControlSet\Control\DeviceClasses\{53F5630D-B6BF-11D0-94F2-00A0C91EFB8B}",,0x00000012
+
 ; Class Co-Installers
 HKLM,"SYSTEM\CurrentControlSet\Control\CoDeviceInstallers",,0x00000012
 HKLM,"SYSTEM\CurrentControlSet\Control\CoDeviceInstallers","{4D36E965-E325-11CE-BFC1-08002BE10318}",0x00010000,"syssetup.dll,CriticalDeviceCoInstaller"
@@ -424,16 +448,13 @@ HKLM,"SYSTEM\CurrentControlSet\Control\CrashControl","MinidumpDir",0x00020002,"%
 HKLM,"SYSTEM\CurrentControlSet\Control\CrashControl","Overwrite",0x00010003,1
 HKLM,"SYSTEM\CurrentControlSet\Control\CrashControl","SendAlert",0x00010003,0
 
-; Device classes key
-HKLM,"SYSTEM\CurrentControlSet\Control\DeviceClasses",,0x00000012
-
 ; HAL Chipset Hacks
 HKLM,"SYSTEM\CurrentControlSet\Control\HAL","10390530",0x00010001,0x1
 HKLM,"SYSTEM\CurrentControlSet\Control\HAL","10390620",0x00010001,0x1
 HKLM,"SYSTEM\CurrentControlSet\Control\HAL","10B90533",0x00010001,0x1
 HKLM,"SYSTEM\CurrentControlSet\Control\HAL","10B91533",0x00010001,0x1
 HKLM,"SYSTEM\CurrentControlSet\Control\HAL","11060596",0x00010001,0x1
-HKLM,"SYSTEM\CurrentControlSet\Control\HAL","11060686",0x00010001,0x5
+HKLM,"SYSTEM\CurrentControlSet\Control\HAL","11060686",0x00010001,0x22004005
 HKLM,"SYSTEM\CurrentControlSet\Control\HAL","1166004F",0x00010001,0x1
 HKLM,"SYSTEM\CurrentControlSet\Control\HAL","11660050",0x00010001,0x1
 HKLM,"SYSTEM\CurrentControlSet\Control\HAL","11660200",0x00010001,0x1
