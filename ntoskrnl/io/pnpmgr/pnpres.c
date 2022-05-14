@@ -6048,6 +6048,75 @@ IopReleaseResources(
                                      DeviceNode->BootResources);
 }
 
+VOID
+NTAPI
+IopRemoveLegacyDeviceNode(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PDEVICE_NODE LegacyDeviceNode)
+{
+    PDEVICE_NODE Child;
+    PDEVICE_NODE node;
+    PDEVICE_OBJECT PhysicalDeviceObject;
+  
+    DPRINT1("IopRemoveLegacyDeviceNode: [%X]:[%X]\n", DeviceObject, LegacyDeviceNode);
+    ASSERT(LegacyDeviceNode);
+
+    if (DeviceObject)
+    {
+        if (DeviceObject->Flags & DO_BUS_ENUMERATED_DEVICE)
+            return;
+    }
+    else
+    {
+        if (!LegacyDeviceNode->DuplicatePDO)
+        {
+            DPRINT1("IopRemoveLegacyDeviceNode: No duplicate PDO for '%S'\n", LegacyDeviceNode->InstancePath.Buffer);
+            ASSERT(LegacyDeviceNode->DuplicatePDO);
+            return;
+        }
+
+        Child = LegacyDeviceNode->Child;
+        LegacyDeviceNode->DuplicatePDO = NULL;
+
+        if (Child)
+            Child->Sibling = LegacyDeviceNode->Sibling;
+
+        if (LegacyDeviceNode->Sibling)
+            LegacyDeviceNode->Sibling->Child = LegacyDeviceNode->Child;
+
+        if (IopLegacyDeviceNode == LegacyDeviceNode)
+            IopLegacyDeviceNode = LegacyDeviceNode->Sibling;
+    }
+
+    for (node = LegacyDeviceNode->OverUsed1.LegacyDeviceNode;
+         node;
+         node = node->OverUsed2.NextResourceDeviceNode)
+    {
+        if (node->OverUsed2.NextResourceDeviceNode == LegacyDeviceNode)
+        {
+            node->OverUsed2.NextResourceDeviceNode = LegacyDeviceNode->OverUsed2.NextResourceDeviceNode;
+            break;
+        }
+    }
+
+    LegacyDeviceNode->Flags &= ~DNF_LEGACY_RESOURCE_DEVICENODE;
+
+    PhysicalDeviceObject = LegacyDeviceNode->PhysicalDeviceObject;
+
+    LegacyDeviceNode->LastChild = NULL;
+    LegacyDeviceNode->Child = NULL;
+    LegacyDeviceNode->Sibling = NULL;
+    LegacyDeviceNode->Parent = NULL;
+
+    IopDestroyDeviceNode(LegacyDeviceNode);
+
+    if (DeviceObject)
+        return;
+
+    PhysicalDeviceObject->DriverObject = IopRootDriverObject;
+    IoDeleteDevice(PhysicalDeviceObject);
+}
+
 NTSTATUS
 NTAPI
 IopAssignResourcesToDevices(
