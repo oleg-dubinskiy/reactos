@@ -933,6 +933,20 @@ Exit:
     return AdapterObject;
 }
 
+/* HalPutDmaAdapter
+      Internal routine to free DMA adapter and resources for reuse.
+      It's exported using the DMA_OPERATIONS interface by HalGetAdapter.
+
+   see HalGetAdapter
+*/
+VOID
+NTAPI
+HalPutDmaAdapter(IN PADAPTER_OBJECT AdapterObject)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+}
+
 /* HalAllocateCommonBuffer
       Allocates memory that is visible to both the processor(s) and the DMA device.
   
