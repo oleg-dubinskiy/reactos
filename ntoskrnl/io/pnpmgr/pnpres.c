@@ -7154,4 +7154,109 @@ PnpEnum:
     DPRINT("IopAllocateLegacyBootResources exit\n");
 }
 
+VOID
+NTAPI
+IopReallocateResources(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    PNP_RESOURCE_REQUEST RequestTable;
+    PPNP_RESOURCE_REQUEST RequestTableEnd = (&RequestTable + 1);
+    LIST_ENTRY ConfigList;
+    ULONG NoResourceRequiredFlag;
+    ULONG DeviceCount;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT1("IopReallocateResources: DeviceNode %p, Flags %X\n", DeviceNode, DeviceNode->Flags);
+
+    KeEnterCriticalRegion();
+    KeWaitForSingleObject(&PpRegistrySemaphore, DelayExecution, KernelMode, FALSE, NULL);
+
+    if (!(DeviceNode->Flags & DNF_RESOURCE_REQUIREMENTS_CHANGED))
+    {
+        DPRINT1("Resource requirements not changed in IopReallocateResources, returning error!\n");
+        KeReleaseSemaphore(&PpRegistrySemaphore, IO_NO_INCREMENT, 1, FALSE);
+        KeLeaveCriticalRegion();
+        return;
+    }
+
+    NoResourceRequiredFlag = (DeviceNode->Flags & DNF_NO_RESOURCE_REQUIRED);
+    DeviceNode->Flags = (DeviceNode->Flags & ~DNF_NO_RESOURCE_REQUIRED);
+
+    if (!(DeviceNode->Flags & DNF_NON_STOPPED_REBALANCE))
+    {
+        Status = IopRebalance(0, NULL);
+        goto Exit;
+    }
+
+    RtlZeroMemory(&RequestTable, sizeof(RequestTable));
+
+    RequestTable.Flags |= (0x200 | 0x80);
+    RequestTable.PhysicalDevice = DeviceNode->PhysicalDeviceObject;
+
+    Status = IopGetResourceRequirementsForAssignTable(&RequestTable, RequestTableEnd, &DeviceCount);
+    if (DeviceCount == 0)
+        goto Exit;
+
+    if (DeviceNode->ResourceList)
+        IopReleaseResourcesInternal(DeviceNode);
+
+    Status = IopFindBestConfiguration(&RequestTable, DeviceCount, &ConfigList);
+    if (NT_SUCCESS(Status))
+        Status = IopCommitConfiguration(&ConfigList);
+
+    if (!NT_SUCCESS(Status))
+    {
+        NTSTATUS RestoreResourcesStatus;
+
+        DPRINT1("IopReallocateResources: Status %p\n", Status);
+
+        RestoreResourcesStatus = IopRestoreResourcesInternal(DeviceNode);
+        if (!NT_SUCCESS(RestoreResourcesStatus))
+        {
+            ASSERT(NT_SUCCESS(RestoreResourcesStatus));
+            PipRequestDeviceRemoval(DeviceNode, FALSE, CM_PROB_NEED_RESTART);
+        }
+
+        IopFreeResourceRequirementsForAssignTable(&RequestTable, RequestTableEnd);
+
+        goto Exit;
+    }
+
+    DeviceNode->Flags &= ~(DNF_NON_STOPPED_REBALANCE | DNF_RESOURCE_REQUIREMENTS_CHANGED);
+
+    IopBuildCmResourceLists(&RequestTable, RequestTableEnd);
+
+    if (DeviceNode->ResourceList)
+        ExFreePoolWithTag(DeviceNode->ResourceList, 0);
+
+    if (DeviceNode->ResourceListTranslated)
+        ExFreePoolWithTag(DeviceNode->ResourceListTranslated, 0);
+
+    DeviceNode->ResourceList = RequestTable.ResourceAssignment;
+    DeviceNode->ResourceListTranslated = RequestTable.TranslatedResourceAssignment;
+
+    ASSERT(DeviceNode->State == DeviceNodeStarted);
+
+    Status = IopStartDevice(DeviceNode);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopReallocateResources: Status %p\n", Status);
+        PipRequestDeviceRemoval(DeviceNode, FALSE, CM_PROB_NORMAL_CONFLICT);
+    }
+
+    IopFreeResourceRequirementsForAssignTable(&RequestTable, RequestTableEnd);
+
+Exit:
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopReallocateResources: Status %p\n", Status);
+        DeviceNode->Flags = (NoResourceRequiredFlag | (DeviceNode->Flags & ~DNF_NO_RESOURCE_REQUIRED));
+    }
+
+    KeReleaseSemaphore(&PpRegistrySemaphore, IO_NO_INCREMENT, 1, FALSE);
+    KeLeaveCriticalRegion();
+}
+
 /* EOF */

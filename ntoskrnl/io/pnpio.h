@@ -1017,6 +1017,12 @@ IopAllocateLegacyBootResources(
     _In_ ULONG BusNumber
 );
 
+VOID
+NTAPI
+IopReallocateResources(
+    _In_ PDEVICE_NODE DeviceNode
+);
+
 /* pnputil.c */
 NTSTATUS
 NTAPI
