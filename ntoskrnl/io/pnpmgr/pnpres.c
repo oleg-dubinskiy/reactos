@@ -5411,6 +5411,295 @@ IopQueryRebalance(
 
 NTSTATUS
 NTAPI
+IopRebalance(
+    _In_ ULONG InDevicesCount,
+    _In_ PPNP_RESOURCE_REQUEST InRequestTable)
+{
+    PPNP_RESOURCE_REQUEST RequestTable = NULL;
+    PPNP_RESOURCE_REQUEST RebalanceEntry;
+    PPNP_RESOURCE_REQUEST RebalanceEntryEnd;
+    PPNP_RESOURCE_REQUEST AssignedTable = NULL;
+    PPNP_RESOURCE_REQUEST AssignedTableEnd;
+    PPNP_RESOURCE_REQUEST Entry;
+    PDEVICE_OBJECT * DeviceList;
+    PDEVICE_OBJECT * pDevice;
+    PDEVICE_NODE DeviceNode;
+    LIST_ENTRY ConfigList;
+    ULONG RebalancePhase;
+    ULONG SizeOfDevicePart;
+    ULONG SizeOfRebalancePart;
+    ULONG RebalanceCount;
+    ULONG AssignedCount;
+    ULONG CountForFind;
+    ULONG Count;
+    ULONG ix;
+    ULONG jx;
+    NTSTATUS Status;
+
+    DPRINT1("IopRebalance: Count %X Table [%p-%p]\n", InDevicesCount, InRequestTable, (InRequestTable + InDevicesCount));
+
+    DeviceList = ExAllocatePoolWithTag(PagedPool, (IopNumberDeviceNodes * sizeof(PDEVICE_OBJECT)), 'erpP');
+    if (!DeviceList)
+    {
+        DPRINT1("IopRebalance: Not enough memory to perform rebalance\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RebalancePhase = 0;
+    RebalanceCount = 0;
+    Count = 0;
+
+    while (TRUE)
+    {
+        while (TRUE)
+        {
+            pDevice = &DeviceList[Count];
+
+            IopQueryRebalance(IopRootDeviceNode, RebalancePhase, &RebalanceCount, &pDevice);
+            if (RebalanceCount)
+                break;
+
+            if (RebalancePhase == 1 || InDevicesCount == 0)
+            {
+                DPRINT1("IopRebalance: No device participates in rebalance phase %X\n", RebalancePhase);
+                ExFreePoolWithTag(DeviceList, 'erpP');
+                return STATUS_UNSUCCESSFUL;
+            }
+
+            RebalancePhase = 1;
+        }
+
+        if (RebalanceCount == Count)
+        {
+            DPRINT1("IopRebalance: RebalanceCount == Count (%X)\n", Count);
+            Status = STATUS_UNSUCCESSFUL;
+            goto Exit;
+        }
+
+        if (!RebalancePhase)
+            Count = RebalanceCount;
+
+        SizeOfDevicePart = (InDevicesCount * sizeof(PNP_RESOURCE_REQUEST));
+        SizeOfRebalancePart = (RebalanceCount * sizeof(PNP_RESOURCE_REQUEST));
+
+        RequestTable = ExAllocatePoolWithTag(PagedPool, (SizeOfDevicePart + SizeOfRebalancePart), 'erpP');
+        if (!RequestTable)
+        {
+            DPRINT1("IopRebalance: Not enough memory to perform rebalance\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto Exit;
+        }
+
+        RebalanceEntry = &RequestTable[InDevicesCount];
+        RebalanceEntryEnd = &RequestTable[InDevicesCount + RebalanceCount];
+
+
+        if (InDevicesCount)
+            RtlCopyMemory(RequestTable, InRequestTable, ((SizeOfDevicePart * 4) / 4));
+
+        RtlZeroMemory(RebalanceEntry, (SizeOfRebalancePart * 4) / 4);
+
+        for (jx = 0; jx < RebalanceCount; jx++)
+        {
+            RebalanceEntry[jx].AllocationType = ArbiterRequestPnpEnumerated;
+            RebalanceEntry[jx].PhysicalDevice = DeviceList[jx];
+        }
+
+        Status = IopGetResourceRequirementsForAssignTable(RebalanceEntry, RebalanceEntryEnd, &AssignedCount);
+        if (!AssignedCount)
+        {
+            DPRINT1("IopRebalance: AssignedCount - 0\n");
+            goto Exit;
+        }
+
+        CountForFind = (InDevicesCount + AssignedCount);
+
+        if (AssignedCount == RebalanceCount)
+        {
+            AssignedTable = RequestTable;
+            AssignedTableEnd = RebalanceEntryEnd;
+        }
+        else
+        {
+            PPNP_RESOURCE_REQUEST newEntry;
+
+            AssignedTable = ExAllocatePoolWithTag(PagedPool, (CountForFind * sizeof(PNP_RESOURCE_REQUEST)), 'erpP');
+            if (!AssignedTable)
+            {
+                IopFreeResourceRequirementsForAssignTable(RebalanceEntry, RebalanceEntryEnd);
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto Exit;
+            }
+
+            newEntry = AssignedTable;
+
+            for (Entry = RequestTable; Entry < RebalanceEntryEnd; Entry++)
+            {
+                if ((Entry->Flags & 0x20) != 0)
+                {
+                    ASSERT(Entry >= RebalanceEntry);
+                }
+                else
+                {
+                    RtlCopyMemory(newEntry, Entry, sizeof(PNP_RESOURCE_REQUEST));
+                    newEntry++;
+                }
+            }
+
+            AssignedTableEnd = &AssignedTable[CountForFind];
+        }
+
+        Status = IopFindBestConfiguration(AssignedTable, CountForFind, &ConfigList);
+
+        if (NT_SUCCESS(Status))
+        {
+            IopBuildCmResourceLists(AssignedTable, AssignedTableEnd);
+
+            if (InDevicesCount != 0)
+                RtlCopyMemory(InRequestTable, AssignedTable, ((SizeOfDevicePart * 4) / 4));
+
+            IopFreeResourceRequirementsForAssignTable(&AssignedTable[InDevicesCount], AssignedTableEnd);
+
+            Count = (ULONG)(AssignedTableEnd - AssignedTable);
+
+            if (RequestTable != AssignedTable)
+            {
+                for (ix = 0; ix < Count; ix++)
+                {
+                    if (!(RequestTable[ix].Flags & 0x20))
+                    {
+                        RtlCopyMemory(&RequestTable[ix], &AssignedTable[ix], sizeof(PNP_RESOURCE_REQUEST));
+
+                        if (AssignedTable[ix].Flags & 0x10)
+                            RequestTable[ix].Status = STATUS_CONFLICTING_ADDRESSES;
+                    }
+                }
+            }
+
+            for (Entry = RebalanceEntry; Entry < RebalanceEntryEnd; Entry++)
+            {
+                ASSERT(Entry->PhysicalDevice);
+                DeviceNode = IopGetDeviceNode(Entry->PhysicalDevice);
+                ASSERT(DeviceNode);
+
+                if (!NT_SUCCESS(Entry->Status))
+                {
+                    IopQueryReconfiguration(IRP_MN_CANCEL_STOP_DEVICE, Entry->PhysicalDevice);
+                    PipRestoreDevNodeState(DeviceNode);
+                }
+                else
+                {
+                    DPRINT1("STOPPING %wZ during REBALANCE\n", &DeviceNode->InstancePath);
+                    IopQueryReconfiguration(IRP_MN_STOP_DEVICE, Entry->PhysicalDevice);
+                    PipSetDevNodeState(DeviceNode, DeviceNodeStopped, NULL);
+                }
+            }
+
+            IopCommitConfiguration(&ConfigList);
+
+            for (Entry = (RebalanceEntryEnd - 1); Entry >= RebalanceEntry; Entry--)
+            {
+                ASSERT(Entry->PhysicalDevice);
+                DeviceNode = IopGetDeviceNode(Entry->PhysicalDevice);
+                ASSERT(DeviceNode);
+
+                if (NT_SUCCESS(Entry->Status))
+                {
+                    if (DeviceNode->ResourceList)
+                        ExFreePoolWithTag(DeviceNode->ResourceList, 0);
+
+                    if (DeviceNode->ResourceListTranslated)
+                        ExFreePoolWithTag(DeviceNode->ResourceListTranslated, 0);
+
+                    DeviceNode->ResourceList = Entry->ResourceAssignment;
+                    DeviceNode->ResourceListTranslated = Entry->TranslatedResourceAssignment;
+
+                    if (DeviceNode->ResourceList == NULL)
+                        DeviceNode->Flags |= DNF_NO_RESOURCE_REQUIRED;
+
+                    if ((Entry->Flags & 0x0400) != 0)
+                        DeviceNode->Flags &= ~(DNF_NON_STOPPED_REBALANCE | DNF_RESOURCE_REQUIREMENTS_CHANGED);
+                }
+            }
+
+            Status = STATUS_SUCCESS;
+            break;
+        }
+
+        IopFreeResourceRequirementsForAssignTable((PPNP_RESOURCE_REQUEST )((PCHAR)AssignedTable + SizeOfDevicePart), AssignedTableEnd);
+
+        if (RebalancePhase == 1)
+        {
+            for (Entry = RebalanceEntry; Entry < RebalanceEntryEnd; Entry++)
+            {
+                IopQueryReconfiguration(IRP_MN_CANCEL_STOP_DEVICE, Entry->PhysicalDevice);
+                ASSERT(Entry->PhysicalDevice);
+
+                DeviceNode = IopGetDeviceNode(Entry->PhysicalDevice);
+                ASSERT(DeviceNode);
+
+                PipRestoreDevNodeState(DeviceNode);
+            }
+
+            break;
+        }
+
+        RebalancePhase = 1;
+
+        if (AssignedTable)
+            ExFreePoolWithTag(AssignedTable, 'erpP');
+
+        if (RequestTable != AssignedTable)
+            ExFreePoolWithTag(RequestTable, 'erpP');
+
+        AssignedTable = NULL;
+        RequestTable = NULL;
+    }
+
+    for (pDevice = &DeviceList[RebalanceCount - 1];
+         pDevice >= DeviceList;
+         pDevice--)
+    {
+        ObDereferenceObject(*pDevice);
+    }
+
+    ExFreePoolWithTag(DeviceList, 'erpP');
+    DeviceList = NULL;
+
+Exit:
+
+    if (!NT_SUCCESS(Status) && (DeviceList != NULL))
+    {
+        DPRINT1("IopRebalance: Rebalance failed\n");
+
+        for (pDevice = &DeviceList[RebalanceCount - 1];
+             pDevice >= DeviceList;
+             pDevice--)
+        {
+            ASSERT(*pDevice);
+            DeviceNode = IopGetDeviceNode(*pDevice);
+            ASSERT(DeviceNode);
+
+            IopQueryReconfiguration(IRP_MN_CANCEL_STOP_DEVICE, *pDevice);
+            PipRestoreDevNodeState(DeviceNode);
+            ObDereferenceObject(*pDevice);
+        }
+    }
+
+    if (DeviceList)
+        ExFreePoolWithTag(DeviceList, 'erpP');
+
+    if (AssignedTable)
+        ExFreePoolWithTag(AssignedTable, 'erpP');
+
+    if (RequestTable && (RequestTable != AssignedTable))
+        ExFreePoolWithTag(RequestTable, 'erpP');
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 IopAllocateResources(
     _Inout_ PULONG OutDeviceCount,
     _In_ PPNP_RESOURCE_REQUEST * ResContext,
@@ -5624,9 +5913,7 @@ IopAllocateResources(
 
         DeviceNode->Flags |= DNF_NEEDS_REBALANCE;
 
-        DPRINT("IopAllocateResources: FIXME IopRebalance\n");
-        ASSERT(FALSE);
-        Status = 0;//IopRebalance(Current, 1, Current);
+        Status = IopRebalance(1, Current);
 
         DeviceNode->Flags &= ~DNF_NEEDS_REBALANCE;
 
