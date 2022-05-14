@@ -1297,6 +1297,63 @@ HalReadDmaCounter(IN PADAPTER_OBJECT AdapterObject)
     return 0;
 }
 
+/* HalpCopyBufferMap
+      Helper function for copying data from/to map register buffers.
+ 
+   see IoFlushAdapterBuffers, IoMapTransfer
+*/
+VOID
+NTAPI
+HalpCopyBufferMap(IN PMDL Mdl,
+                  IN PROS_MAP_REGISTER_ENTRY MapRegisterBase,
+                  IN PVOID CurrentVa,
+                  IN ULONG Length,
+                  IN BOOLEAN WriteToDevice)
+{
+    ULONG CurrentLength;
+    ULONG_PTR CurrentAddress;
+    ULONG ByteOffset;
+    PVOID VirtualAddress;
+
+    VirtualAddress = MmGetSystemAddressForMdlSafe(Mdl, HighPagePriority);
+    if (!VirtualAddress)
+    {
+        /* NOTE: On real NT a mechanism with reserved pages is implemented
+           to handle this case in a slow, but graceful non-fatal way.
+        */
+         KeBugCheckEx(HAL_MEMORY_ALLOCATION, PAGE_SIZE, 0, (ULONG_PTR)__FILE__, 0);
+    }
+
+    CurrentAddress = (ULONG_PTR)VirtualAddress +
+                     (ULONG_PTR)CurrentVa -
+                     (ULONG_PTR)MmGetMdlVirtualAddress(Mdl);
+
+    for (; Length > 0; Length -= CurrentLength)
+    {
+        ByteOffset = BYTE_OFFSET(CurrentAddress);
+        CurrentLength = PAGE_SIZE - ByteOffset;
+
+        if (CurrentLength > Length)
+            CurrentLength = Length;
+
+        if (WriteToDevice)
+        {
+            RtlCopyMemory((PVOID)((ULONG_PTR)MapRegisterBase->VirtualAddress + ByteOffset),
+                          (PVOID)CurrentAddress,
+                          CurrentLength);
+        }
+        else
+        {
+            RtlCopyMemory((PVOID)CurrentAddress,
+                          (PVOID)((ULONG_PTR)MapRegisterBase->VirtualAddress + ByteOffset),
+                          CurrentLength);
+        }
+
+        CurrentAddress += CurrentLength;
+        MapRegisterBase++;
+    }
+}
+
 /* IoFlushAdapterBuffers
       Flush any data remaining in the DMA controller's memory into the host memory.
 
@@ -1333,9 +1390,72 @@ IoFlushAdapterBuffers(IN PADAPTER_OBJECT AdapterObject,
                       IN ULONG Length,
                       IN BOOLEAN WriteToDevice)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return FALSE;
+    BOOLEAN SlaveDma = FALSE;
+    PROS_MAP_REGISTER_ENTRY RealMapRegisterBase;
+    PHYSICAL_ADDRESS HighestAcceptableAddress;
+    PHYSICAL_ADDRESS PhysicalAddress;
+    PPFN_NUMBER MdlPagesPtr;
+
+    /* Sanity checks */
+    ASSERT_IRQL_LESS_OR_EQUAL(DISPATCH_LEVEL);
+    ASSERT(AdapterObject);
+
+    if (!AdapterObject->MasterDevice)
+    {
+        /* Mask out (disable) the DMA channel. */
+        if (AdapterObject->AdapterNumber == 1)
+        {
+            PDMA1_CONTROL DmaControl1 = AdapterObject->AdapterBaseVa;
+            WRITE_PORT_UCHAR(&DmaControl1->SingleMask, (AdapterObject->ChannelNumber | DMA_SETMASK));
+        }
+        else
+        {
+            PDMA2_CONTROL DmaControl2 = AdapterObject->AdapterBaseVa;
+            WRITE_PORT_UCHAR(&DmaControl2->SingleMask, (AdapterObject->ChannelNumber | DMA_SETMASK));
+        }
+
+        SlaveDma = TRUE;
+    }
+
+    /* This can happen if the device supports hardware scatter/gather. */
+    if (MapRegisterBase == NULL)
+        return TRUE;
+
+    RealMapRegisterBase = (PROS_MAP_REGISTER_ENTRY)((ULONG_PTR)MapRegisterBase & ~MAP_BASE_SW_SG);
+
+    if (WriteToDevice)
+        goto Exit;
+
+    if ((ULONG_PTR)MapRegisterBase & MAP_BASE_SW_SG)
+    {
+        if (RealMapRegisterBase->Counter != MAXULONG)
+        {
+            if (SlaveDma && !AdapterObject->IgnoreCount)
+            {
+                Length -= HalReadDmaCounter(AdapterObject);
+            }
+        }
+
+        HalpCopyBufferMap(Mdl, RealMapRegisterBase, CurrentVa, Length, FALSE);
+        goto Exit;
+    }
+
+    MdlPagesPtr = MmGetMdlPfnArray(Mdl);
+    MdlPagesPtr += ((ULONG_PTR)CurrentVa - (ULONG_PTR)Mdl->StartVa) >> PAGE_SHIFT;
+
+    PhysicalAddress.QuadPart = *MdlPagesPtr << PAGE_SHIFT;
+    PhysicalAddress.QuadPart += BYTE_OFFSET(CurrentVa);
+
+    HighestAcceptableAddress = HalpGetAdapterMaximumPhysicalAddress(AdapterObject);
+
+    if ((PhysicalAddress.QuadPart + Length) <= HighestAcceptableAddress.QuadPart)
+        goto Exit;
+
+    HalpCopyBufferMap(Mdl, RealMapRegisterBase, CurrentVa, Length, FALSE);
+
+Exit:
+    RealMapRegisterBase->Counter = 0;
+    return TRUE;
 }
 
 /* IoFreeAdapterChannel
@@ -1459,63 +1579,6 @@ IoFreeMapRegisters(IN PADAPTER_OBJECT AdapterObject,
 {
     UNIMPLEMENTED;
     ASSERT(0);//HalpDbgBreakPointEx();
-}
-
-/* HalpCopyBufferMap
-      Helper function for copying data from/to map register buffers.
- 
-   see IoFlushAdapterBuffers, IoMapTransfer
-*/
-VOID
-NTAPI
-HalpCopyBufferMap(IN PMDL Mdl,
-                  IN PROS_MAP_REGISTER_ENTRY MapRegisterBase,
-                  IN PVOID CurrentVa,
-                  IN ULONG Length,
-                  IN BOOLEAN WriteToDevice)
-{
-    ULONG CurrentLength;
-    ULONG_PTR CurrentAddress;
-    ULONG ByteOffset;
-    PVOID VirtualAddress;
-
-    VirtualAddress = MmGetSystemAddressForMdlSafe(Mdl, HighPagePriority);
-    if (!VirtualAddress)
-    {
-        /* NOTE: On real NT a mechanism with reserved pages is implemented
-           to handle this case in a slow, but graceful non-fatal way.
-        */
-         KeBugCheckEx(HAL_MEMORY_ALLOCATION, PAGE_SIZE, 0, (ULONG_PTR)__FILE__, 0);
-    }
-
-    CurrentAddress = (ULONG_PTR)VirtualAddress +
-                     (ULONG_PTR)CurrentVa -
-                     (ULONG_PTR)MmGetMdlVirtualAddress(Mdl);
-
-    for (; Length > 0; Length -= CurrentLength)
-    {
-        ByteOffset = BYTE_OFFSET(CurrentAddress);
-        CurrentLength = PAGE_SIZE - ByteOffset;
-
-        if (CurrentLength > Length)
-            CurrentLength = Length;
-
-        if (WriteToDevice)
-        {
-            RtlCopyMemory((PVOID)((ULONG_PTR)MapRegisterBase->VirtualAddress + ByteOffset),
-                          (PVOID)CurrentAddress,
-                          CurrentLength);
-        }
-        else
-        {
-            RtlCopyMemory((PVOID)CurrentAddress,
-                          (PVOID)((ULONG_PTR)MapRegisterBase->VirtualAddress + ByteOffset),
-                          CurrentLength);
-        }
-
-        CurrentAddress += CurrentLength;
-        MapRegisterBase++;
-    }
 }
 
 /* IoMapTransfer
