@@ -1048,6 +1048,85 @@ HalFreeCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
                                        CacheEnabled ? MmCached : MmNonCached);
 }
 
+typedef struct _SCATTER_GATHER_CONTEXT {
+    PADAPTER_OBJECT AdapterObject;
+    PMDL Mdl;
+    PUCHAR CurrentVa;
+    ULONG Length;
+    PDRIVER_LIST_CONTROL AdapterListControlRoutine;
+    PVOID AdapterListControlContext, MapRegisterBase;
+    ULONG MapRegisterCount;
+    BOOLEAN WriteToDevice;
+    WAIT_CONTEXT_BLOCK Wcb;
+} SCATTER_GATHER_CONTEXT, *PSCATTER_GATHER_CONTEXT;
+
+IO_ALLOCATION_ACTION
+NTAPI
+HalpScatterGatherAdapterControl(IN PDEVICE_OBJECT DeviceObject,
+                                IN PIRP Irp,
+                                IN PVOID MapRegisterBase,
+                                IN PVOID Context)
+{
+    PSCATTER_GATHER_CONTEXT AdapterControlContext = Context;
+    PADAPTER_OBJECT AdapterObject = AdapterControlContext->AdapterObject;
+    PSCATTER_GATHER_LIST ScatterGatherList;
+    SCATTER_GATHER_ELEMENT TempElements[MAX_SG_ELEMENTS];
+    ULONG ElementCount = 0, RemainingLength = AdapterControlContext->Length;
+    PUCHAR CurrentVa = AdapterControlContext->CurrentVa;
+
+    /* Store the map register base for later in HalPutScatterGatherList */
+    AdapterControlContext->MapRegisterBase = MapRegisterBase;
+
+    while (RemainingLength > 0 && ElementCount < MAX_SG_ELEMENTS)
+    {
+        TempElements[ElementCount].Length = RemainingLength;
+        TempElements[ElementCount].Reserved = 0;
+        TempElements[ElementCount].Address = IoMapTransfer(AdapterObject,
+                                                           AdapterControlContext->Mdl,
+                                                           MapRegisterBase,
+                                                           (CurrentVa + (AdapterControlContext->Length - RemainingLength)),
+                                                           &TempElements[ElementCount].Length,
+                                                           AdapterControlContext->WriteToDevice);
+        if (TempElements[ElementCount].Length == 0)
+            break;
+
+        DPRINT("Allocated one S/G element: 0x%I64u with length: 0x%x\n",
+                TempElements[ElementCount].Address.QuadPart, TempElements[ElementCount].Length);
+
+        ASSERT(TempElements[ElementCount].Length <= RemainingLength);
+
+        RemainingLength -= TempElements[ElementCount].Length;
+        ElementCount++;
+    }
+
+    if (RemainingLength > 0)
+    {
+        DPRINT1("Scatter/gather list construction failed!\n");
+        return DeallocateObject;
+    }
+
+    ScatterGatherList = ExAllocatePoolWithTag(NonPagedPool,
+                                              (sizeof(SCATTER_GATHER_LIST) + sizeof(SCATTER_GATHER_ELEMENT) * ElementCount),
+                                              TAG_DMA);
+    ASSERT(ScatterGatherList);
+
+    ScatterGatherList->NumberOfElements = ElementCount;
+    ScatterGatherList->Reserved = (ULONG_PTR)AdapterControlContext;
+
+    RtlCopyMemory(ScatterGatherList->Elements,
+                  TempElements,
+                  (sizeof(SCATTER_GATHER_ELEMENT) * ElementCount));
+
+    DPRINT("Initiating S/G DMA with %d element(s)\n", ElementCount);
+
+    AdapterControlContext->AdapterListControlRoutine(DeviceObject,
+                                                     Irp,
+                                                     ScatterGatherList,
+                                                     AdapterControlContext->AdapterListControlContext);
+
+    return DeallocateObjectKeepRegisters;
+}
+
 /* HalReadDmaCounter
      Read DMA operation progress counter.
 */
