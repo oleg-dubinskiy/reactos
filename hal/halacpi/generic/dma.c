@@ -600,6 +600,130 @@ HalpAllocateAdapterEx(IN ULONG MapRegisters,
     return AdapterObject;
 }
 
+/* HalpDmaInitializeEisaAdapter
+       Setup DMA modes and extended modes for (E)ISA DMA adapter object.
+*/
+BOOLEAN
+NTAPI
+HalpDmaInitializeEisaAdapter(IN PADAPTER_OBJECT AdapterObject,
+                             IN PDEVICE_DESCRIPTION DeviceDescriptor)
+{
+    UCHAR Controller;
+    DMA_MODE DmaMode = {{0}};
+    DMA_EXTENDED_MODE ExtendedMode = {{0}};
+    PVOID AdapterBaseVa;
+    PVOID Port;
+    UCHAR DmaMask;
+
+    Controller = ((DeviceDescriptor->DmaChannel & 4) ? 2 : 1);
+
+    if (Controller == 1)
+        AdapterBaseVa = UlongToPtr(FIELD_OFFSET(EISA_CONTROL, DmaController1));
+    else
+        AdapterBaseVa = UlongToPtr(FIELD_OFFSET(EISA_CONTROL, DmaController2));
+
+    AdapterObject->AdapterNumber = Controller;
+    AdapterObject->ChannelNumber = (UCHAR)(DeviceDescriptor->DmaChannel & 3);
+    AdapterObject->PagePort = (PUCHAR)HalpEisaPortPage[DeviceDescriptor->DmaChannel];
+    AdapterObject->Width16Bits = FALSE;
+    AdapterObject->AdapterBaseVa = AdapterBaseVa;
+
+    if (HalpEisaDma)
+    {
+        ExtendedMode.ChannelNumber = AdapterObject->ChannelNumber;
+
+        switch (DeviceDescriptor->DmaSpeed)
+        {
+            case Compatible: ExtendedMode.TimingMode = COMPATIBLE_TIMING; break;
+            case TypeA:      ExtendedMode.TimingMode = TYPE_A_TIMING;     break;
+            case TypeB:      ExtendedMode.TimingMode = TYPE_B_TIMING;     break;
+            case TypeC:      ExtendedMode.TimingMode = BURST_TIMING;      break;
+            default:
+                return FALSE;
+        }
+
+        switch (DeviceDescriptor->DmaWidth)
+        {
+            case Width8Bits:  ExtendedMode.TransferSize = B_8BITS;  break;
+            case Width16Bits: ExtendedMode.TransferSize = B_16BITS; break;
+            case Width32Bits: ExtendedMode.TransferSize = B_32BITS; break;
+            default:
+                return FALSE;
+        }
+
+        if (Controller == 1)
+        {
+            Port = UlongToPtr(FIELD_OFFSET(EISA_CONTROL, DmaExtendedMode1));
+            WRITE_PORT_UCHAR(Port, ExtendedMode.Byte);
+        }
+        else
+        {
+            Port = UlongToPtr(FIELD_OFFSET(EISA_CONTROL, DmaExtendedMode2));
+            WRITE_PORT_UCHAR(Port, ExtendedMode.Byte);
+        }
+    }
+    else
+    {
+        /* Validate setup for non-busmaster DMA adapter.
+           Secondary controller supports only 16-bit transfers and main controller supports only 8-bit transfers.
+           Anything else is invalid.
+        */
+        if (!DeviceDescriptor->Master)
+        {
+            if ((Controller == 2) && (DeviceDescriptor->DmaWidth == Width16Bits))
+            {
+                AdapterObject->Width16Bits = TRUE;
+            }
+            else if ((Controller != 1) || (DeviceDescriptor->DmaWidth != Width8Bits))
+            {
+                return FALSE;
+            }
+        }
+    }
+
+    DmaMode.Channel = AdapterObject->ChannelNumber;
+    DmaMode.AutoInitialize = DeviceDescriptor->AutoInitialize;
+
+    /* Set the DMA request mode.
+       For (E)ISA bus master devices just unmask (enable) the DMA channel and set it to cascade mode.
+       Otherwise just select the right one bases on the passed device description.
+    */
+    if (!DeviceDescriptor->Master)
+    {
+        if (DeviceDescriptor->DemandMode)
+            DmaMode.RequestMode = DEMAND_REQUEST_MODE;
+        else
+            DmaMode.RequestMode = SINGLE_REQUEST_MODE;
+
+        goto Exit;
+    }
+
+    DmaMode.RequestMode = CASCADE_REQUEST_MODE;
+    DmaMask = (AdapterObject->ChannelNumber | DMA_CLEARMASK);
+
+    if (Controller == 1)
+    {
+        /* Set the Request Data */
+        _PRAGMA_WARNING_SUPPRESS(__WARNING_DEREF_NULL_PTR)
+        WRITE_PORT_UCHAR(&((PDMA1_CONTROL)AdapterBaseVa)->Mode, DmaMode.Byte);
+
+        /* Unmask DMA Channel */
+        WRITE_PORT_UCHAR(&((PDMA1_CONTROL)AdapterBaseVa)->SingleMask, DmaMask);
+    }
+    else
+    {
+        /* Set the Request Data */
+        WRITE_PORT_UCHAR(&((PDMA2_CONTROL)AdapterBaseVa)->Mode, DmaMode.Byte);
+
+        /* Unmask DMA Channel */
+        WRITE_PORT_UCHAR(&((PDMA2_CONTROL)AdapterBaseVa)->SingleMask, DmaMask);
+    }
+
+Exit:
+    AdapterObject->AdapterMode = DmaMode;
+    return TRUE;
+}
+
 /* HalGetAdapter
       Allocate an adapter object for DMA device.
 
