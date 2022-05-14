@@ -190,8 +190,6 @@ KiInterruptDispatch(IN PKTRAP_FRAME TrapFrame,
     KIRQL OldIrql;
     BOOLEAN Spurious = TRUE;
 
-ASSERT(FALSE);//KeDbgBreakPointEx();
-
     /* Increase interrupt count */
     KeGetCurrentPrcb()->InterruptCount++;
 
