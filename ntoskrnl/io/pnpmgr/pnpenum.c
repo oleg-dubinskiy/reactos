@@ -4277,9 +4277,15 @@ PipProcessRestartPhase1(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ BOOLEAN IsWait)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);//IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PAGED_CODE();
+    DPRINT("PipProcessRestartPhase1: DeviceNode %p\n", DeviceNode);
+
+    ASSERT(DeviceNode->State == DeviceNodeStopped);
+
+    DeviceNode->CompletionStatus = IopStartDevice(DeviceNode);
+    PipSetDevNodeState(DeviceNode, DeviceNodeRestartCompletion, NULL);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
