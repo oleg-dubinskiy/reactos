@@ -287,9 +287,125 @@ HalAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
                           IN ULONG NumberOfMapRegisters,
                           IN PDRIVER_CONTROL ExecutionRoutine)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PADAPTER_OBJECT MasterAdapter;
+    PGROW_WORK_ITEM WorkItem;
+    ULONG Index = MAXULONG;
+    ULONG Result;
+    KIRQL OldIrql;
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+
+    /* Set up the wait context block in case we can't run right away. */
+    WaitContextBlock->DeviceRoutine = ExecutionRoutine;
+    WaitContextBlock->NumberOfMapRegisters = NumberOfMapRegisters;
+
+    /* Returns true if queued, else returns false and sets the queue to busy */
+    if (KeInsertDeviceQueue(&AdapterObject->ChannelWaitQueue, &WaitContextBlock->WaitQueueEntry))
+        return STATUS_SUCCESS;
+
+    MasterAdapter = AdapterObject->MasterAdapter;
+
+    AdapterObject->NumberOfMapRegisters = NumberOfMapRegisters;
+    AdapterObject->CurrentWcb = WaitContextBlock;
+
+    if ((NumberOfMapRegisters) && (AdapterObject->NeedsMapRegisters))
+    {
+        if (NumberOfMapRegisters > AdapterObject->MapRegistersPerChannel)
+        {
+            AdapterObject->NumberOfMapRegisters = 0;
+            IoFreeAdapterChannel(AdapterObject);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        /* Get the map registers.
+           This is partly complicated by the fact that new map registers can only be allocated at PASSIVE_LEVEL and we're currently at DISPATCH_LEVEL.
+           The following code has two code paths:
+
+          - If there is no adapter queued for map register allocation, try to see if enough contiguous map registers are present.
+            In case they're we can just get them and proceed further.
+
+          - If some adapter is already present in the queue we must respect the order of adapters asking for map registers and so the fast case described above can't take place.
+            This case is also entered if not enough coniguous map registers are present.
+
+            A work queue item is allocated and queued, the adapter is also queued into the master adapter queue.
+            The worker routine does the job of allocating the map registers at PASSIVE_LEVEL and calling the ExecutionRoutine.
+        */
+
+        KeAcquireSpinLock(&MasterAdapter->SpinLock, &OldIrql);
+
+        if (IsListEmpty(&MasterAdapter->AdapterQueue))
+        {
+            Index = RtlFindClearBitsAndSet(MasterAdapter->MapRegisters, NumberOfMapRegisters, 0);
+
+            if (Index != MAXULONG)
+            {
+                AdapterObject->MapRegisterBase = MasterAdapter->MapRegisterBase + Index;
+                if (!AdapterObject->ScatterGather)
+                {
+                    AdapterObject->MapRegisterBase = (PROS_MAP_REGISTER_ENTRY)((ULONG_PTR)AdapterObject->MapRegisterBase | MAP_BASE_SW_SG);
+                }
+            }
+        }
+
+        if (Index == MAXULONG)
+        {
+            InsertTailList(&MasterAdapter->AdapterQueue, &AdapterObject->AdapterQueue);
+
+            WorkItem = ExAllocatePoolWithTag(NonPagedPool, sizeof(GROW_WORK_ITEM), TAG_DMA);
+            if (WorkItem)
+            {
+                ExInitializeWorkItem(&WorkItem->WorkQueueItem, HalpGrowMapBufferWorker, WorkItem);
+                WorkItem->AdapterObject = AdapterObject;
+                WorkItem->NumberOfMapRegisters = NumberOfMapRegisters;
+
+                ExQueueWorkItem(&WorkItem->WorkQueueItem, DelayedWorkQueue);
+            }
+
+            KeReleaseSpinLock(&MasterAdapter->SpinLock, OldIrql);
+
+            return STATUS_SUCCESS;
+        }
+
+        KeReleaseSpinLock(&MasterAdapter->SpinLock, OldIrql);
+    }
+    else
+    {
+        AdapterObject->MapRegisterBase = NULL;
+        AdapterObject->NumberOfMapRegisters = 0;
+    }
+
+    AdapterObject->CurrentWcb = WaitContextBlock;
+
+    Result = ExecutionRoutine(WaitContextBlock->DeviceObject,
+                              WaitContextBlock->CurrentIrp,
+                              AdapterObject->MapRegisterBase,
+                              WaitContextBlock->DeviceContext);
+
+    /* Possible return values:
+     
+       - KeepObject
+         Don't free any resources, the ADAPTER_OBJECT is still in use and the caller will call IoFreeAdapterChannel later.
+
+       - DeallocateObject
+         Deallocate the map registers and release the ADAPTER_OBJECT, so someone else can use it.
+
+       - DeallocateObjectKeepRegisters
+         Release the ADAPTER_OBJECT, but hang on to the map registers. The client will later call IoFreeMapRegisters.
+
+       NOTE:
+       IoFreeAdapterChannel runs the queue, so it must be called unless the adapter object is not to be freed.
+    */
+    if (Result == DeallocateObject)
+    {
+        IoFreeAdapterChannel(AdapterObject);
+    }
+    else if (Result == DeallocateObjectKeepRegisters)
+    {
+        AdapterObject->NumberOfMapRegisters = 0;
+        IoFreeAdapterChannel(AdapterObject);
+    }
+
+    return STATUS_SUCCESS;
 }
 
 /* HalGetAdapter
