@@ -136,6 +136,127 @@ HalpGetAdapterMaximumPhysicalAddress(IN PADAPTER_OBJECT AdapterObject)
     return HighestAddress;
 }
 
+/* HalpGrowMapBuffers
+      Allocate initial, or additional, map buffers for DMA master adapter.
+
+   MasterAdapter
+     DMA master adapter to allocate buffers for.
+   SizeOfMapBuffers
+     Size of the map buffers to allocate (not including the size already allocated).
+*/
+BOOLEAN
+NTAPI
+HalpGrowMapBuffers(IN PADAPTER_OBJECT AdapterObject,
+                   IN ULONG SizeOfMapBuffers)
+{
+    PROS_MAP_REGISTER_ENTRY CurrentEntry;
+    PROS_MAP_REGISTER_ENTRY PreviousEntry;
+    PHYSICAL_ADDRESS PhysicalAddress;
+    PHYSICAL_ADDRESS HighestAcceptableAddress;
+    PHYSICAL_ADDRESS LowestAcceptableAddress;
+    PHYSICAL_ADDRESS BoundryAddressMultiple;
+    PVOID VirtualAddress;
+    ULONG MapRegisterCount;
+    KIRQL OldIrql;
+
+    /* Check if enough map register slots are available. */
+    MapRegisterCount = BYTES_TO_PAGES(SizeOfMapBuffers);
+    if (MapRegisterCount + AdapterObject->NumberOfMapRegisters > MAX_MAP_REGISTERS)
+    {
+        DPRINT("No more map register slots available! (Current: %d | Requested: %d | Limit: %d)\n",
+               AdapterObject->NumberOfMapRegisters, MapRegisterCount, MAX_MAP_REGISTERS);
+
+        return FALSE;
+    }
+
+    /* Allocate memory for the new map registers.
+       For 32-bit adapters we use two passes in order not to waste scare resource (low memory).
+    */
+    HighestAcceptableAddress = HalpGetAdapterMaximumPhysicalAddress(AdapterObject);
+
+    LowestAcceptableAddress.HighPart = 0;
+    LowestAcceptableAddress.LowPart = ((HighestAcceptableAddress.LowPart == 0xFFFFFFFF) ? 0x1000000 : 0);
+
+    BoundryAddressMultiple.QuadPart = 0;
+
+    VirtualAddress = 
+    MmAllocateContiguousMemorySpecifyCache((MapRegisterCount << PAGE_SHIFT),
+                                           LowestAcceptableAddress,
+                                           HighestAcceptableAddress,
+                                           BoundryAddressMultiple,
+                                           MmNonCached);
+
+    if (!VirtualAddress && LowestAcceptableAddress.LowPart)
+    {
+        LowestAcceptableAddress.LowPart = 0;
+
+        VirtualAddress =
+        MmAllocateContiguousMemorySpecifyCache((MapRegisterCount << PAGE_SHIFT),
+                                               LowestAcceptableAddress,
+                                               HighestAcceptableAddress,
+                                               BoundryAddressMultiple,
+                                               MmNonCached);
+    }
+
+    if (!VirtualAddress)
+        return FALSE;
+
+    PhysicalAddress = MmGetPhysicalAddress(VirtualAddress);
+
+    /* All the following must be done with the master adapter lock held to prevent corruption. */
+    KeAcquireSpinLock(&AdapterObject->SpinLock, &OldIrql);
+
+    /* Setup map register entries for the buffer allocated.
+       Each entry has a virtual and physical address and corresponds to PAGE_SIZE large buffer.
+    */
+    CurrentEntry = (AdapterObject->MapRegisterBase + AdapterObject->NumberOfMapRegisters);
+
+    for (; MapRegisterCount; MapRegisterCount--)
+    {
+        /* Leave one entry free for every non-contiguous memory region in the map register bitmap.
+           This ensures that we can search using RtlFindClearBits for contiguous map register regions.
+
+           Also for non-EISA DMA leave one free entry for every 64Kb break,
+           because the DMA controller can handle only coniguous 64Kb regions.
+        */
+        if (CurrentEntry != AdapterObject->MapRegisterBase)
+        {
+            PreviousEntry = (CurrentEntry - 1);
+
+            if ((PreviousEntry->PhysicalAddress.LowPart + PAGE_SIZE) == PhysicalAddress.LowPart)
+            {
+                if (!HalpEisaDma)
+                {
+                    if ((PreviousEntry->PhysicalAddress.LowPart ^ PhysicalAddress.LowPart) & 0xFFFF0000)
+                    {
+                        CurrentEntry++;
+                        AdapterObject->NumberOfMapRegisters++;
+                    }
+                }
+            }
+            else
+            {
+                CurrentEntry++;
+                AdapterObject->NumberOfMapRegisters++;
+            }
+        }
+
+        RtlClearBit(AdapterObject->MapRegisters, (ULONG)(CurrentEntry - AdapterObject->MapRegisterBase));
+
+        CurrentEntry->VirtualAddress = VirtualAddress;
+        CurrentEntry->PhysicalAddress = PhysicalAddress;
+
+        PhysicalAddress.LowPart += PAGE_SIZE;
+        VirtualAddress = (PVOID)((ULONG_PTR)VirtualAddress + PAGE_SIZE);
+
+        CurrentEntry++;
+        AdapterObject->NumberOfMapRegisters++;
+    }
+
+    KeReleaseSpinLock(&AdapterObject->SpinLock, OldIrql);
+    return TRUE;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /* HalAllocateAdapterChannel
