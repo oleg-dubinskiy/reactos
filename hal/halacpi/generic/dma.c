@@ -1214,6 +1214,21 @@ HalGetScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
     ASSERT(0);//HalpDbgBreakPointEx();
 }
 
+/* HalpDmaGetDmaAlignment
+      Internal routine to return the DMA alignment requirement.
+      It's exported using the DMA_OPERATIONS interface by HalGetAdapter.
+
+   see HalGetAdapter
+*/
+ULONG
+NTAPI
+HalpDmaGetDmaAlignment(IN PADAPTER_OBJECT AdapterObject)
+{
+    UNIMPLEMENTED;
+    ASSERT(0);//HalpDbgBreakPointEx();
+    return 0;
+}
+
 /* HalReadDmaCounter
      Read DMA operation progress counter.
 */
