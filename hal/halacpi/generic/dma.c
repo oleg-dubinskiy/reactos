@@ -1127,6 +1127,69 @@ HalpScatterGatherAdapterControl(IN PDEVICE_OBJECT DeviceObject,
     return DeallocateObjectKeepRegisters;
 }
 
+/* HalGetScatterGatherList
+      Creates a scatter-gather list to be using in scatter/gather DMA
+
+   AdapterObject
+      Adapter object representing the bus master or system dma controller.
+   DeviceObject
+      The device target for DMA.
+   Mdl
+      The MDL that describes the buffer to be mapped.
+   CurrentVa
+      The current VA in the buffer to be mapped for transfer.
+   Length
+      Specifies the length of data in bytes to be mapped.
+   ExecutionRoutine
+      A caller supplied AdapterListControl routine to be called when DMA is available.
+   Context
+      Context passed to the AdapterListControl routine.
+   WriteToDevice
+      Indicates direction of DMA operation.
+
+   return The status of the operation.
+
+   see HalPutScatterGatherList
+*/
+NTSTATUS
+NTAPI
+HalGetScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
+                        IN PDEVICE_OBJECT DeviceObject,
+                        IN PMDL Mdl,
+                        IN PVOID CurrentVa,
+                        IN ULONG Length,
+                        IN PDRIVER_LIST_CONTROL ExecutionRoutine,
+                        IN PVOID Context,
+                        IN BOOLEAN WriteToDevice)
+{
+    PSCATTER_GATHER_CONTEXT AdapterControlContext;
+
+    AdapterControlContext = ExAllocatePoolWithTag(NonPagedPool, sizeof(SCATTER_GATHER_CONTEXT), TAG_DMA);
+    if (!AdapterControlContext)
+    {
+        DPRINT1("HalGetScatterGatherList: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    AdapterControlContext->AdapterObject = AdapterObject;
+    AdapterControlContext->Mdl = Mdl;
+    AdapterControlContext->CurrentVa = CurrentVa;
+    AdapterControlContext->Length = Length;
+    AdapterControlContext->MapRegisterCount = (PAGE_ROUND_UP(Length) >> PAGE_SHIFT);
+    AdapterControlContext->AdapterListControlRoutine = ExecutionRoutine;
+    AdapterControlContext->AdapterListControlContext = Context;
+    AdapterControlContext->WriteToDevice = WriteToDevice;
+
+    AdapterControlContext->Wcb.DeviceObject = DeviceObject;
+    AdapterControlContext->Wcb.DeviceContext = AdapterControlContext;
+    AdapterControlContext->Wcb.CurrentIrp = DeviceObject->CurrentIrp;
+
+    return HalAllocateAdapterChannel(AdapterObject,
+                                     &AdapterControlContext->Wcb,
+                                     AdapterControlContext->MapRegisterCount,
+                                     HalpScatterGatherAdapterControl);
+}
+
 /* HalReadDmaCounter
      Read DMA operation progress counter.
 */
