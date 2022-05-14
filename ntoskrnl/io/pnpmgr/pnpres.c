@@ -15,6 +15,8 @@
 
 /* GLOBALS *******************************************************************/
 
+PDEVICE_NODE IopLegacyDeviceNode = NULL;
+
 extern PPNP_RESERVED_RESOURCES_CONTEXT IopInitReservedResourceList;
 extern KSEMAPHORE PpRegistrySemaphore;
 extern INTERFACE_TYPE PnpDefaultInterfaceType;
@@ -5982,6 +5984,68 @@ Exit:
     }
 
     return Status;
+}
+
+VOID
+NTAPI
+IopReleaseResources(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    DPRINT1("IopReleaseResources: [%X]\n", DeviceNode);
+
+    IopReleaseResourcesInternal(DeviceNode);
+
+    if (DeviceNode->PrevCmResource)
+    {
+        ExFreePool(DeviceNode->PrevCmResource);
+        DeviceNode->PrevCmResource = NULL;
+    }
+
+  #if DBG
+    if (DeviceNode->DbgParam2)
+    {
+        ExFreePool(DeviceNode->DbgParam2);
+        DeviceNode->DbgParam2 = NULL;
+    }
+  #endif
+
+    if (DeviceNode->ResourceList)
+    {
+        if (NT_SUCCESS(DeviceNode->DebugStatus))
+            ExFreePool(DeviceNode->ResourceList);
+        else
+            DeviceNode->PrevCmResource = DeviceNode->ResourceList;
+
+        DeviceNode->ResourceList = NULL;
+    }
+
+    if (DeviceNode->ResourceListTranslated)
+    {
+        ExFreePool(DeviceNode->ResourceListTranslated);
+        DeviceNode->ResourceListTranslated = NULL;
+    }
+
+    if ((DeviceNode->Flags & (DNF_MADEUP + DNF_DEVICE_GONE)) != DNF_MADEUP)
+    {
+        DeviceNode->Flags &= ~(DNF_BOOT_CONFIG_RESERVED | DNF_HAS_BOOT_CONFIG);
+
+        if (DeviceNode->BootResources) {
+            ExFreePool(DeviceNode->BootResources);
+            DeviceNode->BootResources = NULL;
+        }
+
+        return;
+    }
+
+    if (!(DeviceNode->Flags & DNF_HAS_BOOT_CONFIG))
+        return;
+
+    if (!DeviceNode->BootResources)
+        return;
+
+    IopAllocateBootResourcesInternal(ArbiterRequestPnpEnumerated,
+                                     DeviceNode->PhysicalDeviceObject,
+                                     DeviceNode->BootResources);
 }
 
 NTSTATUS
