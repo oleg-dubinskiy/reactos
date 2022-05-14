@@ -4293,9 +4293,19 @@ NTAPI
 PipProcessRestartPhase2(
     _In_ PDEVICE_NODE DeviceNode)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);//IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PAGED_CODE();
+    DPRINT("PipProcessRestartPhase2: DeviceNode %p\n", DeviceNode);
+
+    if (NT_SUCCESS(DeviceNode->CompletionStatus))
+    {
+        PipSetDevNodeState(DeviceNode, DeviceNodeStarted, NULL);
+        return DeviceNode->CompletionStatus;
+    }
+
+    DPRINT1("PipProcessRestartPhase2: DeviceNode->CompletionStatus %X\n", DeviceNode->CompletionStatus);
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+
+    return DeviceNode->CompletionStatus;
 }
 
 BOOLEAN
