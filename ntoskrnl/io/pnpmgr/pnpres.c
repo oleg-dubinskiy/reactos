@@ -6182,6 +6182,22 @@ IopCombineLegacyResources(
     return CmResources;
 }
 
+VOID
+NTAPI
+IopSetLegacyResourcesFlag(
+    _In_ PDRIVER_OBJECT DriverObject)
+{
+    KIRQL OldIrql;
+
+    DPRINT1("IopSetLegacyResourcesFlag: DriverObject %X\n", DriverObject);
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
+
+    DriverObject->Flags |= DRVO_LEGACY_RESOURCES;
+
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+}
+
 NTSTATUS
 NTAPI
 IopAssignResourcesToDevices(
