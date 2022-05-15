@@ -13,7 +13,7 @@
 #include <ntoskrnl.h>
 #include "../pnpio.h"
 
-#define NDEBUG
+//#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS ********************************************************************/
@@ -28,15 +28,11 @@ PLIST_ENTRY DriverBootReinitTailEntry;
 LIST_ENTRY DriverBootReinitListHead;
 KSPIN_LOCK DriverBootReinitListLock;
 
-UNICODE_STRING IopHardwareDatabaseKey =
-   RTL_CONSTANT_STRING(L"\\REGISTRY\\MACHINE\\HARDWARE\\DESCRIPTION\\SYSTEM");
-
 POBJECT_TYPE IoDriverObjectType = NULL;
-
-#define TAG_RTLREGISTRY 'vrqR'
 
 extern BOOLEAN ExpInTextModeSetup;
 extern BOOLEAN PnpSystemInit;
+extern ULONG InitSafeBootMode;
 
 USHORT IopGroupIndex;
 PLIST_ENTRY IopGroupTable;
@@ -971,6 +967,7 @@ IopCreateDriver(IN PUNICODE_STRING DriverName OPTIONAL,
                 IN PLDR_DATA_TABLE_ENTRY ModuleObject OPTIONAL,
                 OUT PDRIVER_OBJECT *pDriverObject)
 {
+    UNICODE_STRING HardwareKeyName = RTL_CONSTANT_STRING(IO_REG_KEY_DESCRIPTIONSYSTEM);
     WCHAR NameBuffer[100];
     USHORT NameLength;
     UNICODE_STRING LocalDriverName;
@@ -1109,7 +1106,7 @@ try_again:
         return Status;
     }
 
-    DriverObject->HardwareDatabase = &IopHardwareDatabaseKey;
+    DriverObject->HardwareDatabase = &HardwareKeyName;
     DriverObject->DriverStart = ModuleObject ? ModuleObject->DllBase : 0;
     DriverObject->DriverSize = ModuleObject ? ModuleObject->SizeOfImage : 0;
 
@@ -1375,25 +1372,54 @@ IopLoadDriver(
 
 VOID
 NTAPI
-IopLoadUnloadDriverWorker(
-    _Inout_ PVOID Parameter)
-{
-    PLOAD_UNLOAD_PARAMS LoadParams = Parameter;
-
-    ASSERT(PsGetCurrentProcess() == PsInitialSystemProcess);
-    LoadParams->Status = IopLoadUnloadDriver(LoadParams->RegistryPath,
-                                             &LoadParams->DriverObject);
-    KeSetEvent(&LoadParams->Event, 0, FALSE);
-}
-
-NTSTATUS
-NTAPI
 IopLoadUnloadDriver(
-    _In_opt_ PCUNICODE_STRING RegistryPath,
-    _Inout_ PDRIVER_OBJECT *DriverObject)
+    _In_ PVOID Context)
 {
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_DRIVER_UNABLE_TO_LOAD;
+    PLOAD_UNLOAD_PARAMS LoadUnloadDriverContext = Context;
+    PDRIVER_OBJECT DriverObject;
+    HANDLE KeyHandle;
+    NTSTATUS InitStatus;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("IopLoadUnloadDriver: Context %p\n", LoadUnloadDriverContext);
+
+    DriverObject = LoadUnloadDriverContext->DriverObject;
+    if (DriverObject)
+    {
+        DriverObject->DriverUnload(LoadUnloadDriverContext->DriverObject);
+        Status = STATUS_SUCCESS;
+        goto Exit;
+    }
+
+    Status = IopOpenRegistryKey(&KeyHandle,
+                                NULL,
+                                (PUNICODE_STRING)LoadUnloadDriverContext->RegistryPath,
+                                KEY_READ,
+                                FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("IopLoadUnloadDriver: Status %X\n", Status);
+        goto Exit;
+    }
+
+    Status = IopLoadDriver(KeyHandle, TRUE, FALSE, &InitStatus);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("IopLoadUnloadDriver: Status %X\n", Status);
+    }
+
+    if (Status == STATUS_FAILED_DRIVER_ENTRY)
+        Status = InitStatus;
+    else if (Status == STATUS_DRIVER_FAILED_PRIOR_UNLOAD)
+        Status = STATUS_OBJECT_NAME_NOT_FOUND;
+
+    IopReinitializeDrivers();
+
+Exit:
+
+    LoadUnloadDriverContext->Status = Status;
+    KeSetEvent(&LoadUnloadDriverContext->Event, IO_NO_INCREMENT, FALSE);
 }
 
 /*

@@ -1082,13 +1082,6 @@ IopLoadServiceModule(
 );
 
 NTSTATUS
-NTAPI
-IopLoadUnloadDriver(
-    _In_opt_ PCUNICODE_STRING RegistryPath,
-    _Inout_ PDRIVER_OBJECT *DriverObject
-);
-
-NTSTATUS
 FASTCALL
 IopInitializeDriverModule(
     IN PDEVICE_NODE DeviceNode,

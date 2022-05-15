@@ -1,6 +1,8 @@
 #ifndef _PNPIO_H
 #define _PNPIO_H
 
+#define TAG_RTLREGISTRY 'vrqR'
+
 #define IO_REG_KEY_RESOURCEMAP        L"\\REGISTRY\\MACHINE\\HARDWARE\\RESOURCEMAP"
 #define IO_REG_KEY_DESCRIPTIONSYSTEM  L"\\REGISTRY\\MACHINE\\HARDWARE\\DESCRIPTION\\SYSTEM"
 
@@ -409,6 +411,12 @@ IopLoadDriver(
     _In_ BOOLEAN SafeBootModeFlag,
     _In_ BOOLEAN IsFilter,
     _Out_ NTSTATUS * OutInitStatus
+);
+
+VOID
+NTAPI
+IopLoadUnloadDriver(
+    _In_ PVOID Context
 );
 
 /* volume.c */
