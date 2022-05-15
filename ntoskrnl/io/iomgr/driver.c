@@ -63,8 +63,8 @@ IopIsLegacyDriver(
 NTSTATUS
 NTAPI
 IopInvalidDeviceRequest(
-    PDEVICE_OBJECT DeviceObject,
-    PIRP Irp)
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
 {
     Irp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
     Irp->IoStatus.Information = 0;
