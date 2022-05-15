@@ -48,7 +48,6 @@ NTAPI
 IopIsLegacyDriver(
     _In_ PDRIVER_OBJECT DriverObject)
 {
-    BOOLEAN Result;
     PAGED_CODE();
 
     if (DriverObject->DriverExtension->AddDevice)
@@ -90,12 +89,13 @@ PpDriverObjectDereferenceComplete(
 
 VOID
 NTAPI
-IopDeleteDriver(IN PVOID ObjectBody)
+IopDeleteDriver(
+    _In_ PVOID ObjectBody)
 {
     PDRIVER_OBJECT DriverObject = ObjectBody;
     PIO_CLIENT_EXTENSION DriverExtension, NextDriverExtension;
-    PAGED_CODE();
 
+    PAGED_CODE();
     DPRINT1("Deleting driver object '%wZ'\n", &DriverObject->DriverName);
 
     /* There must be no device objects remaining at this point */
@@ -117,7 +117,9 @@ IopDeleteDriver(IN PVOID ObjectBody)
     if (DriverObject->DriverSection)
     {
         /* Unload it */
+        KeFlushQueuedDpcs();
         MmUnloadSystemImage(DriverObject->DriverSection);
+        PpDriverObjectDereferenceComplete(DriverObject);
     }
 
     /* Check if it has a name */
