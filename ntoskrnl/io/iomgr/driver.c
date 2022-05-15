@@ -640,250 +640,177 @@ IopCheckUnloadDriver(
     return STATUS_UNSUCCESSFUL;
 }
 
-/*
- * IopUnloadDriver
- *
- * Unloads a device driver.
- *
- * Parameters
- *    DriverServiceName
- *       Name of the service to unload (registry key).
- *
- *    UnloadPnpDrivers
- *       Whether to unload Plug & Plug or only legacy drivers. If this
- *       parameter is set to FALSE, the routine will unload only legacy
- *       drivers.
- *
- * Return Value
- *    Status
- *
- * To do
- *    Guard the whole function by SEH.
- */
+/* Unloads a device driver.
 
-NTSTATUS NTAPI
-IopUnloadDriver(PUNICODE_STRING DriverServiceName, BOOLEAN UnloadPnpDrivers)
+   DriverServiceName
+      Name of the service to unload (registry key).
+   UnloadPnpDrivers
+      Whether to unload Plug & Plug or only legacy drivers.
+      If this parameter is set to FALSE, the routine will unload only legacy drivers.
+*/
+NTSTATUS
+NTAPI
+IopUnloadDriver(
+    _In_ PUNICODE_STRING DriverServiceName,
+    _In_ BOOLEAN IsUnloadPnpManagers)
 {
-    UNICODE_STRING Backslash = RTL_CONSTANT_STRING(L"\\");
-    RTL_QUERY_REGISTRY_TABLE QueryTable[2];
-    UNICODE_STRING ImagePath;
-    UNICODE_STRING ServiceName;
-    UNICODE_STRING ObjectName;
+    KPROCESSOR_MODE PreviousMode = KeGetPreviousMode(); 
+    LOAD_UNLOAD_PARAMS LoadUnloadDriverContext;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    UNICODE_STRING Destination;
+    UNICODE_STRING DriverName;
     PDRIVER_OBJECT DriverObject;
-    PDEVICE_OBJECT DeviceObject;
-    PEXTENDED_DEVOBJ_EXTENSION DeviceExtension;
-    NTSTATUS Status;
-    USHORT LastBackslash;
-    BOOLEAN SafeToUnload = TRUE;
-    KPROCESSOR_MODE PreviousMode;
-    UNICODE_STRING CapturedServiceName;
+    HANDLE Handle;
+    HANDLE KeyHandle;
+    PVOID Buffer = NULL;
+    BOOLEAN IsSafeToUnload;
+    NTSTATUS Status = STATUS_SUCCESS;
 
     PAGED_CODE();
+    DPRINT("IopUnloadDriver: Unload '%wZ'\n", DriverServiceName);
 
-    PreviousMode = ExGetPreviousMode();
-
-    /* Need the appropriate priviliege */
-    if (!SeSinglePrivilegeCheck(SeLoadDriverPrivilege, PreviousMode))
+    if (PreviousMode != KernelMode && !IsUnloadPnpManagers)
     {
-        DPRINT1("No unload privilege!\n");
-        return STATUS_PRIVILEGE_NOT_HELD;
-    }
-
-    /* Capture the service name */
-    Status = ProbeAndCaptureUnicodeString(&CapturedServiceName, PreviousMode, DriverServiceName);
-    if (!NT_SUCCESS(Status))
-    {
-        return Status;
-    }
-
-    DPRINT("IopUnloadDriver('%wZ', %u)\n", &CapturedServiceName, UnloadPnpDrivers);
-
-
-    /* We need a service name */
-    if (CapturedServiceName.Length == 0)
-    {
-        ReleaseCapturedUnicodeString(&CapturedServiceName, PreviousMode);
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    /*
-     * Get the service name from the registry key name
-     */
-    Status = RtlFindCharInUnicodeString(RTL_FIND_CHAR_IN_UNICODE_STRING_START_AT_END,
-                                        &CapturedServiceName,
-                                        &Backslash,
-                                        &LastBackslash);
-    if (NT_SUCCESS(Status))
-    {
-        NT_ASSERT(CapturedServiceName.Length >= LastBackslash + sizeof(WCHAR));
-        ServiceName.Buffer = &CapturedServiceName.Buffer[LastBackslash / sizeof(WCHAR) + 1];
-        ServiceName.Length = CapturedServiceName.Length - LastBackslash - sizeof(WCHAR);
-        ServiceName.MaximumLength = CapturedServiceName.MaximumLength - LastBackslash - sizeof(WCHAR);
-    }
-    else
-    {
-        ServiceName = CapturedServiceName;
-    }
-
-    /*
-     * Construct the driver object name
-     */
-    Status = RtlUShortAdd(sizeof(DRIVER_ROOT_NAME),
-                          ServiceName.Length,
-                          &ObjectName.MaximumLength);
-    if (!NT_SUCCESS(Status))
-    {
-        ReleaseCapturedUnicodeString(&CapturedServiceName, PreviousMode);
-        return Status;
-    }
-    ObjectName.Length = 0;
-    ObjectName.Buffer = ExAllocatePoolWithTag(PagedPool,
-                                              ObjectName.MaximumLength,
-                                              TAG_IO);
-    if (!ObjectName.Buffer)
-    {
-        ReleaseCapturedUnicodeString(&CapturedServiceName, PreviousMode);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    NT_VERIFY(NT_SUCCESS(RtlAppendUnicodeToString(&ObjectName, DRIVER_ROOT_NAME)));
-    NT_VERIFY(NT_SUCCESS(RtlAppendUnicodeStringToString(&ObjectName, &ServiceName)));
-
-    /*
-     * Find the driver object
-     */
-    Status = ObReferenceObjectByName(&ObjectName,
-                                     0,
-                                     0,
-                                     0,
-                                     IoDriverObjectType,
-                                     KernelMode,
-                                     0,
-                                     (PVOID*)&DriverObject);
-
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("Can't locate driver object for %wZ\n", &ObjectName);
-        ExFreePoolWithTag(ObjectName.Buffer, TAG_IO);
-        ReleaseCapturedUnicodeString(&CapturedServiceName, PreviousMode);
-        return Status;
-    }
-
-    /* Free the buffer for driver object name */
-    ExFreePoolWithTag(ObjectName.Buffer, TAG_IO);
-
-    /* Check that driver is not already unloading */
-    if (DriverObject->Flags & DRVO_UNLOAD_INVOKED)
-    {
-        DPRINT1("Driver deletion pending\n");
-        ObDereferenceObject(DriverObject);
-        ReleaseCapturedUnicodeString(&CapturedServiceName, PreviousMode);
-        return STATUS_DELETE_PENDING;
-    }
-
-    /*
-     * Get path of service...
-     */
-    RtlZeroMemory(QueryTable, sizeof(QueryTable));
-
-    RtlInitUnicodeString(&ImagePath, NULL);
-
-    QueryTable[0].Name = L"ImagePath";
-    QueryTable[0].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    QueryTable[0].EntryContext = &ImagePath;
-
-    Status = RtlQueryRegistryValues(RTL_REGISTRY_ABSOLUTE,
-                                    CapturedServiceName.Buffer,
-                                    QueryTable,
-                                    NULL,
-                                    NULL);
-
-    /* We no longer need service name */
-    ReleaseCapturedUnicodeString(&CapturedServiceName, PreviousMode);
-
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("RtlQueryRegistryValues() failed (Status %x)\n", Status);
-        ObDereferenceObject(DriverObject);
-        return Status;
-    }
-
-    /*
-     * Normalize the image path for all later processing.
-     */
-    Status = IopNormalizeImagePath(&ImagePath, &ServiceName);
-
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("IopNormalizeImagePath() failed (Status %x)\n", Status);
-        ObDereferenceObject(DriverObject);
-        return Status;
-    }
-
-    /* Free the service path */
-    ExFreePool(ImagePath.Buffer);
-
-    /*
-     * Unload the module and release the references to the device object
-     */
-
-    /* Call the load/unload routine, depending on current process */
-    if (DriverObject->DriverUnload && DriverObject->DriverSection &&
-        (UnloadPnpDrivers || (DriverObject->Flags & DRVO_LEGACY_DRIVER)))
-    {
-        /* Loop through each device object of the driver
-           and set DOE_UNLOAD_PENDING flag */
-        DeviceObject = DriverObject->DeviceObject;
-        while (DeviceObject)
+        if (!SeSinglePrivilegeCheck(SeLoadDriverPrivilege, PreviousMode))
         {
-            /* Set the unload pending flag for the device */
-            DeviceExtension = IoGetDevObjExtension(DeviceObject);
-            DeviceExtension->ExtensionFlags |= DOE_UNLOAD_PENDING;
-
-            /* Make sure there are no attached devices or no reference counts */
-            if ((DeviceObject->ReferenceCount) || (DeviceObject->AttachedDevice))
-            {
-                /* Not safe to unload */
-                DPRINT1("Drivers device object is referenced or has attached devices\n");
-
-                SafeToUnload = FALSE;
-            }
-
-            DeviceObject = DeviceObject->NextDevice;
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            return STATUS_PRIVILEGE_NOT_HELD;
         }
 
-        /* If not safe to unload, then return success */
-        if (!SafeToUnload)
+        _SEH2_TRY
         {
-            ObDereferenceObject(DriverObject);
-            return STATUS_SUCCESS;
+            if (((ULONG_PTR)DriverServiceName >= MmUserProbeAddress))
+                *(PUNICODE_STRING)&DriverName = *((PUNICODE_STRING)MmUserProbeAddress);
+            else
+                *(PUNICODE_STRING)&DriverName = *(DriverServiceName);
+
+            if (!DriverName.Length)
+                return STATUS_INVALID_PARAMETER;
+
+            ProbeForRead(DriverName.Buffer, DriverName.Length, sizeof(WCHAR));
+
+            Buffer = ExAllocatePoolWithQuotaTag(PagedPool, DriverName.Length, '  oI');
+
+            RtlCopyMemory(Buffer, DriverName.Buffer, DriverName.Length);
+            DriverName.Buffer = Buffer;
         }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            if (Buffer)
+                ExFreePoolWithTag(Buffer, '  oI');
 
-        DPRINT1("Unloading driver '%wZ' (manual)\n", &DriverObject->DriverName);
+            return _SEH2_GetExceptionCode();
+        }
+        _SEH2_END;
 
-        /* Set the unload invoked flag and call the unload routine */
-        DriverObject->Flags |= DRVO_UNLOAD_INVOKED;
-        Status = IopLoadUnloadDriver(NULL, &DriverObject);
-        ASSERT(Status == STATUS_SUCCESS);
+        Status = ZwUnloadDriver(&DriverName);
 
-        /* Mark the driver object temporary, so it could be deleted later */
-        ObMakeTemporaryObject(DriverObject);
-
-        /* Dereference it 2 times */
-        ObDereferenceObject(DriverObject);
-        ObDereferenceObject(DriverObject);
+        ExFreePoolWithTag(Buffer, '  oI');
 
         return Status;
     }
-    else
+
+    Status = IopOpenRegistryKey(&KeyHandle, NULL, DriverServiceName, KEY_READ, FALSE);
+    if (!NT_SUCCESS(Status))
     {
-        DPRINT1("No DriverUnload function! '%wZ' will not be unloaded!\n", &DriverObject->DriverName);
+        DPRINT1("IopUnloadDriver: Status %X\n", Status);
+        return Status;
+    }
 
-        /* Dereference one time (refd inside this function) */
+    Status = IopGetDriverNameFromKeyNode(KeyHandle, &Destination);
+    ObCloseHandle(KeyHandle, KernelMode);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopUnloadDriver: Status %X\n", Status);
+        return Status;
+    }
+
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &Destination,
+                               (OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE),
+                               NULL,
+                               NULL);
+
+    Status = ObOpenObjectByName(&ObjectAttributes,
+                                IoDriverObjectType,
+                                KernelMode,
+                                NULL,
+                                FILE_READ_DATA,
+                                NULL,
+                                &Handle);
+
+    ExFreePool(Destination.Buffer);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopUnloadDriver: Status %X\n", Status);
+        return Status;
+    }
+
+    Status = ObReferenceObjectByHandle(Handle,
+                                       0,
+                                       IoDriverObjectType,
+                                       KernelMode,
+                                       (PVOID *)&DriverObject,
+                                       NULL);
+    ObCloseHandle(Handle, KernelMode);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopUnloadDriver: Status %X\n", Status);
+        return Status;
+    }
+
+    if (!DriverObject->DriverUnload || !DriverObject->DriverSection)
+    {
+        DPRINT1("IopUnloadDriver: STATUS_INVALID_DEVICE_REQUEST\n");
         ObDereferenceObject(DriverObject);
-
-        /* Return unloading failure */
         return STATUS_INVALID_DEVICE_REQUEST;
     }
+
+    if (!IsUnloadPnpManagers && !IopIsLegacyDriver(DriverObject))
+    {
+        DPRINT1("IopUnloadDriver: STATUS_INVALID_DEVICE_REQUEST\n");
+        ObDereferenceObject(DriverObject);
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    Status = IopCheckUnloadDriver(DriverObject, &IsSafeToUnload);
+    if (NT_SUCCESS(Status))
+        return Status;
+
+    DPRINT1("IopUnloadDriver: Status %X\n", Status);
+
+    if (!IsSafeToUnload)
+    {
+        DPRINT1("IopUnloadDriver: STATUS_INVALID_DEVICE_REQUEST\n");
+        ObDereferenceObject(DriverObject);
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    if (PsGetCurrentProcess() == PsInitialSystemProcess)
+    {
+        DriverObject->DriverUnload(DriverObject);
+        goto Exit;
+    }
+
+    LoadUnloadDriverContext.DriverObject = DriverObject;
+
+    KeInitializeEvent(&LoadUnloadDriverContext.Event, NotificationEvent, FALSE);
+
+    ExInitializeWorkItem(&LoadUnloadDriverContext.WorkItem, IopLoadUnloadDriver, &LoadUnloadDriverContext);
+    ExQueueWorkItem(&LoadUnloadDriverContext.WorkItem, DelayedWorkQueue);
+
+    KeWaitForSingleObject(&LoadUnloadDriverContext.Event, Executive, KernelMode, FALSE, NULL);
+
+Exit:
+
+    ObMakeTemporaryObject(DriverObject);
+    ObDereferenceObject(DriverObject);
+    ObDereferenceObject(DriverObject);
+
+    DPRINT("IopUnloadDriver: return %X\n", Status);
+    return Status;
 }
 
 VOID
