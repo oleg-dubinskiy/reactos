@@ -522,12 +522,10 @@ PipDumpDeviceNodes(
 #endif
     }
 
-    DPRINT1("PipDumpDeviceNodes: DeviceNode %X, Flags %X Level %X\n", DeviceNode, Flags, DebugLevel);
+    DPRINT1("PipDumpDeviceNodes: [%X] Flags %X Level %X\n", DeviceNode, Flags, DebugLevel);
 
     if (DeviceNode == NULL)
-    {
         DeviceNode = IopRootDeviceNode;
-    }
 
     PipDumpDeviceNode(DeviceNode, 0, Flags, DebugLevel);
 }
@@ -629,11 +627,9 @@ IopDumpDeviceNode(
     }
 
     if (!DeviceNode)
-    {
         DeviceNode = IopRootDeviceNode;
-    }
 
-    PipDumpDeviceNodes(DeviceNode, 0, Flags);
+    PipDumpDeviceNodes(DeviceNode, Flags, 0);
 }
 
 VOID
