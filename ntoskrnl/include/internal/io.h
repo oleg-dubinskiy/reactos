@@ -1076,14 +1076,6 @@ IopDeleteDriver(
 
 NTSTATUS
 FASTCALL
-IopGetDriverObject(
-    OUT PDRIVER_OBJECT *DriverObject,
-    IN PUNICODE_STRING ServiceName,
-    IN BOOLEAN FileSystem
-);
-
-NTSTATUS
-FASTCALL
 IopLoadServiceModule(
     IN PUNICODE_STRING ServiceName,
     OUT PLDR_DATA_TABLE_ENTRY *ModuleObject
