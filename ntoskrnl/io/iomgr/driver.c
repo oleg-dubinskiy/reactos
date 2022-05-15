@@ -270,39 +270,35 @@ IopNormalizeImagePath(
     return STATUS_SUCCESS;
 }
 
-/*
- * IopLoadServiceModule
- *
- * Load a module specified by registry settings for service.
- *
- * Parameters
- *    ServiceName
- *       Name of the service to load.
- *
- * Return Value
- *    Status
+/* Load a module specified by registry settings for service.
+
+   ServiceName
+      Name of the service to load.
  */
 NTSTATUS
 FASTCALL
 IopLoadServiceModule(
-    IN PUNICODE_STRING ServiceName,
-    OUT PLDR_DATA_TABLE_ENTRY *ModuleObject)
+    _In_ PUNICODE_STRING ServiceName,
+    _Out_ PLDR_DATA_TABLE_ENTRY * ModuleObject)
 {
+    UNICODE_STRING ServicesName = RTL_CONSTANT_STRING(IO_REG_KEY_SERVICES);
+    UNICODE_STRING ServiceImagePath;
     RTL_QUERY_REGISTRY_TABLE QueryTable[3];
-    ULONG ServiceStart;
-    UNICODE_STRING ServiceImagePath, CCSName;
-    NTSTATUS Status;
-    HANDLE CCSKey, ServiceKey;
+    HANDLE RootHandle;
+    HANDLE ServiceHandle;
     PVOID BaseAddress;
+    ULONG ServiceStart;
+    NTSTATUS Status;
+
+    DPRINT("IopLoadServiceModule: '%wZ', %p\n", ServiceName, ModuleObject);
 
     ASSERT(ExIsResourceAcquiredExclusiveLite(&IopDriverLoadResource));
     ASSERT(ServiceName->Length);
-    DPRINT("IopLoadServiceModule(%wZ, 0x%p)\n", ServiceName, ModuleObject);
 
     if (ExpInTextModeSetup)
     {
         /* We have no registry, but luckily we know where all the drivers are */
-        DPRINT1("IopLoadServiceModule(%wZ, 0x%p) called in ExpInTextModeSetup mode...\n", ServiceName, ModuleObject);
+        DPRINT1("IopLoadServiceModule: '%wZ', %p. ExpInTextModeSetup mode.\n", ServiceName, ModuleObject);
 
         /* ServiceStart < 4 is all that matters */
         ServiceStart = 0;
@@ -313,29 +309,23 @@ IopLoadServiceModule(
     else
     {
         /* Open CurrentControlSet */
-        RtlInitUnicodeString(&CCSName,
-                             L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Services");
-        Status = IopOpenRegistryKeyEx(&CCSKey, NULL, &CCSName, KEY_READ);
+        Status = IopOpenRegistryKeyEx(&RootHandle, NULL, &ServicesName, KEY_READ);
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("IopOpenRegistryKeyEx() failed for '%wZ' with status 0x%lx\n",
-                    &CCSName, Status);
+            DPRINT1("IopLoadServiceModule: Failed '%wZ' with %X\n", &ServicesName, Status);
             return Status;
         }
 
         /* Open service key */
-        Status = IopOpenRegistryKeyEx(&ServiceKey, CCSKey, ServiceName, KEY_READ);
+        Status = IopOpenRegistryKeyEx(&ServiceHandle, RootHandle, ServiceName, KEY_READ);
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("IopOpenRegistryKeyEx() failed for '%wZ' with status 0x%lx\n",
-                    ServiceName, Status);
-            ZwClose(CCSKey);
+            DPRINT1("IopLoadServiceModule: Failed '%wZ' with %X\n", ServiceName, Status);
+            ZwClose(RootHandle);
             return Status;
         }
 
-        /*
-         * Get information about the service.
-         */
+        /* Get information about the service. */
         RtlZeroMemory(QueryTable, sizeof(QueryTable));
 
         RtlInitUnicodeString(&ServiceImagePath, NULL);
@@ -349,35 +339,29 @@ IopLoadServiceModule(
         QueryTable[1].EntryContext = &ServiceImagePath;
 
         Status = RtlQueryRegistryValues(RTL_REGISTRY_HANDLE,
-                                        (PWSTR)ServiceKey,
+                                        (PWSTR)ServiceHandle,
                                         QueryTable,
                                         NULL,
                                         NULL);
-
-        ZwClose(ServiceKey);
-        ZwClose(CCSKey);
+        ZwClose(ServiceHandle);
+        ZwClose(RootHandle);
 
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("RtlQueryRegistryValues() failed (Status %x)\n", Status);
+            DPRINT1("IopLoadServiceModule: RtlQueryRegistryValues() failed %X\n", Status);
             return Status;
         }
     }
 
-    /*
-     * Normalize the image path for all later processing.
-     */
+    /* Normalize the image path for all later processing. */
     Status = IopNormalizeImagePath(&ServiceImagePath, ServiceName);
-
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("IopNormalizeImagePath() failed (Status %x)\n", Status);
+        DPRINT1("IopLoadServiceModule: IopNormalizeImagePath() failed %X\n", Status);
         return Status;
     }
 
-    /*
-     * Case for disabled drivers
-     */
+    /* Case for disabled drivers */
     if (ServiceStart >= 4)
     {
         /* We can't load this */
@@ -385,25 +369,24 @@ IopLoadServiceModule(
     }
     else
     {
-        DPRINT("Loading module from %wZ\n", &ServiceImagePath);
+        DPRINT("IopLoadServiceModule: Loading '%wZ'\n", &ServiceImagePath);
+
         Status = MmLoadSystemImage(&ServiceImagePath, NULL, NULL, 0, (PVOID)ModuleObject, &BaseAddress);
         if (NT_SUCCESS(Status))
-        {
             IopDisplayLoadingMessage(ServiceName);
-        }
     }
 
     ExFreePool(ServiceImagePath.Buffer);
 
-    /*
-     * Now check if the module was loaded successfully.
-     */
+    /* Now check if the module was loaded successfully. */
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("Module loading failed (Status %x)\n", Status);
+        DPRINT("IopLoadServiceModule: Loading failed %X\n", Status);
     }
-
-    DPRINT("Module loading (Status %x)\n", Status);
+    else
+    {
+        DPRINT("IopLoadServiceModule: Loading Ok %X\n", Status);
+    }
 
     return Status;
 }
