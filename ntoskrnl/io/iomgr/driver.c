@@ -51,17 +51,13 @@ IopIsLegacyDriver(
     BOOLEAN Result;
     PAGED_CODE();
 
-    if (DriverObject->DriverExtension->AddDevice != NULL)
-    {
+    if (DriverObject->DriverExtension->AddDevice)
         return FALSE;
-    }
 
-    if ((DriverObject->Flags & DRVO_LEGACY_DRIVER) == DRVO_LEGACY_DRIVER)
-    {
-        Result = TRUE;
-    }
+    if ((DriverObject->Flags & DRVO_LEGACY_DRIVER) != DRVO_LEGACY_DRIVER)
+        return FALSE;
 
-    return Result;
+    return TRUE;
 }
 
 NTSTATUS
