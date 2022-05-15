@@ -598,6 +598,52 @@ LdrProcessDriverModule(PLDR_DATA_TABLE_ENTRY LdrEntry,
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+IopCheckUnloadDriver(
+    _In_ PDRIVER_OBJECT Object,
+    _Out_ PBOOLEAN OutIsSafeToUnload)
+{
+    KIRQL OldIrql;
+    PDEVICE_OBJECT DeviceObject;
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
+
+    DeviceObject = Object->DeviceObject;
+
+    if ((!DeviceObject && (Object->Flags & DRVO_UNLOAD_INVOKED)) ||
+        (!(Object->Flags & DRVO_FILESYSTEM_DRIVER) &&
+         DeviceObject &&
+         ((IoGetDevObjExtension(DeviceObject))->ExtensionFlags & DOE_UNLOAD_PENDING)))
+    {
+          KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+          ObDereferenceObject(Object);
+          return STATUS_SUCCESS;
+    }
+
+    *OutIsSafeToUnload = TRUE;
+
+    while (DeviceObject)
+    {
+        (IoGetDevObjExtension(DeviceObject))->ExtensionFlags |= DOE_UNLOAD_PENDING;
+
+        if (DeviceObject->ReferenceCount || DeviceObject->AttachedDevice)
+            *OutIsSafeToUnload = FALSE;
+
+        DeviceObject = DeviceObject->NextDevice;
+    }
+
+    if ((Object->Flags & DRVO_FILESYSTEM_DRIVER) && Object->DeviceObject)
+        *OutIsSafeToUnload = FALSE;
+
+    if (*OutIsSafeToUnload)
+        Object->Flags |= DRVO_UNLOAD_INVOKED;
+
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+
+    return STATUS_UNSUCCESSFUL;
+}
+
 /*
  * IopUnloadDriver
  *
