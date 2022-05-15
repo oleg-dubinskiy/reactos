@@ -72,6 +72,22 @@ IopInvalidDeviceRequest(
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
+NTSTATUS
+NTAPI
+PpDriverObjectDereferenceComplete(
+    _In_ PDRIVER_OBJECT DriverObject)
+{
+    PAGED_CODE();
+    DPRINT("PpDriverObjectDereferenceComplete: Driver '%wZ'\n", &DriverObject->DriverName);
+
+    return PipRequestDeviceAction(IopRootDeviceNode->PhysicalDeviceObject,
+                                  PipEnumClearProblem,
+                                  0,
+                                  CM_PROB_DRIVER_FAILED_PRIOR_UNLOAD, // RequestArgument 
+                                  NULL,
+                                  NULL);
+}
+
 VOID
 NTAPI
 IopDeleteDriver(IN PVOID ObjectBody)
