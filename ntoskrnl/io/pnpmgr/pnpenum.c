@@ -5039,9 +5039,27 @@ NTAPI
 PiProcessStartSystemDevices(
     _In_ PPIP_ENUM_REQUEST Request)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    SERVICE_LOAD_TYPE DriverLoadType = DemandLoad;
+    PDEVICE_NODE DeviceNode;
+    BOOLEAN IsWait;
+
+    PAGED_CODE();
+    DPRINT("PiProcessStartSystemDevices: Request %p\n", Request);
+
+    DeviceNode = IopGetDeviceNode(Request->DeviceObject);
+
+    IsWait = (Request->CompletionEvent != NULL);
+
+    PipProcessDevNodeTree(DeviceNode,
+                          PnPBootDriversInitialized,
+                          FALSE,
+                          0,
+                          IsWait,
+                          FALSE,
+                          &DriverLoadType,
+                          Request);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
