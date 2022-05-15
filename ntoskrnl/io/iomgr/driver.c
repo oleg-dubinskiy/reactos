@@ -1319,6 +1319,110 @@ Exit:
 
 NTSTATUS
 NTAPI
+IopBuildFullDriverPath(
+    _In_ PUNICODE_STRING DriverPath,
+    _In_ HANDLE ServiceHandle,
+    _Out_ PUNICODE_STRING OutModuleName)
+{
+    PKEY_VALUE_FULL_INFORMATION ValueInfo = NULL;
+    PWSTR DriverPathBuffer;
+    ULONG DriverPathLength;
+    PWSTR ImagePath;
+    PWSTR Buffer;
+    PWSTR Path = NULL;
+    ULONG PathLength = 0;
+    PWSTR Ext;
+    ULONG ExtLen = 0;
+    ULONG Lenght;
+    NTSTATUS Status;
+
+    DPRINT("IopBuildFullDriverPath: Driver '%wZ'\n", DriverPath);
+
+    OutModuleName->Length = 0;
+    OutModuleName->MaximumLength = 0;
+    OutModuleName->Buffer = 0;
+
+    Status = IopGetRegistryValue(ServiceHandle, L"ImagePath", &ValueInfo);
+
+    if (NT_SUCCESS(Status) && ValueInfo->DataLength)
+    {
+        DriverPathLength = (ValueInfo->DataLength - sizeof(WCHAR));
+        DriverPathBuffer = (PWSTR)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset);
+
+        ImagePath = DriverPathBuffer;
+
+        if (ImagePath[0] != '\\')
+        {
+            Path = L"\\SystemRoot\\";
+            PathLength = 12;
+        }
+
+        Ext = NULL;
+    }
+    else
+    {
+        DriverPathBuffer = DriverPath->Buffer;
+        DPRINT("IopBuildFullDriverPath: DriverPathBuffer '%S'\n", DriverPathBuffer);
+
+        DriverPathLength = DriverPath->Length;
+        DPRINT("IopBuildFullDriverPath: DriverPathLength %X\n", DriverPathLength);
+
+        ImagePath = DriverPathBuffer;
+
+        PathLength = 29;
+        Path = L"\\SystemRoot\\System32\\Drivers\\";
+        DPRINT("IopBuildFullDriverPath: Path '%S'\n", Path);
+
+        ExtLen = 8;
+        Ext = L".SYS";
+        DPRINT("IopBuildFullDriverPath: Ext '%S'\n", Ext);
+
+    }
+
+    Lenght = (DriverPathLength + ExtLen + ((PathLength + 1) * sizeof(WCHAR)));
+
+    Buffer = ExAllocatePoolWithTag(PagedPool, Lenght, '  oI');
+    if (!Buffer)
+    {
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+
+        OutModuleName->MaximumLength = 0;
+        OutModuleName->Buffer = NULL;
+
+        if (ValueInfo)
+            ExFreePoolWithTag(ValueInfo, 0);
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    OutModuleName->Length = (Lenght - sizeof(WCHAR));
+    OutModuleName->MaximumLength = Lenght;
+    OutModuleName->Buffer = Buffer;
+
+    if (Path)
+    {
+        RtlCopyMemory(Buffer, Path, (PathLength * sizeof(WCHAR)));
+        ImagePath = DriverPathBuffer;
+    }
+
+    if (DriverPathLength)
+        RtlCopyMemory(&OutModuleName->Buffer[PathLength], ImagePath, DriverPathLength);
+
+    if (ExtLen)
+        RtlCopyMemory((&OutModuleName->Buffer[PathLength] + DriverPathLength), Ext, ExtLen);
+
+    OutModuleName->Buffer[OutModuleName->Length >> 1] = 0;
+
+    if (ValueInfo)
+        ExFreePoolWithTag(ValueInfo, 0);
+
+    DPRINT("IopBuildFullDriverPath: OutModuleName '%wZ'\n", OutModuleName);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 IopLoadDriver(
     _In_ HANDLE ServiceHandle,
     _In_ BOOLEAN SafeBootModeFlag,
