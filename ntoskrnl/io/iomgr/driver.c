@@ -1285,6 +1285,40 @@ IoGetDriverObjectExtension(IN PDRIVER_OBJECT DriverObject,
 
 NTSTATUS
 NTAPI
+IopPnpDriverStarted(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ HANDLE ServiceHandle,
+    _In_ PUNICODE_STRING DriverPath)
+{
+    DPRINT("IopPnpDriverStarted: DriverObject %X, DeviceObject %X\n", DriverObject, DriverObject->DeviceObject);
+
+    if (DriverObject->DeviceObject)
+        goto Exit;
+
+    if (DriverPath->Buffer == NULL)
+        goto Exit;
+
+    DPRINT("IopPnpDriverStarted: DriverPath %wZ\n", DriverPath);
+
+    if (IopIsAnyDeviceInstanceEnabled(DriverPath, NULL, FALSE))
+        goto Exit;
+
+    DPRINT("IopPnpDriverStarted: DriverObject->Flags %X\n", DriverObject->Flags);
+
+    if (!(DriverObject->Flags & DRVO_REINIT_REGISTERED))
+    {
+        IopDriverLoadingFailed(ServiceHandle, NULL);
+        DPRINT1("IopPnpDriverStarted: return STATUS_PLUGPLAY_NO_DEVICE\n");
+        return STATUS_PLUGPLAY_NO_DEVICE;
+    }
+
+Exit:
+    IopDeleteLegacyKey(DriverObject);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 IopLoadDriver(
     _In_ HANDLE ServiceHandle,
     _In_ BOOLEAN SafeBootModeFlag,
