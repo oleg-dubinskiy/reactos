@@ -5177,9 +5177,41 @@ NTAPI
 PpProcessClearProblem(
     _In_ PPIP_ENUM_REQUEST Request)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    DEVICETREE_TRAVERSE_CONTEXT TraverseContext;
+    PDEVICE_NODE DeviceNode;
+    ULONG Context[3];
+
+    PAGED_CODE();
+
+    Context[0] = Request->RequestArgument;
+    Context[1] = 1;
+    Context[2] = 5;
+
+    ASSERT(Request->DeviceObject);
+
+    if (Request->DeviceObject)
+        DeviceNode = IopGetDeviceNode(Request->DeviceObject);
+    else
+        DeviceNode = NULL;
+
+    ASSERT(DeviceNode);
+
+    DPRINT("PpProcessClearProblem: Request %p, DeviceNode %p, State %X\n", Request, DeviceNode, DeviceNode->State);
+
+    if (DeviceNode->State == DeviceNodeDeletePendingCloses)
+        return STATUS_DELETE_PENDING;
+
+    if (DeviceNode->State == DeviceNodeDeleted)
+        return STATUS_DELETE_PENDING;
+
+    IopInitDeviceTreeTraverseContext(&TraverseContext,
+                                     DeviceNode,
+                                     PiResetProblemDevicesWorker,
+                                     Context);
+
+    IopTraverseDeviceTree(&TraverseContext);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
