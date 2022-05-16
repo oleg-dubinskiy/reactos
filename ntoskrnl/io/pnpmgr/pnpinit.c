@@ -1914,34 +1914,33 @@ PipCheckDependencies(
     NTSTATUS Status;
     BOOLEAN Result = TRUE;
 
-    DPRINT("PipCheckDependencies: KeyHandle - %X\n", KeyHandle);
+    DPRINT("PipCheckDependencies: KeyHandle %X\n", KeyHandle);
 
     Status = IopGetRegistryValue(KeyHandle, L"DependOnGroup", &ValueInfo);
     if (!NT_SUCCESS(Status))
-    {
         return TRUE;
-    }
 
-    Length = ValueInfo->DataLength;
     DependString = (PWSTR)((PUCHAR)ValueInfo + ValueInfo->DataOffset);
 
-    while (Length)
+    for (Length = ValueInfo->DataLength;
+         Length != 0;
+         Length -= GroupString.MaximumLength)
     {
         RtlInitUnicodeString(&GroupString, DependString);
         GroupString.Length = GroupString.MaximumLength;
 
         Entry = PipLookupGroupName(&GroupString, FALSE);
-        if (Entry && Entry->NumberOfLoads == 0)
+
+        if (Entry && !Entry->NumberOfLoads)
         {
             Result = FALSE;
             break;
         }
 
         DependString = (PWSTR)((PUCHAR)DependString + GroupString.MaximumLength);
-        Length -= GroupString.MaximumLength;
     }
 
-    ExFreePool(ValueInfo);
+    ExFreePoolWithTag(ValueInfo, 'uspP');
 
     return Result;
 }
