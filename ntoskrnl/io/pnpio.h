@@ -688,6 +688,15 @@ IopInitializeSystemDrivers(
     VOID
 );
 
+NTSTATUS
+NTAPI
+IopPrepareDriverLoading(
+    _In_ PUNICODE_STRING ServiceKeyName,
+    _In_ HANDLE ServiceKeyHandle,
+    _In_ PVOID ImageBase,
+    _In_ BOOLEAN IsFilter
+);
+
 /* pnpirp.c */
 NTSTATUS
 NTAPI
