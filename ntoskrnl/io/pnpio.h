@@ -1225,4 +1225,11 @@ PipServiceInstanceToDeviceInstance(
     _In_ ACCESS_MASK DesiredAccess
 );
 
+NTSTATUS
+NTAPI
+IopDriverLoadingFailed(
+    _In_ HANDLE ServiceKeyHandle,
+    _In_ PUNICODE_STRING ServiceKeyName
+);
+
 #endif  /* _PNPIO_H */

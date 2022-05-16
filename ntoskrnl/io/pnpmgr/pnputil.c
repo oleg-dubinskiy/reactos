@@ -2036,4 +2036,290 @@ Exit:
         ZwClose(EnumHandle);
 }
 
+NTSTATUS
+NTAPI
+IopDriverLoadingFailed(
+    _In_ HANDLE ServiceKeyHandle,
+    _In_ PUNICODE_STRING ServiceKeyName)
+{
+    UNICODE_STRING EnumKeyName = RTL_CONSTANT_STRING(IO_REG_KEY_ENUM);
+    UNICODE_STRING InitStartFailedName = RTL_CONSTANT_STRING(L"INITSTARTFAILED");
+    UNICODE_STRING ActiveServiceName = RTL_CONSTANT_STRING(L"ActiveService");
+    UNICODE_STRING NextInstanceName = RTL_CONSTANT_STRING(L"NextInstance");
+    UNICODE_STRING ControlName = RTL_CONSTANT_STRING(L"Control");
+    UNICODE_STRING CountName = RTL_CONSTANT_STRING(L"Count");
+    UNICODE_STRING EnumName = RTL_CONSTANT_STRING(L"Enum");
+    UNICODE_STRING DeviceInstance;
+    UNICODE_STRING NameString;
+    PKEY_VALUE_FULL_INFORMATION ValueInfo;
+    PDEVICE_OBJECT DeviceObject;
+    PDEVICE_NODE DeviceNode;
+    HANDLE InstanceKeyHandle;
+    HANDLE EnumKeyHandle = NULL;
+    HANDLE ControlKeyHandle;
+    HANDLE KeyHandle;
+    HANDLE Handle;
+    WCHAR InstanceName[(10 * sizeof(WCHAR))];
+    PWSTR InstanceNameEnd;
+    ULONG InitStartFailed;
+    ULONG NextInstance;
+    ULONG Count;
+    ULONG Number;
+    ULONG ix;
+    LONG InstanceNameLen;
+    BOOLEAN IsServiceEnumKeyOpened = FALSE;
+    BOOLEAN IsRemove;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT1("Handle %X Service %wZ\n", ServiceKeyHandle, ServiceKeyName);
+
+    if (ServiceKeyHandle)
+    {
+        Status = IopOpenRegistryKeyEx(&KeyHandle, ServiceKeyHandle, &EnumName, KEY_READ);
+    }
+    else
+    {
+        Status = PipOpenServiceEnumKeys(ServiceKeyName, KEY_READ, &ServiceKeyHandle, &KeyHandle, FALSE);
+        IsServiceEnumKeyOpened = TRUE;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDriverLoadingFailed: Status %X\n", Status);
+        return Status;
+    }
+
+    InitStartFailed = 1;
+    ZwSetValueKey(KeyHandle, &InitStartFailedName, 0, REG_DWORD, &InitStartFailed, sizeof(InitStartFailed));
+
+    Count = 0;
+    Status = IopGetRegistryValue(KeyHandle, L"Count", &ValueInfo);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDriverLoadingFailed: Status %X\n", Status);
+        goto Exit;
+    }
+
+    if (ValueInfo->Type == REG_DWORD && ValueInfo->DataLength >= sizeof(ULONG))
+    {
+        Count = *(PULONG)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset);
+        DPRINT1("IopDriverLoadingFailed: Count %X\n", Count);
+    }
+
+    ExFreePoolWithTag(ValueInfo, 'uspP');
+
+    if (Count == 0)
+    {
+        DPRINT1("IopDriverLoadingFailed: Count %X\n", Count);
+        goto Exit;
+    }
+
+    IopOpenRegistryKeyEx(&EnumKeyHandle, NULL, &EnumKeyName, KEY_ALL_ACCESS);
+
+    NextInstance = Count;
+    if (Count <= 0)
+    {
+        DPRINT1("IopDriverLoadingFailed: Count %X\n", Count);
+        goto Exit1;
+    }
+
+    for (ix = 0; ix < Count; ix++)
+    {
+        IsRemove = FALSE;
+
+        Status = PipServiceInstanceToDeviceInstance(ServiceKeyHandle,
+                                                    ServiceKeyName,
+                                                    ix,
+                                                    &DeviceInstance,
+                                                    &InstanceKeyHandle,
+                                                    KEY_ALL_ACCESS);
+        if (NT_SUCCESS(Status))
+        {
+            DeviceObject = IopDeviceObjectFromDeviceInstance(&DeviceInstance);
+            if (DeviceObject)
+            {
+                DeviceNode =  IopGetDeviceNode(DeviceObject);
+                if (DeviceNode)
+                {
+                    IopReleaseDeviceResources(DeviceNode, TRUE);
+
+                    if (DeviceNode->Flags & DNF_MADEUP)
+                    {
+                        if (DeviceNode->State == DeviceNodeStarted ||
+                            DeviceNode->State == DeviceNodeStartPostWork)
+                        {
+                            PipSetDevNodeState(DeviceNode, DeviceNodeRemoved, NULL);
+                            PipSetDevNodeProblem(DeviceNode, CM_PROB_DEVICE_NOT_THERE);
+                            IsRemove = TRUE;
+                        }
+                    }
+                }
+
+                ObDereferenceObject(DeviceObject);
+            }
+
+            KeEnterCriticalRegion();
+            ExAcquireResourceSharedLite(&PpRegistryDeviceResource, TRUE);
+
+            ControlKeyHandle = NULL;
+            Status = IopOpenRegistryKeyEx(&ControlKeyHandle, InstanceKeyHandle, &ControlName, KEY_ALL_ACCESS);
+
+            if (NT_SUCCESS(Status))
+            {
+                Status = IopGetRegistryValue(ControlKeyHandle, L"*NewlyCreated*", &ValueInfo);
+                if (NT_SUCCESS(Status))
+                    ExFreePoolWithTag(ValueInfo, 'uspP');
+
+                if (Status != STATUS_OBJECT_NAME_NOT_FOUND && Status != STATUS_OBJECT_PATH_NOT_FOUND)
+                {
+                     RtlStringCchPrintfExW(InstanceName, 10, &InstanceNameEnd, NULL, 0, L"%u", ix);
+
+                     InstanceNameLen = (InstanceNameEnd - InstanceName);
+                     NameString.MaximumLength = (10 * sizeof(WCHAR));
+
+                     if (InstanceNameLen == -1)
+                         NameString.Length = (10 * sizeof(WCHAR));
+                     else
+                         NameString.Length = (InstanceNameLen * sizeof(WCHAR));
+
+                     NameString.Buffer = InstanceName;
+
+                     Status = ZwDeleteValueKey(KeyHandle, &NameString);
+                     if (NT_SUCCESS(Status))
+                     {
+                         NextInstance--;
+
+                         ZwDeleteKey(ControlKeyHandle);
+                         ZwDeleteKey(InstanceKeyHandle);
+
+                         if (EnumKeyHandle)
+                         {
+                             DeviceInstance.Length -= (5 * sizeof(WCHAR));
+                             DeviceInstance.Buffer[DeviceInstance.Length / sizeof(WCHAR)] = 0;
+
+                             Status = IopOpenRegistryKeyEx(&Handle, EnumKeyHandle, &DeviceInstance, KEY_ALL_ACCESS);
+
+                             DeviceInstance.Buffer[DeviceInstance.Length / sizeof(WCHAR)] = '\\';
+                             DeviceInstance.Length += (5 * sizeof(WCHAR));
+
+                             if (NT_SUCCESS(Status))
+                             {
+                                 ZwDeleteKey(Handle);
+                                 ZwClose(Handle);
+                             }
+                         }
+
+                         if (IsRemove)
+                             IoDeleteDevice(DeviceObject);
+
+                         ZwClose(ControlKeyHandle);
+                         ZwClose(InstanceKeyHandle);
+
+                         IopCleanupDeviceRegistryValues(&DeviceInstance);
+                     }
+                }
+            }
+            else
+            {
+                if (ControlKeyHandle)
+                {
+                    ZwDeleteValueKey(ControlKeyHandle, &ActiveServiceName);
+                    ZwClose(ControlKeyHandle);
+                }
+
+                ZwClose(InstanceKeyHandle);
+            }
+
+            ExFreePool(DeviceInstance.Buffer);
+
+            ExReleaseResourceLite(&PpRegistryDeviceResource);
+            KeLeaveCriticalRegion();
+        }
+    }
+
+    if (NextInstance == Count)
+    {
+        DPRINT1("NextInstance == Count\n");
+        goto Exit1;
+    }
+
+    KeEnterCriticalRegion();
+    ExAcquireResourceSharedLite(&PpRegistryDeviceResource, TRUE);
+
+    if (NextInstance)
+    {
+        Number = 0;
+
+        for (ix = 0; ix < Count; ix++)
+        {
+            RtlStringCchPrintfExW(InstanceName, 10, &InstanceNameEnd, NULL, 0, L"%u", ix);
+
+            InstanceNameLen = (InstanceNameEnd - InstanceName);
+
+            if (InstanceNameLen == -1)
+                NameString.Length = (10 * sizeof(WCHAR));
+            else
+                NameString.Length = (InstanceNameLen * sizeof(WCHAR));
+
+            NameString.MaximumLength = (10 * sizeof(WCHAR));
+            NameString.Buffer = InstanceName;
+
+            Status = IopGetRegistryValue(KeyHandle, InstanceName, &ValueInfo);
+            if (!NT_SUCCESS(Status))
+                continue;
+
+            if (ix != Number)
+            {
+                ZwDeleteValueKey(KeyHandle, &NameString);
+
+                RtlStringCchPrintfExW(InstanceName, 10, &InstanceNameEnd, NULL, 0, L"%u", Number);
+
+                InstanceNameLen = (InstanceNameEnd - InstanceName);
+
+                if (InstanceNameLen == -1)
+                    NameString.Length = (10 * sizeof(WCHAR));
+                else
+                    NameString.Length = (InstanceNameLen * sizeof(WCHAR));
+
+                NameString.MaximumLength = (10 * sizeof(WCHAR));
+                NameString.Buffer = InstanceName;
+
+                ZwSetValueKey(KeyHandle,
+                              &NameString,
+                              0,
+                              REG_SZ,
+                              (PVOID)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset),
+                              ValueInfo->DataLength);
+            }
+
+            ExFreePoolWithTag(ValueInfo, 'uspP');
+
+            Number++;
+        }
+    }
+
+    ZwSetValueKey(KeyHandle, &CountName, 0, REG_DWORD, &NextInstance, sizeof(NextInstance));
+    ZwSetValueKey(KeyHandle, &NextInstanceName, 0, REG_DWORD, &NextInstance, sizeof(NextInstance));
+
+    ExReleaseResourceLite(&PpRegistryDeviceResource);
+    KeLeaveCriticalRegion();
+
+Exit1:
+
+    if (EnumKeyHandle)
+        ZwClose(EnumKeyHandle);
+
+    Status = STATUS_SUCCESS;
+
+Exit:
+
+    ZwClose(KeyHandle);
+    if (IsServiceEnumKeyOpened)
+        ZwClose(ServiceKeyHandle);
+
+    DPRINT1("IopDriverLoadingFailed: return %X\n", Status);
+    return Status;
+}
+
 /* EOF */
