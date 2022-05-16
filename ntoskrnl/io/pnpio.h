@@ -419,6 +419,13 @@ IopLoadUnloadDriver(
     _In_ PVOID Context
 );
 
+NTSTATUS
+NTAPI
+IopUnloadDriver(
+    _In_ PUNICODE_STRING DriverServiceName,
+    _In_ BOOLEAN IsUnloadPnpManagers
+);
+
 /* volume.c */
 NTSTATUS
 NTAPI

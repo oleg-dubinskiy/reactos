@@ -2914,6 +2914,64 @@ PiProcessNewDeviceNode(
     return Status;
 }
 
+NTSTATUS
+NTAPI 
+IopUnloadAttachedDriver(
+    _In_ PDRIVER_OBJECT DriverObject)
+{
+    UNICODE_STRING RegServicesName = RTL_CONSTANT_STRING(IO_REG_KEY_SERVICES);
+    UNICODE_STRING FullServiceName;
+    PUNICODE_STRING ServiceKeyName;
+    PWSTR Buffer;
+    ULONG Length;
+    NTSTATUS Status;
+
+    ServiceKeyName = &DriverObject->DriverExtension->ServiceKeyName;
+    DPRINT("IopUnloadAttachedDriver: ServiceKeyName '%wZ'\n", ServiceKeyName);
+
+    if (!DriverObject->DriverSection)
+    {
+        DPRINT("IopUnloadAttachedDriver: Skipping unload '%wZ'\n", ServiceKeyName);
+        return STATUS_SUCCESS;
+    }
+
+    if (DriverObject->DeviceObject)
+    {
+        DPRINT("IopUnloadAttachedDriver: Skipping unload '%wZ'\n", ServiceKeyName);
+        return STATUS_SUCCESS;
+    }
+
+    Length = (ServiceKeyName->Length + RegServicesName.Length + 6);
+
+    Buffer = ExAllocatePoolWithTag(PagedPool, Length, 'edpP');
+    if (!Buffer)
+    {
+        DPRINT1("IopUnloadAttachedDriver: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlStringCbPrintfW(Buffer,
+                       Length,
+                       L"%s\\%s",
+                       RegServicesName.Buffer,
+                       ServiceKeyName->Buffer);
+
+    RtlInitUnicodeString(&FullServiceName, Buffer);
+
+    Status = IopUnloadDriver(&FullServiceName, TRUE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("IopUnloadAttachedDriver: Error unloading '%wZ', Status %X\n", ServiceKeyName, Status);
+        goto Exit;
+    }
+
+    DPRINT("IopUnloadAttachedDriver: Unloaded '%wZ'\n", ServiceKeyName);
+
+Exit:
+    ExFreePoolWithTag(FullServiceName.Buffer, 'edpP');
+    return STATUS_SUCCESS;
+}
+
 BOOLEAN
 NTAPI
 PipGetRegistryDwordWithFallback(
@@ -4049,12 +4107,7 @@ Exit:
             ASSERT(Entry->DriverObject);
 
             if (PnPBootDriversInitialized)
-            {
-                DPRINT("PipCallDriverAddDevice: FIXME IopUnloadAttachedDriver(). DriverName - %wZ\n",
-                       &Entry->DriverObject->DriverName);
-
-                ASSERT(FALSE);
-            }
+                IopUnloadAttachedDriver(Entry->DriverObject);
 
             ObDereferenceObject(Entry->DriverObject);
             ExFreePoolWithTag(Entry, 'nepP');
