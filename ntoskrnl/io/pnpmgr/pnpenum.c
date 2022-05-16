@@ -5126,6 +5126,53 @@ PiProcessRequeryDeviceState(
 }
 
 NTSTATUS
+PiResetProblemDevicesWorker(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ PVOID context)
+{
+    ULONG MaxUnload;
+    PULONG Context = context;
+
+    PAGED_CODE();
+    DPRINT("PiResetProblemDevicesWorker: DeviceNode %p, State %X\n", DeviceNode, DeviceNode->State);
+
+    if (!(DeviceNode->Flags & DNF_HAS_PROBLEM))
+        return STATUS_SUCCESS;
+
+    if (DeviceNode->Problem != Context[0])
+        return STATUS_SUCCESS;
+
+    MaxUnload = Context[2];
+
+    if (MaxUnload)
+    {
+        if (DeviceNode->DriverUnloadRetryCount >= MaxUnload)
+            return STATUS_SUCCESS;
+
+        DeviceNode->DriverUnloadRetryCount++;
+    }
+
+    PipRequestDeviceAction(DeviceNode->PhysicalDeviceObject,
+                           PipEnumGetSetDeviceStatus,
+                           1,
+                           0,
+                           NULL,
+                           NULL);
+
+    if (!Context[1])
+        return STATUS_SUCCESS;
+
+    PipRequestDeviceAction(DeviceNode->PhysicalDeviceObject,
+                           PipEnumStartDevice,
+                           1,
+                           0,
+                           NULL,
+                           NULL);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
 NTAPI
 PpProcessClearProblem(
     _In_ PPIP_ENUM_REQUEST Request)
