@@ -1429,10 +1429,413 @@ IopLoadDriver(
     _In_ BOOLEAN IsFilter,
     _Out_ NTSTATUS * OutInitStatus)
 {
-    DPRINT("IopLoadDriver: SafeBootModeFlag - %X, IsFilter - %X\n",
-           SafeBootModeFlag, IsFilter);
-    ASSERT(FALSE);
-    return STATUS_SUCCESS;
+    UNICODE_STRING HardwareKeyName = RTL_CONSTANT_STRING(IO_REG_KEY_DESCRIPTIONSYSTEM);
+    PKEY_VALUE_FULL_INFORMATION ValueInfo = NULL;
+    PKEY_BASIC_INFORMATION KeyInfo = NULL;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    PIMAGE_NT_HEADERS NtHeader;
+    PUNICODE_STRING ObjectName;
+    UNICODE_STRING DriverPath;
+    UNICODE_STRING DriverName;
+    UNICODE_STRING ModuleName;
+    KPROCESSOR_MODE AccessMode;
+    PDRIVER_OBJECT driver;
+    PLIST_ENTRY Entry;
+    PVOID DriverSection;
+    PVOID ImageBase;
+    HANDLE Handle;
+    ULONG ResultLength;
+    ULONG ix;
+    NTSTATUS Status;
+
+    DriverPath.Length = 0;
+    DriverPath.MaximumLength = 0;
+    DriverPath.Buffer = NULL;
+
+    PAGED_CODE();
+    DPRINT("IopLoadDriver: %p, SafeBootModeFlag %X, IsFilter %X\n", ServiceHandle, SafeBootModeFlag, IsFilter);
+
+    *OutInitStatus = STATUS_SUCCESS;
+
+    DriverName.Buffer = NULL;
+    ModuleName.Buffer = NULL;
+
+    Status = NtQueryKey(ServiceHandle, KeyBasicInformation, NULL, 0, &ResultLength);
+
+    if (Status != STATUS_BUFFER_OVERFLOW && Status != STATUS_BUFFER_TOO_SMALL)
+    {
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+        Status = STATUS_ILL_FORMED_SERVICE_ENTRY;
+        goto Exit;
+    }
+
+    KeyInfo = ExAllocatePoolWithTag(NonPagedPool, (ResultLength + (4 * sizeof(WCHAR))), '  oI');
+    if (!KeyInfo)
+    {
+        DPRINT1("IopLoadDriver: STATUS_INSUFFICIENT_RESOURCES\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    Status = NtQueryKey(ServiceHandle, KeyBasicInformation, KeyInfo, ResultLength, &ResultLength);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+        goto Exit;
+    }
+
+    ModuleName.Length = (USHORT)KeyInfo->NameLength;
+    ModuleName.MaximumLength = ModuleName.Length + (4 * sizeof(WCHAR));
+    ModuleName.Buffer = KeyInfo->Name;
+
+    DriverPath.Buffer = ExAllocatePoolWithTag(PagedPool, ModuleName.Length + sizeof(WCHAR), '  oI');
+    if (!DriverPath.Buffer)
+    {
+        DPRINT1("IopLoadDriver: STATUS_INSUFFICIENT_RESOURCES\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    DriverPath.Length = ModuleName.Length;
+    DriverPath.MaximumLength = (ModuleName.Length + sizeof(WCHAR));
+    RtlCopyMemory(DriverPath.Buffer, ModuleName.Buffer, ModuleName.Length);
+    DriverPath.Buffer[DriverPath.Length / sizeof(WCHAR)] = 0;
+
+    RtlAppendUnicodeToString(&ModuleName, L".SYS");
+
+    if (SafeBootModeFlag && InitSafeBootMode)
+    {
+        DPRINT1("IopLoadDriver: FIXME InitSafeBootMode\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+    }
+
+    ExAcquireResourceSharedLite(&PsLoadedModuleResource, TRUE);
+    ASSERT(PsLoadedModuleList.Flink != NULL);
+
+    for (Entry = PsLoadedModuleList.Flink;
+         Entry != &PsLoadedModuleList;
+         Entry = Entry->Flink)
+    {
+        PLDR_DATA_TABLE_ENTRY LdrEntry;
+
+        LdrEntry = CONTAINING_RECORD(Entry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+        if (RtlEqualUnicodeString(&ModuleName, &LdrEntry->BaseDllName, TRUE))
+        {
+            Status = STATUS_IMAGE_ALREADY_LOADED;
+            ExReleaseResourceLite(&PsLoadedModuleResource);
+            ModuleName.Buffer = NULL;
+            goto Exit;
+        }
+    }
+    ExReleaseResourceLite(&PsLoadedModuleResource);
+
+    Status = IopBuildFullDriverPath(&DriverPath, ServiceHandle, &ModuleName);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+        ModuleName.Buffer = NULL;
+        goto Exit;
+    }
+
+    Status = IopGetDriverNameFromKeyNode(ServiceHandle, &DriverName);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+        goto Exit;
+    }
+
+    InitializeObjectAttributes(&ObjectAttributes, &DriverName, OBJ_PERMANENT, NULL, NULL);
+
+    ExAcquireResourceExclusiveLite(&IopDriverLoadResource, TRUE);
+
+    Status = MmLoadSystemImage(&ModuleName, NULL, NULL, FALSE, &DriverSection, &ImageBase);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+
+        if (Status != STATUS_IMAGE_ALREADY_LOADED)
+        {
+            ExReleaseResourceLite(&IopDriverLoadResource);
+            goto Exit;
+        }
+
+        Status = ObOpenObjectByName(&ObjectAttributes,
+                                    IoDriverObjectType,
+                                    KernelMode,
+                                    NULL,
+                                    0,
+                                    NULL,
+                                    &Handle);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopLoadDriver: Status %X\n", Status);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            goto Exit;
+        }
+
+        AccessMode = KeGetCurrentThread()->PreviousMode;
+
+        Status = ObReferenceObjectByHandle(Handle,
+                                           0,
+                                           IoDriverObjectType,
+                                           AccessMode,
+                                           (PVOID *)&driver,
+                                           NULL);
+        NtClose(Handle);
+
+        if (NT_SUCCESS(Status))
+        {
+            DPRINT1("IopLoadDriver: FIXME IopResurrectDriver\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+        }
+
+        ExReleaseResourceLite(&IopDriverLoadResource);
+        goto Exit;
+    }
+
+    /* Only probe (check) */
+    NtHeader = RtlImageNtHeader(ImageBase);
+    DPRINT1("IopLoadDriver: DriverPath %wZ\n", &DriverPath);
+
+    Status = IopPrepareDriverLoading(&DriverPath, ServiceHandle, ImageBase, IsFilter);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+        MmUnloadSystemImage(DriverSection);
+        ExReleaseResourceLite(&IopDriverLoadResource);
+        goto Exit;
+    }
+
+    AccessMode = KeGetCurrentThread()->PreviousMode;
+
+    Status = ObCreateObject(AccessMode,
+                            IoDriverObjectType,
+                            &ObjectAttributes,
+                            KernelMode,
+                            NULL,
+                            (sizeof(DRIVER_OBJECT) + sizeof(DRIVER_EXTENSION)),
+                            0,
+                            0,
+                            (PVOID *)&driver);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+
+        MmUnloadSystemImage(DriverSection);
+        ExReleaseResourceLite(&IopDriverLoadResource);
+        goto Exit;
+    }
+
+    RtlZeroMemory(driver, (sizeof(DRIVER_OBJECT) + sizeof(DRIVER_EXTENSION)));
+
+    driver->Type = IO_TYPE_DRIVER;
+    driver->Size = sizeof(DRIVER_OBJECT);
+
+    driver->DriverExtension = (PDRIVER_EXTENSION)&driver[1];
+    driver->DriverExtension->DriverObject = driver;
+
+    for (ix = 0; ix <= IRP_MJ_MAXIMUM_FUNCTION; ix++)
+        driver->MajorFunction[ix] = IopInvalidDeviceRequest;
+
+    NtHeader = RtlImageNtHeader(ImageBase);
+    if (!(NtHeader->OptionalHeader.DllCharacteristics & IMAGE_FILE_DLL))
+        driver->Flags |= DRVO_LEGACY_DRIVER;
+
+    driver->DriverInit = (PVOID)((ULONG_PTR)ImageBase + NtHeader->OptionalHeader.AddressOfEntryPoint);
+    driver->DriverSection = DriverSection;
+    driver->DriverStart = ImageBase;
+    driver->DriverSize = NtHeader->OptionalHeader.SizeOfImage;
+
+    Status = ObInsertObject(driver, NULL, FILE_READ_DATA, 0, NULL, &Handle);
+
+    ExReleaseResourceLite(&IopDriverLoadResource);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+        goto Exit;
+    }
+
+    AccessMode = KeGetCurrentThread()->PreviousMode;
+    Status = ObReferenceObjectByHandle(Handle, 0, IoDriverObjectType, AccessMode, (PVOID *)&driver, NULL);
+
+    ASSERT(Status == STATUS_SUCCESS);
+    NtClose(Handle);
+
+    driver->HardwareDatabase = &HardwareKeyName;
+
+    driver->DriverName.Buffer = ExAllocatePoolWithTag(PagedPool, DriverName.MaximumLength, '  oI');
+    if (!driver->DriverName.Buffer)
+    {
+        DPRINT1("IopLoadDriver: Allocate failed!\n");
+        /* No return */
+    }
+    else
+    {
+        driver->DriverName.MaximumLength = DriverName.MaximumLength;
+        driver->DriverName.Length = DriverName.Length;
+        RtlCopyMemory(driver->DriverName.Buffer, DriverName.Buffer, DriverName.MaximumLength);
+    }
+
+    ObjectName = ExAllocatePoolWithTag(NonPagedPool, (1 * PAGE_SIZE), '  oI');
+    if (!ObjectName)
+    {
+        DPRINT1("IopLoadDriver: STATUS_INSUFFICIENT_RESOURCES\n");
+
+        ObMakeTemporaryObject(driver);
+        ObDereferenceObject(driver);
+
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    Status = NtQueryObject(ServiceHandle, ObjectNameInformation, ObjectName, (1 * PAGE_SIZE), &ix);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+
+        ObMakeTemporaryObject(driver);
+        ObDereferenceObject(driver);
+
+        ExFreePoolWithTag(ObjectName, '  oI');
+        goto Exit;
+    }
+
+#if 0
+    KeQuerySystemTime(..); // Get timing interval for init driver?
+#endif
+
+    if (DriverPath.Buffer)
+    {
+        driver->DriverExtension->ServiceKeyName.Buffer = ExAllocatePoolWithTag(0, DriverPath.MaximumLength, '  oI');
+        if (driver->DriverExtension->ServiceKeyName.Buffer)
+        {
+            driver->DriverExtension->ServiceKeyName.MaximumLength = DriverPath.MaximumLength;
+            driver->DriverExtension->ServiceKeyName.Length = DriverPath.Length;
+            RtlCopyMemory(driver->DriverExtension->ServiceKeyName.Buffer, DriverPath.Buffer, DriverPath.MaximumLength);
+        }
+    }
+
+    //DPRINT1("IopLoadDriver: driver %X\n", driver); // debug initialization driver
+    Status = driver->DriverInit(driver, ObjectName);
+    //DPRINT1("IopLoadDriver: Status %X\n", Status); // debug initialization driver
+
+    *OutInitStatus = Status;
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLoadDriver: [%X] %wZ DriverInit failed %X\n", driver, &driver->DriverName, Status);
+        Status = STATUS_FAILED_DRIVER_ENTRY;
+    }
+
+#if 0
+    KeQuerySystemTime(..); // Get timing interval for init driver?
+#endif
+
+    for (ix = 0; ix <= IRP_MJ_MAXIMUM_FUNCTION; ix++)
+    {
+        if (!driver->MajorFunction[ix])
+        {
+            ASSERT(driver->MajorFunction[ix] != NULL);
+            driver->MajorFunction[ix] = IopInvalidDeviceRequest;
+        }
+    }
+
+    ExFreePoolWithTag(ObjectName, '  oI');
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+        ObMakeTemporaryObject(driver);
+        ObDereferenceObject(driver);
+        goto Exit;
+    }
+
+    if (!IopIsLegacyDriver(driver))
+    {
+        //DPRINT1("IopLoadDriver: Status %X\n", Status); // debug start driver
+        Status = IopPnpDriverStarted(driver, ServiceHandle, &DriverPath);
+        //DPRINT1("IopLoadDriver: Status %X\n", Status); // debug start driver
+
+        if (NT_SUCCESS(Status))
+        {
+            MmFreeDriverInitialization(driver->DriverSection);
+            IopReadyDeviceObjects(driver);
+            goto Exit;
+        }
+
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+
+        if (driver->DriverUnload)
+        {
+            driver->Flags |= DRVO_UNLOAD_INVOKED;
+            driver->DriverUnload(driver);
+        }
+        else
+        {
+            DbgPrint("IopLoadDriver: PnP driver '%wZ' not supported DriverUnload().\n", &DriverName);
+        }
+    }
+    else
+    {
+        DPRINT("IopLoadDriver: IopIsLegacyDriver - TRUE\n");
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopLoadDriver: Status %X\n", Status);
+        ObMakeTemporaryObject(driver);
+        ObDereferenceObject(driver);
+        goto Exit;
+    }
+
+    MmFreeDriverInitialization(driver->DriverSection);
+    IopReadyDeviceObjects(driver);
+
+Exit:
+
+    if (DriverName.Buffer)
+        ExFreePoolWithTag(DriverName.Buffer, '  oI');
+
+    if (KeyInfo)
+        ExFreePoolWithTag(KeyInfo, '  oI');
+
+    if (DriverPath.Buffer)
+        ExFreePoolWithTag(DriverPath.Buffer, '  oI');
+
+    if (ModuleName.Buffer)
+        ExFreePool(ModuleName.Buffer);
+
+    if (NT_SUCCESS(Status))
+    {
+        ObCloseHandle(ServiceHandle, KernelMode);
+        return Status;
+    }
+
+    DPRINT1("IopLoadDriver: Status %X\n", Status);
+
+    if (Status != STATUS_PLUGPLAY_NO_DEVICE && Status != STATUS_IMAGE_ALREADY_LOADED)
+    {
+        NTSTATUS Sts;
+
+        IopDriverLoadingFailed(ServiceHandle, NULL);
+
+        Sts = IopGetRegistryValue(ServiceHandle, L"ErrorControl", &ValueInfo);
+        if (NT_SUCCESS(Sts))
+        {
+            if (ValueInfo->DataLength)
+            {
+                DPRINT1("IopLoadDriver: FIXME CmBootLastKnownGood\n");
+                //ASSERT(FALSE); // IoDbgBreakPointEx();
+            }
+
+            ExFreePool(ValueInfo);
+        }
+    }
+
+    ObCloseHandle(ServiceHandle, KernelMode);
+
+    return Status;
 }
 
 VOID
