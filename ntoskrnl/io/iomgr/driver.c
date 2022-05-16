@@ -1435,7 +1435,7 @@ IopLoadDriver(
     OBJECT_ATTRIBUTES ObjectAttributes;
     PIMAGE_NT_HEADERS NtHeader;
     PUNICODE_STRING ObjectName;
-    UNICODE_STRING DriverPath;
+    UNICODE_STRING DriverPath = { 0, 0, NULL };
     UNICODE_STRING DriverName;
     UNICODE_STRING ModuleName;
     KPROCESSOR_MODE AccessMode;
@@ -1447,10 +1447,6 @@ IopLoadDriver(
     ULONG ResultLength;
     ULONG ix;
     NTSTATUS Status;
-
-    DriverPath.Length = 0;
-    DriverPath.MaximumLength = 0;
-    DriverPath.Buffer = NULL;
 
     PAGED_CODE();
     DPRINT("IopLoadDriver: %p, SafeBootModeFlag %X, IsFilter %X\n", ServiceHandle, SafeBootModeFlag, IsFilter);
@@ -1890,60 +1886,97 @@ Exit:
     KeSetEvent(&LoadUnloadDriverContext->Event, IO_NO_INCREMENT, FALSE);
 }
 
-/*
- * NtLoadDriver
- *
- * Loads a device driver.
- *
- * Parameters
- *    DriverServiceName
- *       Name of the service to load (registry key).
- *
- * Return Value
- *    Status
- *
- * Status
- *    implemented
+/* Loads a device driver.
+
+   DriverServiceName
+      Name of the service to load (registry key).
  */
-NTSTATUS NTAPI
-NtLoadDriver(IN PUNICODE_STRING DriverServiceName)
+NTSTATUS
+NTAPI
+NtLoadDriver(PUNICODE_STRING DriverServiceName)
 {
-    UNICODE_STRING CapturedDriverServiceName = { 0, 0, NULL };
+    LOAD_UNLOAD_PARAMS LoadUnloadDriverContext;
+    UNICODE_STRING DriverName = { 0, 0, NULL };
     KPROCESSOR_MODE PreviousMode;
-    PDRIVER_OBJECT DriverObject;
-    NTSTATUS Status;
+    PETHREAD CurrentThread;
+    PVOID Buffer = NULL;
 
     PAGED_CODE();
+    DPRINT("NtLoadDriver: Driver '%wZ'\n", DriverServiceName);
+
+    CurrentThread = PsGetCurrentThread();
+    ASSERT(&CurrentThread->Tcb == KeGetCurrentThread());
 
     PreviousMode = KeGetPreviousMode();
 
-    /*
-     * Check security privileges
-     */
-    if (!SeSinglePrivilegeCheck(SeLoadDriverPrivilege, PreviousMode))
+    if (PreviousMode == KernelMode)
     {
-        DPRINT("Privilege not held\n");
-        return STATUS_PRIVILEGE_NOT_HELD;
+        DriverName.Length = DriverServiceName->Length;
+        DriverName.MaximumLength = DriverServiceName->MaximumLength;
+        DriverName.Buffer = DriverServiceName->Buffer;
+    }
+    else
+    {
+        if (!SeSinglePrivilegeCheck(SeLoadDriverPrivilege, PreviousMode))
+        {
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            return STATUS_PRIVILEGE_NOT_HELD;
+        }
+
+        _SEH2_TRY
+        {
+            if (((ULONG_PTR)DriverServiceName >= MmUserProbeAddress))
+                *(PUNICODE_STRING)&DriverName = *((PUNICODE_STRING)MmUserProbeAddress);
+            else
+                *(PUNICODE_STRING)&DriverName = *(DriverServiceName);
+
+            if (!DriverName.Length)
+                return STATUS_INVALID_PARAMETER;
+
+            ProbeForRead(DriverName.Buffer, DriverName.Length, sizeof(WCHAR));
+
+            Buffer = ExAllocatePoolWithQuotaTag(PagedPool, DriverName.Length, '  oI');
+
+            RtlCopyMemory(Buffer, DriverName.Buffer, DriverName.Length);
+            DriverName.Buffer = Buffer;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            if (Buffer)
+                ExFreePoolWithTag(Buffer, '  oI');
+
+            return _SEH2_GetExceptionCode();
+        }
+        _SEH2_END;
     }
 
-    Status = ProbeAndCaptureUnicodeString(&CapturedDriverServiceName,
-                                          PreviousMode,
-                                          DriverServiceName);
-    if (!NT_SUCCESS(Status))
+    KeInitializeEvent(&LoadUnloadDriverContext.Event, NotificationEvent, FALSE);
+
+    LoadUnloadDriverContext.DriverObject = NULL;
+    LoadUnloadDriverContext.RegistryPath = &DriverName;
+
+    CurrentThread = PsGetCurrentThread();
+    ASSERT(&CurrentThread->Tcb == KeGetCurrentThread());
+
+    if (PsGetCurrentProcess() == PsInitialSystemProcess)
     {
-        return Status;
+        IopLoadUnloadDriver(&LoadUnloadDriverContext);
+    }
+    else
+    {
+        ExInitializeWorkItem(&LoadUnloadDriverContext.WorkItem,
+                             IopLoadUnloadDriver,
+                             &LoadUnloadDriverContext);
+
+        ExQueueWorkItem(&LoadUnloadDriverContext.WorkItem, DelayedWorkQueue);
+
+        KeWaitForSingleObject(&LoadUnloadDriverContext.Event, UserRequest, KernelMode, FALSE, NULL);
     }
 
-    DPRINT("NtLoadDriver('%wZ')\n", &CapturedDriverServiceName);
+    if (Buffer)
+        ExFreePoolWithTag(DriverName.Buffer, '  oI');
 
-    /* Load driver and call its entry point */
-    DriverObject = NULL;
-    Status = IopLoadUnloadDriver(&CapturedDriverServiceName, &DriverObject);
-
-    ReleaseCapturedUnicodeString(&CapturedDriverServiceName,
-                                 PreviousMode);
-
-    return Status;
+    return LoadUnloadDriverContext.Status;
 }
 
 /*

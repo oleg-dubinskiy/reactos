@@ -2112,6 +2112,8 @@ typedef struct _DRIVER_EXTENSION {
   PDRIVER_ADD_DEVICE AddDevice;
   ULONG Count;
   UNICODE_STRING ServiceKeyName;
+  struct _IO_CLIENT_EXTENSION* ClientDriverExtension;
+  struct _FS_FILTER_CALLBACKS* FsFilterCallbacks;
 } DRIVER_EXTENSION, *PDRIVER_EXTENSION;
 
 #define DRVO_UNLOAD_INVOKED               0x00000001
