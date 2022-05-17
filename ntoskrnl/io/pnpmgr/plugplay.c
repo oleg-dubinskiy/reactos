@@ -885,68 +885,161 @@ NtGetPlugPlayEvent(IN ULONG Reserved1,
     return STATUS_SUCCESS;
 }
 
-/* unimplemented
- * NtPlugPlayControl
- *
- * A function for doing various Plug & Play operations from user mode.
- *
- * Parameters
- *    PlugPlayControlClass
- *       0x00   Reenumerate device tree
- *
- *              Buffer points to UNICODE_STRING decribing the instance
- *              path (like "HTREE\ROOT\0" or "Root\ACPI_HAL\0000"). For
- *              more information about instance paths see !devnode command
- *              in kernel debugger or look at "Inside Windows 2000" book,
- *              chapter "Driver Loading, Initialization, and Installation".
- *
- *       0x01   Register new device
- *       0x02   Deregister device
- *       0x03   Initialize device
- *       0x04   Start device
- *       0x06   Query and remove device
- *       0x07   User response
- *
- *              Called after processing the message from NtGetPlugPlayEvent.
- *
- *       0x08   Generate legacy device
- *       0x09   Get interface device list
- *       0x0A   Get property data
- *       0x0B   Device class association (Registration)
- *       0x0C   Get related device
- *       0x0D   Get device interface alias
- *       0x0E   Get/set/clear device status
- *       0x0F   Get device depth
- *       0x10   Query device relations
- *       0x11   Query target device relation
- *       0x12   Query conflict list
- *       0x13   Retrieve dock data
- *       0x14   Reset device
- *       0x15   Halt device
- *       0x16   Get blocked driver data
- *
- *    Buffer
- *       The buffer contains information that is specific to each control
- *       code. The buffer is read-only.
- *
- *    BufferSize
- *       Size of the buffer pointed by the Buffer parameter. If the
- *       buffer size specifies incorrect value for specified control
- *       code, error ??? is returned.
- *
- * Return Values
- *    STATUS_PRIVILEGE_NOT_HELD
- *    STATUS_SUCCESS
- *    ...
- */
+/* A function for doing various Plug & Play operations from user mode.
+
+    PlugPlayControlClass
+       0x00   Reenumerate device tree
+
+              Buffer points to UNICODE_STRING decribing the instance
+              path (like "HTREE\ROOT\0" or "Root\ACPI_HAL\0000"). For
+              more information about instance paths see !devnode command
+              in kernel debugger or look at "Inside Windows 2000" book,
+              chapter "Driver Loading, Initialization, and Installation".
+
+       0x01   Register new device
+       0x02   Deregister device
+       0x03   Initialize device
+       0x04   Start device
+       0x06   Query and remove device
+       0x07   User response
+
+              Called after processing the message from NtGetPlugPlayEvent.
+
+       0x08   Generate legacy device
+       0x09   Get interface device list
+       0x0A   Get property data
+       0x0B   Device class association (Registration)
+       0x0C   Get related device
+       0x0D   Get device interface alias
+       0x0E   Get/set/clear device status
+       0x0F   Get device depth
+       0x10   Query device relations
+       0x11   Query target device relation
+       0x12   Query conflict list
+       0x13   Retrieve dock data
+       0x14   Reset device
+       0x15   Halt device
+       0x16   Get blocked driver data
+
+    Buffer
+       The buffer contains information that is specific to each control
+       code. The buffer is read-only.
+
+    BufferSize
+       Size of the buffer pointed by the Buffer parameter. If the
+       buffer size specifies incorrect value for specified control
+       code, error ??? is returned.
+
+ Return Values
+    STATUS_PRIVILEGE_NOT_HELD
+    STATUS_SUCCESS
+    ...
+
+    halfplemented
+*/
 NTSTATUS
 NTAPI
-NtPlugPlayControl(IN PLUGPLAY_CONTROL_CLASS PlugPlayControlClass,
-                  IN OUT PVOID Buffer,
-                  IN ULONG BufferLength)
+NtPlugPlayControl(
+    _In_ PLUGPLAY_CONTROL_CLASS PnPControlClass,
+    _Inout_ PVOID Buffer,
+    _In_ ULONG BufferLength)
 {
-    DPRINT1("NtPlugPlayControl(%d %p %lu) called\n", PlugPlayControlClass, Buffer, BufferLength);
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    KPROCESSOR_MODE AccessMode = KeGetCurrentThread()->PreviousMode;
+    PPNP_CONTROL_HANDLER PlugPlayEntry;
+    PVOID PnPControlData;
+    SIZE_T PnPControlDataLength;
+    NTSTATUS Status;
+    NTSTATUS status;
+
+    DPRINT("NtPlugPlayControl: PnPControlClass %X Buffer %p, BufferLength %X\n", PnPControlClass, Buffer, BufferLength);
+    PAGED_CODE();
+
+    if (AccessMode != KernelMode)
+    {
+        if (!SeSinglePrivilegeCheck(SeTcbPrivilege, UserMode))
+        {
+            DPRINT1("NtPlugPlayControl: SecurityCheck failed\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            return STATUS_PRIVILEGE_NOT_HELD;
+        }
+    }
+
+    if (PnPControlClass >= MaxPlugPlayControl) // 0x17
+    {
+        DPRINT1("NtPlugPlayControl: Max %X, Class %X, Length %X\n", MaxPlugPlayControl, PnPControlClass, BufferLength);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER_1;
+    }
+
+    PlugPlayEntry = &PlugPlayHandlerTable[PnPControlClass];
+    if (!PlugPlayEntry)
+    {
+        DPRINT1("NtPlugPlayControl: Unknown control class, Class %X, Length %X\n", PnPControlClass, BufferLength);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER_1;
+    }
+
+    if (PlugPlayEntry->ControlCode != PnPControlClass)
+    {
+        DPRINT1("NtPlugPlayControl: Table isn't correctly (%X)!\n", PnPControlClass);
+        ASSERT(PlugPlayEntry->ControlCode == PnPControlClass);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (PlugPlayEntry->Function == NULL)
+    {
+        DPRINT1("NtPlugPlayControl: PlugPlayEntry->Function == NULL\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    PnPControlDataLength = BufferLength;
+
+    if (PlugPlayEntry->Size != BufferLength)
+    {
+        DPRINT1("NtPlugPlayControl: FIXME! Invalid size. Class %X, Length %X\n", PnPControlClass, BufferLength);
+#if 0 // FIXME umpnpmgr
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER_MIX;
+#endif
+    }
+
+    Status = PiControlMakeUserModeCallersCopy(&PnPControlData,
+                                              Buffer,
+                                              BufferLength,
+                                              sizeof(ULONG),
+                                              AccessMode,
+                                              TRUE); // Read
+    if (!NT_SUCCESS(Status))
+    {
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return Status;
+    }
+
+    Status = (PlugPlayEntry->Function)(PnPControlClass, PnPControlData, PnPControlDataLength, AccessMode);
+
+    if (NT_ERROR(Status) && (Status != STATUS_BUFFER_TOO_SMALL))
+        goto Exit;
+
+    status = PiControlMakeUserModeCallersCopy(&Buffer,
+                                              PnPControlData,
+                                              PnPControlDataLength,
+                                              sizeof(ULONG),
+                                              AccessMode,
+                                              FALSE); // Write
+    if (!NT_SUCCESS(status))
+    {
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        Status = status;
+    }
+
+Exit:
+
+    if (AccessMode && PnPControlData)
+        ExFreePool(PnPControlData);
+
+    return Status;
 }
+
+/* EOF */
