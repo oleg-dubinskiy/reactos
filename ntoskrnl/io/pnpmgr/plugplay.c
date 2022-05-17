@@ -121,6 +121,24 @@ IopQueueTargetDeviceEvent(const GUID *Guid,
     return STATUS_SUCCESS;
 }
 
+/* Remove the current PnP event from the tail of the event queue
+   and signal IopPnpNotifyEvent if there is yet another event in the queue.
+*/
+NTSTATUS
+IopRemovePlugPlayEvent(VOID)
+{
+    DPRINT("IopRemovePlugPlayEvent()\n");
+
+    /* Remove a pnp event entry from the tail of the queue */
+    if (!IsListEmpty(&IopPnpEventQueueHead))
+        ExFreePool(CONTAINING_RECORD(RemoveTailList(&IopPnpEventQueueHead), PNP_EVENT_ENTRY, ListEntry));
+
+    /* Signal the next pnp event in the queue */
+    if (!IsListEmpty(&IopPnpEventQueueHead))
+        KeSetEvent(&IopPnpNotifyEvent, IO_NO_INCREMENT, FALSE);
+
+    return STATUS_SUCCESS;
+}
 
 static PDEVICE_OBJECT
 IopTraverseDeviceNode(PDEVICE_NODE Node, PUNICODE_STRING DeviceInstance)
