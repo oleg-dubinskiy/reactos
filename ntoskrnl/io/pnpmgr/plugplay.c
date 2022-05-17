@@ -345,9 +345,19 @@ NTSTATUS NTAPI PiControlQueryAndRemoveDevice(ULONG PnPControlClass, PVOID PnPCon
 
 NTSTATUS NTAPI PiControlUserResponse(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("PiControlUserResponse: Class %X, Data %p, Length %X\n", PnPControlClass, PnPControlData, PnPControlDataLength);
+
+    PAGED_CODE();
+    ASSERT(PnPControlClass == 7); // PlugPlayControlUserResponse
+
+    if (!PnPControlData || PnPControlDataLength != sizeof(PLUGPLAY_CONTROL_USER_RESPONSE_DATA))
+    {
+        DPRINT1("PiControlUserResponse: FIXME NtPlugPlayControl(PlugPlayControlUserResponse, NULL, 0) in usetup/devinst.c\n"); 
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    return IopRemovePlugPlayEvent();
 }
 
 NTSTATUS NTAPI PiControlGenerateLegacyDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
