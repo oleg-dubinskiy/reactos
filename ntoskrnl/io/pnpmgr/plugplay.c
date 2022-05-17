@@ -632,6 +632,53 @@ NTSTATUS NTAPI PiControlRetrieveDockData(ULONG PnPControlClass, PVOID PnPControl
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+NTAPI
+PiQueueDeviceRequest(
+    _In_ PUNICODE_STRING DeviceInstance,
+    _In_ PIP_ENUM_TYPE RequestType,
+    _In_ ULONG_PTR RequestArgument,
+    _In_ BOOLEAN IsWait)
+{
+    PDEVICE_OBJECT DeviceObject;
+    NTSTATUS Status;
+    KEVENT Event;
+
+    PAGED_CODE();
+
+    DeviceObject = IopDeviceObjectFromDeviceInstance(DeviceInstance);
+
+    if (!DeviceObject)
+    {
+        DPRINT1("PiQueueDeviceRequest: return STATUS_NO_SUCH_DEVICE\n");
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    if (!IopGetDeviceNode(DeviceObject))
+    {
+        DPRINT1("PiQueueDeviceRequest: return STATUS_NO_SUCH_DEVICE\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    if (IsWait)
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    Status = PipRequestDeviceAction(DeviceObject,
+                                    RequestType,
+                                    0,
+                                    RequestArgument,
+                                    (IsWait != FALSE ? &Event : NULL),
+                                    NULL);
+
+    if (NT_SUCCESS(Status) && IsWait)
+        Status = KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+    ObDereferenceObject(DeviceObject);
+
+    return Status;
+}
+
 NTSTATUS NTAPI PiControlResetDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
 {
     UNIMPLEMENTED;
