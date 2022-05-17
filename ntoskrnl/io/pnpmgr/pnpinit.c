@@ -438,96 +438,131 @@ PpInitGetGroupOrderIndex(IN HANDLE ServiceHandle)
 
 USHORT
 NTAPI
-PipGetDriverTagPriority(IN HANDLE ServiceHandle)
+PipGetDriverTagPriority(
+    _In_ HANDLE ServiceHandle)
 {
+    UNICODE_STRING GroupOrderListName = RTL_CONSTANT_STRING(IO_REG_KEY_GROUPORDERLIST);
+    PKEY_VALUE_FULL_INFORMATION ValueInfoGroupOrderList;
+    PKEY_VALUE_FULL_INFORMATION ValueInfoGroup;
+    PKEY_VALUE_FULL_INFORMATION ValueInfoTag;
+    HANDLE GroupOrderListHandle;
+    PULONG GroupOrderList;
+    PULONG CurrentOrder;
+    ULONG ListSize;
+    USHORT GroupOrderListNameLength = 0;
+    USHORT TagPriority = 0xFFFF;
+    USHORT Count;
+    USHORT Tag;
     NTSTATUS Status;
-    HANDLE KeyHandle = NULL;
-    PKEY_VALUE_FULL_INFORMATION KeyValueInformation = NULL;
-    PKEY_VALUE_FULL_INFORMATION KeyValueInformationTag;
-    PKEY_VALUE_FULL_INFORMATION KeyValueInformationGroupOrderList;
-    PVOID Buffer;
-    UNICODE_STRING Group;
-    PULONG GroupOrder;
-    ULONG Count, Tag = 0;
-    USHORT i = -1;
-    UNICODE_STRING GroupString =
-    RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet"
-                        L"\\Control\\ServiceGroupOrder");
 
     /* Open the key */
-    Status = IopOpenRegistryKeyEx(&KeyHandle, NULL, &GroupString, KEY_READ);
-    if (!NT_SUCCESS(Status)) goto Quickie;
+    Status = IopOpenRegistryKeyEx(&GroupOrderListHandle, NULL, &GroupOrderListName, KEY_READ);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PipGetDriverTagPriority: Status %X\n", Status);
+        return TagPriority;
+    }
 
     /* Read the group */
-    Status = IopGetRegistryValue(ServiceHandle, L"Group", &KeyValueInformation);
-    if (!NT_SUCCESS(Status)) goto Quickie;
+    Status = IopGetRegistryValue(ServiceHandle, L"Group", &ValueInfoGroup);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PipGetDriverTagPriority: Status %X\n", Status);
+        ZwClose(GroupOrderListHandle);
+        return TagPriority;
+    }
 
     /* Make sure we have a group */
-    if ((KeyValueInformation->Type == REG_SZ) &&
-        (KeyValueInformation->DataLength))
+    if (ValueInfoGroup->Type == REG_SZ && ValueInfoGroup->DataLength)
     {
-        /* Convert to unicode string */
-        Buffer = (PVOID)((ULONG_PTR)KeyValueInformation + KeyValueInformation->DataOffset);
-        PnpRegSzToString(Buffer, KeyValueInformation->DataLength, &Group.Length);
-        Group.MaximumLength = (USHORT)KeyValueInformation->DataLength;
-        Group.Buffer = Buffer;
+        PnpRegSzToString((PWCHAR)((ULONG_PTR)ValueInfoGroup + ValueInfoGroup->DataOffset),
+                         ValueInfoGroup->DataLength,
+                         &GroupOrderListNameLength);
+
+        GroupOrderListName.Length = GroupOrderListNameLength;
+        GroupOrderListName.MaximumLength = ValueInfoGroup->DataLength;
+        GroupOrderListName.Buffer = (PWSTR)((ULONG_PTR)ValueInfoGroup + ValueInfoGroup->DataOffset);
+
+        DPRINT("PipGetDriverTagPriority: Group '%wZ'\n", &GroupOrderListName);
+    }
+    else
+    {
+        DPRINT1("PipGetDriverTagPriority: Type %X DataLength %X\n", ValueInfoGroup->Type, ValueInfoGroup->DataLength);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
     }
 
     /* Now read the tag */
-    Status = IopGetRegistryValue(ServiceHandle, L"Tag", &KeyValueInformationTag);
-    if (!NT_SUCCESS(Status)) goto Quickie;
+    Status = IopGetRegistryValue(ServiceHandle, L"Tag", &ValueInfoTag);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PipGetDriverTagPriority: Status %X\n", Status);
+        ZwClose(GroupOrderListHandle);
+        ExFreePoolWithTag(ValueInfoGroup, 'uspP');
+        return TagPriority;
+    }
 
     /* Make sure we have a tag */
-    if ((KeyValueInformationTag->Type == REG_DWORD) &&
-        (KeyValueInformationTag->DataLength))
+    if (ValueInfoTag->Type != REG_DWORD || ValueInfoTag->DataLength != sizeof(ULONG))
     {
-        /* Read it */
-        Tag = *(PULONG)((ULONG_PTR)KeyValueInformationTag +
-                        KeyValueInformationTag->DataOffset);
+        DPRINT1("PipGetDriverTagPriority: Type %X DataLength %X\n", ValueInfoTag->Type, ValueInfoTag->DataLength);
+        ZwClose(GroupOrderListHandle);
+        ExFreePoolWithTag(ValueInfoTag, 'uspP');
+        ExFreePoolWithTag(ValueInfoGroup, 'uspP');
+        return TagPriority;
     }
 
-    /* We can get rid of this now */
-    ExFreePool(KeyValueInformationTag);
+    Tag = *(PULONG)((ULONG_PTR)ValueInfoTag + ValueInfoTag->DataOffset);
+    DPRINT("PipGetDriverTagPriority: Tag %X\n", Tag);
 
-    /* Now let's read the group's tag order */
-    Status = IopGetRegistryValue(KeyHandle,
-                                 Group.Buffer,
-                                 &KeyValueInformationGroupOrderList);
+    ExFreePoolWithTag(ValueInfoTag, 'uspP');
 
-    /* We can get rid of this now */
-Quickie:
-    if (KeyValueInformation) ExFreePool(KeyValueInformation);
-    if (KeyHandle) NtClose(KeyHandle);
-    if (!NT_SUCCESS(Status)) return -1;
+    /* Now let's read the GroupOrderList */
+    Status = IopGetRegistryValue(GroupOrderListHandle, GroupOrderListName.Buffer, &ValueInfoGroupOrderList);
 
-    /* We're on the success path -- validate the tag order*/
-    if ((KeyValueInformationGroupOrderList->Type == REG_BINARY) &&
-        (KeyValueInformationGroupOrderList->DataLength))
+    ZwClose(GroupOrderListHandle);
+    ExFreePoolWithTag(ValueInfoGroup, 'uspP');
+
+    if (!NT_SUCCESS(Status))
     {
-        /* Get the order array */
-        GroupOrder = (PULONG)((ULONG_PTR)KeyValueInformationGroupOrderList +
-                              KeyValueInformationGroupOrderList->DataOffset);
-
-        /* Get the count */
-        Count = *GroupOrder;
-        ASSERT(((Count + 1) * sizeof(ULONG)) <=
-               KeyValueInformationGroupOrderList->DataLength);
-
-        /* Now loop each tag */
-        GroupOrder++;
-        for (i = 1; i <= Count; i++)
-        {
-            /* If we found it, we're out */
-            if (Tag == *GroupOrder) break;
-
-            /* Try the next one */
-            GroupOrder++;
-        }
+        DPRINT1("PipGetDriverTagPriority: Status %X\n", Status);
+        return TagPriority;
     }
 
-    /* Last buffer to free */
-    ExFreePool(KeyValueInformationGroupOrderList);
-    return i;
+    /* We're on the success path -- validate the GroupOrderList */
+    if (ValueInfoGroupOrderList->Type != REG_BINARY ||
+        ValueInfoGroupOrderList->DataLength < sizeof(ULONG))
+    {
+        DPRINT1("PipGetDriverTagPriority: Type %X DataLength %X\n", ValueInfoGroupOrderList->Type, ValueInfoGroupOrderList->DataLength);
+        goto Exit;
+    }
+
+    GroupOrderList = (PULONG)((ULONG_PTR)ValueInfoGroupOrderList + ValueInfoGroupOrderList->DataOffset);
+
+    /* First member (with [0] idx) - count records in list */
+    Count = (USHORT)GroupOrderList[0];
+    DPRINT("PipGetDriverTagPriority: Count %X\n", Count);
+
+    ListSize = ((Count + 1) * sizeof(ULONG));
+
+    if (ListSize > ValueInfoGroupOrderList->DataLength)
+    {
+        DPRINT1("PipGetDriverTagPriority: ListSize %X DataLength %X\n", ListSize, ValueInfoGroupOrderList->DataLength);
+        ASSERT(ListSize <= ValueInfoGroupOrderList->DataLength);
+        goto Exit;
+    }
+
+    /* Skip counter records in list */
+    CurrentOrder = &GroupOrderList[1];
+
+    for (TagPriority = 1; TagPriority <= Count; TagPriority++)
+    {
+        if (Tag == CurrentOrder[TagPriority - 1])
+            break;
+    }
+
+Exit:
+    ExFreePoolWithTag(ValueInfoGroupOrderList, 'uspP');
+    return TagPriority;
 }
 
 VOID
@@ -2151,7 +2186,7 @@ IopInitializeBootDrivers(
     DPRINT("Dumping Nodes:\n");
     PipDumpDeviceNodes(NULL, 1+2+4+8, 0);
     DPRINT("\n");
-    ASSERT(FALSE);
+    //ASSERT(FALSE);
 #endif
 
     RtlInitUnicodeString(&RawFsName, L"\\FileSystem\\RAW");
@@ -2603,7 +2638,7 @@ Next:
     DPRINT("Dumping Nodes:\n");
     PipDumpDeviceNodes(NULL, 1+2+4+8, 0);
     DPRINT("\n");
-    ASSERT(FALSE);
+    //ASSERT(FALSE);
 #endif
 
     DPRINT("IopInitializeBootDrivers: return TRUE\n");
