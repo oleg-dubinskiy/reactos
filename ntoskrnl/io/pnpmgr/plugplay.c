@@ -59,6 +59,8 @@ PNP_CONTROL_HANDLER PlugPlayHandlerTable[] =
 static LIST_ENTRY IopPnpEventQueueHead;
 static KEVENT IopPnpNotifyEvent;
 
+extern ERESOURCE PpRegistryDeviceResource;
+
 /* FUNCTIONS *****************************************************************/
 
 NTSTATUS INIT_FUNCTION
@@ -386,6 +388,140 @@ NTSTATUS NTAPI PiControlDeviceClassAssociation(ULONG PnPControlClass, PVOID PnPC
     UNIMPLEMENTED;
     ASSERT(FALSE); // IoDbgBreakPointEx();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PiGetRelatedDevice(
+     _In_ PUNICODE_STRING DeviceInstance,
+     _Out_ PWSTR OutInstancePath,
+     _Out_ PUSHORT OutInstanceSize,
+     _In_ ULONG Relationship)
+{
+    PDEVICE_OBJECT DeviceObject;
+    PDEVICE_OBJECT deviceObject;
+    PDEVICE_NODE DeviceNode;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    PAGED_CODE();
+    DPRINT("PiGetRelatedDevice: Instance '%wZ', Relationship %X\n", DeviceInstance, Relationship);
+
+    PpDevNodeLockTree(0);
+
+    DeviceObject = IopDeviceObjectFromDeviceInstance(DeviceInstance);
+    if (!DeviceObject)
+    {
+        DPRINT("PiGetRelatedDevice: Status = STATUS_NO_SUCH_DEVICE\n");
+        Status = STATUS_NO_SUCH_DEVICE;
+        goto Exit;
+    }
+
+    DeviceNode = IopGetDeviceNode(DeviceObject);
+    if (!DeviceNode)
+    {
+        DPRINT("PiGetRelatedDevice: Status = STATUS_NO_SUCH_DEVICE\n");
+        Status = STATUS_NO_SUCH_DEVICE;
+        goto Exit;
+    }
+
+    DPRINT("PiGetRelatedDevice: Device %p, Node %p\n", DeviceObject, DeviceNode);
+
+    if (DeviceNode->State == DeviceNodeDeleted ||
+        DeviceNode->State == DeviceNodeDeletePendingCloses)
+    {
+        DPRINT("PiGetRelatedDevice: Status = STATUS_NO_SUCH_DEVICE\n");
+        Status = STATUS_NO_SUCH_DEVICE;
+        goto Exit;
+    }
+
+    switch (Relationship)
+    {
+        case 1: // Parent
+        {
+            DeviceNode = DeviceNode->Parent;
+            DPRINT1("PiGetRelatedDevice: Parent Node %X\n", DeviceNode);
+            break;
+        }
+        case 2: // Child
+        {
+            DeviceNode = DeviceNode->Child;
+            DPRINT1("PiGetRelatedDevice: Child Node %X\n", DeviceNode);
+            goto NextNode;
+        }
+        case 3: // Sibling
+        {
+            DeviceNode = DeviceNode->Sibling;
+            DPRINT1("PiGetRelatedDevice: Sibling Node %X\n", DeviceNode);
+NextNode:
+            while (DeviceNode &&
+                   DeviceNode->Flags & DNF_HAS_PROBLEM &&
+                   DeviceNode->Problem == CM_PROB_DEVICE_NOT_THERE &&
+                   DeviceNode->Flags & DNF_LEGACY_DRIVER)
+            {
+                DeviceNode = DeviceNode->Sibling;
+            }
+
+            KeEnterCriticalRegion();
+            ExAcquireResourceSharedLite(&PpRegistryDeviceResource, TRUE);
+
+            while (DeviceNode)
+            {
+                if (DeviceNode->InstancePath.Length)
+                {
+                    deviceObject = IopDeviceObjectFromDeviceInstance(&DeviceNode->InstancePath);
+                    if (deviceObject)
+                    {
+                        ObDereferenceObject(deviceObject);
+                        DPRINT("PiGetRelatedDevice: device %X Node %X\n", deviceObject, DeviceNode);
+                        break;
+                    }
+                }
+
+                DeviceNode = DeviceNode->Sibling;
+            }
+
+            ExReleaseResourceLite(&PpRegistryDeviceResource);
+            KeLeaveCriticalRegion();
+
+            break;
+        }
+        default:
+        {
+            DPRINT("PiGetRelatedDevice: STATUS_INVALID_PARAMETER\n");
+            Status = STATUS_INVALID_PARAMETER;
+            goto Exit;
+        }
+    }
+
+    if (!DeviceNode)
+    {
+        DPRINT("PiGetRelatedDevice: STATUS_NO_SUCH_DEVICE\n");
+        Status = STATUS_NO_SUCH_DEVICE;
+        goto Exit;
+    }
+
+    if (*OutInstanceSize <= DeviceNode->InstancePath.Length)
+    {
+        DPRINT1("PiGetRelatedDevice: STATUS_BUFFER_TOO_SMALL\n");
+        Status = STATUS_BUFFER_TOO_SMALL;
+        *OutInstanceSize = (DeviceNode->InstancePath.Length + sizeof(WCHAR));
+    }
+    else
+    {
+        RtlCopyMemory(OutInstancePath, DeviceNode->InstancePath.Buffer, DeviceNode->InstancePath.Length);
+        DPRINT1("PiGetRelatedDevice: '%S', %X\n", DeviceNode->InstancePath.Buffer, DeviceNode->InstancePath.Length);
+
+        OutInstancePath[DeviceNode->InstancePath.Length / sizeof(WCHAR)] = 0;
+        *OutInstanceSize = DeviceNode->InstancePath.Length;
+    }
+
+Exit:
+    PpDevNodeUnlockTree(0);
+
+    if (DeviceObject)
+        ObDereferenceObject(DeviceObject);
+
+    return Status;
 }
 
 NTSTATUS NTAPI PiControlGetRelatedDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
