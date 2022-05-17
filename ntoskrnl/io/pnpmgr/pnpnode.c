@@ -658,6 +658,57 @@ IopInsertLegacyBusDeviceNode(
 
 BOOLEAN
 NTAPI
+PipIsDevNodeDNStarted(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    PAGED_CODE();
+
+    if (DeviceNode->State == DeviceNodeUnspecified)
+    {
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return FALSE;
+    }
+
+    if (DeviceNode->State == DeviceNodeUninitialized ||
+        DeviceNode->State == DeviceNodeInitialized ||
+        DeviceNode->State == DeviceNodeDriversAdded ||
+        DeviceNode->State == DeviceNodeResourcesAssigned)
+    {
+        return FALSE;
+    }
+
+    if (DeviceNode->State == DeviceNodeStartPending ||
+        DeviceNode->State == DeviceNodeStartCompletion ||
+        DeviceNode->State == DeviceNodeStartPostWork ||
+        DeviceNode->State == DeviceNodeStarted ||
+        DeviceNode->State == DeviceNodeQueryStopped ||
+        DeviceNode->State == DeviceNodeStopped ||
+        DeviceNode->State == DeviceNodeRestartCompletion ||
+        DeviceNode->State == DeviceNodeEnumeratePending ||
+        DeviceNode->State == DeviceNodeEnumerateCompletion)
+    {
+        return TRUE;
+    }
+
+    if (DeviceNode->State == DeviceNodeAwaitingQueuedDeletion ||
+        DeviceNode->State == DeviceNodeAwaitingQueuedRemoval ||
+        DeviceNode->State == DeviceNodeQueryRemoved ||
+        DeviceNode->State == DeviceNodeRemovePendingCloses ||
+        DeviceNode->State == DeviceNodeRemoved ||
+        DeviceNode->State == DeviceNodeDeletePendingCloses ||
+        DeviceNode->State == DeviceNodeDeleted)
+    {
+        return FALSE;
+    }
+
+    DPRINT1("PipIsDevNodeDNStarted: Unknown State %X\n", DeviceNode->State);
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+
+    return FALSE;
+}
+
+BOOLEAN
+NTAPI
 PipAreDriversLoadedWorker(
     _In_ PNP_DEVNODE_STATE State,
     _In_ PNP_DEVNODE_STATE PreviousState)

@@ -936,6 +936,12 @@ IopInsertLegacyBusDeviceNode(
 
 BOOLEAN
 NTAPI
+PipIsDevNodeDNStarted(
+    _In_ PDEVICE_NODE DeviceNode
+);
+
+BOOLEAN
+NTAPI
 PipAreDriversLoaded(
     _In_ PDEVICE_NODE DeviceNode
 );
