@@ -541,6 +541,30 @@ IopDumpResRequest(
     _In_ PPNP_RESOURCE_REQUEST ResRequest
 );
 
+/* plugplay.c */
+NTSTATUS NTAPI PiControlEnumerateDevice          (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlRegisterNewDevice        (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlDeregisterDevice         (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlInitializeDevice         (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlStartDevice              (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlQueryAndRemoveDevice     (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlUserResponse             (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlGenerateLegacyDevice     (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlGetInterfaceDeviceList   (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlGetPropertyData          (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlDeviceClassAssociation   (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlGetRelatedDevice         (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlGetInterfaceDeviceAlias  (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlGetSetDeviceStatus       (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlGetDeviceDepth           (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlQueryDeviceRelations     (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlQueryTargetDeviceRelation(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlQueryConflictList        (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlRetrieveDockData         (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlResetDevice              (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlHaltDevice               (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+NTSTATUS NTAPI PiControlGetBlockedDriverData     (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
+
 /* pnpdel.c */
 BOOLEAN
 NTAPI

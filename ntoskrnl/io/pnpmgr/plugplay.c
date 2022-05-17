@@ -9,12 +9,16 @@
 /* INCLUDES *****************************************************************/
 
 #include <ntoskrnl.h>
-#define NDEBUG
+#include "../pnpio.h"
+
+//#define NDEBUG
 #include <debug.h>
 
 #if defined (ALLOC_PRAGMA)
-#pragma alloc_text(INIT, IopInitPlugPlayEvents)
+  #pragma alloc_text(INIT, IopInitPlugPlayEvents)
 #endif
+
+/* DATA **********************************************************************/
 
 typedef struct _PNP_EVENT_ENTRY
 {
@@ -22,6 +26,33 @@ typedef struct _PNP_EVENT_ENTRY
     PLUGPLAY_EVENT_BLOCK Event;
 } PNP_EVENT_ENTRY, *PPNP_EVENT_ENTRY;
 
+PNP_CONTROL_HANDLER PlugPlayHandlerTable[] =
+{
+  { 0,  12, &PiControlEnumerateDevice },
+  { 1,  12, &PiControlRegisterNewDevice },
+  { 2,  12, &PiControlDeregisterDevice },
+  { 3,  12, &PiControlInitializeDevice },
+  { 4,  12, &PiControlStartDevice },
+  { 5,  12, NULL },
+  { 6,  24, &PiControlQueryAndRemoveDevice },
+  { 7,  16, &PiControlUserResponse },
+  { 8,  16, &PiControlGenerateLegacyDevice },
+  { 9,  24, &PiControlGetInterfaceDeviceList },
+  { 10, 20, &PiControlGetPropertyData },
+  { 11, 32, &PiControlDeviceClassAssociation },
+  { 12, 20, &PiControlGetRelatedDevice },
+  { 13, 20, &PiControlGetInterfaceDeviceAlias },
+  { 14, 20, &PiControlGetSetDeviceStatus },
+  { 15, 12, &PiControlGetDeviceDepth },
+  { 16, 20, &PiControlQueryDeviceRelations },
+  { 17, 16, &PiControlQueryTargetDeviceRelation },
+  { 18, 32, &PiControlQueryConflictList },
+  { 19, 8,  &PiControlRetrieveDockData },
+  { 20, 12, &PiControlResetDevice },
+  { 21, 12, &PiControlHaltDevice },
+  { 22, 12, &PiControlGetBlockedDriverData },
+  { 23, 0,  NULL }
+};
 
 /* GLOBALS *******************************************************************/
 
@@ -139,6 +170,162 @@ IopGetDeviceObjectFromDeviceInstance(PUNICODE_STRING DeviceInstance)
     }
 
     return IopTraverseDeviceNode(IopRootDeviceNode, DeviceInstance);
+}
+
+/* CONTROL FUNCTIONS *********************************************************/
+
+NTSTATUS NTAPI PiControlEnumerateDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlRegisterNewDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlDeregisterDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlInitializeDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlStartDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlQueryAndRemoveDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlUserResponse(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlGenerateLegacyDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlGetInterfaceDeviceList(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlGetPropertyData(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlDeviceClassAssociation(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlGetRelatedDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlGetInterfaceDeviceAlias(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlGetSetDeviceStatus(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlGetDeviceDepth(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlQueryDeviceRelations(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlQueryTargetDeviceRelation(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlQueryConflictList(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlRetrieveDockData(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlResetDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlHaltDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI PiControlGetBlockedDriverData(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
