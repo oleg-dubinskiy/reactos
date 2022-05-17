@@ -402,6 +402,58 @@ NTSTATUS NTAPI PiControlGetInterfaceDeviceAlias(ULONG PnPControlClass, PVOID PnP
     return STATUS_NOT_IMPLEMENTED;
 }
 
+VOID
+NTAPI
+PiControlGetUserFlagsFromDeviceNode(
+    _In_ PDEVICE_NODE DeviceNode,
+    _Out_ PULONG OutDeviceStatus)
+{
+    ULONG DeviceStatus;
+
+    PAGED_CODE();
+
+    DeviceStatus = 0x01800000;
+
+    if (PipAreDriversLoaded(DeviceNode))
+        DeviceStatus = 0x01800002;
+
+    if (PipIsDevNodeDNStarted(DeviceNode))
+        DeviceStatus |= 0x00000008;
+
+    /* UserFlags */
+
+    if (DeviceNode->UserFlags & 0x0001)
+        DeviceStatus |= 0x00040000;
+
+    if (DeviceNode->UserFlags & 0x0002)
+        DeviceStatus |= 0x40000000;
+
+    if (DeviceNode->UserFlags & 0x0004)
+        DeviceStatus |= 0x00000100;
+
+    /* Flags */
+
+    if (DeviceNode->Flags & 0x000004000)
+        DeviceStatus |= 0x00008000;
+
+    if (DeviceNode->Flags & 0x00002000)
+        DeviceStatus |= 0x00000400;
+
+    if (DeviceNode->Flags & 0x00100000)
+        DeviceStatus |= 0x00000040;
+
+    if (DeviceNode->Flags & 0x00001000)
+        DeviceStatus |= 0x00001000;
+
+    if (DeviceNode->Flags & 0x00200000)
+        DeviceStatus |= 0x00000200;
+
+    if (!DeviceNode->DisableableDepends)
+        DeviceStatus |= 0x00002000;
+
+    *OutDeviceStatus = DeviceStatus;
+}
+
 NTSTATUS NTAPI PiControlGetSetDeviceStatus(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
 {
     UNIMPLEMENTED;
