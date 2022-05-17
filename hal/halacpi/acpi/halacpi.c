@@ -373,7 +373,7 @@ NTAPI
 HalpEndOfBoot(VOID)
 {
     DPRINT1("HalpEndOfBoot: not implemented, FIXME!\n");
-    ASSERT(0);// HalpDbgBreakPointEx();
+    //ASSERT(0);// HalpDbgBreakPointEx();
 }
 
 VOID
