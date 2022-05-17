@@ -2926,6 +2926,8 @@ IopUnloadAttachedDriver(
     ULONG Length;
     NTSTATUS Status;
 
+    PAGED_CODE();
+
     ServiceKeyName = &DriverObject->DriverExtension->ServiceKeyName;
     DPRINT("IopUnloadAttachedDriver: ServiceKeyName '%wZ'\n", ServiceKeyName);
 
@@ -5205,9 +5207,135 @@ NTAPI
 PiRestartDevice(
     _In_ PPIP_ENUM_REQUEST Request)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    SERVICE_LOAD_TYPE DriverLoadType;
+    PDEVICE_NODE DeviceNode;
+
+    PAGED_CODE();
+
+    ASSERT(Request->DeviceObject != NULL);
+
+    DeviceNode = IopGetDeviceNode(Request->DeviceObject);
+    DPRINT("PiRestartDevice: DeviceNode %X, State %X\n", DeviceNode, DeviceNode->State);
+
+    if (DeviceNode->State == DeviceNodeDeletePendingCloses ||
+        DeviceNode->State == DeviceNodeDeleted)
+    {
+        DPRINT("PiRestartDevice: return STATUS_DELETE_PENDING\n");
+        return STATUS_DELETE_PENDING;
+    }
+
+    if (DeviceNode->Flags & (DNF_HAS_PROBLEM | DNF_HAS_PRIVATE_PROBLEM))
+    {
+        DPRINT("PiRestartDevice: return STATUS_UNSUCCESSFUL\n");
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    switch (DeviceNode->State)
+    {
+        case DeviceNodeStartPending:
+            DPRINT("PiRestartDevice: DeviceNodeStartPending. STATUS_SUCCESS\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            return STATUS_SUCCESS;
+
+        case DeviceNodeInitialized:
+            DPRINT("PiRestartDevice: DeviceNodeInitialized\n");
+            ASSERT(!(DeviceNode->UserFlags & DNUF_WILL_BE_REMOVED));
+            IopRestartDeviceNode(DeviceNode);
+            break;
+
+        case DeviceNodeRemoved:
+            DPRINT("PiRestartDevice: DeviceNodeRemoved\n");
+            ASSERT(!(DeviceNode->UserFlags & DNUF_WILL_BE_REMOVED));
+            IopRestartDeviceNode(DeviceNode);
+            break;
+
+        case DeviceNodeUninitialized:
+            DPRINT("PiRestartDevice: DeviceNodeUninitialized\n");
+            break;
+
+        case DeviceNodeDriversAdded:
+            DPRINT("PiRestartDevice: DeviceNodeDriversAdded\n");
+            break;
+
+        case DeviceNodeResourcesAssigned:
+            DPRINT("PiRestartDevice: DeviceNodeResourcesAssigned\n");
+            break;
+
+        case DeviceNodeStartCompletion:
+            DPRINT("PiRestartDevice: DeviceNodeStartCompletion\n");
+            break;
+
+        case DeviceNodeStartPostWork:
+            DPRINT("PiRestartDevice: DeviceNodeStartPostWork\n");
+            break;
+
+        case DeviceNodeEnumerateCompletion:
+            DPRINT("PiRestartDevice: DeviceNodeEnumerateCompletion\n");
+            break;
+
+        case DeviceNodeStarted:
+            DPRINT("PiRestartDevice: DeviceNodeStarted. STATUS_SUCCESS\n");
+            return STATUS_SUCCESS;
+
+        case DeviceNodeQueryStopped:
+            DPRINT("PiRestartDevice: DeviceNodeQueryStopped. STATUS_SUCCESS\n");
+            return STATUS_SUCCESS;
+
+        case DeviceNodeStopped:
+            DPRINT("PiRestartDevice: DeviceNodeStopped. STATUS_SUCCESS\n");
+            return STATUS_SUCCESS;
+
+        case DeviceNodeRestartCompletion:
+            DPRINT("PiRestartDevice: DeviceNodeRestartCompletion. STATUS_SUCCESS\n");
+            return STATUS_SUCCESS;
+
+        case DeviceNodeEnumeratePending:
+            DPRINT("PiRestartDevice: DeviceNodeEnumeratePending. STATUS_SUCCESS\n");
+            return STATUS_SUCCESS;
+
+        case DeviceNodeAwaitingQueuedDeletion:
+            DPRINT("PiRestartDevice: DeviceNodeAwaitingQueuedDeletion. STATUS_UNSUCCESSFUL\n");
+            return STATUS_UNSUCCESSFUL;
+
+        case DeviceNodeAwaitingQueuedRemoval:
+            DPRINT("PiRestartDevice: DeviceNodeAwaitingQueuedRemoval. STATUS_UNSUCCESSFUL\n");
+            return STATUS_UNSUCCESSFUL;
+
+        case DeviceNodeQueryRemoved:
+            DPRINT("PiRestartDevice: DeviceNodeQueryRemoved. STATUS_UNSUCCESSFUL\n");
+            return STATUS_UNSUCCESSFUL;
+
+        case DeviceNodeRemovePendingCloses:
+            DPRINT("PiRestartDevice: DeviceNodeRemovePendingCloses. STATUS_UNSUCCESSFUL\n");
+            return STATUS_UNSUCCESSFUL;
+
+        case DeviceNodeDeletePendingCloses:
+            DPRINT("PiRestartDevice: DeviceNodeDeletePendingCloses. STATUS_UNSUCCESSFUL\n");
+            return STATUS_UNSUCCESSFUL;
+
+        default:
+            DPRINT("PiRestartDevice: Unknown State %X. STATUS_UNSUCCESSFUL\n", DeviceNode->State);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            return STATUS_UNSUCCESSFUL;
+    }
+
+    if (Request->RequestType != PipEnumStartDevice)
+        return STATUS_SUCCESS;
+
+    ObReferenceObject(DeviceNode->PhysicalDeviceObject);
+
+    DriverLoadType = DemandLoad;
+
+    PipProcessDevNodeTree(DeviceNode,
+                          PnPBootDriversInitialized,
+                          FALSE,
+                          0,
+                          (Request->CompletionEvent != NULL),
+                          FALSE,
+                          &DriverLoadType,
+                          Request);
+
+    return STATUS_SUCCESS;
 }
 
 VOID
