@@ -161,44 +161,7 @@ extern POBJECT_TYPE NTSYSAPI IoDriverObjectType;
 #define DOE_SIO_DEFERRED                        0x100
 #define DOE_SIO_NO_CANCEL                       0x200
 
-//
-// Device Node Flags
-//
-#if 0 // old flags
-#define DNF_PROCESSED                           0x00000001
-#define DNF_STARTED                             0x00000002
-#define DNF_START_FAILED                        0x00000004
-#define DNF_ENUMERATED                          0x00000008
-#define DNF_DELETED                             0x00000010
-#define DNF_MADEUP                              0x00000020
-#define DNF_START_REQUEST_PENDING               0x00000040
-#define DNF_NO_RESOURCE_REQUIRED                0x00000080
-#define DNF_INSUFFICIENT_RESOURCES              0x00000100
-#define DNF_RESOURCE_ASSIGNED                   0x00000200
-#define DNF_RESOURCE_REPORTED                   0x00000400
-#define DNF_HAL_NODE                            0x00000800 // ???
-#define DNF_ADDED                               0x00001000
-#define DNF_ADD_FAILED                          0x00002000
-#define DNF_LEGACY_DRIVER                       0x00004000
-#define DNF_STOPPED                             0x00008000
-#define DNF_WILL_BE_REMOVED                     0x00010000
-#define DNF_LEGACY_RESOURCE_DEVICENODE          0x00020000
-#define DNF_NOT_CONFIGURED                      0x00040000
-#define DNF_REINSTALL                           0x00080000
-#define DNF_RESOURCE_REQUIREMENTS_NEED_FILTERED 0x00100000 // ???
-#define DNF_DISABLED                            0x00200000
-#define DNF_RESTART_OK                          0x00400000
-#define DNF_NEED_RESTART                        0x00800000
-#define DNF_VISITED                             0x01000000
-#define DNF_ASSIGNING_RESOURCES                 0x02000000
-#define DNF_BEEING_ENUMERATED                   0x04000000
-#define DNF_NEED_ENUMERATION_ONLY               0x08000000
-#define DNF_LOCKED                              0x10000000
-#define DNF_HAS_BOOT_CONFIG                     0x20000000
-#define DNF_BOOT_CONFIG_RESERVED                0x40000000
-#define DNF_HAS_PROBLEM                         0x80000000 // ???
-#endif
-
+/* Device Node Flags */
 #define DNF_MADEUP                              (0x00000001) // The device was created and is owned by the PnP Manager. It was not created by a bus driver. 
 #define DNF_DUPLICATE                           (0x00000002) // The device node is a duplicate of another enumerated device node. 
 #define DNF_HAL_NODE                            (0x00000004) // The device node is the root node created by the hardware abstraction layer (HAL). 
@@ -232,11 +195,13 @@ extern POBJECT_TYPE NTSYSAPI IoDriverObjectType;
 #define DNF_NO_UPPER_CLASS_FILTERS              (0x40000000) // There is no Registry entry of the upper-class-filters type for the device. 
 #define DNF_WAITING_FOR_FDO                     (0x80000000) // Enumeration of the device is waiting until the driver attaches its FDO. 
 
-//
-// Device Node User Flags
-//
+/* Device Node User Flags */
+#define DNUF_WILL_BE_REMOVED                    0x0001
 #define DNUF_DONT_SHOW_IN_UI                    0x0002
+#define DNUF_NEED_RESTART                       0x0004
 #define DNUF_NOT_DISABLEABLE                    0x0008
+#define DNUF_SHUTDOWN_QUERIED                   0x0010
+#define DNUF_SHUTDOWN_SUBTREE_DONE              0x0020
 
 //
 // Internal Option Flags
