@@ -49,6 +49,28 @@ typedef union _TIMER_CONTROL_PORT_REGISTER
     UCHAR Bits;
 } TIMER_CONTROL_PORT_REGISTER, *PTIMER_CONTROL_PORT_REGISTER;
 
+/* See ISA System Architecture 3rd Edition (Tom Shanley, Don Anderson, John Swindle) P. 400
+   This port is controled by the i8255 Programmable Peripheral Interface (PPI)
+*/
+#define SYSTEM_CONTROL_PORT_A   (PUCHAR)0x0092
+#define SYSTEM_CONTROL_PORT_B   (PUCHAR)0x0061
+
+typedef union _SYSTEM_CONTROL_PORT_B_REGISTER
+{
+    struct
+    {
+        UCHAR Timer2GateToSpeaker:1;
+        UCHAR SpeakerDataEnable:1;
+        UCHAR ParityCheckEnable:1;
+        UCHAR ChannelCheckEnable:1;
+        UCHAR RefreshRequest:1;
+        UCHAR Timer2Output:1;
+        UCHAR ChannelCheck:1;
+        UCHAR ParityCheck:1;
+    };
+    UCHAR Bits;
+} SYSTEM_CONTROL_PORT_B_REGISTER, *PSYSTEM_CONTROL_PORT_B_REGISTER;
+
 /* Commonly stated as being 1.19318MHz
 
    See ISA System Architecture 3rd Edition (Tom Shanley, Don Anderson, John Swindle) P. 471
