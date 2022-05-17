@@ -369,10 +369,9 @@ HalpTranslateBusAddress(IN INTERFACE_TYPE InterfaceType,
                         IN OUT PULONG AddressSpace,
                         OUT PPHYSICAL_ADDRESS TranslatedAddress)
 {
-    DPRINT1("HalpTranslateBusAddress: ... \n");
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
-    return FALSE;
+    /* Translation is easy */
+    TranslatedAddress->QuadPart = BusAddress.QuadPart;
+    return TRUE;
 }
 
 NTSTATUS
