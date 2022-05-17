@@ -2939,7 +2939,7 @@ IopUnloadAttachedDriver(
 
     if (DriverObject->DeviceObject)
     {
-        DPRINT("IopUnloadAttachedDriver: Skipping unload '%wZ'\n", ServiceKeyName);
+        DPRINT("IopUnloadAttachedDriver: Skipping unload, DeviceObject %p\n", DriverObject->DeviceObject);
         return STATUS_SUCCESS;
     }
 
@@ -4019,19 +4019,23 @@ Exit:
     for (ix = 0; ix < PipMaxServiceType; ix++)
     {
         PDRIVER_ADD_DEVICE_ENTRY Entry;
+        PDRIVER_ADD_DEVICE_ENTRY PrevEntry;
         PDRIVER_ADD_DEVICE_ENTRY DriverLists;
 
         DriverLists = QueryContext.DriverLists[ix];
 
-        for (Entry = DriverLists; Entry; Entry = Entry->NextEntry)
+        for (Entry = DriverLists; Entry; )
         {
             ASSERT(Entry->DriverObject);
 
-            if (PnPBootDriversInitialized)
-                IopUnloadAttachedDriver(Entry->DriverObject);
+            PrevEntry = Entry;
+            Entry = Entry->NextEntry;
 
-            ObDereferenceObject(Entry->DriverObject);
-            ExFreePoolWithTag(Entry, 'nepP');
+            if (PnPBootDriversInitialized)
+                IopUnloadAttachedDriver(PrevEntry->DriverObject);
+
+            ObDereferenceObject(PrevEntry->DriverObject);
+            ExFreePoolWithTag(PrevEntry, 'nepP');
         }
     }
 
