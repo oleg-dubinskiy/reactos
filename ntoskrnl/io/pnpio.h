@@ -295,6 +295,21 @@ typedef struct _DEVNODE_INTERFACE_STATE
     UNICODE_STRING SymbolicLinkName; 
 } DEVNODE_INTERFACE_STATE, *PDEVNODE_INTERFACE_STATE; 
 
+typedef NTSTATUS
+(NTAPI* PNP_CONTROL_FUNCTION)(
+    _In_ ULONG PnPControlClass,
+    _In_ PVOID PnPControlData,
+    _In_ ULONG PnPControlDataLength,
+    _In_ KPROCESSOR_MODE AccessMode
+);
+
+typedef struct _PNP_CONTROL_HANDLER
+{ 
+    ULONG ControlCode;
+    ULONG Size;
+    PNP_CONTROL_FUNCTION Function;
+} PNP_CONTROL_HANDLER, *PPNP_CONTROL_HANDLER; 
+
 typedef struct _PNP_DEVICE_EVENT_LIST {
     NTSTATUS Status;
     KMUTANT EventQueueMutex;
