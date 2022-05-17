@@ -456,9 +456,145 @@ PiControlGetUserFlagsFromDeviceNode(
 
 NTSTATUS NTAPI PiControlGetSetDeviceStatus(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
 {
-    UNIMPLEMENTED;
+    PPLUGPLAY_CONTROL_STATUS_DATA StatusData;
+    PDEVICE_NODE DeviceNode = NULL;
+    UNICODE_STRING DeviceInstance;
+    PDEVICE_OBJECT DeviceObject;
+    PKEVENT Event;
+    KEVENT event;
+    ULONG_PTR RequestArgument;
+    ULONG RequestType;
+    UCHAR ReorderingBarrier;
+    NTSTATUS* OutStatus;
+    NTSTATUS status;
+    NTSTATUS Status;
+
+    DPRINT("PiControlGetSetDeviceStatus : Class %X Data %p, Length %X\n", PnPControlClass, PnPControlData, PnPControlDataLength);
+    PAGED_CODE();
+
+    ASSERT(PnPControlClass == 14); // PlugPlayControlDeviceStatus
+    ASSERT(PnPControlDataLength == sizeof(PLUGPLAY_CONTROL_STATUS_DATA));
+
+    StatusData = PnPControlData;
+
+    DeviceInstance.MaximumLength = StatusData->DeviceInstance.Length;
+    DeviceInstance.Length = StatusData->DeviceInstance.Length;
+
+    if (!StatusData->DeviceInstance.Length)
+    {
+        DPRINT1("PiControlGetSetDeviceStatus : STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (StatusData->DeviceInstance.Length > 0x190) // ?
+    {
+        DPRINT1("PiControlGetSetDeviceStatus : STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (StatusData->DeviceInstance.Length & 1)
+    {
+        DPRINT1("PiControlGetSetDeviceStatus : STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = PiControlMakeUserModeCallersCopy((PVOID *)&DeviceInstance.Buffer,
+                                              StatusData->DeviceInstance.Buffer,
+                                              StatusData->DeviceInstance.Length,
+                                              2,
+                                              AccessMode,
+                                              TRUE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PiControlGetSetDeviceStatus : Status %X\n", Status);
+        return Status;
+    }
+
+    PpDevNodeLockTree(0);
+
+    DeviceObject = IopDeviceObjectFromDeviceInstance(&DeviceInstance);
+
+    if (AccessMode && DeviceInstance.Buffer)
+        ExFreePool(DeviceInstance.Buffer);
+
+    if (DeviceObject)
+        DeviceNode = IopGetDeviceNode(DeviceObject);
+
+    PpDevNodeUnlockTree(0);
+
+    if (!DeviceNode || DeviceNode == IopRootDeviceNode)
+    {
+        Status = STATUS_SUCCESS;
+        goto Exit;
+    }
+
+    if (StatusData->Operation == 0)
+    {
+        PiControlGetUserFlagsFromDeviceNode(DeviceNode, &StatusData->DeviceStatus);
+        StatusData->DeviceProblem = DeviceNode->Problem;
+        Status = STATUS_SUCCESS;
+        goto Exit;
+    }
+
+    if (StatusData->Operation == 1)
+    {
+        KeInitializeEvent(&event, NotificationEvent, FALSE);
+
+        OutStatus = &status;
+        Event = &event;
+
+        ReorderingBarrier = 0;
+        RequestArgument = (ULONG_PTR)StatusData;
+        RequestType = PipEnumSetProblem;
+
+        DPRINT1("PiControlGetSetDeviceStatus : StatusData->Operation == 1\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+
+        Status = PipRequestDeviceAction(DeviceObject, RequestType, ReorderingBarrier, RequestArgument, Event, OutStatus);
+        if (NT_SUCCESS(Status))
+        {
+            Status = KeWaitForSingleObject(&event, Executive, KernelMode, FALSE, NULL);
+            if (Status != STATUS_SUCCESS)
+                Status = status;
+        }
+
+        goto Exit;
+    }
+
+    if (StatusData->Operation == 2)
+    {
+        KeInitializeEvent(&event, NotificationEvent, FALSE);
+
+        OutStatus = &status;
+        Event = &event;
+
+        ReorderingBarrier = 0;
+        RequestArgument = 0;
+        RequestType = PipEnumGetSetDeviceStatus;
+
+        DPRINT1("PiControlGetSetDeviceStatus : StatusData->Operation == 2\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+
+        Status = PipRequestDeviceAction(DeviceObject, RequestType, ReorderingBarrier, RequestArgument, Event, OutStatus);
+        if (NT_SUCCESS(Status))
+        {
+            Status = KeWaitForSingleObject(&event, Executive, KernelMode, FALSE, NULL);
+            if (Status != STATUS_SUCCESS)
+                Status = status;
+        }
+
+        goto Exit;
+    }
+
+    DPRINT1("PiControlGetSetDeviceStatus : StatusData->Operation %X\n", StatusData->Operation);
     ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    Status = STATUS_SUCCESS;
+
+Exit:
+    if (DeviceObject)
+        ObDereferenceObject(DeviceObject);
+
+    return Status;
 }
 
 NTSTATUS NTAPI PiControlGetDeviceDepth(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
