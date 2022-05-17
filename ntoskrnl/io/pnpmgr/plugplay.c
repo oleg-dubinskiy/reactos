@@ -526,9 +526,119 @@ Exit:
 
 NTSTATUS NTAPI PiControlGetRelatedDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PPLUGPLAY_CONTROL_RELATED_DEVICE_DATA RelatedDeviceData = PnPControlData;
+    UNICODE_STRING InstanceName;
+    PWSTR Instance;
+    USHORT Size;
+    NTSTATUS status;
+    NTSTATUS Status;
+  
+    DPRINT("PiControlGetRelatedDevice: Class %X, Data %p, Length %X\n", PnPControlClass, PnPControlData, PnPControlDataLength);
+    PAGED_CODE();
+
+    ASSERT(PnPControlClass == PlugPlayControlGetRelatedDevice);
+    ASSERT(PnPControlDataLength == sizeof(PLUGPLAY_CONTROL_RELATED_DEVICE_DATA));
+
+    InstanceName.Length = RelatedDeviceData->TargetDeviceInstance.Length;
+    InstanceName.MaximumLength = InstanceName.Length;
+
+    if (!InstanceName.Length)
+    {
+        DPRINT1("PiControlResetDevice: STATUS_INVALID_PARAMETER\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (InstanceName.Length > 0x190) // ?
+    {
+        DPRINT1("PiControlResetDevice: STATUS_INVALID_PARAMETER\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (InstanceName.Length & 1)
+    {
+        DPRINT1("PiControlResetDevice: STATUS_INVALID_PARAMETER\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (RelatedDeviceData->RelatedDeviceInstance &&
+        RelatedDeviceData->RelatedDeviceInstanceLength)
+    {
+        Size = (RelatedDeviceData->RelatedDeviceInstanceLength * sizeof(WCHAR));
+
+        if (AccessMode == KernelMode)
+        {
+            Instance = RelatedDeviceData->RelatedDeviceInstance;
+        }
+        else
+        {
+            Instance = ExAllocatePoolWithQuotaTag((PagedPool | POOL_QUOTA_FAIL_INSTEAD_OF_RAISE), Size, '  pP');
+            if (!Instance)
+            {
+                DPRINT1("PiControlResetDevice: STATUS_INSUFFICIENT_RESOURCES\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlZeroMemory(Instance, Size);
+        }
+    }
+    else
+    {
+        Instance = NULL;
+        Size = 0;
+    }
+
+    InstanceName.Buffer = NULL;
+
+    Status = PiControlMakeUserModeCallersCopy((PVOID *)&InstanceName.Buffer,
+                                              RelatedDeviceData->TargetDeviceInstance.Buffer,
+                                              InstanceName.Length,
+                                              2,
+                                              AccessMode,
+                                              TRUE);//Read
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("PiControlGetRelatedDevice: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        goto Exit;
+    }
+
+    Status = PiGetRelatedDevice(&InstanceName, Instance, &Size, RelatedDeviceData->Relation);
+    if (!Instance)
+    {
+        RelatedDeviceData->RelatedDeviceInstanceLength = (Size / sizeof(WCHAR));
+        goto Exit;
+    }
+
+    status = PiControlMakeUserModeCallersCopy((PVOID *)&RelatedDeviceData->RelatedDeviceInstance,
+                                              Instance,
+                                              (RelatedDeviceData->RelatedDeviceInstanceLength * sizeof(WCHAR)),
+                                              2,
+                                              AccessMode,
+                                              FALSE);//Wtite
+    if (!NT_SUCCESS(status))
+    {
+        DPRINT("PiControlGetRelatedDevice: status %X\n", status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        Status = status;
+    }
+
+    RelatedDeviceData->RelatedDeviceInstanceLength = (Size / sizeof(WCHAR));
+
+Exit:
+
+    if (AccessMode != KernelMode)
+    {
+        if (InstanceName.Buffer)
+            ExFreePool(InstanceName.Buffer);
+
+        if (Instance)
+            ExFreePoolWithTag(Instance, '  pP');
+    }
+
+    return Status;
 }
 
 NTSTATUS NTAPI PiControlGetInterfaceDeviceAlias(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
