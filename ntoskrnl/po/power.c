@@ -10,7 +10,7 @@
 /* INCLUDES ******************************************************************/
 
 #include <ntoskrnl.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS *******************************************************************/
@@ -833,14 +833,21 @@ PoSetPowerState(IN PDEVICE_OBJECT DeviceObject,
     return ps;
 }
 
-/*
- * @unimplemented
- */
+/* @unimplemented */
 VOID
 NTAPI
 PoSetSystemState(IN EXECUTION_STATE Flags)
 {
-    UNIMPLEMENTED;
+    if (Flags & ~(ES_SYSTEM_REQUIRED |
+                  ES_DISPLAY_REQUIRED |
+                  ES_USER_PRESENT))
+    {
+        ASSERT(FALSE);
+        return;
+    }
+
+    //UNIMPLEMENTED;
+    DPRINT("PoSetSystemState: Flags %X. UNIMPLEMENTED\n", Flags);
 }
 
 /*
