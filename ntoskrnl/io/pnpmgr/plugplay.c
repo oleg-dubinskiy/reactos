@@ -190,6 +190,59 @@ IopGetDeviceObjectFromDeviceInstance(PUNICODE_STRING DeviceInstance)
     return IopTraverseDeviceNode(IopRootDeviceNode, DeviceInstance);
 }
 
+NTSTATUS
+NTAPI
+PiControlCopyUserModeCallersBuffer(
+    _Out_ PVOID OutBuffer,
+    _In_ PVOID Buffer,
+    _In_ SIZE_T Length,
+    _In_ ULONG Alignment,
+    _In_ KPROCESSOR_MODE AccessMode,
+    _In_ BOOLEAN IsReadFromBuffer)
+{
+    ULONG_PTR buffer;
+    ULONG_PTR bufferEnd;
+
+    PAGED_CODE();
+
+    if (AccessMode == KernelMode)
+    {
+        RtlCopyMemory(OutBuffer, Buffer, Length);
+        return STATUS_SUCCESS;
+    }
+
+    /* UserMode */
+
+    if (!IsReadFromBuffer)
+    {
+        ProbeForWrite(OutBuffer, Length, Alignment);
+        goto Exit;
+    }
+
+    ASSERT((Alignment == 1) || (Alignment == 2) || (Alignment == 4) ||
+           (Alignment == 8) || (Alignment == 16));
+
+    if (!Length)
+        goto Exit;
+
+    buffer = (ULONG_PTR)Buffer;
+    bufferEnd = (buffer + Length);
+
+    if (buffer & (Alignment - 1))
+        ExRaiseDatatypeMisalignment();
+
+    if ((bufferEnd <= MmUserProbeAddress) && (bufferEnd >= buffer))
+        goto Exit;
+
+    DPRINT1("PiControlCopyUserModeCallersBuffer: buffer %p, bufferEnd %p\n", buffer, bufferEnd);
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+
+Exit:
+    RtlCopyMemory(OutBuffer, Buffer, Length);
+
+    return STATUS_SUCCESS;
+}
+
 /* CONTROL FUNCTIONS *********************************************************/
 
 NTSTATUS NTAPI PiControlEnumerateDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
