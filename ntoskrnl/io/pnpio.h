@@ -565,6 +565,17 @@ NTSTATUS NTAPI PiControlResetDevice              (ULONG PnPControlClass, PVOID P
 NTSTATUS NTAPI PiControlHaltDevice               (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
 NTSTATUS NTAPI PiControlGetBlockedDriverData     (ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode);
 
+NTSTATUS
+NTAPI
+PiControlMakeUserModeCallersCopy(
+    _Out_ PVOID* pOutBuffer,
+    _In_ PVOID Buffer,
+    _In_ SIZE_T Size,
+    _In_ ULONG Alignment,
+    _In_ KPROCESSOR_MODE AccessMode,
+    _In_ BOOLEAN IsReadFromBuffer
+);
+
 /* pnpdel.c */
 BOOLEAN
 NTAPI

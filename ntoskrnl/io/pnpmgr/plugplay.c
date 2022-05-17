@@ -243,6 +243,62 @@ Exit:
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+PiControlMakeUserModeCallersCopy(
+    _Out_ PVOID* pOutBuffer,
+    _In_ PVOID Buffer,
+    _In_ SIZE_T Size,
+    _In_ ULONG Alignment,
+    _In_ KPROCESSOR_MODE AccessMode,
+    _In_ BOOLEAN IsReadFromBuffer)
+{
+    NTSTATUS Status;
+    PVOID NewBuffer;
+
+    PAGED_CODE();
+
+    if (AccessMode == KernelMode)
+    {
+        *pOutBuffer = Buffer;
+        return STATUS_SUCCESS;
+    }
+
+    if (!Size)
+    {
+        *pOutBuffer = NULL;
+        return STATUS_SUCCESS;
+    }
+
+    if (IsReadFromBuffer)
+    {
+        NewBuffer = ExAllocatePoolWithQuotaTag((PagedPool | POOL_QUOTA_FAIL_INSTEAD_OF_RAISE), Size, '  pP');
+        if (!NewBuffer)
+        {
+            *pOutBuffer = NULL;
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        *pOutBuffer = NewBuffer;
+    }
+    else if (*pOutBuffer == NULL)
+    {
+        return STATUS_SUCCESS;
+    }
+
+    Status = PiControlCopyUserModeCallersBuffer(*pOutBuffer, Buffer, Size, Alignment, AccessMode, IsReadFromBuffer);
+    if (NT_SUCCESS(Status))
+        return Status;
+
+    if (IsReadFromBuffer)
+    {
+        ExFreePoolWithTag(*pOutBuffer, '  pP');
+        *pOutBuffer = NULL;
+    }
+
+    return Status;
+}
+
 /* CONTROL FUNCTIONS *********************************************************/
 
 NTSTATUS NTAPI PiControlEnumerateDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
