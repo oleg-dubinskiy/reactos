@@ -5139,6 +5139,69 @@ PiProcessShutdownPnpDevices(
 
 NTSTATUS
 NTAPI
+IopRestartDeviceNode(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("IopRestartDeviceNode: DeviceNode %X\n", DeviceNode);
+    PAGED_CODE();
+
+    PpDevNodeLockTree(3);
+
+    ASSERT(DeviceNode->State == DeviceNodeRemoved ||
+           DeviceNode->State == DeviceNodeInitialized);
+
+    ASSERT(!(DeviceNode->Flags & (DNF_HAS_PROBLEM | DNF_HAS_PRIVATE_PROBLEM)));
+
+    if (!(DeviceNode->Flags & DNF_ENUMERATED))
+    {
+        PpDevNodeUnlockTree(3);
+        DPRINT("IopRestartDeviceNode: return STATUS_UNSUCCESSFUL\n");
+        ASSERT(DeviceNode->Flags & DNF_ENUMERATED);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    DeviceNode->Flags &= ~(DNF_HARDWARE_VERIFICATION + DNF_DRIVER_BLOCKED);
+    DeviceNode->UserFlags &= ~DNUF_NEED_RESTART;
+
+    if (DeviceNode->State != DeviceNodeUninitialized)
+    {
+        DeviceNode->Flags &= ~(DNF_NO_RESOURCE_REQUIRED + DNF_RESOURCE_REQUIREMENTS_CHANGED);
+
+        if (DeviceNode->ServiceName.Length)
+        {
+            ExFreePool(DeviceNode->ServiceName.Buffer);
+
+            DeviceNode->ServiceName.MaximumLength = 0;
+            DeviceNode->ServiceName.Length = 0;
+            DeviceNode->ServiceName.Buffer = NULL;
+        }
+
+        if (DeviceNode->ResourceRequirements)
+        {
+            ExFreePool(DeviceNode->ResourceRequirements);
+
+            DeviceNode->Flags &= ~DNF_RESOURCE_REQUIREMENTS_NEED_FILTERED;
+            DeviceNode->ResourceRequirements = NULL;
+        }
+    }
+
+    ASSERT(DeviceNode->ServiceName.Length == 0 &&
+           DeviceNode->ServiceName.MaximumLength == 0 &&
+           DeviceNode->ServiceName.Buffer == NULL);
+
+    ASSERT(!(DeviceNode->Flags & ~(DNF_MADEUP | DNF_ENUMERATED | DNF_IDS_QUERIED | DNF_HAS_BOOT_CONFIG |
+                                   DNF_BOOT_CONFIG_RESERVED | DNF_NO_RESOURCE_REQUIRED)));
+
+    PipSetDevNodeState(DeviceNode, DeviceNodeUninitialized, NULL);
+    PpDevNodeUnlockTree(3);
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 PiRestartDevice(
     _In_ PPIP_ENUM_REQUEST Request)
 {
