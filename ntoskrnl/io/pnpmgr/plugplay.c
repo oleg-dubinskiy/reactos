@@ -681,9 +681,59 @@ PiQueueDeviceRequest(
 
 NTSTATUS NTAPI PiControlResetDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PPLUGPLAY_CONTROL_RESET_DEVICE_DATA ResetData = PnPControlData;
+    USHORT Size = ResetData->DeviceInstance.Length;
+    UNICODE_STRING DeviceInstance;
+    NTSTATUS Status;
+
+    DPRINT("PiControlResetDevice : Class %X, Data %p, Length %X\n", PnPControlClass, PnPControlData, PnPControlDataLength);
+    PAGED_CODE();
+
+    DeviceInstance.Length = Size;
+    DeviceInstance.MaximumLength = Size;
+
+    if (!ResetData->DeviceInstance.Length)
+    {
+        DPRINT1("PiControlResetDevice : STATUS_INVALID_PARAMETER\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (Size > 0x190) // ?
+    {
+        DPRINT1("PiControlResetDevice : STATUS_INVALID_PARAMETER\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (Size & 1)
+    {
+        DPRINT1("PiControlResetDevice : STATUS_INVALID_PARAMETER\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = PiControlMakeUserModeCallersCopy((PVOID *)&DeviceInstance.Buffer,
+                                              ResetData->DeviceInstance.Buffer,
+                                              Size,
+                                              2,
+                                              AccessMode,
+                                              TRUE);//Read
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PiControlResetDevice : Status %X\n", Status);
+        return Status;
+    }
+
+    Status = PiQueueDeviceRequest(&DeviceInstance, PipEnumResetDevice, 0, TRUE);
+
+    if (AccessMode == KernelMode)
+        return Status;
+
+    if (DeviceInstance.Buffer)
+        ExFreePool(DeviceInstance.Buffer);
+
+    return Status;
 }
 
 NTSTATUS NTAPI PiControlHaltDevice(ULONG PnPControlClass, PVOID PnPControlData, ULONG PnPControlDataLength, KPROCESSOR_MODE AccessMode)
