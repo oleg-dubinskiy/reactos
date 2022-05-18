@@ -307,13 +307,6 @@ PoRemoveVolumeDevice(
 //
 // Power State routines
 //
-NTSTATUS
-NTAPI
-PopSetSystemPowerState(
-    SYSTEM_POWER_STATE PowerState,
-    POWER_ACTION PowerAction
-);
-
 VOID
 NTAPI
 PopCleanupPowerState(
