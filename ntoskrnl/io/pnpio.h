@@ -1111,6 +1111,14 @@ IopReallocateResources(
 );
 
 NTSTATUS
+NTAPI
+IopWriteAllocatedResourcesToRegistry(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ PCM_RESOURCE_LIST CmResource,
+    _In_ ULONG DataSize
+);
+
+NTSTATUS
 NTAPI 
 IopLegacyResourceAllocation(
     _In_ ARBITER_REQUEST_SOURCE AllocationType,

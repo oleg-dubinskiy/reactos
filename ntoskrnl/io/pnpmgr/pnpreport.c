@@ -1094,9 +1094,7 @@ ResourcesAssign:
             if (ResourceList)
             {
                 ResourceListSize = PnpDetermineResourceListSize(ResourceList);
-DPRINT1("IoReportDetectedDevice: FIXME IopWriteAllocatedResourcesToRegistry()\n");
-ASSERT(FALSE); // IoDbgBreakPointEx();
-                //IopWriteAllocatedResourcesToRegistry(DeviceNode, ResourceList, ResourceListSize);
+                IopWriteAllocatedResourcesToRegistry(DeviceNode, ResourceList, ResourceListSize);
             }
         }
         else if (ResourceList &&
