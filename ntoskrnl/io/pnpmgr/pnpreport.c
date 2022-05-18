@@ -303,6 +303,157 @@ IopDuplicateDetection(_In_ INTERFACE_TYPE LegacyBusType,
     return Status;
 }
 
+static
+BOOLEAN
+PipIsDuplicatedDevices(
+    _In_ PCM_RESOURCE_LIST CmResource1,
+    _In_ PCM_RESOURCE_LIST CmResource2)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//IoDbgBreakPointEx();
+    return FALSE;
+}
+
+static
+BOOLEAN
+IopIsReportedAlready(
+    _In_ HANDLE handle,
+    _In_ PCUNICODE_STRING ServiceKeyName,
+    _In_ PCM_RESOURCE_LIST InCmResource,
+    _Out_ PBOOLEAN OutMatchingKey)
+{
+    UNICODE_STRING DeviceReportedName = RTL_CONSTANT_STRING(L"DeviceReported");
+    UNICODE_STRING LogConfName = RTL_CONSTANT_STRING(L"LogConf");
+    UNICODE_STRING ControlName = RTL_CONSTANT_STRING(L"Control");
+    UNICODE_STRING KeyValueName;
+    PKEY_VALUE_FULL_INFORMATION DeviceReportedInfo = NULL;
+    PKEY_VALUE_FULL_INFORMATION BootConfigInfo = NULL;
+    PKEY_VALUE_FULL_INFORMATION ServiceInfo = NULL;
+    PCM_RESOURCE_LIST BootCmResource = NULL;
+    HANDLE KeyHandle = NULL;
+    HANDLE Handle;
+    ULONG Data;
+    NTSTATUS Status;
+    USHORT Size;
+    BOOLEAN Result = FALSE;
+
+    PAGED_CODE();
+    DPRINT("IopIsReportedAlready: Service '%wZ', InCmResource %p\n", ServiceKeyName, InCmResource);
+
+    *OutMatchingKey = FALSE;
+
+    Status = IopGetRegistryValue(handle, L"Service", &ServiceInfo);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopIsReportedAlready: Status %X\n", Status);
+        goto OpenControlKey;
+    }
+
+    if (ServiceInfo->Type != REG_SZ)
+    {
+        DPRINT1("IopIsReportedAlready: Status %X\n", Status);
+        goto OpenControlKey;
+    }
+
+    if (!ServiceInfo->DataLength)
+    {
+        DPRINT1("IopIsReportedAlready: Status %X\n", Status);
+        goto OpenControlKey;
+    }
+
+    Size = (USHORT)ServiceInfo->DataLength;
+
+    KeyValueName.Length = Size;
+    KeyValueName.MaximumLength = Size;
+    KeyValueName.Buffer = (PWSTR)((ULONG_PTR)ServiceInfo + ServiceInfo->DataOffset);
+
+    if (KeyValueName.Buffer[(Size / sizeof(WCHAR)) - 1] == 0)
+        KeyValueName.Length = (Size - sizeof(WCHAR));
+
+    if (!RtlEqualUnicodeString(ServiceKeyName, &KeyValueName, TRUE))
+        goto OpenControlKey;
+
+    Status = IopOpenRegistryKeyEx(&Handle, handle, &LogConfName, KEY_READ);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopIsReportedAlready: Status %X\n", Status);
+
+        if (!InCmResource)
+            *OutMatchingKey = TRUE;
+
+        goto OpenControlKey;
+    }
+
+    Status = IopGetRegistryValue(Handle, L"BootConfig", &BootConfigInfo);
+    ZwClose(Handle);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopIsReportedAlready: Status %X\n", Status);
+
+        if (!InCmResource)
+            *OutMatchingKey = TRUE;
+
+        goto OpenControlKey;
+    }
+
+    if (BootConfigInfo->Type == REG_RESOURCE_LIST && BootConfigInfo->DataLength)
+    {
+        BootCmResource = (PCM_RESOURCE_LIST)((ULONG_PTR)BootConfigInfo + BootConfigInfo->DataOffset);
+
+        if (InCmResource && BootCmResource)
+        {
+            if (PipIsDuplicatedDevices(InCmResource, BootCmResource))
+                *OutMatchingKey = TRUE;
+        }
+    }
+
+    if (!InCmResource && !BootCmResource)
+        *OutMatchingKey = TRUE;
+
+OpenControlKey:
+
+    Status = IopOpenRegistryKeyEx(&KeyHandle, handle, &ControlName, KEY_ALL_ACCESS);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopIsReportedAlready: Status %X\n", Status);
+        goto Exit;
+    }
+
+    Status = IopGetRegistryValue(KeyHandle, L"DeviceReported", &DeviceReportedInfo);
+    if (NT_SUCCESS(Status))
+        goto Exit;
+
+    if (*OutMatchingKey != TRUE)
+        goto Exit;
+
+     Result = TRUE;
+
+     Data = 1;
+     Status = ZwSetValueKey(KeyHandle, &DeviceReportedName, 0, REG_DWORD, &Data, sizeof(Data));
+     if (!NT_SUCCESS(Status))
+     {
+         DPRINT1("IopIsReportedAlready: Status %X\n", Status);
+         Result = FALSE;
+     }
+
+Exit:
+
+    if (KeyHandle)
+        ZwClose(KeyHandle);
+
+    if (DeviceReportedInfo)
+        ExFreePool(DeviceReportedInfo);
+
+    if (BootConfigInfo)
+        ExFreePool(BootConfigInfo);
+
+    if (ServiceInfo)
+        ExFreePool(ServiceInfo);
+
+    return Result;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 NTSTATUS
@@ -675,15 +826,13 @@ IoReportDetectedDevice(IN PDRIVER_OBJECT DriverObject,
                     ZwDeleteValueKey(KeyHandle, &MigratedName);
                 }
 
-DPRINT1("IoReportDetectedDevice: FIXME IopIsReportedAlready()\n");
-ASSERT(FALSE); // IoDbgBreakPointEx();
-                //if (IopIsReportedAlready(KeyHandle, ServiceKeyName, ResourceList, &MatchingKey))
+                if (IopIsReportedAlready(KeyHandle, ServiceKeyName, ResourceList, &MatchingKey))
                 {
                     DPRINT1("IoReportDetectedDevice: IsReportedAlready - TRUE\n");
                     break;
                 }
 
-                DPRINT("MatchingKey %X IsMigrated %X\n", MatchingKey, IsMigrated);
+                DPRINT("MatchingKey %X, IsMigrated %X\n", MatchingKey, IsMigrated);
 
                 if (!MatchingKey || !IsMigrated)
                 {
