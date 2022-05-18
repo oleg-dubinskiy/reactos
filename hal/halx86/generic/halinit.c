@@ -89,23 +89,38 @@ HalInitSystem(IN ULONG BootPhase,
     if (BootPhase == 0)
     {
         /* Phase 0... save bus type */
-        HalpBusType = LoaderBlock->u.I386.MachineType & 0xFF;
+        HalpBusType = (LoaderBlock->u.I386.MachineType & 0xFF);
 
         /* Get command-line parameters */
         HalpGetParameters(LoaderBlock);
 
         /* Check for PRCB version mismatch */
-        if (Prcb->MajorVersion != PRCB_MAJOR_VERSION)
-        {
+        if (Prcb->MajorVersion != PRCB_MAJOR_VERSION) {
             /* No match, bugcheck */
+            DPRINT1("HalInitSystem: MajorVersion %X - (%X)\n", Prcb->MajorVersion, PRCB_MAJOR_VERSION);
             KeBugCheckEx(MISMATCHED_HAL, 1, Prcb->MajorVersion, PRCB_MAJOR_VERSION, 0);
         }
 
         /* Checked/free HAL requires checked/free kernel */
-        if (Prcb->BuildType != HalpBuildType)
-        {
-            /* No match, bugcheck */
-            KeBugCheckEx(MISMATCHED_HAL, 2, Prcb->BuildType, HalpBuildType, 0);
+      #if DBG 
+        if ((Prcb->BuildType & PRCB_BUILD_DEBUG) == 0) {
+            DPRINT1("HalInitSystem: BuildType %X - (%X)\n", Prcb->BuildType, PRCB_BUILD_DEBUG);
+            KeBugCheckEx(MISMATCHED_HAL, 2, Prcb->BuildType, PRCB_BUILD_DEBUG, 0);
+        }
+        if ((Prcb->BuildType & PRCB_BUILD_UNIPROCESSOR) == PRCB_BUILD_UNIPROCESSOR) {
+            DPRINT1("HalInitSystem: BuildType %X - (%X)\n", Prcb->BuildType, PRCB_BUILD_UNIPROCESSOR);
+            KeBugCheckEx(MISMATCHED_HAL, 2, Prcb->BuildType, 0, 0);
+        }
+      #else 
+        if ((Prcb->BuildType & PRCB_BUILD_DEBUG) == PRCB_BUILD_DEBUG) {
+            DPRINT1("HalInitSystem: BuildType %X - (%X)\n", Prcb->BuildType, PRCB_BUILD_DEBUG);
+            KeBugCheckEx(MISMATCHED_HAL, 2, Prcb->BuildType, PRCB_BUILD_DEBUG, 0);
+        }
+      #endif
+
+        if (HalpBusType == MACHINE_TYPE_MCA) {
+            DPRINT1("HalInitSystem: HalpBusType %X - (%X)\n", HalpBusType, MACHINE_TYPE_MCA);
+            KeBugCheckEx(MISMATCHED_HAL, 3, MACHINE_TYPE_MCA, 0, 0);
         }
 
         /* Initialize ACPI */

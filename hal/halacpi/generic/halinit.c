@@ -180,7 +180,7 @@ HalInitSystem(IN ULONG BootPhase,
     if (BootPhase == 0)
     {
         /* Phase 0... save bus type */
-        HalpBusType = LoaderBlock->u.I386.MachineType & 0xFF;
+        HalpBusType = (LoaderBlock->u.I386.MachineType & 0xFF);
 
         /* Get command-line parameters */
         HalpGetParameters(LoaderBlock);
