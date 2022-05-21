@@ -1722,6 +1722,43 @@ Exit:
     return Status;
 }
 
+NTSTATUS
+NTAPI
+PiDeferSetInterfaceState(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ PUNICODE_STRING SymbolicLinkName)
+{
+    PDEVNODE_INTERFACE_STATE State;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("PiDeferSetInterfaceState: [%p] SymbolicLink '%wZ'\n", DeviceNode, SymbolicLinkName);
+
+    ASSERT(ExIsResourceAcquiredExclusiveLite(&PpRegistryDeviceResource));
+    //ASSERT(PiIsPnpRegistryLocked(TRUE));
+
+    State = ExAllocatePoolWithTag(PagedPool, sizeof(*State), '  pP');
+    if (!State)
+    {
+        DPRINT1("PiDeferSetInterfaceState: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = PnpAllocateUnicodeString(&State->SymbolicLinkName, SymbolicLinkName->Length);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PiDeferSetInterfaceState: STATUS_INSUFFICIENT_RESOURCES\n");
+        ExFreePoolWithTag(State, '  pP');
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyUnicodeString(&State->SymbolicLinkName, SymbolicLinkName);
+
+    InsertTailList(&DeviceNode->PendedSetInterfaceState, &State->Link);
+
+    return STATUS_SUCCESS;
+}
+
 /*++
  * @name IoSetDeviceInterfaceState
  * @implemented
