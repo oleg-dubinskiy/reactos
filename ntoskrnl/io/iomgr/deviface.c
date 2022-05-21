@@ -1413,6 +1413,62 @@ IopDropReferenceString(
     return Status;
 }
 
+NTSTATUS
+NTAPI
+IopBuildGlobalSymbolicLinkString(
+    _In_ PUNICODE_STRING InString,
+    _Out_ PUNICODE_STRING OutGlobalString)
+{
+    UNICODE_STRING Source;
+    NTSTATUS Status;
+    USHORT length;
+
+    PAGED_CODE();
+    DPRINT("IopDropReferenceString: InString '%wZ'\n", InString);
+
+    if (RtlCompareMemory(InString->Buffer, L"\\\\?\\", (4 * sizeof(WCHAR))) != (4 * sizeof(WCHAR)) &&
+        RtlCompareMemory(InString->Buffer, L"\\??\\", (4 * sizeof(WCHAR))) != (4 * sizeof(WCHAR)))
+    {
+        DPRINT1("IopDropReferenceString: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    length = (InString->Length + (6 * sizeof(WCHAR)));
+
+    Status = PnpAllocateUnicodeString(OutGlobalString, length);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDropReferenceString: Status %X\n", Status);
+        return Status;
+    }
+
+    Status = RtlAppendUnicodeToString(OutGlobalString, L"\\GLOBAL??\\");
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDropReferenceString: Status %X\n", Status);
+        ASSERT(NT_SUCCESS(Status));
+        RtlFreeUnicodeString(OutGlobalString);
+        return Status;
+    }
+
+    Source.Length = (InString->Length - (4 * sizeof(WCHAR)));
+    Source.MaximumLength = (InString->MaximumLength - (4 * sizeof(WCHAR)));
+    Source.Buffer = &InString->Buffer[4];
+
+    Status = RtlAppendUnicodeStringToString(OutGlobalString, &Source);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDropReferenceString: Status %X\n", Status);
+        ASSERT(NT_SUCCESS(Status));
+        RtlFreeUnicodeString(OutGlobalString);
+        return Status;
+    }
+
+    ASSERT(OutGlobalString->Length == length);
+
+    return Status;
+}
+
 /*++
  * @name IoSetDeviceInterfaceState
  * @implemented
