@@ -1376,6 +1376,43 @@ IopParseSymbolicLinkName(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+IopDropReferenceString(
+    _Out_ PUNICODE_STRING OutString,
+    _In_ PUNICODE_STRING InString)
+{
+    UNICODE_STRING RefName;
+    BOOLEAN IsRefString;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    ASSERT(InString);
+    ASSERT(OutString);
+
+    Status = IopParseSymbolicLinkName(InString, NULL, NULL, NULL, &RefName, &IsRefString, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDropReferenceString: Status %X\n", Status);
+        RtlZeroMemory(&OutString, sizeof(OutString));
+        return Status;
+    }
+
+    if (IsRefString)
+        OutString->Length = (InString->Length - RefName.Length - sizeof(WCHAR));
+    else
+        OutString->Length = InString->Length;
+
+    OutString->MaximumLength = OutString->Length;
+    OutString->Buffer = InString->Buffer;
+
+    DPRINT1("IopDropReferenceString: In  '%wZ'\n", InString);
+    DPRINT1("IopDropReferenceString: Out '%wZ'\n", OutString);
+
+    return Status;
+}
+
 /*++
  * @name IoSetDeviceInterfaceState
  * @implemented
