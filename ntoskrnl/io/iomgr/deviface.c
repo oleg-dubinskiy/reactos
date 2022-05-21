@@ -1225,6 +1225,157 @@ IoRegisterDeviceInterface(
     return (NT_SUCCESS(Status) ? SymLinkStatus : Status);
 }
 
+NTSTATUS
+NTAPI
+IopParseSymbolicLinkName(
+    _In_ PUNICODE_STRING SymbolicLinkName,
+    _Out_ PUNICODE_STRING OutPrefixName,
+    _Out_ PUNICODE_STRING OutEnumName,
+    _Out_ PUNICODE_STRING OutGuidName,
+    _Out_ PUNICODE_STRING OutRefName,
+    _Out_ PBOOLEAN OutIsRefString,
+    _Out_ GUID* OutGuid)
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+    UNICODE_STRING GuidString;
+    GUID Guid;
+    PWCHAR Ptr;
+    ULONG ix;
+    USHORT Count;
+    USHORT ReferenceStart = 0;
+    BOOLEAN IsRefString;
+
+    PAGED_CODE();
+    DPRINT("IopParseSymbolicLinkName: SymbolicLink '%wZ'\n", SymbolicLinkName);
+
+    if (!SymbolicLinkName)
+    {
+        DPRINT1("IopParseSymbolicLinkName: STATUS_INVALID_PARAMETER\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!SymbolicLinkName->Buffer)
+    {
+        DPRINT1("IopParseSymbolicLinkName: STATUS_INVALID_PARAMETER\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!SymbolicLinkName->Length)
+    {
+        DPRINT1("IopParseSymbolicLinkName: STATUS_INVALID_PARAMETER\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (SymbolicLinkName->Length < 0x55)
+    {
+        DPRINT1("IopParseSymbolicLinkName: SymbolicLinkName->Length %X\n", SymbolicLinkName->Length);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (RtlCompareMemory(SymbolicLinkName->Buffer, L"\\\\?\\", (4 * sizeof(WCHAR))) != (4 * sizeof(WCHAR)) &&
+        RtlCompareMemory(SymbolicLinkName->Buffer, L"\\??\\", (4 * sizeof(WCHAR))) != (4 * sizeof(WCHAR)))
+    {
+        DPRINT1("IopParseSymbolicLinkName: STATUS_INVALID_PARAMETER\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Ptr = &SymbolicLinkName->Buffer[4]; // skip "\??\"
+    Count = (SymbolicLinkName->Length / sizeof(WCHAR));
+
+    for (ix = 0; ix < (Count - 4); ix++, Ptr++)
+    {
+        if(*Ptr == L'\\')
+        {
+            DPRINT("IopParseSymbolicLinkName: ReferenceStart %X, Link '%wZ'\n", ReferenceStart, SymbolicLinkName);
+            ReferenceStart = (ix + 5);
+            break;
+        }
+    }
+
+    if (ReferenceStart)
+    {
+        IsRefString = TRUE;
+    }
+    else
+    {
+        ReferenceStart = (Count + 1); // to end string
+        IsRefString = FALSE;
+    }
+
+    GuidString.Length = 0x4C;
+    GuidString.MaximumLength = 0x4C;
+    GuidString.Buffer = &SymbolicLinkName->Buffer[ReferenceStart - 0x27];
+
+    Status = RtlGUIDFromString(&GuidString, &Guid);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopParseSymbolicLinkName: RtlGUIDFromString() failed for GUID '%wZ' in '%wZ'\n", &GuidString, SymbolicLinkName);
+        DPRINT1("IopParseSymbolicLinkName: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (OutPrefixName)
+    {
+        OutPrefixName->Length = 8;
+        OutPrefixName->MaximumLength = OutPrefixName->Length;
+        OutPrefixName->Buffer = SymbolicLinkName->Buffer;
+
+        DPRINT1("IopParseSymbolicLinkName: OutPrefix '%wZ'\n", OutPrefixName);
+    }
+
+    if (OutEnumName)
+    {
+        OutEnumName->Length = (ReferenceStart * sizeof(WCHAR) - 0x58);
+        OutEnumName->MaximumLength = OutEnumName->Length;
+        OutEnumName->Buffer = &SymbolicLinkName->Buffer[4];
+
+        DPRINT1("IopParseSymbolicLinkName: OutEnum '%wZ'\n", OutEnumName);
+    }
+
+    if (OutGuidName)
+    {
+        OutGuidName->Length = 0x4C;
+        OutGuidName->MaximumLength = OutGuidName->Length;
+        OutGuidName->Buffer = &SymbolicLinkName->Buffer[ReferenceStart - 0x27];
+
+        DPRINT1("IopParseSymbolicLinkName: OutGuid '%wZ'\n", OutGuidName);
+    }
+
+    if (OutRefName)
+    {
+        if (IsRefString)
+        {
+            OutRefName->Length = (SymbolicLinkName->Length - ReferenceStart * sizeof(WCHAR));
+            OutRefName->MaximumLength = OutRefName->Length;
+            OutRefName->Buffer = &SymbolicLinkName->Buffer[ReferenceStart];
+
+            DPRINT1("IopParseSymbolicLinkName: OutRef '%wZ'\n", OutRefName);
+        }
+        else
+        {
+            OutRefName->Length = 0;
+            OutRefName->MaximumLength = OutRefName->Length;
+            OutRefName->Buffer = NULL;
+
+            DPRINT1("IopParseSymbolicLinkName: OutRef is ''\n");
+        }
+    }
+
+    if (OutIsRefString)
+        *OutIsRefString = IsRefString;
+
+    if (OutGuid)
+        RtlCopyMemory(OutGuid, &Guid, sizeof(*OutGuid));
+
+    return STATUS_SUCCESS;
+}
+
 /*++
  * @name IoSetDeviceInterfaceState
  * @implemented
