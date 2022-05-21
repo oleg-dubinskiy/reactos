@@ -16,16 +16,7 @@
 //#define NDEBUG
 #include <debug.h>
 
-/* GLOBALS *******************************************************************/
-
-extern LIST_ENTRY IopProfileNotifyList;
-extern LIST_ENTRY IopDeviceClassNotifyList[13];
-extern LIST_ENTRY IopDeferredRegistrationList;
-extern KGUARDED_MUTEX IopHwProfileNotifyLock;
-extern KGUARDED_MUTEX IopDeviceClassNotifyLock;
-extern KGUARDED_MUTEX IopTargetDeviceNotifyLock;
-extern KGUARDED_MUTEX IopDeferredRegistrationLock;
-extern KGUARDED_MUTEX PiNotificationInProgressLock;
+#define HashGuid(Guid) ((((PULONG)Guid)[0] + ((PULONG)Guid)[1]  + ((PULONG)Guid)[2]  + ((PULONG)Guid)[3]) % 13)
 
 /* TYPES *******************************************************************/
 
@@ -40,8 +31,22 @@ typedef struct _PNP_NOTIFY_ENTRY
     PDRIVER_NOTIFICATION_CALLBACK_ROUTINE PnpNotificationProc;
 } PNP_NOTIFY_ENTRY, *PPNP_NOTIFY_ENTRY;
 
-KGUARDED_MUTEX PnpNotifyListLock;
+/* GLOBALS *******************************************************************/
+
 LIST_ENTRY PnpNotifyListHead;
+KGUARDED_MUTEX PnpNotifyListLock;
+
+extern LIST_ENTRY IopProfileNotifyList;
+extern LIST_ENTRY IopDeviceClassNotifyList[13];
+extern LIST_ENTRY IopDeferredRegistrationList;
+
+extern KGUARDED_MUTEX IopHwProfileNotifyLock;
+extern KGUARDED_MUTEX IopDeviceClassNotifyLock;
+extern KGUARDED_MUTEX IopTargetDeviceNotifyLock;
+extern KGUARDED_MUTEX IopDeferredRegistrationLock;
+extern KGUARDED_MUTEX PiNotificationInProgressLock;
+
+extern BOOLEAN PiNotificationInProgress;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -475,11 +480,59 @@ VOID
 NTAPI
 IopNotifyDeviceClassChange(
     _In_ PPLUGPLAY_EVENT_BLOCK EventBlock,
-    _In_ GUID * ClassGuid,
+    _In_ GUID* ClassGuid,
     _In_ PUNICODE_STRING SymbolicLinkName)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
+    DEVICE_INTERFACE_CHANGE_NOTIFICATION InterfaceNotification;
+    PDEVICE_INTERFACE_NOTIFY Notify;
+    PLIST_ENTRY Head;
+    PLIST_ENTRY Entry;
+    NTSTATUS CallbackStatus;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("IopNotifyDeviceClassChange: EventBlock %p, SymbolicLink '%wZ'\n", EventBlock, SymbolicLinkName);
+
+    InterfaceNotification.Version = 1;
+    InterfaceNotification.Size = sizeof(InterfaceNotification);
+    InterfaceNotification.Event = EventBlock->EventGuid;
+    InterfaceNotification.InterfaceClassGuid = *ClassGuid;
+    InterfaceNotification.SymbolicLinkName = SymbolicLinkName;
+
+    KeAcquireGuardedMutex(&IopDeviceClassNotifyLock);
+
+    Head = &IopDeviceClassNotifyList[HashGuid(ClassGuid)];
+
+    for (Entry = Head->Flink; (Entry != Head); Entry = Entry->Flink)
+    {
+        Notify = CONTAINING_RECORD(Entry, DEVICE_INTERFACE_NOTIFY, Header.Link);
+
+        if (Notify->Header.Unregistered)
+            continue;
+
+        if (!PiCompareGuid(&(Notify->Interface), ClassGuid))
+            continue;
+
+        IopReferenceNotify(&Notify->Header);
+        KeReleaseGuardedMutex(&IopDeviceClassNotifyLock);
+
+        Status = PiNotifyDriverCallback(Notify->Header.PnpNotificationRoutine,
+                                        &InterfaceNotification,
+                                        Notify->Header.Context,
+                                        Notify->Header.SessionId,
+                                        Notify->Header.OpaqueSession,
+                                        &CallbackStatus);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopNotifyDeviceClassChange: Status %X\n", Status);
+            ASSERT(NT_SUCCESS(Status));
+        }
+
+        KeAcquireGuardedMutex(&IopDeviceClassNotifyLock);
+        IopDereferenceNotify(&Notify->Header);
+    }
+
+    KeReleaseGuardedMutex(&IopDeviceClassNotifyLock);
 }
 
 VOID
