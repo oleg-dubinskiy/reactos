@@ -1513,6 +1513,143 @@ IopReplaceSeperatorWithPound(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+IopOpenOrCreateDeviceInterfaceSubKeys(
+    _Out_ PHANDLE OutInterfaceHandle,
+    _Out_ PULONG OutInterfaceDisposition,
+    _Out_ PHANDLE OutInterfaceInstanceHandle,
+    _Out_ PULONG OutInterfaceInstanceDisposition,
+    _In_ HANDLE InterfaceClassHandle,
+    _In_ PUNICODE_STRING InterfaceName,
+    _In_ ACCESS_MASK DesiredAccess,
+    _In_ BOOLEAN IsCreateOrOpen)
+{
+    UNICODE_STRING DestinationString;
+    UNICODE_STRING RefName;
+    HANDLE ParentHandle;
+    HANDLE KeyHandle;
+    ULONG Disposition;
+    WCHAR CharBuffer;
+    BOOLEAN IsRefString = FALSE;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("IopOpenOrCreateDeviceInterfaceSubKeys: Interface %wZ, IsCreateOrOpen %X\n", InterfaceName, IsCreateOrOpen);
+
+    Status = PnpAllocateUnicodeString(&DestinationString, InterfaceName->Length);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopOpenOrCreateDeviceInterfaceSubKeys: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return Status;
+    }
+
+    RtlCopyUnicodeString(&DestinationString, InterfaceName);
+    DPRINT("IopOpenOrCreateDeviceInterfaceSubKeys: Destination '%wZ'\n", &DestinationString);
+
+    Status = IopParseSymbolicLinkName(&DestinationString, NULL, NULL, NULL, &RefName, &IsRefString, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopOpenOrCreateDeviceInterfaceSubKeys: Status %X\n", Status);
+        ASSERT(NT_SUCCESS(Status));
+        RtlFreeUnicodeString(&DestinationString);
+        return Status;
+    }
+
+    if (IsRefString)
+    {
+        RefName.Length += sizeof(WCHAR);
+        RefName.MaximumLength += sizeof(WCHAR);
+        RefName.Buffer--;
+
+        DPRINT1("IopOpenOrCreateDeviceInterfaceSubKeys: IsRefString\n");
+
+        DestinationString.Length = (USHORT)((ULONG_PTR)RefName.Buffer - (ULONG_PTR)DestinationString.Buffer);
+        DestinationString.MaximumLength = DestinationString.Length;
+    }
+    else
+    {
+        RefName.Length = sizeof(CharBuffer);
+        RefName.MaximumLength = RefName.Length;
+        RefName.Buffer = &CharBuffer;
+    }
+
+    DestinationString.Buffer[0] = '#';
+    DestinationString.Buffer[1] = '#';
+    DestinationString.Buffer[2] = '?';
+    DestinationString.Buffer[3] = '#';
+
+    IopReplaceSeperatorWithPound(&DestinationString, &DestinationString);
+
+    if (IsCreateOrOpen)
+    {
+        Status = IopCreateRegistryKeyEx(&ParentHandle,
+                                        InterfaceClassHandle,
+                                        &DestinationString,
+                                        DesiredAccess,
+                                        REG_OPTION_NON_VOLATILE,
+                                        &Disposition);
+    }
+    else
+    {
+        Status = IopOpenRegistryKeyEx(&ParentHandle, InterfaceClassHandle, &DestinationString, DesiredAccess);
+        Disposition = 2;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopOpenOrCreateDeviceInterfaceSubKeys: [%X] Iface '%wZ'\n", IsCreateOrOpen, InterfaceName);
+        DPRINT1("IopOpenOrCreateDeviceInterfaceSubKeys: Status %X for '%wZ'\n", Status, &DestinationString);
+        goto Exit;
+    }
+
+    RefName.Buffer[0] = '#';
+
+    if (IsCreateOrOpen)
+    {
+         Status = IopCreateRegistryKeyEx(&KeyHandle,
+                                         ParentHandle,
+                                         &RefName,
+                                         DesiredAccess,
+                                         REG_OPTION_NON_VOLATILE,
+                                         OutInterfaceInstanceDisposition);
+    }
+    else
+    {
+        Status = IopOpenRegistryKeyEx(&KeyHandle, ParentHandle, &RefName, DesiredAccess);
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopOpenOrCreateDeviceInterfaceSubKeys: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+
+        if (Disposition == 1)
+            ZwDeleteKey(ParentHandle);
+
+        ZwClose(ParentHandle);
+        goto Exit;
+    }
+
+    if (OutInterfaceHandle)
+        *OutInterfaceHandle = ParentHandle;
+    else
+        ZwClose(ParentHandle);
+
+    if (OutInterfaceDisposition)
+        *OutInterfaceDisposition = Disposition;
+
+    if (OutInterfaceInstanceHandle)
+        *OutInterfaceInstanceHandle = KeyHandle;
+    else
+        ZwClose(KeyHandle);
+
+Exit:
+    RtlFreeUnicodeString(&DestinationString);
+    return Status;
+}
+
 /*++
  * @name IoSetDeviceInterfaceState
  * @implemented
