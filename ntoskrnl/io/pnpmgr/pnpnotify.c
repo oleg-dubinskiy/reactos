@@ -444,6 +444,20 @@ IoUnregisterPlugPlayNotification(IN PVOID NotificationEntry)
 
 VOID
 NTAPI
+IopReferenceNotify(
+    _In_ PPNP_NOTIFY_HEADER NotifyHeader)
+{
+    DPRINT("IopReferenceNotify: NotifyHeader %p\n", NotifyHeader);
+    PAGED_CODE();
+
+    ASSERT(NotifyHeader);
+    ASSERT(NotifyHeader->RefCount);
+
+    NotifyHeader->RefCount++;
+}
+
+VOID
+NTAPI
 IopNotifyDeviceClassChange(
     _In_ PPLUGPLAY_EVENT_BLOCK EventBlock,
     _In_ GUID * ClassGuid,
