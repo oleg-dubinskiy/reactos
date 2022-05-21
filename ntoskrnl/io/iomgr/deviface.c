@@ -1650,6 +1650,78 @@ Exit:
     return Status;
 }
 
+NTSTATUS
+NTAPI
+IopDeviceInterfaceKeysFromSymbolicLink(
+    _In_ PUNICODE_STRING SymbolicLinkName,
+    _In_ ACCESS_MASK DesiredAccess,
+    _Out_ PHANDLE OutInterfaceClassHandle,
+    _Out_ PHANDLE OutInterfaceHandle,
+    _Out_ PHANDLE OutInterfaceInstanceHandle)
+{
+    UNICODE_STRING DeviceClassesName = RTL_CONSTANT_STRING(IO_REG_KEY_DEVICECLASSES);
+    UNICODE_STRING GuidName;
+    HANDLE InterfaceClassHandle;
+    HANDLE KeyHandle;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("IopDeviceInterfaceKeysFromSymbolicLink: SymbolicLink '%wZ'\n", SymbolicLinkName);
+
+    Status = IopParseSymbolicLinkName(SymbolicLinkName, NULL, NULL, &GuidName, NULL, NULL, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDeviceInterfaceKeysFromSymbolicLink: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return Status;
+    }
+
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(&PpRegistryDeviceResource, TRUE);
+
+    Status = IopOpenRegistryKeyEx(&KeyHandle, NULL, &DeviceClassesName, KEY_READ);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDeviceInterfaceKeysFromSymbolicLink: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        goto Exit;
+    }
+
+    Status = IopOpenRegistryKeyEx(&InterfaceClassHandle, KeyHandle, &GuidName, KEY_READ);
+    ZwClose(KeyHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDeviceInterfaceKeysFromSymbolicLink: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        goto Exit;
+    }
+
+    Status = IopOpenOrCreateDeviceInterfaceSubKeys(OutInterfaceHandle,
+                                                   NULL,
+                                                   OutInterfaceInstanceHandle,
+                                                   NULL,
+                                                   InterfaceClassHandle,
+                                                   SymbolicLinkName,
+                                                   DesiredAccess,
+                                                   FALSE);
+
+    if (NT_SUCCESS(Status) && OutInterfaceClassHandle)
+        *OutInterfaceClassHandle = InterfaceClassHandle;
+    else
+        ZwClose(InterfaceClassHandle);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDeviceInterfaceKeysFromSymbolicLink: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+    }
+
+Exit:
+    ExReleaseResourceLite(&PpRegistryDeviceResource);
+    KeLeaveCriticalRegion();
+    return Status;
+}
+
 /*++
  * @name IoSetDeviceInterfaceState
  * @implemented
