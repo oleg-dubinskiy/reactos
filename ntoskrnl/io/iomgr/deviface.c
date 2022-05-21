@@ -1469,6 +1469,50 @@ IopBuildGlobalSymbolicLinkString(
     return Status;
 }
 
+NTSTATUS
+NTAPI
+IopReplaceSeperatorWithPound(
+    _In_ PUNICODE_STRING InString,
+    _Out_ PUNICODE_STRING OutString)
+{
+    PWSTR InChar;
+    PWSTR OutChar;
+    ULONG ix;
+    USHORT InStringLen;
+    WCHAR Char;
+
+    PAGED_CODE();
+    //DPRINT("IopReplaceSeperatorWithPound: InString '%wZ'\n", InString);
+
+    ASSERT(InString);
+    ASSERT(OutString);
+
+    if (InString->Length > OutString->MaximumLength)
+    {
+        DPRINT1("IopReplaceSeperatorWithPound: STATUS_BUFFER_TOO_SMALL. In %X, Out %X\n", InString->Length, OutString->MaximumLength);
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    InChar = InString->Buffer;
+    OutChar = OutString->Buffer;
+
+    InStringLen = InString->Length / sizeof(WCHAR);
+
+    for (ix = 0; ix < InStringLen; ix++, InChar++, OutChar++)
+    {
+        Char = *InChar;
+
+        if (*InChar == '\\' || Char == '/')
+            *OutChar = '#';
+        else
+            *OutChar = Char;
+    }
+
+    OutString->Length = InString->Length;
+
+    return STATUS_SUCCESS;
+}
+
 /*++
  * @name IoSetDeviceInterfaceState
  * @implemented
