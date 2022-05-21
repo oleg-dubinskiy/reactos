@@ -1759,6 +1759,41 @@ PiDeferSetInterfaceState(
     return STATUS_SUCCESS;
 }
 
+VOID 
+NTAPI
+PiRemoveDeferredSetInterfaceState(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ PCUNICODE_STRING SymbolicLinkName)
+{
+    PDEVNODE_INTERFACE_STATE State;
+    PLIST_ENTRY Entry;
+
+    PAGED_CODE();
+    DPRINT("PiRemoveDeferredSetInterfaceState: [%p] SymbolicLink %wZ\n", DeviceNode, SymbolicLinkName);
+
+    ASSERT(ExIsResourceAcquiredExclusiveLite(&PpRegistryDeviceResource));
+    //ASSERT(PiIsPnpRegistryLocked(TRUE));
+
+    for (Entry = DeviceNode->PendedSetInterfaceState.Flink;
+         Entry != &DeviceNode->PendedSetInterfaceState;
+         Entry = Entry->Flink)
+    {
+        State = CONTAINING_RECORD(Entry, DEVNODE_INTERFACE_STATE, Link);
+
+        if (RtlEqualUnicodeString(&State->SymbolicLinkName, SymbolicLinkName, TRUE))
+        {
+            RemoveEntryList(&State->Link);
+
+            ExFreePoolWithTag(State->SymbolicLinkName.Buffer, '  pP');
+            ExFreePoolWithTag(State, '  pP');
+
+            break;
+        }
+    }
+
+    return;
+}
+
 /*++
  * @name IoSetDeviceInterfaceState
  * @implemented
