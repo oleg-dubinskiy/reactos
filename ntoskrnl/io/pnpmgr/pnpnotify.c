@@ -456,6 +456,21 @@ IopReferenceNotify(
     NotifyHeader->RefCount++;
 }
 
+NTSTATUS
+NTAPI
+PiNotifyDriverCallback(
+    _In_ PDRIVER_NOTIFICATION_CALLBACK_ROUTINE CallbackRoutine,
+    _In_ PVOID NotificationStructure,
+    _In_ PVOID Context,
+    _In_ ULONG SessionId,
+    _In_ PVOID OpaqueSession,
+    _Out_ NTSTATUS* OutStatus)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 IopNotifyDeviceClassChange(
