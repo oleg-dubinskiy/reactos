@@ -1794,6 +1794,360 @@ PiRemoveDeferredSetInterfaceState(
     return;
 }
 
+NTSTATUS
+NTAPI
+IopProcessSetInterfaceState(
+    _In_ PUNICODE_STRING SymbolicLinkName,
+    _In_ BOOLEAN Enable,
+    _In_ BOOLEAN PdoNotStarted)
+{
+    UNICODE_STRING ReferenceCountName = RTL_CONSTANT_STRING(L"ReferenceCount");
+    UNICODE_STRING ControlName = RTL_CONSTANT_STRING(L"Control");
+    UNICODE_STRING LinkedName = RTL_CONSTANT_STRING(L"Linked");
+    UNICODE_STRING MinusReferenceString;
+    UNICODE_STRING GlobalSymbolicLink;
+    UNICODE_STRING DestinationString;
+    UNICODE_STRING ValueName;
+    PEXTENDED_DEVOBJ_EXTENSION DeviceObjectExtension;
+    PKEY_VALUE_FULL_INFORMATION ValueInfo = NULL;
+    HANDLE InterfaceInstanceHandle = NULL;
+    HANDLE InstanceControlHandle = NULL;
+    HANDLE InterfaceClassHandle = NULL;
+    HANDLE ParentControlHandle = NULL;
+    HANDLE InterfaceHandle = NULL;
+    PDEVICE_OBJECT DeviceObject;
+    PDEVICE_NODE DeviceNode;
+    PVOID PropertyBuffer = NULL;
+    GUID DeviceGuid;
+    ULONG ReferenceCount;
+    ULONG Linked;
+    USHORT Length;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("IopProcessSetInterfaceState: SymbolicLink '%wZ', Enable %X\n", SymbolicLinkName, Enable);
+
+    Status = IopParseSymbolicLinkName(SymbolicLinkName, NULL, NULL, NULL, NULL, NULL, &DeviceGuid);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopProcessSetInterfaceState: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        goto Exit;
+    }
+
+    Status = IopDropReferenceString(&MinusReferenceString, SymbolicLinkName);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopProcessSetInterfaceState: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        goto Exit;
+    }
+
+    Status = IopBuildGlobalSymbolicLinkString(&MinusReferenceString, &GlobalSymbolicLink);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopProcessSetInterfaceState: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        goto Exit;
+    }
+
+    Status = IopDeviceInterfaceKeysFromSymbolicLink(SymbolicLinkName,
+                                                    (KEY_READ | KEY_WRITE),
+                                                    &InterfaceClassHandle,
+                                                    &InterfaceHandle,
+                                                    &InterfaceInstanceHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopProcessSetInterfaceState: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        goto Exit1;
+    }
+
+    Status = IopCreateRegistryKeyEx(&ParentControlHandle, InterfaceHandle, &ControlName, KEY_READ, REG_OPTION_VOLATILE, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopProcessSetInterfaceState: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        goto Exit1;
+    }
+
+    Status = IopGetRegistryValue(InterfaceHandle, L"DeviceInstance", &ValueInfo);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopProcessSetInterfaceState: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        goto Exit2;
+    }
+
+    Status = IopCreateRegistryKeyEx(&InstanceControlHandle, InterfaceInstanceHandle, &ControlName, KEY_READ, REG_OPTION_VOLATILE, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopProcessSetInterfaceState: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        ExFreePool(ValueInfo);
+        InstanceControlHandle = NULL;
+        goto Exit2;
+    }
+
+    if (ValueInfo->Type != REG_SZ)
+    {
+        DPRINT1("IopProcessSetInterfaceState: ValueInfo->Type %X\n", ValueInfo->Type);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        Status = STATUS_INVALID_DEVICE_REQUEST;
+    }
+    else
+    {
+        PnpRegSzToString((PWCHAR)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset), ValueInfo->DataLength, &Length);
+
+        ValueName.Length = Length;
+        ValueName.MaximumLength = (USHORT)ValueInfo->DataLength;
+        ValueName.Buffer = (PWCHAR)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset);
+
+        DeviceObject = IopDeviceObjectFromDeviceInstance(&ValueName);
+        if (!DeviceObject)
+        {
+            DPRINT1("IopProcessSetInterfaceState: Value '%wZ'\n", &ValueName);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+        }
+        else
+        {
+            DPRINT("IopProcessSetInterfaceState: Value '%wZ'\n", &ValueName);
+
+            if (PdoNotStarted)
+            {
+                DeviceObjectExtension = IoGetDevObjExtension(DeviceObject);
+
+                if (DeviceObjectExtension->ExtensionFlags & DOE_START_PENDING)
+                {
+                    DeviceNode = DeviceObjectExtension->DeviceNode;
+
+                    if (Enable)
+                    {
+                        Status = PiDeferSetInterfaceState(DeviceNode, SymbolicLinkName);
+                        if (NT_SUCCESS(Status))
+                        {
+                            ExFreePool(ValueInfo);
+                            ObDereferenceObject(DeviceObject);
+                            Status = STATUS_SUCCESS;
+                            goto Exit2;
+                        }
+                    }
+                    else
+                    {
+                        PiRemoveDeferredSetInterfaceState(DeviceNode, SymbolicLinkName);
+                        ExFreePool(ValueInfo);
+                        ObDereferenceObject(DeviceObject);
+                        Status = STATUS_SUCCESS;
+                        goto Exit2;
+                    }
+                }
+            }
+
+            if (!Enable || !NT_SUCCESS(Status))
+                ObDereferenceObject(DeviceObject);
+        }
+    }
+
+    if (!Enable)
+        Status = STATUS_SUCCESS;
+
+    ExFreePool(ValueInfo);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopProcessSetInterfaceState: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        goto Exit2;
+    }
+
+    if (Enable)
+    {
+        ULONG BufferLength = 0x200;
+        ULONG size;
+
+        for (size = 0x200; ; size = BufferLength)
+        {
+            PropertyBuffer = ExAllocatePoolWithTag(PagedPool, size, '  pP');
+            if (!PropertyBuffer)
+            {
+                DPRINT1("IopProcessSetInterfaceState: STATUS_INSUFFICIENT_RESOURCES\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                break;
+            }
+
+            Status = IoGetDeviceProperty(DeviceObject,
+                                         DevicePropertyPhysicalDeviceObjectName,
+                                         BufferLength,
+                                         PropertyBuffer,
+                                         &BufferLength);
+            if (NT_SUCCESS(Status))
+                break;
+
+            ExFreePoolWithTag(PropertyBuffer, '  pP');
+
+            if (Status != STATUS_BUFFER_TOO_SMALL)
+                break;
+        }
+
+        ObDereferenceObject(DeviceObject);
+
+        if (!NT_SUCCESS(Status) || !BufferLength)
+        {
+            DPRINT1("IopProcessSetInterfaceState: Status %X\n", Status);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            goto Exit2;
+        }
+
+        RtlInitUnicodeString(&DestinationString, PropertyBuffer);
+    }
+
+    ValueInfo = NULL;
+
+    Status = IopGetRegistryValue(InstanceControlHandle, L"Linked", &ValueInfo);
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+    {
+        Linked = 0;
+    }
+    else if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopProcessSetInterfaceState: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        goto Exit3;
+    }
+    else if ((ValueInfo->Type != REG_DWORD) || (ValueInfo->DataLength != sizeof(ULONG)))
+    {
+        Linked = 0;
+    }
+    else
+    {
+        Linked = *(PULONG)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset);
+    }
+
+    if (ValueInfo)
+        ExFreePool(ValueInfo);
+
+    Status= IopGetRegistryValue(ParentControlHandle, L"ReferenceCount", &ValueInfo);
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+    {
+        ReferenceCount = 0;
+    }
+    else
+    {
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopProcessSetInterfaceState: Status %X\n", Status);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            goto Exit3;
+        }
+
+        if ((ValueInfo->Type != REG_DWORD) || (ValueInfo->DataLength != sizeof(ULONG)))
+            ReferenceCount = 0;
+        else
+            ReferenceCount = *(PULONG)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset);
+
+        ExFreePool(ValueInfo);
+    }
+
+    if (!Enable)
+    {
+        if (Linked)
+        {
+            if (ReferenceCount > 1)
+            {
+                ReferenceCount--;
+            }
+            else
+            {
+                ReferenceCount = 0;
+
+                Status = IoDeleteSymbolicLink(&GlobalSymbolicLink);
+                if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+                {
+                    DPRINT("IopProcessSetInterfaceState: STATUS_OBJECT_NAME_NOT_FOUND for '%ws' to delete!\n", GlobalSymbolicLink.Buffer);
+                    Status = STATUS_SUCCESS;
+                }
+            }
+
+            Linked = 0;
+        }
+        else
+        {
+            DPRINT("IopProcessSetInterfaceState: STATUS_OBJECT_NAME_NOT_FOUND\n");
+            Status = STATUS_OBJECT_NAME_NOT_FOUND;
+        }
+    }
+    else
+    {
+        if (Linked)
+        {
+            Status = STATUS_OBJECT_NAME_EXISTS;
+            goto Exit3;
+        }
+
+        if (ReferenceCount > 0)
+        {
+            ReferenceCount++;
+        }
+        else
+        {
+            ReferenceCount = 1;
+
+            Status = IoCreateSymbolicLink(&GlobalSymbolicLink, &DestinationString);
+            if (Status == STATUS_OBJECT_NAME_COLLISION)
+            {
+                DPRINT("IopProcessSetInterfaceState: STATUS_OBJECT_NAME_COLLISION. '%ws' already exists!\n", GlobalSymbolicLink.Buffer);
+                Status = STATUS_SUCCESS;
+            }
+        }
+
+        Linked = 1;
+    }
+
+    if (!NT_SUCCESS(Status))
+        goto Exit3;
+
+    ZwSetValueKey(InstanceControlHandle, &LinkedName, 0, REG_DWORD, &Linked, sizeof(Linked));
+    Status = ZwSetValueKey(ParentControlHandle, &ReferenceCountName, 0, REG_DWORD, &ReferenceCount, sizeof(ReferenceCount));
+
+    if (Linked)
+        PpSetDeviceClassChange(&GUID_DEVICE_INTERFACE_ARRIVAL, &DeviceGuid, SymbolicLinkName);
+    else
+        PpSetDeviceClassChange(&GUID_DEVICE_INTERFACE_REMOVAL, &DeviceGuid, SymbolicLinkName);
+
+Exit3:
+    if (PropertyBuffer)
+        ExFreePoolWithTag(PropertyBuffer, '  pP');
+
+Exit2:
+    if (ParentControlHandle)
+        ZwClose(ParentControlHandle);
+
+    if (InstanceControlHandle)
+        ZwClose(InstanceControlHandle);
+
+Exit1:
+    RtlFreeUnicodeString(&GlobalSymbolicLink);
+
+    if (InterfaceHandle)
+        ZwClose(InterfaceHandle);
+
+    if (InterfaceInstanceHandle)
+        ZwClose(InterfaceInstanceHandle);
+
+    if (InterfaceClassHandle)
+        ZwClose(InterfaceClassHandle);
+
+    if (NT_SUCCESS(Status))
+        return Status;
+
+Exit:
+    if (!Enable)
+        Status = STATUS_SUCCESS;
+
+    return Status;
+}
+
 /*++
  * @name IoSetDeviceInterfaceState
  * @implemented
@@ -1981,18 +2335,6 @@ IoSetDeviceInterfaceState(IN PUNICODE_STRING SymbolicLinkName,
     ObDereferenceObject(PhysicalDeviceObject);
     DPRINT("Status %x\n", Status);
     return STATUS_SUCCESS;
-}
-
-NTSTATUS
-NTAPI
-IopProcessSetInterfaceState(
-    _In_ PUNICODE_STRING SymbolicLinkName,
-    _In_ BOOLEAN Enable,
-    _In_ BOOLEAN PdoNotStarted)
-{
-    UNIMPLEMENTED;
-    ASSERT(FALSE);//IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
 }
 
 VOID
