@@ -11,7 +11,7 @@
 #include <ntoskrnl.h>
 #include "../pnpio.h"
 
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS ********************************************************************/
@@ -22,6 +22,21 @@ extern INTERFACE_TYPE PnpDefaultInterfaceType;
 extern ERESOURCE PpRegistryDeviceResource;
 
 /* FUNCTIONS ******************************************************************/
+
+BOOLEAN
+NTAPI
+PiCompareGuid(
+    _In_ CONST GUID* Guid1,
+    _In_ CONST GUID* Guid2)
+{
+    //PAGED_CODE();
+
+    if (Guid1 == Guid2)
+        return TRUE;
+
+    return RtlCompareMemory(Guid1, Guid2, sizeof(GUID)) == sizeof(GUID);
+}
+
 
 NTSTATUS
 NTAPI

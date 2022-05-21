@@ -1142,6 +1142,13 @@ IopFindLegacyBusDeviceNode(
 );
 
 /* pnputil.c */
+BOOLEAN
+NTAPI
+PiCompareGuid(
+    _In_ CONST GUID* Guid1,
+    _In_ CONST GUID* Guid2
+);
+
 NTSTATUS
 NTAPI
 PnpAllocateUnicodeString(
