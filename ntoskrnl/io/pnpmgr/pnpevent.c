@@ -9,15 +9,13 @@
 
 /* GLOBALS *******************************************************************/
 
+BOOLEAN PiNotificationInProgress = FALSE;
+
 extern PPNP_DEVICE_EVENT_LIST PpDeviceEventList;
 extern KGUARDED_MUTEX PiNotificationInProgressLock;
 
 extern KEVENT PiEventQueueEmpty;
 extern BOOLEAN PpPnpShuttingDown;
-
-/* DATA **********************************************************************/
-
-BOOLEAN PiNotificationInProgress = FALSE;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -32,8 +30,8 @@ PiAllocateCriticalMemory(
     PVOID Block;
     LARGE_INTEGER Interval;
 
+    DPRINT("PiAllocateCriticalMemory: DeleteType %X, NumberOfBytes %X\n", DeleteType, NumberOfBytes);
     PAGED_CODE();
-    DPRINT("PiAllocateCriticalMemory: DeleteType - %X, NumberOfBytes - %X\n", DeleteType, NumberOfBytes);
 
     ASSERT(KeGetCurrentIrql() != DISPATCH_LEVEL);
 
@@ -42,11 +40,9 @@ PiAllocateCriticalMemory(
         Block = ExAllocatePoolWithTag(PoolType, NumberOfBytes, Tag);
 
         if (Block || DeleteType == PipQueryRemove || DeleteType == PipEject)
-        {
             break;
-        }
 
-        Interval.QuadPart = -10000ll * 1; // 1 msec
+        Interval.QuadPart = (-10000ll * 1); // 1 msec
         KeDelayExecutionThread(KernelMode, FALSE, &Interval);
     }
 
@@ -59,8 +55,8 @@ PpCompleteDeviceEvent(
     _In_ PPNP_DEVICE_EVENT_ENTRY EventEntry,
     _In_ NTSTATUS Status)
 {
+    DPRINT("PpCompleteDeviceEvent: EventEntry %p, Status %X\n", EventEntry, Status);
     PAGED_CODE();
-    DPRINT("PpCompleteDeviceEvent: EventEntry - %p, Status - %X\n", EventEntry, Status);
 
     if (EventEntry->CallerEvent)
     {
@@ -76,9 +72,7 @@ PpCompleteDeviceEvent(
     }
 
     if (EventEntry->Data.DeviceObject)
-    {
         ObDereferenceObject(EventEntry->Data.DeviceObject);
-    }
 
     ExFreePoolWithTag(EventEntry, 'EEpP');
 }
@@ -86,11 +80,11 @@ PpCompleteDeviceEvent(
 BOOLEAN
 NTAPI
 IopNotifyPnpWhenChainDereferenced(
-    _In_ PDEVICE_OBJECT * RemovalDevices,
+    _In_ PDEVICE_OBJECT* RemovalDevices,
     _In_ ULONG DevicesCount,
     _In_ BOOLEAN IsQueryRemove,
     _In_ BOOLEAN IsAllowRunWorker,
-    _Out_ PDEVICE_OBJECT * OutDeviceObject)
+    _Out_ PDEVICE_OBJECT* OutDeviceObject)
 {
     UNIMPLEMENTED;
     ASSERT(FALSE); // IoDbgBreakPointEx();
@@ -100,7 +94,7 @@ IopNotifyPnpWhenChainDereferenced(
 NTSTATUS
 NTAPI
 PiProcessQueryRemoveAndEject(
-    _In_ PPNP_DEVICE_EVENT_ENTRY * pEventEntry)
+    _In_ PPNP_DEVICE_EVENT_ENTRY* pEventEntry)
 {
     UNIMPLEMENTED;
     ASSERT(FALSE); // IoDbgBreakPointEx();
@@ -110,13 +104,13 @@ PiProcessQueryRemoveAndEject(
 NTSTATUS
 NTAPI
 PiProcessTargetDeviceEvent(
-    _In_ PPNP_DEVICE_EVENT_ENTRY * pEventEntry)
+    _In_ PPNP_DEVICE_EVENT_ENTRY* pEventEntry)
 {
     PPNP_DEVICE_EVENT_ENTRY EventEntry;
     NTSTATUS Status = STATUS_SUCCESS;
 
     PAGED_CODE();
-    DPRINT("PiProcessTargetDeviceEvent: pEventEntry - %p, Status - %X\n", pEventEntry, Status);
+    DPRINT("PiProcessTargetDeviceEvent: pEventEntry %p, Status %X\n", pEventEntry, Status);
 
     EventEntry = *pEventEntry;
 
@@ -168,8 +162,8 @@ PiWalkDeviceList(
     PWORK_QUEUE_ITEM WorkItem = Context;
     NTSTATUS Status;
 
+    DPRINT("PiWalkDeviceList: WorkItem %p\n", WorkItem);
     PAGED_CODE();
-    DPRINT("PiWalkDeviceList: WorkItem - %p\n", WorkItem);
 
     Status = KeWaitForSingleObject(&PpDeviceEventList->EventQueueMutex,
                                    Executive,
@@ -178,7 +172,7 @@ PiWalkDeviceList(
                                    NULL);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("PiWalkDeviceList: Status - %X\n", Status);
+        DPRINT1("PiWalkDeviceList: Status %X\n", Status);
         KeAcquireGuardedMutex(&PiNotificationInProgressLock);
         KeSetEvent(&PiEventQueueEmpty, IO_NO_INCREMENT, FALSE);
         PiNotificationInProgress = FALSE;
@@ -200,8 +194,7 @@ PiWalkDeviceList(
                                        PNP_DEVICE_EVENT_ENTRY,
                                        ListEntry);
 
-        DPRINT("PiWalkDeviceList: EventEntry - %p, EventCategory - %X\n", EventEntry,
-               EventEntry->Data.EventCategory);
+        DPRINT("PiWalkDeviceList: EventEntry %p, EventCategory %X\n", EventEntry, EventEntry->Data.EventCategory);
 
         KeReleaseGuardedMutex(&PpDeviceEventList->Lock);
 
@@ -212,7 +205,7 @@ PiWalkDeviceList(
             DeviceNode = IopGetDeviceNode(EventEntry->Data.DeviceObject);
             if (!DeviceNode)
             {
-                DPRINT("PiWalkDeviceList: continue. STATUS_NO_SUCH_DEVICE\n");
+                DPRINT1("PiWalkDeviceList: continue. STATUS_NO_SUCH_DEVICE\n");
                 PpCompleteDeviceEvent(EventEntry, STATUS_NO_SUCH_DEVICE);
                 IopProcessDeferredRegistrations();
                 continue;
@@ -224,8 +217,7 @@ PiWalkDeviceList(
             case DeviceClassChangeEvent:
                 DPRINT("PiWalkDeviceList: DeviceClassChangeEvent - kernel notifying\n");
 
-                RtlInitUnicodeString(&SymbolicLinkName,
-                                     EventEntry->Data.DeviceClass.SymbolicLinkName);
+                RtlInitUnicodeString(&SymbolicLinkName, EventEntry->Data.DeviceClass.SymbolicLinkName);
 
                 IopNotifyDeviceClassChange(&EventEntry->Data,
                                            &EventEntry->Data.DeviceClass.ClassGuid,
@@ -237,8 +229,9 @@ PiWalkDeviceList(
                 break;
 
             case CustomDeviceEvent:
-                DPRINT("PiWalkDeviceList: FIXME CustomDeviceEvent()\n");
-                ASSERT(FALSE);
+                DPRINT1("PiWalkDeviceList: FIXME CustomDeviceEvent()\n");
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+                Status = STATUS_NOT_IMPLEMENTED;
                 break;
 
             case TargetDeviceChangeEvent:
@@ -246,25 +239,45 @@ PiWalkDeviceList(
                 break;
 
             case DeviceInstallEvent:
-                DPRINT("PiWalkDeviceList: FIXME DeviceInstallEvent\n");
-                ASSERT(FALSE);
+                DPRINT1("PiWalkDeviceList: FIXME DeviceInstallEvent - user-mode notifying\n");
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+                //PiNotifyUserMode(EventEntry);
+                Status = STATUS_SUCCESS;
                 break;
 
             case HardwareProfileChangeEvent:
-                DPRINT("PiWalkDeviceList: FIXME HardwareProfileChangeEvent\n");
-                ASSERT(FALSE);
+                DPRINT1("PiWalkDeviceList: FIXME HardwareProfileChangeEvent\n");
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+                //Status = PiNotifyUserMode(EventEntry);
                 break;
 
             case PowerEvent:
+                DPRINT1("PiWalkDeviceList: FIXME PowerEvent\n");
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+                //Status = PiNotifyUserMode(EventEntry);
+                break;
+
             case VetoEvent:
+                DPRINT1("PiWalkDeviceList: FIXME VetoEvent\n");
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+                //Status = PiNotifyUserMode(EventEntry);
+                break;
+
             case BlockedDriverEvent:
+                DPRINT1("PiWalkDeviceList: FIXME BlockedDriverEvent\n");
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+                //Status = PiNotifyUserMode(EventEntry);
+                break;
+
             case InvalidIDEvent:
-                ASSERT(FALSE);
+                DPRINT1("PiWalkDeviceList: FIXME InvalidIDEvent\n");
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+                //Status = PiNotifyUserMode(EventEntry);
                 break;
 
             default:
-                DPRINT("PiWalkDeviceList: EventEntry->Data.EventCategory - %X\n", EventEntry->Data.EventCategory);
-                ASSERT(FALSE);
+                DPRINT1("PiWalkDeviceList: Unknown EventCategory %X\n", EventEntry->Data.EventCategory);
+                ASSERT(FALSE); // IoDbgBreakPointEx();
                 Status = STATUS_UNSUCCESSFUL;
                 break;
         }
@@ -275,6 +288,7 @@ PiWalkDeviceList(
         }
         else
         {
+            DPRINT1("PiWalkDeviceList: Status %X\n", Status);
             ASSERT(FALSE);
         }
 
@@ -290,9 +304,7 @@ PiWalkDeviceList(
     KeReleaseGuardedMutex(&PpDeviceEventList->Lock);
 
     if (WorkItem)
-    {
         ExFreePoolWithTag(WorkItem, 'IWpP');
-    }
 
     KeReleaseMutex(&PpDeviceEventList->EventQueueMutex, FALSE);
 
@@ -307,15 +319,15 @@ PiInsertEventInQueue(
     NTSTATUS Status = STATUS_SUCCESS;
     PWORK_QUEUE_ITEM WorkItem = NULL;
 
+    DPRINT("PiInsertEventInQueue: EventEntry %p, EventCategory %X\n", EventEntry, EventEntry->Data.EventCategory);
     PAGED_CODE();
-    DPRINT("PiInsertEventInQueue: EventEntry - %p, EventCategory - %X\n", EventEntry, EventEntry->Data.EventCategory);
 
     KeAcquireGuardedMutex(&PpDeviceEventList->Lock);
     KeAcquireGuardedMutex(&PiNotificationInProgressLock);
 
     if (PiNotificationInProgress)
     {
-        DPRINT("PiInsertEventInQueue: PiNotificationInProgress - TRUE\n");
+        DPRINT("PiInsertEventInQueue: PiNotificationInProgress TRUE\n");
     }
     else
     {
@@ -327,7 +339,7 @@ PiInsertEventInQueue(
         }
         else
         {
-            DPRINT("PiInsertEventInQueue: STATUS_INSUFFICIENT_RESOURCES\n");
+            DPRINT1("PiInsertEventInQueue: STATUS_INSUFFICIENT_RESOURCES\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
         }
     }
@@ -337,17 +349,16 @@ PiInsertEventInQueue(
     KeReleaseGuardedMutex(&PiNotificationInProgressLock);
     KeReleaseGuardedMutex(&PpDeviceEventList->Lock);
 
-    if (WorkItem)
-    {
-        WorkItem->WorkerRoutine = PiWalkDeviceList;
-        WorkItem->Parameter = WorkItem;
-        WorkItem->List.Flink = NULL;
+    if (!WorkItem)
+        return Status;
 
-        ExQueueWorkItem(WorkItem, DelayedWorkQueue);
+    WorkItem->WorkerRoutine = PiWalkDeviceList;
+    WorkItem->Parameter = WorkItem;
+    WorkItem->List.Flink = NULL;
 
-        DPRINT("PiInsertEventInQueue: queue WorkItem - %X\n", WorkItem);
-    }
+    ExQueueWorkItem(WorkItem, DelayedWorkQueue);
 
+    DPRINT("PiInsertEventInQueue: queue WorkItem %X\n", WorkItem);
     return Status;
 }
 
@@ -382,30 +393,30 @@ PpSynchronizeDeviceEventQueue(VOID)
     EventEntry->Data.TotalSize = sizeof(EventEntry->Data);
 
     Status = PiInsertEventInQueue(EventEntry);
-
-    if (NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status))
     {
-        Status = KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        DPRINT1("PpSynchronizeDeviceEventQueue: return STATUS_NO_MEMORY\n");
+        return Status;
     }
 
-    return Status;
+    return KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
 }
 
 NTSTATUS
 NTAPI
 PpSetDeviceClassChange(
-    _In_ CONST GUID * EventGuid,
-    _In_ GUID * ClassGuid,
+    _In_ CONST GUID* EventGuid,
+    _In_ GUID* ClassGuid,
     _In_ PUNICODE_STRING SymbolicLinkName)
 {
-    NTSTATUS Status;
-    ULONG EventEntrySize;
     PPNP_DEVICE_EVENT_ENTRY EventEntry;
+    ULONG EventEntrySize;
     ULONG DataTotalSize;
     ULONG Length;
+    NTSTATUS Status;
 
     PAGED_CODE();
-    DPRINT("PpSetDeviceClassChange: SymbolicLinkName - %wZ\n", SymbolicLinkName);
+    DPRINT("PpSetDeviceClassChange: SymbolicLink '%wZ'\n", SymbolicLinkName);
 
     if (PpPnpShuttingDown)
     {
@@ -458,7 +469,7 @@ PpSetTargetDeviceRemove(
     _In_ BOOLEAN IsEjectRequest,
     _In_ ULONG Problem,
     _In_ PKEVENT SyncEvent,
-    _Out_ NTSTATUS * OutResult,
+    _Out_ NTSTATUS* OutResult,
     _In_ PPNP_VETO_TYPE VetoType,
     _In_ PUNICODE_STRING VetoName)
 {
@@ -470,8 +481,7 @@ PpSetTargetDeviceRemove(
     NTSTATUS Status;
 
     PAGED_CODE();
-    DPRINT("PpSetTargetDeviceRemove: DeviceObject - %p, IsRemove - %X, IsNoRestart - %X, RemoveNoRestart - %X, IsEjectRequest - %X, Problem - %X\n",
-           DeviceObject, IsRemove, IsNoRestart, RemoveNoRestart, IsEjectRequest, Problem);
+    DPRINT("PpSetTargetDeviceRemove: [%p] %X, %X, %X, %X, %X\n", DeviceObject, IsRemove, IsNoRestart, RemoveNoRestart, IsEjectRequest, Problem);
 
     ASSERT(DeviceObject != NULL);
 
@@ -483,22 +493,24 @@ PpSetTargetDeviceRemove(
 
     if (PpPnpShuttingDown)
     {
-        DPRINT("PpSetTargetDeviceRemove: return STATUS_TOO_LATE\n");
+        DPRINT1("PpSetTargetDeviceRemove: return STATUS_TOO_LATE\n");
         return STATUS_TOO_LATE;
     }
 
     ObReferenceObject(DeviceObject);
+
     DeviceNode = IopGetDeviceNode(DeviceObject);
     ASSERT(DeviceNode);
 
     InstanceLength = DeviceNode->InstancePath.Length;
-    TotalSize = sizeof(PLUGPLAY_EVENT_BLOCK) + InstanceLength + sizeof(WCHAR);
-    EventEntrySize = TotalSize + (sizeof(PNP_DEVICE_EVENT_ENTRY) - sizeof(PLUGPLAY_EVENT_BLOCK));
+    TotalSize = (sizeof(PLUGPLAY_EVENT_BLOCK) + InstanceLength + sizeof(WCHAR));
+
+    EventEntrySize = (TotalSize + (sizeof(PNP_DEVICE_EVENT_ENTRY) - sizeof(PLUGPLAY_EVENT_BLOCK)));
 
     EventEntry = ExAllocatePoolWithTag(PagedPool, EventEntrySize, 'EEpP');
     if (!EventEntry)
     {
-        DPRINT("PpSetTargetDeviceRemove: return STATUS_INSUFFICIENT_RESOURCES\n");
+        DPRINT1("PpSetTargetDeviceRemove: return STATUS_INSUFFICIENT_RESOURCES\n");
         ObDereferenceObject(DeviceObject);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -511,29 +523,19 @@ PpSetTargetDeviceRemove(
     EventEntry->VetoName = VetoName;
 
     if (IsEjectRequest)
-    {
-        RtlCopyMemory(&EventEntry->Data.EventGuid,
-                      &GUID_DEVICE_EJECT,
-                      sizeof(GUID));
-    }
+        RtlCopyMemory(&EventEntry->Data.EventGuid, &GUID_DEVICE_EJECT, sizeof(GUID));
     else
-    {
-        RtlCopyMemory(&EventEntry->Data.EventGuid,
-                      &GUID_DEVICE_QUERY_AND_REMOVE,
-                      sizeof(GUID));
-    }
+        RtlCopyMemory(&EventEntry->Data.EventGuid, &GUID_DEVICE_QUERY_AND_REMOVE, sizeof(GUID));
 
     EventEntry->Data.EventCategory = TargetDeviceChangeEvent;
     EventEntry->Data.Result = (PVOID)OutResult;
 
     if (IsNoRestart)
-    {
         EventEntry->Data.Flags |= 2;
-    }
+
     if (IsRemove)
-    {
         EventEntry->Data.Flags |= 4;
-    }
+
     if (RemoveNoRestart)
     {
         ASSERT(IsNoRestart == FALSE);
@@ -554,7 +556,7 @@ PpSetTargetDeviceRemove(
 
     Status = PiInsertEventInQueue(EventEntry);
 
-    DPRINT("PpSetTargetDeviceRemove: return Status - %p\n", Status);
+    DPRINT("PpSetTargetDeviceRemove: return %X\n", Status);
     return Status;
 }
 
