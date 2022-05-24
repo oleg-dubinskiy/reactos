@@ -11,7 +11,7 @@
 #include <ndk/rtlfuncs.h>
 #include "arbiter.h"
 
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS ********************************************************************/
