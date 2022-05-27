@@ -1982,6 +1982,54 @@ HalpNextDriveLetter(
     return 0;
 }
 
+NTSTATUS
+NTAPI
+HalpEnableAutomaticDriveLetterAssignment(
+    VOID)
+{
+    UNICODE_STRING MntMgrDeviceName;
+    PDEVICE_OBJECT DeviceObject;
+    PFILE_OBJECT FileObject;
+    IO_STATUS_BLOCK IoStatus;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    DPRINT("HalpEnableAutomaticDriveLetterAssignment()\n");
+
+    RtlInitUnicodeString(&MntMgrDeviceName, L"\\Device\\MountPointManager");
+
+    Status = IoGetDeviceObjectPointer(&MntMgrDeviceName, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpEnableAutomaticDriveLetterAssignment: Status %X\n", Status);
+        return Status;
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTMGR_AUTO_DL_ASSIGNMENTS,
+                                        DeviceObject,
+                                        NULL,
+                                        0UL,
+                                        NULL,
+                                        0UL,
+                                        FALSE,
+                                        &Event,
+                                        &IoStatus);
+    if (!Irp)
+    {
+        DPRINT1("HalpEnableAutomaticDriveLetterAssignment: Build failed\n");
+        goto Exit;
+    }
+
+    if (IoCallDriver(DeviceObject, Irp) == STATUS_PENDING)
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+Exit:
+    return ObDereferenceObject(FileObject);
+}
+
 VOID
 FASTCALL
 IoAssignDriveLetters(
