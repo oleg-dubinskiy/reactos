@@ -21,194 +21,185 @@
 
 NTSTATUS
 NTAPI
-HalpGetFullGeometry(IN PDEVICE_OBJECT DeviceObject,
-                    IN PDISK_GEOMETRY Geometry,
-                    OUT PULONGLONG RealSectorCount)
+HalpGetFullGeometry(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PDISK_GEOMETRY Geometry,
+    _Out_ PULONGLONG RealSectorCount)
 {
-    PIRP Irp;
+    PARTITION_INFORMATION PartitionInfo;
     IO_STATUS_BLOCK IoStatusBlock;
     PKEVENT Event;
+    PIRP Irp;
     NTSTATUS Status;
-    PARTITION_INFORMATION PartitionInfo;
+
     PAGED_CODE();
 
-    /* Allocate a non-paged event */
-    Event = ExAllocatePoolWithTag(NonPagedPool,
-                                     sizeof(KEVENT),
-                                     TAG_FILE_SYSTEM);
-    if (!Event) return STATUS_INSUFFICIENT_RESOURCES;
+    Event = ExAllocatePoolWithTag(NonPagedPool, sizeof(*Event), TAG_FILE_SYSTEM);
+    if (!Event)
+    {
+        DPRINT1("HalpGetFullGeometry: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
-    /* Initialize it */
     KeInitializeEvent(Event, NotificationEvent, FALSE);
 
     /* Build the IRP */
     Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_DRIVE_GEOMETRY,
-                                             DeviceObject,
-                                             NULL,
-                                             0UL,
-                                             Geometry,
-                                             sizeof(DISK_GEOMETRY),
-                                             FALSE,
-                                             Event,
-                                             &IoStatusBlock);
+                                        DeviceObject,
+                                        NULL,
+                                        0UL,
+                                        Geometry,
+                                        sizeof(*Geometry),
+                                        FALSE,
+                                        Event,
+                                        &IoStatusBlock);
     if (!Irp)
     {
-        /* Fail, free the event */
+        DPRINT1("HalpGetFullGeometry: STATUS_INSUFFICIENT_RESOURCES\n");
         ExFreePoolWithTag(Event, TAG_FILE_SYSTEM);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    /* Call the driver and check if it's pending */
     Status = IoCallDriver(DeviceObject, Irp);
     if (Status == STATUS_PENDING)
     {
-        /* Wait on the driver */
         KeWaitForSingleObject(Event, Executive, KernelMode, FALSE, NULL);
         Status = IoStatusBlock.Status;
     }
 
-    /* Check if the driver returned success */
-    if(NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status))
     {
-        /* Build another IRP */
-        Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_PARTITION_INFO,
-                                                 DeviceObject,
-                                                 NULL,
-                                                 0UL,
-                                                 &PartitionInfo,
-                                                 sizeof(PARTITION_INFORMATION),
-                                                 FALSE,
-                                                 Event,
-                                                 &IoStatusBlock);
-        if (!Irp)
-        {
-            /* Fail, free the event */
-            ExFreePoolWithTag(Event, TAG_FILE_SYSTEM);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        /* Reset event */
-        KeClearEvent(Event);
-
-        /* Call the driver and check if it's pending */
-        Status = IoCallDriver(DeviceObject, Irp);
-        if (Status == STATUS_PENDING)
-        {
-            /* Wait on the driver */
-            KeWaitForSingleObject(Event, Executive, KernelMode, FALSE, NULL);
-            Status = IoStatusBlock.Status;
-        }
-
-        /* Check if the driver returned success */
-        if(NT_SUCCESS(Status))
-        {
-            /* Get the number of sectors */
-            *RealSectorCount = (PartitionInfo.PartitionLength.QuadPart /
-                                Geometry->BytesPerSector);
-        }
+        DPRINT1("HalpGetFullGeometry: Status %X\n", Status);
+        goto Exit;
     }
 
-    /* Free the event and return the Status */
+    /* Build another IRP */
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_PARTITION_INFO,
+                                        DeviceObject,
+                                        NULL,
+                                        0UL,
+                                        &PartitionInfo,
+                                        sizeof(PartitionInfo),
+                                        FALSE,
+                                        Event,
+                                        &IoStatusBlock);
+    if (!Irp)
+    {
+        DPRINT1("HalpGetFullGeometry: STATUS_INSUFFICIENT_RESOURCES\n");
+        ExFreePoolWithTag(Event, TAG_FILE_SYSTEM);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Reset event */
+    KeClearEvent(Event);
+
+    Status = IoCallDriver(DeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatusBlock.Status;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpGetFullGeometry: Status %X\n", Status);
+        goto Exit;
+    }
+
+    /* Get the number of sectors */
+    *RealSectorCount = (PartitionInfo.PartitionLength.QuadPart / Geometry->BytesPerSector);
+
+Exit:
     ExFreePoolWithTag(Event, TAG_FILE_SYSTEM);
     return Status;
 }
 
 BOOLEAN
 NTAPI
-HalpIsValidPartitionEntry(IN PPARTITION_DESCRIPTOR Entry,
-                          IN ULONGLONG MaxOffset,
-                          IN ULONGLONG MaxSector)
+HalpIsValidPartitionEntry(
+    _In_ PPARTITION_DESCRIPTOR Entry,
+    _In_ ULONGLONG MaxOffset,
+    _In_ ULONGLONG MaxSector)
 {
     ULONGLONG EndingSector;
+
     PAGED_CODE();
 
     /* Unused partitions are considered valid */
-    if (Entry->PartitionType == PARTITION_ENTRY_UNUSED) return TRUE;
+    if (Entry->PartitionType == PARTITION_ENTRY_UNUSED)
+        return TRUE;
 
     /* Get the last sector of the partition */
-    EndingSector = GET_STARTING_SECTOR(Entry) +  GET_PARTITION_LENGTH(Entry);
+    EndingSector = (GET_STARTING_SECTOR(Entry) +  GET_PARTITION_LENGTH(Entry));
 
     /* Check if it's more then the maximum sector */
     if (EndingSector > MaxSector)
     {
-        /* Invalid partition */
-        DPRINT1("FSTUB: entry is invalid\n");
-        DPRINT1("FSTUB: offset %#08lx\n", GET_STARTING_SECTOR(Entry));
-        DPRINT1("FSTUB: length %#08lx\n", GET_PARTITION_LENGTH(Entry));
-        DPRINT1("FSTUB: end %#I64x\n", EndingSector);
-        DPRINT1("FSTUB: max %#I64x\n", MaxSector);
-        return FALSE;
-    }
-    else if(GET_STARTING_SECTOR(Entry) > MaxOffset)
-    {
-        /* Invalid partition */
-        DPRINT1("FSTUB: entry is invalid\n");
-        DPRINT1("FSTUB: offset %#08lx\n", GET_STARTING_SECTOR(Entry));
-        DPRINT1("FSTUB: length %#08lx\n", GET_PARTITION_LENGTH(Entry));
-        DPRINT1("FSTUB: end %#I64x\n", EndingSector);
-        DPRINT1("FSTUB: maxOffset %#I64x\n", MaxOffset);
-        return FALSE;
+        DPRINT1("HalpIsValidPartitionEntry: entry is invalid\n");
+        goto ErrorExit;
     }
 
-    /* It's fine, return success */
-    return TRUE;
+    if (GET_STARTING_SECTOR(Entry) <= MaxOffset)
+        return TRUE;
+
+    DPRINT1("HalpIsValidPartitionEntry: entry is invalid\n");
+
+ErrorExit:
+
+    DPRINT1("HalpIsValidPartitionEntry: offset %X, len %X, end %I64X, max %I64X\n",
+            GET_STARTING_SECTOR(Entry), GET_PARTITION_LENGTH(Entry), EndingSector, MaxSector);
+
+    return FALSE;
 }
 
 VOID
 NTAPI
-HalpCalculateChsValues(IN PLARGE_INTEGER PartitionOffset,
-                       IN PLARGE_INTEGER PartitionLength,
-                       IN CCHAR ShiftCount,
-                       IN ULONG SectorsPerTrack,
-                       IN ULONG NumberOfTracks,
-                       IN ULONG ConventionalCylinders,
-                       OUT PPARTITION_DESCRIPTOR PartitionDescriptor)
+HalpCalculateChsValues(
+    _In_ PLARGE_INTEGER PartitionOffset,
+    _In_ PLARGE_INTEGER PartitionLength,
+    _In_ CCHAR ShiftCount,
+    _In_ ULONG SectorsPerTrack,
+    _In_ ULONG NumberOfTracks,
+    _In_ ULONG ConventionalCylinders,
+    _Out_ PPARTITION_DESCRIPTOR PartitionDescriptor)
 {
     LARGE_INTEGER FirstSector, SectorCount;
     ULONG LastSector, Remainder, SectorsPerCylinder;
     ULONG StartingCylinder, EndingCylinder;
     ULONG StartingTrack, EndingTrack;
     ULONG StartingSector, EndingSector;
+
     PAGED_CODE();
 
     /* Calculate the number of sectors for each cylinder */
-    SectorsPerCylinder = SectorsPerTrack * NumberOfTracks;
+    SectorsPerCylinder = (SectorsPerTrack * NumberOfTracks);
 
-    /* Calculate the first sector, and the sector count */
-    FirstSector.QuadPart = PartitionOffset->QuadPart >> ShiftCount;
-    SectorCount.QuadPart = PartitionLength->QuadPart >> ShiftCount;
+    FirstSector.QuadPart = (PartitionOffset->QuadPart >> ShiftCount);
+    SectorCount.QuadPart = (PartitionLength->QuadPart >> ShiftCount);
 
-    /* Now calculate the last sector */
-    LastSector = FirstSector.LowPart + SectorCount.LowPart - 1;
+    LastSector = (FirstSector.LowPart + SectorCount.LowPart - 1);
 
-    /* Calculate the first and last cylinders */
-    StartingCylinder = FirstSector.LowPart / SectorsPerCylinder;
-    EndingCylinder = LastSector / SectorsPerCylinder;
+    StartingCylinder = (FirstSector.LowPart / SectorsPerCylinder);
+    EndingCylinder = (LastSector / SectorsPerCylinder);
 
-    /* Set the default number of cylinders */
-    if (!ConventionalCylinders) ConventionalCylinders = 1024;
+    if (!ConventionalCylinders)
+        ConventionalCylinders = 0x400;
 
-    /* Normalize the values */
     if (StartingCylinder >= ConventionalCylinders)
-    {
-        /* Set the maximum to 1023 */
-        StartingCylinder = ConventionalCylinders - 1;
-    }
+        StartingCylinder = (ConventionalCylinders - 1);
+
     if (EndingCylinder >= ConventionalCylinders)
-    {
-        /* Set the maximum to 1023 */
-        EndingCylinder = ConventionalCylinders - 1;
-    }
+        EndingCylinder = (ConventionalCylinders - 1);
 
     /* Calculate the starting head and sector that still remain */
-    Remainder = FirstSector.LowPart % SectorsPerCylinder;
-    StartingTrack = Remainder / SectorsPerTrack;
-    StartingSector = Remainder % SectorsPerTrack;
+    Remainder = (FirstSector.LowPart % SectorsPerCylinder);
+    StartingTrack = (Remainder / SectorsPerTrack);
+    StartingSector = (Remainder % SectorsPerTrack);
 
     /* Calculate the ending head and sector that still remain */
-    Remainder = LastSector % SectorsPerCylinder;
-    EndingTrack = Remainder / SectorsPerTrack;
-    EndingSector = Remainder % SectorsPerTrack;
+    Remainder = (LastSector % SectorsPerCylinder);
+    EndingTrack = (Remainder / SectorsPerTrack);
+    EndingSector = (Remainder % SectorsPerTrack);
 
     /* Set cylinder data for the MSB */
     PartitionDescriptor->StartingCylinderMsb = (UCHAR)StartingCylinder;
@@ -219,10 +210,8 @@ HalpCalculateChsValues(IN PLARGE_INTEGER PartitionOffset,
     PartitionDescriptor->EndingTrack = (UCHAR)EndingTrack;
 
     /* Update cylinder data for the LSB */
-    StartingCylinder = ((StartingSector + 1) & 0x3F) |
-                       ((StartingCylinder >> 2) & 0xC0);
-    EndingCylinder = ((EndingSector + 1) & 0x3F) |
-                     ((EndingCylinder >> 2) & 0xC0);
+    StartingCylinder = (((StartingSector + 1) & 0x3F) | ((StartingCylinder >> 2) & 0xC0));
+    EndingCylinder = (((EndingSector + 1) & 0x3F) | ((EndingCylinder >> 2) & 0xC0));
 
     /* Set the cylinder data for the LSB */
     PartitionDescriptor->StartingCylinderLsb = (UCHAR)StartingCylinder;
@@ -231,9 +220,10 @@ HalpCalculateChsValues(IN PLARGE_INTEGER PartitionOffset,
 
 VOID
 FASTCALL
-xHalGetPartialGeometry(IN PDEVICE_OBJECT DeviceObject,
-                       IN PULONG ConventionalCylinders,
-                       IN PLONGLONG DiskSize)
+xHalGetPartialGeometry(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PULONG ConventionalCylinders,
+    _In_ PLONGLONG DiskSize)
 {
     PDISK_GEOMETRY DiskGeometry = NULL;
     PIO_STATUS_BLOCK IoStatusBlock = NULL;
@@ -241,90 +231,100 @@ xHalGetPartialGeometry(IN PDEVICE_OBJECT DeviceObject,
     PIRP Irp;
     NTSTATUS Status;
 
-    /* Set defaults */
     *ConventionalCylinders = 0;
     *DiskSize = 0;
 
-    /* Allocate the structure in nonpaged pool */
-    DiskGeometry = ExAllocatePoolWithTag(NonPagedPool,
-                                         sizeof(DISK_GEOMETRY),
-                                         TAG_FILE_SYSTEM);
-    if (!DiskGeometry) goto Cleanup;
+    DiskGeometry = ExAllocatePoolWithTag(NonPagedPool, sizeof(*DiskGeometry), TAG_FILE_SYSTEM);
+    if (!DiskGeometry)
+    {
+        DPRINT1("xHalGetPartialGeometry: Allocate failed\n");
+        goto Cleanup;
+    }
 
-    /* Allocate the status block in nonpaged pool */
-    IoStatusBlock = ExAllocatePoolWithTag(NonPagedPool,
-                                          sizeof(IO_STATUS_BLOCK),
-                                          TAG_FILE_SYSTEM);
-    if (!IoStatusBlock) goto Cleanup;
+    IoStatusBlock = ExAllocatePoolWithTag(NonPagedPool, sizeof(*IoStatusBlock), TAG_FILE_SYSTEM);
+    if (!IoStatusBlock)
+    {
+        DPRINT1("xHalGetPartialGeometry: Allocate failed\n");
+        goto Cleanup;
+    }
 
-    /* Allocate the event in nonpaged pool too */
-    Event = ExAllocatePoolWithTag(NonPagedPool,
-                                  sizeof(KEVENT),
-                                  TAG_FILE_SYSTEM);
-    if (!Event) goto Cleanup;
+    Event = ExAllocatePoolWithTag(NonPagedPool, sizeof(*Event), TAG_FILE_SYSTEM);
+    if (!Event)
+    {
+        DPRINT1("xHalGetPartialGeometry: Allocate failed\n");
+        goto Cleanup;
+    }
 
-    /* Initialize the event */
     KeInitializeEvent(Event, NotificationEvent, FALSE);
 
-    /* Build the IRP */
     Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_DRIVE_GEOMETRY,
                                         DeviceObject,
                                         NULL,
                                         0,
                                         DiskGeometry,
-                                        sizeof(DISK_GEOMETRY),
+                                        sizeof(*DiskGeometry),
                                         FALSE,
                                         Event,
                                         IoStatusBlock);
-    if (!Irp) goto Cleanup;
+    if (!Irp)
+    {
+        DPRINT1("xHalGetPartialGeometry: Build failed\n");
+        goto Cleanup;
+    }
 
-    /* Now call the driver */
     Status = IoCallDriver(DeviceObject, Irp);
     if (Status == STATUS_PENDING)
     {
-        /* Wait for it to complete */
         KeWaitForSingleObject(Event, Executive, KernelMode, FALSE, NULL);
         Status = IoStatusBlock->Status;
     }
 
-    /* Check driver status */
-    if (NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status))
     {
-        /* Return the cylinder count */
-        *ConventionalCylinders = DiskGeometry->Cylinders.LowPart;
-
-        /* Make sure it's not larger then 1024 */
-        if (DiskGeometry->Cylinders.LowPart >= 1024)
-        {
-            /* Otherwise, normalize the value */
-            *ConventionalCylinders = 1024;
-        }
-
-        /* Calculate the disk size */
-        *DiskSize = DiskGeometry->Cylinders.QuadPart *
-                    DiskGeometry->TracksPerCylinder *
-                    DiskGeometry->SectorsPerTrack *
-                    DiskGeometry->BytesPerSector;
+        DPRINT1("xHalGetPartialGeometry: Status %X\n", Status);
+        goto Cleanup;
     }
 
+    /* Return the cylinder count */
+    *ConventionalCylinders = DiskGeometry->Cylinders.LowPart;
+
+    if (DiskGeometry->Cylinders.LowPart >= 0x400)
+        *ConventionalCylinders = 0x400;
+
+    /* Calculate the disk size */
+    *DiskSize = DiskGeometry->Cylinders.QuadPart *
+                DiskGeometry->TracksPerCylinder *
+                DiskGeometry->SectorsPerTrack *
+                DiskGeometry->BytesPerSector;
+
 Cleanup:
-    /* Free all the pointers */
-    if (Event) ExFreePoolWithTag(Event, TAG_FILE_SYSTEM);
-    if (IoStatusBlock) ExFreePoolWithTag(IoStatusBlock, TAG_FILE_SYSTEM);
-    if (DiskGeometry) ExFreePoolWithTag(DiskGeometry, TAG_FILE_SYSTEM);
+
+    if (Event)
+        ExFreePoolWithTag(Event, TAG_FILE_SYSTEM);
+
+    if (IoStatusBlock)
+        ExFreePoolWithTag(IoStatusBlock, TAG_FILE_SYSTEM);
+
+    if (DiskGeometry)
+        ExFreePoolWithTag(DiskGeometry, TAG_FILE_SYSTEM);
+
     return;
 }
 
 VOID
 NTAPI
-FstubFixupEfiPartition(IN PPARTITION_DESCRIPTOR PartitionDescriptor,
-                       IN ULONGLONG MaxOffset)
+FstubFixupEfiPartition(
+    _In_ PPARTITION_DESCRIPTOR PartitionDescriptor,
+    _In_ ULONGLONG MaxOffset)
 {
-    ULONG PartitionMaxOffset, PartitionLength;
+    ULONG PartitionMaxOffset;
+    ULONG PartitionLength;
+
     PAGED_CODE();
 
     /* Compute partition length (according to MBR entry) */
-    PartitionMaxOffset = GET_STARTING_SECTOR(PartitionDescriptor) + GET_PARTITION_LENGTH(PartitionDescriptor);
+    PartitionMaxOffset = (GET_STARTING_SECTOR(PartitionDescriptor) + GET_PARTITION_LENGTH(PartitionDescriptor));
+
     /* In case the partition length goes beyond disk size... */
     if (PartitionMaxOffset > MaxOffset)
     {
