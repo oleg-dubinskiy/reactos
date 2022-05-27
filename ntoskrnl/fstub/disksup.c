@@ -1696,6 +1696,98 @@ Exit:
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+HalpNextMountLetter(
+    _In_ PCUNICODE_STRING PartitionName,
+    _In_ PCHAR NextLetter)
+{
+    PMOUNTMGR_DRIVE_LETTER_TARGET DriveLetterTarget;
+    MOUNTMGR_DRIVE_LETTER_INFORMATION OutputBuffer;
+    UNICODE_STRING MntMgrDeviceName;
+    PDEVICE_OBJECT DeviceObject;
+    IO_STATUS_BLOCK IoStatus;
+    PFILE_OBJECT FileObject;
+    KEVENT Event;
+    PIRP Irp;
+    ULONG DriveLetterTargetSize;
+    NTSTATUS Status;
+
+    DPRINT("HalpNextMountLetter: Partition '%wZ'\n", PartitionName);
+
+    RtlInitUnicodeString(&MntMgrDeviceName, L"\\Device\\MountPointManager");
+
+    Status = IoGetDeviceObjectPointer(&MntMgrDeviceName, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpNextMountLetter: return Status %X\n", Status);
+        return Status;
+    }
+
+    DriveLetterTarget = ExAllocatePoolWithTag(PagedPool, (PartitionName->Length + 4), 'btsF');
+    if (!DriveLetterTarget)
+    {
+        DPRINT1("HalpNextMountLetter: STATUS_INSUFFICIENT_RESOURCES\n");
+        ObDereferenceObject(FileObject);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    DriveLetterTarget->DeviceNameLength = PartitionName->Length;
+
+    RtlCopyMemory(DriveLetterTarget->DeviceName, PartitionName->Buffer, PartitionName->Length);
+
+    DriveLetterTargetSize = (PartitionName->Length + 4);
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+    RtlZeroMemory(&OutputBuffer, sizeof(OutputBuffer));
+
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTMGR_NEXT_DRIVE_LETTER,
+                                        DeviceObject,
+                                        DriveLetterTarget,
+                                        DriveLetterTargetSize,
+                                        &OutputBuffer,
+                                        sizeof(OutputBuffer),
+                                        FALSE,
+                                        &Event,
+                                        &IoStatus);
+    if (!Irp)
+    {
+        DPRINT1("HalpNextMountLetter: STATUS_INSUFFICIENT_RESOURCES\n");
+        ExFreePoolWithTag(DriveLetterTarget, 'btsF');
+        ObDereferenceObject(FileObject);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = IoCallDriver(DeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatus.Status;
+        DPRINT("HalpNextMountLetter: IoStatus.Status %X\n", Status);
+    }
+    else if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpNextMountLetter: Status %X\n", Status);
+    }
+
+    ExFreePoolWithTag(DriveLetterTarget, 'btsF');
+    ObDereferenceObject(FileObject);
+
+    *NextLetter = OutputBuffer.CurrentDriveLetter;
+
+ #if DBG
+    if (OutputBuffer.DriveLetterWasAssigned)
+    {
+        DPRINT("HalpNextMountLetter: NextLetter %C, ret %X\n", *NextLetter, Status);
+    }
+    else
+    {
+        DPRINT1("HalpNextMountLetter: DriveLetterWasAssigned is FALSE for '%wZ'\n", PartitionName);
+    }
+ #endif
+
+    return Status;
+}
 VOID
 FASTCALL
 IoAssignDriveLetters(
