@@ -255,6 +255,243 @@ Exit:
 }
 
 VOID
+NTAPI
+IopNotifyDeviceClassChange(
+    _In_ PPLUGPLAY_EVENT_BLOCK EventBlock,
+    _In_ GUID* ClassGuid,
+    _In_ PUNICODE_STRING SymbolicLinkName)
+{
+    DEVICE_INTERFACE_CHANGE_NOTIFICATION InterfaceNotification;
+    PDEVICE_INTERFACE_NOTIFY Notify;
+    PLIST_ENTRY Head;
+    PLIST_ENTRY Entry;
+    NTSTATUS CallbackStatus;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("IopNotifyDeviceClassChange: EventBlock %p, SymbolicLink '%wZ'\n", EventBlock, SymbolicLinkName);
+
+    InterfaceNotification.Version = 1;
+    InterfaceNotification.Size = sizeof(InterfaceNotification);
+    InterfaceNotification.Event = EventBlock->EventGuid;
+    InterfaceNotification.InterfaceClassGuid = *ClassGuid;
+    InterfaceNotification.SymbolicLinkName = SymbolicLinkName;
+
+    KeAcquireGuardedMutex(&IopDeviceClassNotifyLock);
+
+    Head = &IopDeviceClassNotifyList[HashGuid(ClassGuid)];
+
+    for (Entry = Head->Flink; (Entry != Head); Entry = Entry->Flink)
+    {
+        Notify = CONTAINING_RECORD(Entry, DEVICE_INTERFACE_NOTIFY, Header.Link);
+
+        if (Notify->Header.Unregistered)
+            continue;
+
+        if (!PiCompareGuid(&(Notify->Interface), ClassGuid))
+            continue;
+
+        IopReferenceNotify(&Notify->Header);
+        KeReleaseGuardedMutex(&IopDeviceClassNotifyLock);
+
+        Status = PiNotifyDriverCallback(Notify->Header.PnpNotificationRoutine,
+                                        &InterfaceNotification,
+                                        Notify->Header.Context,
+                                        Notify->Header.SessionId,
+                                        Notify->Header.OpaqueSession,
+                                        &CallbackStatus);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopNotifyDeviceClassChange: Status %X\n", Status);
+            ASSERT(NT_SUCCESS(Status));
+        }
+
+        KeAcquireGuardedMutex(&IopDeviceClassNotifyLock);
+        IopDereferenceNotify(&Notify->Header);
+    }
+
+    KeReleaseGuardedMutex(&IopDeviceClassNotifyLock);
+}
+
+NTSTATUS
+NTAPI
+IopNotifyTargetDeviceChange(
+    _In_ GUID* EventGuid,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PTARGET_DEVICE_CUSTOM_NOTIFICATION CustomStructure,
+    _Out_ PDRIVER_OBJECT* OutDriverObject)
+{
+    TARGET_DEVICE_REMOVAL_NOTIFICATION TargetRemoval;
+    PTARGET_DEVICE_NOTIFY Notification;
+    PTARGET_DEVICE_NOTIFY notification;
+    PVOID NotificationStructure;
+    PDEVICE_NODE DeviceNode;
+    PLIST_ENTRY Entry;
+    BOOLEAN IsCancelled;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    ASSERT(DeviceObject != NULL);
+    ASSERT(EventGuid != NULL);
+
+    ObReferenceObject(DeviceObject);
+
+    DeviceNode = IopGetDeviceNode(DeviceObject);
+    ASSERT(DeviceNode != NULL);
+
+    if (CustomStructure)
+    {
+        CustomStructure->Version = 1;
+    }
+    else
+    {
+        TargetRemoval.Version = 1;
+        TargetRemoval.Size = sizeof(TargetRemoval);
+        TargetRemoval.Event = *EventGuid;
+    }
+
+    KeAcquireGuardedMutex(&IopTargetDeviceNotifyLock);
+
+    IsCancelled = RtlCompareMemory(EventGuid, &GUID_TARGET_DEVICE_REMOVE_CANCELLED, sizeof(GUID)) == sizeof(GUID);
+
+    if (IsCancelled)
+        Entry = DeviceNode->TargetDeviceNotify.Blink;
+    else
+        Entry = DeviceNode->TargetDeviceNotify.Flink;
+
+    while (Entry != &DeviceNode->TargetDeviceNotify)
+    {
+        NTSTATUS status;
+
+        Notification = CONTAINING_RECORD(Entry, TARGET_DEVICE_NOTIFY, Header.Link);
+        DPRINT("IopNotifyTargetDeviceChange: DeviceObject %p, Notification %p\n", DeviceObject, Notification);
+
+        if (Notification->Header.Unregistered)
+        {
+            if (IsCancelled)
+                Entry = Entry->Blink;
+            else
+                Entry = Entry->Flink;
+
+            continue;
+        }
+
+        IopReferenceNotify(&Notification->Header);
+        KeReleaseGuardedMutex(&IopTargetDeviceNotifyLock);
+
+        if (CustomStructure)
+        {
+            CustomStructure->FileObject = Notification->FileObject;
+            NotificationStructure = CustomStructure;
+        }
+        else
+        {
+            TargetRemoval.FileObject = Notification->FileObject;
+            NotificationStructure = &TargetRemoval;
+        }
+
+        DPRINT("IopNotifyTargetDeviceChange: Callback %p\n", Notification->Header.PnpNotificationRoutine);
+        status = PiNotifyDriverCallback(Notification->Header.PnpNotificationRoutine,
+                                        NotificationStructure,
+                                        Notification->Header.Context,
+                                        Notification->Header.SessionId,
+                                        Notification->Header.OpaqueSession,
+                                        &Status);
+        if (!NT_SUCCESS(status))
+        {
+            DPRINT1("IopNotifyTargetDeviceChange: status %X\n", status);
+            ASSERT(NT_SUCCESS(status));
+            Status = STATUS_SUCCESS;
+        }
+
+        if (NT_SUCCESS(Status))
+            goto Next;
+
+        /* PiNotifyDriverCallback() return unsuccessful Status */
+        DPRINT1("IopNotifyTargetDeviceChange: Status %X\n", Status);
+
+        if (RtlCompareMemory(EventGuid, &GUID_TARGET_DEVICE_QUERY_REMOVE, 0x10) != 0x10)
+        {
+            ASSERT(Notification == (PVOID)CustomStructure);
+
+            DPRINT1("IopNotifyTargetDeviceChange: Driver '%wZ', PnpNotificationRoutine %p\n", &Notification->Header.DriverObject->DriverName, Notification->Header.PnpNotificationRoutine);
+            DPRINT1("IopNotifyTargetDeviceChange: Failed!!! Notification %p Status %X\n", Notification, Status);
+
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            goto Next;
+        }
+
+        ASSERT(Notification == (PVOID)&TargetRemoval);
+
+        if (OutDriverObject)
+            *OutDriverObject = Notification->Header.DriverObject;
+
+        TargetRemoval.Event = GUID_TARGET_DEVICE_REMOVE_CANCELLED;
+        notification = Notification;
+
+        KeAcquireGuardedMutex(&IopTargetDeviceNotifyLock);
+
+        do
+        {
+            Notification = CONTAINING_RECORD(Entry, TARGET_DEVICE_NOTIFY, Header.Link);
+
+            if (Notification->Header.Unregistered)
+            {
+                Entry = Entry->Blink;
+ 
+               if (Notification == notification)
+                    IopDereferenceNotify(&notification->Header);
+
+                continue;
+            }
+
+            IopReferenceNotify(&Notification->Header);
+            KeReleaseGuardedMutex(&IopTargetDeviceNotifyLock);
+
+            TargetRemoval.FileObject = Notification->FileObject;
+
+            status = PiNotifyDriverCallback(Notification->Header.PnpNotificationRoutine,
+                                            &TargetRemoval,
+                                            Notification->Header.Context,
+                                            Notification->Header.SessionId,
+                                            Notification->Header.OpaqueSession,
+                                            NULL);
+            ASSERT(NT_SUCCESS(status));
+            KeAcquireGuardedMutex(&IopTargetDeviceNotifyLock);
+
+            Entry = Entry->Blink;
+
+            IopDereferenceNotify(&Notification->Header);
+
+            if (Notification == notification)
+                IopDereferenceNotify(&notification->Header);
+
+        }
+        while (Entry != &DeviceNode->TargetDeviceNotify);
+
+        goto Exit;
+
+Next:
+        KeAcquireGuardedMutex(&IopTargetDeviceNotifyLock);
+
+        if (IsCancelled)
+            Entry = Entry->Blink;
+        else
+            Entry = Entry->Flink;
+
+        IopDereferenceNotify(&Notification->Header);
+    }
+
+    Status = STATUS_SUCCESS;
+
+Exit:
+    KeReleaseGuardedMutex(&IopTargetDeviceNotifyLock);
+    ObDereferenceObject(DeviceObject);
+    return Status;
+}
+
+VOID
 IopNotifyPlugPlayNotification(
     IN PDEVICE_OBJECT DeviceObject,
     IN IO_NOTIFICATION_EVENT_CATEGORY EventCategory,
@@ -624,65 +861,6 @@ PiNotifyDriverCallback(
     UNIMPLEMENTED;
     ASSERT(FALSE); // IoDbgBreakPointEx();
     return STATUS_NOT_IMPLEMENTED;
-}
-
-VOID
-NTAPI
-IopNotifyDeviceClassChange(
-    _In_ PPLUGPLAY_EVENT_BLOCK EventBlock,
-    _In_ GUID* ClassGuid,
-    _In_ PUNICODE_STRING SymbolicLinkName)
-{
-    DEVICE_INTERFACE_CHANGE_NOTIFICATION InterfaceNotification;
-    PDEVICE_INTERFACE_NOTIFY Notify;
-    PLIST_ENTRY Head;
-    PLIST_ENTRY Entry;
-    NTSTATUS CallbackStatus;
-    NTSTATUS Status;
-
-    PAGED_CODE();
-    DPRINT("IopNotifyDeviceClassChange: EventBlock %p, SymbolicLink '%wZ'\n", EventBlock, SymbolicLinkName);
-
-    InterfaceNotification.Version = 1;
-    InterfaceNotification.Size = sizeof(InterfaceNotification);
-    InterfaceNotification.Event = EventBlock->EventGuid;
-    InterfaceNotification.InterfaceClassGuid = *ClassGuid;
-    InterfaceNotification.SymbolicLinkName = SymbolicLinkName;
-
-    KeAcquireGuardedMutex(&IopDeviceClassNotifyLock);
-
-    Head = &IopDeviceClassNotifyList[HashGuid(ClassGuid)];
-
-    for (Entry = Head->Flink; (Entry != Head); Entry = Entry->Flink)
-    {
-        Notify = CONTAINING_RECORD(Entry, DEVICE_INTERFACE_NOTIFY, Header.Link);
-
-        if (Notify->Header.Unregistered)
-            continue;
-
-        if (!PiCompareGuid(&(Notify->Interface), ClassGuid))
-            continue;
-
-        IopReferenceNotify(&Notify->Header);
-        KeReleaseGuardedMutex(&IopDeviceClassNotifyLock);
-
-        Status = PiNotifyDriverCallback(Notify->Header.PnpNotificationRoutine,
-                                        &InterfaceNotification,
-                                        Notify->Header.Context,
-                                        Notify->Header.SessionId,
-                                        Notify->Header.OpaqueSession,
-                                        &CallbackStatus);
-        if (!NT_SUCCESS(Status))
-        {
-            DPRINT1("IopNotifyDeviceClassChange: Status %X\n", Status);
-            ASSERT(NT_SUCCESS(Status));
-        }
-
-        KeAcquireGuardedMutex(&IopDeviceClassNotifyLock);
-        IopDereferenceNotify(&Notify->Header);
-    }
-
-    KeReleaseGuardedMutex(&IopDeviceClassNotifyLock);
 }
 
 VOID
