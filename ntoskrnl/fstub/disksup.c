@@ -1260,295 +1260,6 @@ FstubFixupEfiPartition(IN PPARTITION_DESCRIPTOR PartitionDescriptor,
     }
 }
 
-NTSTATUS
-FASTCALL
-xHalIoWritePartitionTable(IN PDEVICE_OBJECT DeviceObject,
-                          IN ULONG SectorSize,
-                          IN ULONG SectorsPerTrack,
-                          IN ULONG NumberOfHeads,
-                          IN PDRIVE_LAYOUT_INFORMATION PartitionBuffer)
-{
-    KEVENT Event;
-    IO_STATUS_BLOCK IoStatusBlock;
-    PIRP Irp;
-    NTSTATUS Status = STATUS_SUCCESS;
-    ULONG BufferSize;
-    PUSHORT Buffer;
-    PPTE Entry;
-    PPARTITION_TABLE PartitionTable;
-    LARGE_INTEGER Offset, NextOffset, ExtendedOffset, SectorOffset;
-    LARGE_INTEGER StartOffset, PartitionLength;
-    ULONG i, j;
-    CCHAR k;
-    BOOLEAN IsEzDrive = FALSE, IsSuperFloppy = FALSE, DoRewrite = FALSE, IsMbr;
-    ULONG ConventionalCylinders;
-    LONGLONG DiskSize;
-    PDISK_LAYOUT DiskLayout = (PDISK_LAYOUT)PartitionBuffer;
-    PVOID MbrBuffer;
-    UCHAR PartitionType;
-    PIO_STACK_LOCATION IoStackLocation;
-    PPARTITION_INFORMATION PartitionInfo = PartitionBuffer->PartitionEntry;
-    PPARTITION_INFORMATION TableEntry;
-    ExtendedOffset.QuadPart = NextOffset.QuadPart = Offset.QuadPart = 0;
-    PAGED_CODE();
-
-    /* Normalize the buffer size */
-    BufferSize = max(512, SectorSize);
-
-    /* Get the partial drive geometry */
-    xHalGetPartialGeometry(DeviceObject, &ConventionalCylinders, &DiskSize);
-
-    /* Check for EZ Drive */
-    HalExamineMBR(DeviceObject, BufferSize, 0x55, &MbrBuffer);
-    if (MbrBuffer)
-    {
-        /* EZ Drive found, bias the offset */
-        IsEzDrive = TRUE;
-        ExFreePoolWithTag(MbrBuffer, TAG_FILE_SYSTEM);
-        Offset.QuadPart = 512;
-    }
-
-    /* Get the number of bits to shift to multiply by the sector size */
-    for (k = 0; k < 32; k++) if ((SectorSize >> k) == 1) break;
-
-    /* Check if there's only one partition */
-    if (PartitionBuffer->PartitionCount == 1)
-    {
-        /* Check if it has no starting offset or hidden sectors */
-        if (!(PartitionInfo->StartingOffset.QuadPart) &&
-            !(PartitionInfo->HiddenSectors))
-        {
-            /* Then it's a super floppy */
-            IsSuperFloppy = TRUE;
-
-            /* Which also means it must be non-bootable FAT-16 */
-            if ((PartitionInfo->PartitionNumber) ||
-                (PartitionInfo->PartitionType != PARTITION_FAT_16) ||
-                (PartitionInfo->BootIndicator))
-            {
-                /* It's not, so we fail */
-                return STATUS_INVALID_PARAMETER;
-            }
-
-            /* Check if it needs a rewrite, and disable EZ drive for sure */
-            if (PartitionInfo->RewritePartition) DoRewrite = TRUE;
-            IsEzDrive = FALSE;
-        }
-    }
-
-    /* Count the number of partition tables */
-    DiskLayout->TableCount = (PartitionBuffer->PartitionCount + 4 - 1) / 4;
-
-    /* Allocate our partition buffer */
-    Buffer = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, TAG_FILE_SYSTEM);
-    if (!Buffer) return STATUS_INSUFFICIENT_RESOURCES;
-
-    /* Loop the entries */
-    Entry = (PPTE)&Buffer[PARTITION_TABLE_OFFSET];
-    for (i = 0; i < DiskLayout->TableCount; i++)
-    {
-        /* Set if this is the MBR partition */
-        IsMbr= (BOOLEAN)!i;
-
-        /* Initialize th event */
-        KeInitializeEvent(&Event, NotificationEvent, FALSE);
-
-        /* Build the read IRP */
-        Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ,
-                                           DeviceObject,
-                                           Buffer,
-                                           BufferSize,
-                                           &Offset,
-                                           &Event,
-                                           &IoStatusBlock);
-        if (!Irp)
-        {
-            /* Fail */
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            break;
-        }
-
-        /* Make sure to disable volume verification */
-        IoStackLocation = IoGetNextIrpStackLocation(Irp);
-        IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
-
-        /* Call the driver */
-        Status = IoCallDriver(DeviceObject, Irp);
-        if (Status == STATUS_PENDING)
-        {
-            /* Wait for completion */
-            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
-            Status = IoStatusBlock.Status;
-        }
-
-        /* Check for failure */
-        if (!NT_SUCCESS(Status)) break;
-
-        /* If we biased for EZ-Drive, unbias now */
-        if (IsEzDrive && (Offset.QuadPart == 512)) Offset.QuadPart = 0;
-
-        /* Check if this is a normal disk */
-        if (!IsSuperFloppy)
-        {
-            /* Set the boot record signature */
-            Buffer[BOOT_SIGNATURE_OFFSET] = BOOT_RECORD_SIGNATURE;
-
-            /* By default, don't require a rewrite */
-            DoRewrite = FALSE;
-
-            /* Check if we don't have an offset */
-            if (!Offset.QuadPart)
-            {
-                /* Check if the signature doesn't match */
-                if (((PULONG)Buffer)[PARTITION_TABLE_OFFSET / 2 - 1] !=
-                    PartitionBuffer->Signature)
-                {
-                    /* Then write the signature and now we need a rewrite */
-                    ((PULONG)Buffer)[PARTITION_TABLE_OFFSET / 2 - 1] =
-                        PartitionBuffer->Signature;
-                    DoRewrite = TRUE;
-                }
-            }
-
-            /* Loop the partition table entries */
-            PartitionTable = &DiskLayout->PartitionTable[i];
-            for (j = 0; j < 4; j++)
-            {
-                /* Get the current entry and type */
-                TableEntry = &PartitionTable->PartitionEntry[j];
-                PartitionType = TableEntry->PartitionType;
-
-                /* Check if the entry needs a rewrite */
-                if (TableEntry->RewritePartition)
-                {
-                    /* Then we need one too */
-                    DoRewrite = TRUE;
-
-                    /* Save the type and if it's a bootable partition */
-                    Entry[j].PartitionType = TableEntry->PartitionType;
-                    Entry[j].ActiveFlag = TableEntry->BootIndicator ? 0x80 : 0;
-
-                    /* Make sure it's used */
-                    if (PartitionType != PARTITION_ENTRY_UNUSED)
-                    {
-                        /* Make sure it's not a container (unless primary) */
-                        if ((IsMbr) || !(IsContainerPartition(PartitionType)))
-                        {
-                            /* Use the partition offset */
-                            StartOffset.QuadPart = Offset.QuadPart;
-                        }
-                        else
-                        {
-                            /* Use the extended logical partition offset */
-                            StartOffset.QuadPart = ExtendedOffset.QuadPart;
-                        }
-
-                        /* Set the sector offset */
-                        SectorOffset.QuadPart = TableEntry->
-                                                StartingOffset.QuadPart -
-                                                StartOffset.QuadPart;
-
-                        /* Now calculate the starting sector */
-                        StartOffset.QuadPart = SectorOffset.QuadPart >> k;
-                        Entry[j].StartingSector = StartOffset.LowPart;
-
-                        /* As well as the length */
-                        PartitionLength.QuadPart = TableEntry->PartitionLength.
-                                                   QuadPart >> k;
-                        Entry[j].PartitionLength = PartitionLength.LowPart;
-
-                        /* Calculate the CHS values */
-                        HalpCalculateChsValues(&TableEntry->StartingOffset,
-                                               &TableEntry->PartitionLength,
-                                               k,
-                                               SectorsPerTrack,
-                                               NumberOfHeads,
-                                               ConventionalCylinders,
-                                               (PPARTITION_DESCRIPTOR)
-                                               &Entry[j]);
-                    }
-                    else
-                    {
-                        /* Otherwise set up an empty entry */
-                        Entry[j].StartingSector = 0;
-                        Entry[j].PartitionLength = 0;
-                        Entry[j].StartingTrack = 0;
-                        Entry[j].EndingTrack = 0;
-                        Entry[j].StartingCylinder = 0;
-                        Entry[j].EndingCylinder = 0;
-                    }
-                }
-
-                /* Check if this is a container partition */
-                if (IsContainerPartition(PartitionType))
-                {
-                    /* Then update the offset to use */
-                    NextOffset = TableEntry->StartingOffset;
-                }
-            }
-        }
-
-        /* Check if we need to write back the buffer */
-        if (DoRewrite)
-        {
-            /* We don't need to do this again */
-            DoRewrite = FALSE;
-
-            /* Initialize the event */
-            KeInitializeEvent(&Event, NotificationEvent, FALSE);
-
-            /* If we unbiased for EZ-Drive, rebias now */
-            if ((IsEzDrive) && !(Offset.QuadPart)) Offset.QuadPart = 512;
-
-            /* Build the write IRP */
-            Irp = IoBuildSynchronousFsdRequest(IRP_MJ_WRITE,
-                                               DeviceObject,
-                                               Buffer,
-                                               BufferSize,
-                                               &Offset,
-                                               &Event,
-                                               &IoStatusBlock);
-            if (!Irp)
-            {
-                /* Fail */
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                break;
-            }
-
-            /* Make sure to disable volume verification */
-            IoStackLocation = IoGetNextIrpStackLocation(Irp);
-            IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
-
-            /* Call the driver */
-            Status = IoCallDriver(DeviceObject, Irp);
-            if (Status == STATUS_PENDING)
-            {
-                /* Wait for completion */
-                KeWaitForSingleObject(&Event,
-                                      Executive,
-                                      KernelMode,
-                                      FALSE,
-                                      NULL);
-                Status = IoStatusBlock.Status;
-            }
-
-            /* Check for failure */
-            if (!NT_SUCCESS(Status)) break;
-
-            /* If we biased for EZ-Drive, unbias now */
-            if (IsEzDrive && (Offset.QuadPart == 512)) Offset.QuadPart = 0;
-        }
-
-        /* Update the partition offset and set the extended offset if needed */
-        Offset = NextOffset;
-        if (IsMbr) ExtendedOffset = NextOffset;
-    }
-
-    /* If we had a buffer, free it, then return status */
-    if (Buffer) ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
-    return Status;
-}
-
 /* PUBLIC FUNCTIONS **********************************************************/
 
 VOID
@@ -2264,22 +1975,307 @@ IoSetPartitionInformation(
     return Status;
 }
 
-/*
- * @implemented
- */
 NTSTATUS
 FASTCALL
-IoWritePartitionTable(IN PDEVICE_OBJECT DeviceObject,
-                      IN ULONG SectorSize,
-                      IN ULONG SectorsPerTrack,
-                      IN ULONG NumberOfHeads,
-                      IN PDRIVE_LAYOUT_INFORMATION PartitionBuffer)
+IoWritePartitionTable(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG SectorSize,
+    _In_ ULONG SectorsPerTrack,
+    _In_ ULONG NumberOfHeads,
+    _In_ PDRIVE_LAYOUT_INFORMATION PartitionBuffer)
 {
-    return HALDISPATCH->HalIoWritePartitionTable(DeviceObject,
-                                                 SectorSize,
-                                                 SectorsPerTrack,
-                                                 NumberOfHeads,
-                                                 PartitionBuffer);
+    PPARTITION_INFORMATION PartitionInfo = PartitionBuffer->PartitionEntry;
+    PPARTITION_INFORMATION TableEntry;
+    PDISK_LAYOUT DiskLayout = (PDISK_LAYOUT)PartitionBuffer;
+    PIO_STACK_LOCATION IoStackLocation;
+    PPARTITION_TABLE PartitionTable;
+    IO_STATUS_BLOCK IoStatusBlock;
+    LARGE_INTEGER StartOffset;
+    LARGE_INTEGER PartitionLength;
+    LARGE_INTEGER Offset;
+    LARGE_INTEGER NextOffset;
+    LARGE_INTEGER ExtendedOffset;
+    LARGE_INTEGER SectorOffset;
+    LONGLONG DiskSize;
+    PVOID MbrBuffer;
+    PUSHORT Buffer;
+    PPTE Entry;
+    PIRP Irp;
+    KEVENT Event;
+    ULONG ConventionalCylinders;
+    ULONG BufferSize;
+    ULONG ix;
+    ULONG jx;
+    CCHAR kx;
+    UCHAR PartitionType;
+    BOOLEAN IsEzDrive = FALSE;
+    BOOLEAN IsSuperFloppy = FALSE;
+    BOOLEAN DoRewrite = FALSE;
+    BOOLEAN IsMbr;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    PAGED_CODE();
+
+    BufferSize = max(0x200, SectorSize);
+
+    ExtendedOffset.QuadPart = 0;
+    NextOffset.QuadPart = 0;
+    Offset.QuadPart = 0;
+
+    /* Get the partial drive geometry */
+    xHalGetPartialGeometry(DeviceObject, &ConventionalCylinders, &DiskSize);
+
+    /* Check for EZ Drive */
+    HalExamineMBR(DeviceObject, BufferSize, 0x55, &MbrBuffer);
+    if (MbrBuffer)
+    {
+        /* EZ Drive found, bias the offset */
+        IsEzDrive = TRUE;
+        ExFreePoolWithTag(MbrBuffer, TAG_FILE_SYSTEM);
+        Offset.QuadPart = 0x200;
+    }
+
+    /* Get the number of bits to shift to multiply by the sector size */
+    for (kx = 0; kx < 0x20; kx++)
+    {
+        if ((SectorSize >> kx) == 1)
+            break;
+    }
+
+    /* Check if there's only one partition */
+    if (PartitionBuffer->PartitionCount == 1)
+    {
+        /* Check if it has no starting offset or hidden sectors */
+        if (!(PartitionInfo->StartingOffset.QuadPart) &&
+            !(PartitionInfo->HiddenSectors))
+        {
+            /* Then it's a super floppy */
+            IsSuperFloppy = TRUE;
+
+            /* Which also means it must be non-bootable FAT-16 */
+            if ((PartitionInfo->PartitionNumber) ||
+                (PartitionInfo->PartitionType != PARTITION_FAT_16) ||
+                (PartitionInfo->BootIndicator))
+            {
+                /* It's not, so we fail */
+                return STATUS_INVALID_PARAMETER;
+            }
+
+            /* Check if it needs a rewrite, and disable EZ drive for sure */
+            if (PartitionInfo->RewritePartition)
+                DoRewrite = TRUE;
+
+            IsEzDrive = FALSE;
+        }
+    }
+
+    /* Count the number of partition tables */
+    DiskLayout->TableCount = ((PartitionBuffer->PartitionCount + 4 - 1) / 4);
+
+    /* Allocate our partition buffer */
+    Buffer = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, TAG_FILE_SYSTEM);
+    if (!Buffer)
+    {
+        DPRINT1("IoWritePartitionTable: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Loop the entries */
+    Entry = (PPTE)&Buffer[PARTITION_TABLE_OFFSET];
+
+    for (ix = 0; ix < DiskLayout->TableCount; ix++)
+    {
+        /* Set if this is the MBR partition */
+        IsMbr = (ix == 0);
+
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+        /* Build the read IRP */
+        Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ,
+                                           DeviceObject,
+                                           Buffer,
+                                           BufferSize,
+                                           &Offset,
+                                           &Event,
+                                           &IoStatusBlock);
+        if (!Irp)
+        {
+            DPRINT1("IoWritePartitionTable: STATUS_INSUFFICIENT_RESOURCES\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break;
+        }
+
+        /* Make sure to disable volume verification */
+        IoStackLocation = IoGetNextIrpStackLocation(Irp);
+        IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+
+        Status = IoCallDriver(DeviceObject, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatusBlock.Status;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IoWritePartitionTable: Status %X\n", Status);
+            break;
+        }
+
+        /* If we biased for EZ-Drive, unbias now */
+        if (IsEzDrive && (Offset.QuadPart == 0x200))
+            Offset.QuadPart = 0;
+
+        /* Check if this is a normal disk */
+        if (!IsSuperFloppy)
+        {
+            /* Set the boot record signature */
+            Buffer[BOOT_SIGNATURE_OFFSET] = BOOT_RECORD_SIGNATURE;
+
+            /* By default, don't require a rewrite */
+            DoRewrite = FALSE;
+
+            /* Check if we don't have an offset */
+            if (!Offset.QuadPart)
+            {
+                /* Check if the signature doesn't match */
+                if (((PULONG)Buffer)[PARTITION_TABLE_OFFSET / 2 - 1] != PartitionBuffer->Signature)
+                {
+                    /* Then write the signature and now we need a rewrite */
+                    ((PULONG)Buffer)[PARTITION_TABLE_OFFSET / 2 - 1] = PartitionBuffer->Signature;
+                    DoRewrite = TRUE;
+                }
+            }
+
+            /* Loop the partition table entries */
+            PartitionTable = &DiskLayout->PartitionTable[ix];
+
+            for (jx = 0; jx < 4; jx++)
+            {
+                /* Get the current entry and type */
+                TableEntry = &PartitionTable->PartitionEntry[jx];
+                PartitionType = TableEntry->PartitionType;
+
+                /* Check if the entry needs a rewrite */
+                if (TableEntry->RewritePartition)
+                {
+                    /* Then we need one too */
+                    DoRewrite = TRUE;
+
+                    /* Save the type and if it's a bootable partition */
+                    Entry[jx].PartitionType = TableEntry->PartitionType;
+                    Entry[jx].ActiveFlag = (TableEntry->BootIndicator ? 0x80 : 0);
+
+                    /* Make sure it's used */
+                    if (PartitionType != PARTITION_ENTRY_UNUSED)
+                    {
+                        /* Make sure it's not a container (unless primary) */
+                        if (IsMbr || !IsContainerPartition(PartitionType))
+                            StartOffset.QuadPart = Offset.QuadPart; /* Use the partition offset */
+                        else
+                            StartOffset.QuadPart = ExtendedOffset.QuadPart; /* Use the extended logical partition offset */
+
+                        /* Set the sector offset */
+                        SectorOffset.QuadPart = (TableEntry->StartingOffset.QuadPart - StartOffset.QuadPart);
+
+                        /* Now calculate the starting sector */
+                        StartOffset.QuadPart = (SectorOffset.QuadPart >> kx);
+                        Entry[jx].StartingSector = StartOffset.LowPart;
+
+                        /* As well as the length */
+                        PartitionLength.QuadPart = (TableEntry->PartitionLength.QuadPart >> kx);
+                        Entry[jx].PartitionLength = PartitionLength.LowPart;
+
+                        /* Calculate the CHS values */
+                        HalpCalculateChsValues(&TableEntry->StartingOffset,
+                                               &TableEntry->PartitionLength,
+                                               kx,
+                                               SectorsPerTrack,
+                                               NumberOfHeads,
+                                               ConventionalCylinders,
+                                               (PPARTITION_DESCRIPTOR)&Entry[jx]);
+                    }
+                    else
+                    {
+                        /* Otherwise set up an empty entry */
+                        Entry[jx].StartingSector = 0;
+                        Entry[jx].PartitionLength = 0;
+                        Entry[jx].StartingTrack = 0;
+                        Entry[jx].EndingTrack = 0;
+                        Entry[jx].StartingCylinder = 0;
+                        Entry[jx].EndingCylinder = 0;
+                    }
+                }
+
+                /* Check if this is a container partition */
+                if (IsContainerPartition(PartitionType))
+                {
+                    /* Then update the offset to use */
+                    NextOffset = TableEntry->StartingOffset;
+                }
+            }
+        }
+
+        /* Check if we need to write back the buffer */
+        if (DoRewrite)
+        {
+            /* We don't need to do this again */
+            DoRewrite = FALSE;
+
+            KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+            /* If we unbiased for EZ-Drive, rebias now */
+            if ((IsEzDrive) && !(Offset.QuadPart))
+                Offset.QuadPart = 0x200;
+
+            /* Build the write IRP */
+            Irp = IoBuildSynchronousFsdRequest(IRP_MJ_WRITE,
+                                               DeviceObject,
+                                               Buffer,
+                                               BufferSize,
+                                               &Offset,
+                                               &Event,
+                                               &IoStatusBlock);
+            if (!Irp)
+            {
+                DPRINT1("IoWritePartitionTable: STATUS_INSUFFICIENT_RESOURCES\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                break;
+            }
+
+            /* Make sure to disable volume verification */
+            IoStackLocation = IoGetNextIrpStackLocation(Irp);
+            IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+
+            Status = IoCallDriver(DeviceObject, Irp);
+            if (Status == STATUS_PENDING)
+            {
+                KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+                Status = IoStatusBlock.Status;
+            }
+
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("IoWritePartitionTable: Status %X\n", Status);
+                break;
+            }
+
+            /* If we biased for EZ-Drive, unbias now */
+            if (IsEzDrive && (Offset.QuadPart == 0x200))
+                Offset.QuadPart = 0;
+        }
+
+        /* Update the partition offset and set the extended offset if needed */
+        Offset = NextOffset;
+
+        if (IsMbr)
+            ExtendedOffset = NextOffset;
+    }
+
+    if (Buffer)
+        ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
+
+    return Status;
 }
 
 /*
