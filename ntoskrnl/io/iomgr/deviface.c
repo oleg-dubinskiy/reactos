@@ -1389,31 +1389,36 @@ cleanup:
 NTSTATUS
 NTAPI
 IoGetDeviceInterfaces(
-    _In_ CONST GUID *InterfaceClassGuid,
+    _In_ CONST GUID* InterfaceClassGuid,
     _In_ PDEVICE_OBJECT PhysicalDeviceObject OPTIONAL,
     _In_ ULONG Flags,
     _Out_ PWSTR* SymbolicLinkList)
 {
-    UNICODE_STRING Control = RTL_CONSTANT_STRING(L"Control");
-    UNICODE_STRING SymbolicLink = RTL_CONSTANT_STRING(L"SymbolicLink");
     UNICODE_STRING DeviceInstanceName = RTL_CONSTANT_STRING(L"DeviceInstance");
+    UNICODE_STRING SymbolicLink = RTL_CONSTANT_STRING(L"SymbolicLink");
     UNICODE_STRING LinkedName = RTL_CONSTANT_STRING(L"Linked");
+    UNICODE_STRING Control = RTL_CONSTANT_STRING(L"Control");
+    UNICODE_STRING ReturnBuffer = { 0, 0, NULL };
+    UNICODE_STRING KeyName;
+    PUNICODE_STRING InstanceDevicePath = NULL;
+    PEXTENDED_DEVOBJ_EXTENSION DeviceObjectExtension;
+    PKEY_VALUE_PARTIAL_INFORMATION PartialInfo;
+    PKEY_VALUE_PARTIAL_INFORMATION bip = NULL;
+    PKEY_BASIC_INFORMATION ReferenceBi = NULL;
+    PKEY_BASIC_INFORMATION DeviceBi = NULL;
+    OBJECT_ATTRIBUTES ObjectAttributes;
     HANDLE InterfaceKey = NULL;
-    HANDLE DeviceKey = NULL;
     HANDLE ReferenceKey = NULL;
     HANDLE ControlKey = NULL;
-    PKEY_BASIC_INFORMATION DeviceBi = NULL;
-    PKEY_BASIC_INFORMATION ReferenceBi = NULL;
-    PKEY_VALUE_PARTIAL_INFORMATION bip = NULL;
-    PKEY_VALUE_PARTIAL_INFORMATION PartialInfo;
-    PEXTENDED_DEVOBJ_EXTENSION DeviceObjectExtension;
-    PUNICODE_STRING InstanceDevicePath = NULL;
-    UNICODE_STRING KeyName;
-    OBJECT_ATTRIBUTES ObjectAttributes;
-    BOOLEAN FoundRightPDO = FALSE;
-    ULONG ix, jx, Size, NeededLength, ActualLength, LinkedValue;
-    UNICODE_STRING ReturnBuffer = { 0, 0, NULL };
+    HANDLE DeviceKey = NULL;
+    ULONG NeededLength;
+    ULONG ActualLength;
+    ULONG LinkedValue;
+    ULONG Size;
+    ULONG ix;
+    ULONG jx;
     USHORT Length;
+    BOOLEAN FoundRightPDO = FALSE;
     NTSTATUS Status;
 
     PAGED_CODE();
@@ -1426,14 +1431,14 @@ IoGetDeviceInterfaces(
         /* 1st level: Presence of a Device Node */
         if (!DeviceObjectExtension->DeviceNode)
         {
-            DPRINT("PhysicalDeviceObject %p doesn't have a DeviceNode\n", PhysicalDeviceObject);
+            DPRINT1("IoGetDeviceInterfaces: PDO %p doesn't have a DeviceNode\n", PhysicalDeviceObject);
             return STATUS_INVALID_DEVICE_REQUEST;
         }
 
         /* 2nd level: Presence of an non-zero length InstancePath */
         if (!DeviceObjectExtension->DeviceNode->InstancePath.Length)
         {
-            DPRINT("PhysicalDeviceObject %p's DOE has zero-length InstancePath\n", PhysicalDeviceObject);
+            DPRINT1("IoGetDeviceInterfaces: PDO's %p DOE has zero-length InstancePath\n", PhysicalDeviceObject);
             return STATUS_INVALID_DEVICE_REQUEST;
         }
 
@@ -1444,11 +1449,11 @@ IoGetDeviceInterfaces(
     Status = IopOpenInterfaceKey(InterfaceClassGuid, KEY_ENUMERATE_SUB_KEYS, &InterfaceKey);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("IopOpenInterfaceKey() failed with status %X\n", Status);
+        DPRINT1("IoGetDeviceInterfaces: IopOpenInterfaceKey() failed %X\n", Status);
         goto cleanup;
     }
 
-    /* Enumerate subkeys (i.e. the different device objects) */
+    /* Enumerate subkeys (ix.e. the different device objects) */
     for (ix = 0; ; ix++)
     {
         Status = ZwEnumerateKey(InterfaceKey, ix, KeyBasicInformation, NULL, 0, &Size);
@@ -1457,14 +1462,14 @@ IoGetDeviceInterfaces(
 
         if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL)
         {
-            DPRINT1("ZwEnumerateKey() failed with status %X\n", Status);
+            DPRINT1("IoGetDeviceInterfaces: ZwEnumerateKey() failed %X\n", Status);
             goto cleanup;
         }
 
         DeviceBi = ExAllocatePool(PagedPool, Size);
         if (!DeviceBi)
         {
-            DPRINT1("ExAllocatePool() failed\n");
+            DPRINT1("IoGetDeviceInterfaces: ExAllocatePool() failed\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto cleanup;
         }
@@ -1472,7 +1477,7 @@ IoGetDeviceInterfaces(
         Status = ZwEnumerateKey(InterfaceKey, ix, KeyBasicInformation, DeviceBi, Size, &Size);
         if (!NT_SUCCESS(Status))
         {
-            DPRINT("ZwEnumerateKey() failed with status %X\n", Status);
+            DPRINT("IoGetDeviceInterfaces: ZwEnumerateKey() failed %X\n", Status);
             goto cleanup;
         }
 
@@ -1489,7 +1494,7 @@ IoGetDeviceInterfaces(
         Status = ZwOpenKey(&DeviceKey, KEY_ENUMERATE_SUB_KEYS, &ObjectAttributes);
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("ZwOpenKey() failed with status %X\n", Status);
+            DPRINT1("IoGetDeviceInterfaces: ZwOpenKey() failed %X\n", Status);
             goto cleanup;
         }
 
@@ -1498,7 +1503,8 @@ IoGetDeviceInterfaces(
             /* Check if we are on the right physical device object, by reading the DeviceInstance string */
             Status = ZwQueryValueKey(DeviceKey, &DeviceInstanceName, KeyValuePartialInformation, NULL, 0, &NeededLength);
             if (Status != STATUS_BUFFER_TOO_SMALL)
-                break; /* error */
+                /* error */
+                break;
 
             ActualLength = NeededLength;
             PartialInfo = ExAllocatePool(NonPagedPool, ActualLength);
@@ -1512,7 +1518,7 @@ IoGetDeviceInterfaces(
             Status = ZwQueryValueKey(DeviceKey, &KeyName, KeyValuePartialInformation, PartialInfo, ActualLength, &NeededLength);
             if (!NT_SUCCESS(Status))
             {
-                DPRINT1("ZwQueryValueKey #2 failed (%x)\n", Status);
+                DPRINT1("IoGetDeviceInterfaces: ZwQueryValueKey #2 failed (%X)\n", Status);
                 ExFreePool(PartialInfo);
                 goto cleanup;
             }
@@ -1530,7 +1536,8 @@ IoGetDeviceInterfaces(
             PartialInfo = NULL;
 
             if (!FoundRightPDO)
-                continue; /* not yet found */
+                /* not yet found */
+                continue;
         }
 
         /* Enumerate subkeys (ie the different reference strings) */
@@ -1542,7 +1549,7 @@ IoGetDeviceInterfaces(
 
             if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL)
             {
-                DPRINT1("ZwEnumerateKey() failed with status %X\n", Status);
+                DPRINT1("IoGetDeviceInterfaces: ZwEnumerateKey() failed %X\n", Status);
                 goto cleanup;
             }
 
@@ -1557,7 +1564,7 @@ IoGetDeviceInterfaces(
             Status = ZwEnumerateKey(DeviceKey, jx, KeyBasicInformation, ReferenceBi, Size, &Size);
             if (!NT_SUCCESS(Status))
             {
-                DPRINT("ZwEnumerateKey() failed with status %X\n", Status);
+                DPRINT("IoGetDeviceInterfaces: ZwEnumerateKey() failed %X\n", Status);
                 goto cleanup;
             }
 
@@ -1578,7 +1585,7 @@ IoGetDeviceInterfaces(
             Status = ZwOpenKey(&ReferenceKey, KEY_QUERY_VALUE, &ObjectAttributes);
             if (!NT_SUCCESS(Status))
             {
-                DPRINT("ZwOpenKey() failed with status %X\n", Status);
+                DPRINT("IoGetDeviceInterfaces: ZwOpenKey() failed %X\n", Status);
                 goto cleanup;
             }
 
@@ -1598,24 +1605,19 @@ IoGetDeviceInterfaces(
 
                 if (!NT_SUCCESS(Status))
                 {
-                    DPRINT1("ZwOpenKey() failed with status %X\n", Status);
+                    DPRINT1("IoGetDeviceInterfaces: ZwOpenKey() failed %X\n", Status);
                     goto cleanup;
                 }
 
-                Status = ZwQueryValueKey(ControlKey,
-                                         &LinkedName,
-                                         KeyValuePartialInformation,
-                                         NULL,
-                                         0,
-                                         &NeededLength);
-
+                Status = ZwQueryValueKey(ControlKey, &LinkedName, KeyValuePartialInformation, NULL, 0, &NeededLength);
                 if (Status != STATUS_BUFFER_TOO_SMALL)
                 {
-                    DPRINT1("ZwQueryValueKey #1 failed (%x)\n", Status);
+                    DPRINT1("IoGetDeviceInterfaces: ZwQueryValueKey #1 failed (%X)\n", Status);
                     goto cleanup;
                 }
 
                 ActualLength = NeededLength;
+
                 PartialInfo = ExAllocatePool(NonPagedPool, ActualLength);
                 if (!PartialInfo)
                 {
@@ -1624,17 +1626,22 @@ IoGetDeviceInterfaces(
                     goto cleanup;
                 }
 
-                Status = ZwQueryValueKey(ControlKey, &LinkedName, KeyValuePartialInformation, PartialInfo, ActualLength,&NeededLength);
+                Status = ZwQueryValueKey(ControlKey,
+                                         &LinkedName,
+                                         KeyValuePartialInformation,
+                                         PartialInfo,
+                                         ActualLength,
+                                         &NeededLength);
                 if (!NT_SUCCESS(Status))
                 {
-                    DPRINT1("ZwQueryValueKey #2 failed (%x)\n", Status);
+                    DPRINT1("IoGetDeviceInterfaces: ZwQueryValueKey #2 failed (%X)\n", Status);
                     ExFreePool(PartialInfo);
                     goto cleanup;
                 }
 
                 if (PartialInfo->Type != REG_DWORD || PartialInfo->DataLength != sizeof(ULONG))
                 {
-                    DPRINT1("Bad registry read\n");
+                    DPRINT1("IoGetDeviceInterfaces: Bad registry read\n");
                     ExFreePool(PartialInfo);
                     goto cleanup;
                 }
@@ -1653,7 +1660,7 @@ IoGetDeviceInterfaces(
             {
                 if (Status != STATUS_BUFFER_TOO_SMALL)
                 {
-                    DPRINT("ZwQueryValueKey() failed with status %X\n", Status);
+                    DPRINT("IoGetDeviceInterfaces: ZwQueryValueKey() failed %X\n", Status);
                     goto cleanup;
                 }
             }
@@ -1669,20 +1676,22 @@ IoGetDeviceInterfaces(
             Status = ZwQueryValueKey(ReferenceKey, &SymbolicLink, KeyValuePartialInformation, bip, Size, &Size);
             if (!NT_SUCCESS(Status))
             {
-                DPRINT("ZwQueryValueKey() failed with status %X\n", Status);
+                DPRINT("IoGetDeviceInterfaces: ZwQueryValueKey() failed %X\n", Status);
                 goto cleanup;
             }
 
             if (bip->Type != REG_SZ)
             {
-                DPRINT("Unexpected registry type 0x%lx (expected 0x%lx)\n", bip->Type, REG_SZ);
+                DPRINT("IoGetDeviceInterfaces: registry type %X (expected %X)\n", bip->Type, REG_SZ);
                 Status = STATUS_UNSUCCESSFUL;
                 goto cleanup;
             }
 
             if (bip->DataLength < (5 * sizeof(WCHAR)))
             {
-                DPRINT("Registry string too short (length %lu, expected %lu at least)\n", bip->DataLength, (5 * sizeof(WCHAR)));
+                DPRINT("IoGetDeviceInterfaces: Registry string short (%X), expected >= %X)\n",
+                       bip->DataLength, (5 * sizeof(WCHAR)));
+
                 Status = STATUS_UNSUCCESSFUL;
                 goto cleanup;
             }
@@ -1694,11 +1703,13 @@ IoGetDeviceInterfaces(
             RtlCopyMemory(KeyName.Buffer, L"\\??\\", 4 * sizeof(WCHAR));
 
             /* Add new symbolic link to symbolic link list */
-            if ((ReturnBuffer.Length + KeyName.Length + sizeof(WCHAR)) > ReturnBuffer.MaximumLength)
+            Length = (ReturnBuffer.Length + KeyName.Length + sizeof(WCHAR));
+            if (Length > ReturnBuffer.MaximumLength)
             {
                 PWSTR NewBuffer;
-                ReturnBuffer.MaximumLength = (USHORT)max((2 * ReturnBuffer.MaximumLength),
-                                                         (USHORT)(ReturnBuffer.Length + KeyName.Length + 2 * sizeof(WCHAR)));
+
+                Length += sizeof(WCHAR);
+                ReturnBuffer.MaximumLength = (USHORT)max((2 * ReturnBuffer.MaximumLength), Length);
 
                 NewBuffer = ExAllocatePool(PagedPool, ReturnBuffer.MaximumLength);
                 if (!NewBuffer)
@@ -1717,12 +1728,12 @@ IoGetDeviceInterfaces(
                 ReturnBuffer.Buffer = NewBuffer;
             }
 
-            DPRINT("Adding symbolic link %wZ\n", &KeyName);
+            DPRINT("IoGetDeviceInterfaces: Adding symbolic link '%wZ'\n", &KeyName);
 
             Status = RtlAppendUnicodeStringToString(&ReturnBuffer, &KeyName);
             if (!NT_SUCCESS(Status))
             {
-                DPRINT("RtlAppendUnicodeStringToString() failed with status %X\n", Status);
+                DPRINT("IoGetDeviceInterfaces: RtlAppendUnicodeStringToString() failed %X\n", Status);
                 goto cleanup;
             }
 
@@ -1790,8 +1801,8 @@ NextReferenceString:
     }
 
     ReturnBuffer.Buffer[ReturnBuffer.Length / sizeof(WCHAR)] = UNICODE_NULL;
-    *SymbolicLinkList = ReturnBuffer.Buffer;
 
+    *SymbolicLinkList = ReturnBuffer.Buffer;
     Status = STATUS_SUCCESS;
 
 cleanup:
