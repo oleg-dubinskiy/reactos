@@ -151,6 +151,109 @@ Exit:
     return Status;
 }
 
+NTSTATUS
+NTAPI
+PiNotifyDriverCallback(
+    _In_ PDRIVER_NOTIFICATION_CALLBACK_ROUTINE CallbackRoutine,
+    _In_ PVOID NotificationStructure,
+    _In_ PVOID Context,
+    _In_ ULONG SessionId,
+    _In_ PVOID OpaqueSession,
+    _Out_ NTSTATUS* OutStatus)
+{
+    PEPROCESS Process;
+    KAPC_STATE ApcState;
+    ULONG CombinedApcDisable;
+    KIRQL OldIrql;
+    KIRQL NewIrql;
+    NTSTATUS callbackStatus;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    PAGED_CODE();
+
+    if (!CallbackRoutine)
+    {
+        DPRINT1("PiNotifyDriverCallback: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!NotificationStructure)
+    {
+        DPRINT1("PiNotifyDriverCallback: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    OldIrql = KeGetCurrentIrql();
+    CombinedApcDisable = KeGetCurrentThread()->CombinedApcDisable;
+
+    Process = (PEPROCESS)KeGetCurrentThread()->ApcState.Process;
+
+    if (!OpaqueSession ||
+        (Process->ProcessInSession && SessionId == PsGetCurrentProcessSessionId()))
+    {
+        ASSERT(!MmIsSessionAddress(CallbackRoutine) || OpaqueSession);
+
+        DPRINT("PiNotifyDriverCallback: calling CallbackRoutine %p\n", CallbackRoutine);
+
+        callbackStatus = CallbackRoutine(NotificationStructure, Context);
+        if (OutStatus)
+            *OutStatus = callbackStatus;
+
+        if (!NT_SUCCESS(callbackStatus))
+        {
+            DPRINT1("PiNotifyDriverCallback: callbackStatus %X\n", callbackStatus);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+        }
+
+        goto Exit;
+    }
+
+    ASSERT(MmIsSessionAddress(CallbackRoutine));
+
+    Status = MmAttachSession(OpaqueSession, &ApcState);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PiNotifyDriverCallback: Status %X\n", Status);
+        ASSERT(NT_SUCCESS(Status));
+    }
+
+    DPRINT("PiNotifyDriverCallback: CallbackRoutine %p, SessionId %X\n", CallbackRoutine, SessionId);
+
+    callbackStatus = CallbackRoutine(NotificationStructure, Context);
+    if (OutStatus)
+        *OutStatus = callbackStatus;
+
+    if (!NT_SUCCESS(callbackStatus))
+    {
+        DPRINT1("PiNotifyDriverCallback: callbackStatus %X\n", callbackStatus);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+    }
+
+    Status = 0;MmDetachSession(OpaqueSession, &ApcState); // TODO: add ret NTSTATUS for MmDetachSession().
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PiNotifyDriverCallback: Status %X\n", Status);
+        ASSERT(NT_SUCCESS(Status));
+    }
+
+Exit:
+
+    if (OldIrql != KeGetCurrentIrql())
+    {
+        NewIrql = KeGetCurrentIrql();
+        DPRINT1("PiNotifyDriverCallback: CallbackRoutine %p, NewIrql %X, OldIrql %X\n", CallbackRoutine, NewIrql, OldIrql);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+    }
+
+    if (CombinedApcDisable != KeGetCurrentThread()->CombinedApcDisable)
+    {
+        DPRINT1("PiNotifyDriverCallback: CallbackRoutine %p, Current %X, Old %X\n", CallbackRoutine, KeGetCurrentThread()->CombinedApcDisable, CombinedApcDisable);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+    }
+
+    return Status;
+}
+
 VOID
 IopNotifyPlugPlayNotification(
     IN PDEVICE_OBJECT DeviceObject,
