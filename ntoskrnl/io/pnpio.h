@@ -377,6 +377,11 @@ typedef struct _PNP_NOTIFY_HEADER
     PKGUARDED_MUTEX NotifyLock;
 } PNP_NOTIFY_HEADER, *PPNP_NOTIFY_HEADER;
 
+typedef struct _HARDWARE_PROFILE_NOTIFY
+{
+    PNP_NOTIFY_HEADER Header;
+} HARDWARE_PROFILE_NOTIFY, *PHARDWARE_PROFILE_NOTIFY; 
+
 typedef struct _DEVICE_INTERFACE_NOTIFY
 {
     PNP_NOTIFY_HEADER Header;
@@ -390,6 +395,11 @@ typedef struct _TARGET_DEVICE_NOTIFY
     PDEVICE_OBJECT PhysicalDeviceObject;
 } TARGET_DEVICE_NOTIFY, *PTARGET_DEVICE_NOTIFY; 
 
+typedef struct _SETUP_NOTIFY_DATA
+{
+    PNP_NOTIFY_HEADER Header;
+} SETUP_NOTIFY_DATA, *PSETUP_NOTIFY_DATA; 
+
 typedef struct _PNP_DEFER_NOTIFY
 {
     LIST_ENTRY Link;
@@ -397,6 +407,14 @@ typedef struct _PNP_DEFER_NOTIFY
 } PNP_DEFER_NOTIFY, *PPNP_DEFER_NOTIFY; 
 
 /* === IO mgr ================================ */
+
+/* device.c */
+NTSTATUS
+NTAPI
+IopGetRelatedTargetDevice(
+    _In_ PFILE_OBJECT FileObject,
+    _Out_ PDEVICE_NODE* DeviceNode
+);
 
 /* deviface.c */
 VOID

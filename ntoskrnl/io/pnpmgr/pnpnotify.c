@@ -33,6 +33,7 @@ typedef struct _PNP_NOTIFY_ENTRY
 
 /* GLOBALS *******************************************************************/
 
+PSETUP_NOTIFY_DATA IopSetupNotifyData;
 LIST_ENTRY PnpNotifyListHead;
 KGUARDED_MUTEX PnpNotifyListLock;
 
@@ -737,126 +738,287 @@ IoPnPDeliverServicePowerNotification(ULONG VetoedPowerOperation OPTIONAL,
     return 0;
 }
 
-/*
- * @implemented
- */
 NTSTATUS
 NTAPI
-IoRegisterPlugPlayNotification(IN IO_NOTIFICATION_EVENT_CATEGORY EventCategory,
-                               IN ULONG EventCategoryFlags,
-                               IN PVOID EventCategoryData OPTIONAL,
-                               IN PDRIVER_OBJECT DriverObject,
-                               IN PDRIVER_NOTIFICATION_CALLBACK_ROUTINE CallbackRoutine,
-                               IN PVOID Context,
-                               OUT PVOID *NotificationEntry)
+IoRegisterPlugPlayNotification(
+    _In_ IO_NOTIFICATION_EVENT_CATEGORY EventCategory,
+    _In_ ULONG EventCategoryFlags,
+    _In_ PVOID EventCategoryData OPTIONAL,
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDRIVER_NOTIFICATION_CALLBACK_ROUTINE CallbackRoutine,
+    _In_ PVOID Context,
+    _Out_ PVOID* NotificationEntry)
 {
-    PPNP_NOTIFY_ENTRY Entry;
+    DEVICE_INTERFACE_CHANGE_NOTIFICATION InterfaceNotification;
+    PHARDWARE_PROFILE_NOTIFY HwProfileNotify;
+    PDEVICE_INTERFACE_NOTIFY IntarfaceNotify;
+    PTARGET_DEVICE_NOTIFY TargetDeviceNotify;
+    PSETUP_NOTIFY_DATA SetupNotify;
+    UNICODE_STRING DestinationString;
+    PDEVICE_NODE deviceNode;
     PWSTR SymbolicLinkList;
+    PVOID Session;
     NTSTATUS Status;
+
+    DPRINT1("IoRegisterPlugPlayNotification: %X, %X, %p, %p\n", EventCategory, EventCategoryFlags, EventCategoryData, DriverObject);
     PAGED_CODE();
 
-    DPRINT("%s(EventCategory 0x%x, EventCategoryFlags 0x%lx, DriverObject %p) called.\n",
-           __FUNCTION__,
-           EventCategory,
-           EventCategoryFlags,
-           DriverObject);
+    ASSERT(NotificationEntry);
+    *NotificationEntry = NULL;
 
-    ObReferenceObject(DriverObject);
-
-    /* Try to allocate entry for notification before sending any notification */
-    Entry = ExAllocatePoolWithTag(NonPagedPool,
-                                  sizeof(PNP_NOTIFY_ENTRY),
-                                  TAG_PNP_NOTIFY);
-
-    if (!Entry)
+    Status = ObReferenceObjectByPointer(DriverObject, 0, IoDriverObjectType, KernelMode);
+    if (!NT_SUCCESS(Status))
     {
-        DPRINT("ExAllocatePool() failed\n");
-        ObDereferenceObject(DriverObject);
-        return STATUS_INSUFFICIENT_RESOURCES;
+        DPRINT1("IoRegisterPlugPlayNotification: Status %X\n", Status);
+        return Status;
     }
 
-    if (EventCategory == EventCategoryDeviceInterfaceChange &&
-        EventCategoryFlags & PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES)
+    if (EventCategory == EventCategoryReserved) // Setup Notify
     {
-        DEVICE_INTERFACE_CHANGE_NOTIFICATION NotificationInfos;
-        UNICODE_STRING SymbolicLinkU;
-        PWSTR SymbolicLink;
-
-        Status = IoGetDeviceInterfaces((LPGUID)EventCategoryData,
-                                       NULL, /* PhysicalDeviceObject OPTIONAL */
-                                       0, /* Flags */
-                                       &SymbolicLinkList);
-        if (NT_SUCCESS(Status))
+        if (!ExpInTextModeSetup)
         {
-            /* Enumerate SymbolicLinkList */
-            NotificationInfos.Version = 1;
-            NotificationInfos.Size = sizeof(DEVICE_INTERFACE_CHANGE_NOTIFICATION);
-            RtlCopyMemory(&NotificationInfos.Event,
-                          &GUID_DEVICE_INTERFACE_ARRIVAL,
-                          sizeof(GUID));
-            RtlCopyMemory(&NotificationInfos.InterfaceClassGuid,
-                          EventCategoryData,
-                          sizeof(GUID));
-            NotificationInfos.SymbolicLinkName = &SymbolicLinkU;
+            *NotificationEntry = NULL;
+            goto Exit;
+        }
 
-            for (SymbolicLink = SymbolicLinkList;
-                 *SymbolicLink;
-                 SymbolicLink += wcslen(SymbolicLink) + 1)
+        ASSERT(IopSetupNotifyData == NULL);
+        ASSERT(MmIsSessionAddress((PVOID)CallbackRoutine) == FALSE);
+        ASSERT(MmGetSessionId(PsGetCurrentProcess()) == 0);
+
+        SetupNotify = ExAllocatePoolWithTag(PagedPool, sizeof(SETUP_NOTIFY_DATA), '  pP');
+        if (!SetupNotify)
+        {
+            DPRINT1("IoRegisterPlugPlayNotification: STATUS_INSUFFICIENT_RESOURCES\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto ErrorExit;
+        }
+
+        if (MmIsSessionAddress(CallbackRoutine))
+            Session = MmGetSessionById(SetupNotify->Header.SessionId);
+        else
+            Session = NULL;
+
+        InitializeListHead(&SetupNotify->Header.Link);
+
+        SetupNotify->Header.EventCategory = EventCategoryReserved;
+        SetupNotify->Header.SessionId = MmGetSessionId(PsGetCurrentProcess());
+        SetupNotify->Header.OpaqueSession = Session;
+        SetupNotify->Header.PnpNotificationRoutine = CallbackRoutine;
+        SetupNotify->Header.Context = Context;
+        SetupNotify->Header.DriverObject = DriverObject;
+        SetupNotify->Header.RefCount = 1;
+        SetupNotify->Header.Unregistered = FALSE;
+        SetupNotify->Header.NotifyLock = NULL;
+
+        IopSetupNotifyData = SetupNotify;
+
+        *NotificationEntry = NULL;
+        goto Exit;
+    }
+
+    if (EventCategory == EventCategoryHardwareProfileChange)
+    {
+        HwProfileNotify = ExAllocatePoolWithTag(PagedPool, sizeof(HARDWARE_PROFILE_NOTIFY), '  pP');
+        if (!HwProfileNotify)
+        {
+            DPRINT1("IoRegisterPlugPlayNotification: STATUS_INSUFFICIENT_RESOURCES\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto ErrorExit;
+        }
+
+        if (MmIsSessionAddress(CallbackRoutine))
+            Session = MmGetSessionById(HwProfileNotify->Header.SessionId);
+        else
+            Session = NULL;
+
+        HwProfileNotify->Header.EventCategory = EventCategoryHardwareProfileChange;
+        HwProfileNotify->Header.SessionId = MmGetSessionId(PsGetCurrentProcess());
+        HwProfileNotify->Header.OpaqueSession = Session;
+        HwProfileNotify->Header.PnpNotificationRoutine = CallbackRoutine;
+        HwProfileNotify->Header.Context = Context;
+        HwProfileNotify->Header.DriverObject = DriverObject;
+        HwProfileNotify->Header.RefCount = 1;
+        HwProfileNotify->Header.Unregistered = FALSE;
+        HwProfileNotify->Header.NotifyLock = &IopHwProfileNotifyLock;
+
+        Status = PiDeferNotification(&HwProfileNotify->Header);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IoRegisterPlugPlayNotification: Status %X\n", Status);
+            ExFreePoolWithTag(HwProfileNotify, '  pP');
+            goto Exit;
+        }
+
+        KeAcquireGuardedMutex(&IopHwProfileNotifyLock);
+        InsertTailList(&IopProfileNotifyList, &HwProfileNotify->Header.Link);
+        KeReleaseGuardedMutex(&IopHwProfileNotifyLock);
+
+        *NotificationEntry = HwProfileNotify;
+        goto Exit;
+    }
+
+    if (EventCategory == EventCategoryDeviceInterfaceChange)
+    {
+        NTSTATUS CallbackStatus;
+        NTSTATUS sts;
+        PWSTR Str;
+
+        ASSERT(EventCategoryData);
+
+        IntarfaceNotify = ExAllocatePoolWithTag(PagedPool, sizeof(DEVICE_INTERFACE_NOTIFY), '  pP');
+        if (!IntarfaceNotify)
+        {
+            DPRINT("IoRegisterPlugPlayNotification: STATUS_INSUFFICIENT_RESOURCES\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto ErrorExit;
+        }
+
+        if (MmIsSessionAddress(CallbackRoutine))
+            Session = MmGetSessionById(IntarfaceNotify->Header.SessionId);
+        else
+            Session = NULL;
+
+        IntarfaceNotify->Header.EventCategory = EventCategoryDeviceInterfaceChange;
+        IntarfaceNotify->Header.SessionId = MmGetSessionId(PsGetCurrentProcess());
+        IntarfaceNotify->Header.OpaqueSession = Session;
+        IntarfaceNotify->Header.PnpNotificationRoutine = CallbackRoutine;
+        IntarfaceNotify->Header.Context = Context;
+        IntarfaceNotify->Header.DriverObject = DriverObject;
+        IntarfaceNotify->Header.RefCount = 1;
+        IntarfaceNotify->Header.Unregistered = FALSE;
+        IntarfaceNotify->Header.NotifyLock = &IopDeviceClassNotifyLock;
+
+        RtlCopyMemory(&IntarfaceNotify->Interface, EventCategoryData, sizeof(IntarfaceNotify->Interface));
+
+        Status = PiDeferNotification(&IntarfaceNotify->Header);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IoRegisterPlugPlayNotification: Status %X\n", Status);
+            ExFreePoolWithTag(IntarfaceNotify, '  pP');
+            goto Exit;
+        }
+
+        KeAcquireGuardedMutex(&IopDeviceClassNotifyLock);
+        InsertTailList(&IopDeviceClassNotifyList[HashGuid(&IntarfaceNotify->Interface)], &IntarfaceNotify->Header.Link);
+        KeReleaseGuardedMutex(&IopDeviceClassNotifyLock);
+
+        if (!(EventCategoryFlags & 1))
+        {
+            DPRINT1("IoRegisterPlugPlayNotification: !(EventCategoryFlags & 1)\n");
+            *NotificationEntry = IntarfaceNotify;
+            goto Exit;
+        }
+
+        InterfaceNotification.Version = 1;
+        InterfaceNotification.Size = sizeof(InterfaceNotification);
+        InterfaceNotification.Event = GUID_DEVICE_INTERFACE_ARRIVAL;
+        InterfaceNotification.InterfaceClassGuid = IntarfaceNotify->Interface;
+
+        Status = IoGetDeviceInterfaces(&IntarfaceNotify->Interface, NULL, 0, &SymbolicLinkList);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IoRegisterPlugPlayNotification: Status %X\n", Status);
+            goto ErrorExit;
+        }
+
+        for (Str = SymbolicLinkList;
+             *Str;
+             Str += ((DestinationString.Length / sizeof(WCHAR)) + 1))
+        {
+            RtlInitUnicodeString(&DestinationString, Str);
+            InterfaceNotification.SymbolicLinkName = &DestinationString;
+
+            DPRINT("IoRegisterPlugPlayNotification: CallbackRoutine %X\n", CallbackRoutine);
+
+            sts = PiNotifyDriverCallback(CallbackRoutine,
+                                         &InterfaceNotification,
+                                         Context,
+                                         IntarfaceNotify->Header.SessionId,
+                                         IntarfaceNotify->Header.OpaqueSession,
+                                         &CallbackStatus);
+            if (!NT_SUCCESS(sts))
             {
-                RtlInitUnicodeString(&SymbolicLinkU, SymbolicLink);
-                DPRINT("Calling callback routine for %S\n", SymbolicLink);
-                (*CallbackRoutine)(&NotificationInfos, Context);
+                DPRINT1("IoRegisterPlugPlayNotification: sts %X\n", sts);
+                ASSERT(NT_SUCCESS(sts));
             }
-
-            ExFreePool(SymbolicLinkList);
         }
+
+        ExFreePool(SymbolicLinkList);
+
+        *NotificationEntry = IntarfaceNotify;
+        goto Exit;
     }
 
-    Entry->PnpNotificationProc = CallbackRoutine;
-    Entry->EventCategory = EventCategory;
-    Entry->Context = Context;
-    Entry->DriverObject = DriverObject;
-    switch (EventCategory)
+    if (EventCategory == EventCategoryTargetDeviceChange)
     {
-        case EventCategoryDeviceInterfaceChange:
+        ASSERT(EventCategoryData);
+
+        TargetDeviceNotify = ExAllocatePoolWithTag(PagedPool, sizeof(TARGET_DEVICE_NOTIFY), '  pP');
+        if (!TargetDeviceNotify)
         {
-            Status = RtlStringFromGUID(EventCategoryData, &Entry->Guid);
-            if (!NT_SUCCESS(Status))
-            {
-                ExFreePoolWithTag(Entry, TAG_PNP_NOTIFY);
-                ObDereferenceObject(DriverObject);
-                return Status;
-            }
-            break;
+            DPRINT1("IoRegisterPlugPlayNotification: STATUS_INSUFFICIENT_RESOURCES\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto ErrorExit;
         }
-        case EventCategoryHardwareProfileChange:
+
+        Status = IopGetRelatedTargetDevice((PFILE_OBJECT)EventCategoryData, &deviceNode);
+        if (!NT_SUCCESS(Status))
         {
-            /* nothing to do */
-           break;
+            DPRINT1("IoRegisterPlugPlayNotification: Status %X\n", Status);
+            ExFreePoolWithTag(TargetDeviceNotify, '  pP');
+            goto Exit;
         }
-        case EventCategoryTargetDeviceChange:
+
+        if (MmIsSessionAddress(CallbackRoutine))
+            Session = MmGetSessionById(TargetDeviceNotify->Header.SessionId);
+        else
+            Session = NULL;
+
+        TargetDeviceNotify->Header.EventCategory = EventCategoryTargetDeviceChange;
+        TargetDeviceNotify->Header.SessionId = MmGetSessionId(PsGetCurrentProcess());
+        TargetDeviceNotify->Header.OpaqueSession = Session;
+        TargetDeviceNotify->Header.PnpNotificationRoutine = CallbackRoutine;
+        TargetDeviceNotify->Header.Context = Context;
+        TargetDeviceNotify->Header.DriverObject = DriverObject;
+        TargetDeviceNotify->Header.RefCount = 1;
+        TargetDeviceNotify->Header.Unregistered = FALSE;
+        TargetDeviceNotify->Header.NotifyLock = &IopTargetDeviceNotifyLock;
+
+        TargetDeviceNotify->FileObject = EventCategoryData;
+
+        ASSERT(deviceNode->PhysicalDeviceObject);
+        TargetDeviceNotify->PhysicalDeviceObject = deviceNode->PhysicalDeviceObject;
+
+        Status = PiDeferNotification(&TargetDeviceNotify->Header);
+        if (!NT_SUCCESS(Status))
         {
-            Entry->FileObject = (PFILE_OBJECT)EventCategoryData;
-            break;
+            DPRINT1("IoRegisterPlugPlayNotification: Status %X\n", Status);
+            ExFreePoolWithTag(TargetDeviceNotify, '  pP');
+            goto Exit;
         }
-        default:
-        {
-            DPRINT1("%s: unknown EventCategory 0x%x UNIMPLEMENTED\n",
-                    __FUNCTION__, EventCategory);
-            break;
-        }
+
+        KeAcquireGuardedMutex(&IopTargetDeviceNotifyLock);
+        InsertTailList(&deviceNode->TargetDeviceNotify, &TargetDeviceNotify->Header.Link);
+        KeReleaseGuardedMutex(&IopTargetDeviceNotifyLock);
+
+        *NotificationEntry = TargetDeviceNotify;
+        goto Exit;
     }
 
-    KeAcquireGuardedMutex(&PnpNotifyListLock);
-    InsertHeadList(&PnpNotifyListHead,
-                   &Entry->PnpNotifyList);
-    KeReleaseGuardedMutex(&PnpNotifyListLock);
+    DPRINT1("IoRegisterPlugPlayNotification: Unknown EventCategory %X\n", EventCategory);
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    Status = STATUS_INVALID_PARAMETER;
 
-    DPRINT("%s returns NotificationEntry %p\n", __FUNCTION__, Entry);
+Exit:
+    if (NT_SUCCESS(Status))
+        return Status;
 
-    *NotificationEntry = Entry;
+ErrorExit:
 
-    return STATUS_SUCCESS;
+    ObDereferenceObject(DriverObject);
+
+    DPRINT("IoRegisterPlugPlayNotification: return %X\n", Status);
+    return Status;
 }
 
 /*
