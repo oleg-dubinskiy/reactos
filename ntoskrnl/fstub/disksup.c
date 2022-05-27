@@ -1564,6 +1564,138 @@ Exit:
     return Status;
 }
 
+NTSTATUS
+NTAPI
+HalpQueryPartitionType(
+    _In_ PUNICODE_STRING PartitionName,
+    _In_ PDRIVE_LAYOUT_INFORMATION DriveLayoutInfo,
+    _Out_ PULONG OutPartitionType)
+{
+    PARTITION_INFORMATION_EX PartitionInfo;
+    PARTITION_INFORMATION* PartitionEntry;
+    IO_STATUS_BLOCK IoStatusBlock;
+    PDEVICE_OBJECT DeviceObject;
+    PFILE_OBJECT FileObject;
+    KEVENT Event;
+    PIRP Irp;
+    ULONG ix;
+    UCHAR PartitionType;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("HalpQueryPartitionType: Partition '%wZ'\n", PartitionName);
+
+    Status = IoGetDeviceObjectPointer(PartitionName, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpQueryPartitionType: Status %X\n", Status);
+        return Status;
+    }
+
+    DeviceObject = IoGetAttachedDeviceReference(FileObject->DeviceObject);
+    ObDereferenceObject(FileObject);
+
+    if (DeviceObject->Characteristics & 1)
+    {
+        ObDereferenceObject(DeviceObject);
+        goto Exit;
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_PARTITION_INFO_EX,
+                                        DeviceObject,
+                                        NULL,
+                                        0UL,
+                                        &PartitionInfo,
+                                        sizeof(PartitionInfo),
+                                        FALSE,
+                                        &Event,
+                                        &IoStatusBlock);
+    if (!Irp)
+    {
+        DPRINT1("HalpQueryPartitionType: STATUS_INSUFFICIENT_RESOURCES\n");
+        ObDereferenceObject(DeviceObject);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = IoCallDriver(DeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatusBlock.Status;
+    }
+
+    ObDereferenceObject(DeviceObject);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpQueryPartitionType: Status %X\n", Status);
+
+        if (DriveLayoutInfo)
+            return Status;
+
+        goto Exit;
+    }
+
+    if (PartitionInfo.PartitionStyle)
+    {
+        if (PartitionInfo.PartitionStyle != 1)
+        {
+            *OutPartitionType = 4;
+            return STATUS_SUCCESS;
+        }
+
+        if (RtlCompareMemory(&PartitionInfo.Gpt.PartitionType, &PARTITION_BASIC_DATA_GUID, sizeof(GUID)) == sizeof(GUID))
+        {
+            *OutPartitionType = 5;
+            return STATUS_SUCCESS;
+        }
+
+        *OutPartitionType = 4;
+        return STATUS_SUCCESS;
+    }
+
+    PartitionType = (PartitionInfo.Mbr.PartitionType & 0x80);
+
+    DPRINT("HalpQueryPartitionType: FIXME test partition type\n");
+
+    if (IsRecognizedPartition(PartitionType))
+    {
+        *OutPartitionType = 4;
+        return STATUS_SUCCESS;
+    }
+
+    if (PartitionType)
+    {
+        *OutPartitionType = 3;
+        return STATUS_SUCCESS;
+    }
+
+    if (!DriveLayoutInfo)
+    {
+        DPRINT("HalpQueryPartitionType: DriveLayoutInfo is NULL\n");
+        goto Exit;
+    }
+
+    PartitionEntry = DriveLayoutInfo->PartitionEntry;
+    
+    for (ix = 0; ix < 4; ix++)
+    {
+        if (PartitionInfo.StartingOffset.QuadPart == PartitionEntry->StartingOffset.QuadPart)
+        {
+            *OutPartitionType = (PartitionInfo.Mbr.BootIndicator == 0);
+            return STATUS_SUCCESS;
+        }
+
+        PartitionEntry++;
+    }
+
+Exit:
+    *OutPartitionType = 2;
+    return STATUS_SUCCESS;
+}
+
 VOID
 FASTCALL
 IoAssignDriveLetters(
