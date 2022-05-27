@@ -1273,35 +1273,20 @@ IoGetDeviceInterfaceAlias(IN PUNICODE_STRING SymbolicLinkName,
     return STATUS_NOT_IMPLEMENTED;
 }
 
-/*++
- * @name IopOpenInterfaceKey
- *
- * Returns the alias device interface of the specified device interface
- *
- * @param InterfaceClassGuid
- *        FILLME
- *
- * @param DesiredAccess
- *        FILLME
- *
- * @param pInterfaceKey
- *        FILLME
- *
- * @return Usual NTSTATUS
- *
- * @remarks None
- *
- *--*/
-static NTSTATUS
-IopOpenInterfaceKey(IN CONST GUID *InterfaceClassGuid,
-                    IN ACCESS_MASK DesiredAccess,
-                    OUT HANDLE *pInterfaceKey)
+/* Returns the alias device interface of the specified device interface */
+static
+NTSTATUS
+IopOpenInterfaceKey(
+    _In_ CONST GUID* InterfaceClassGuid,
+    _In_ ACCESS_MASK DesiredAccess,
+    _Out_ HANDLE* pInterfaceKey)
 {
     UNICODE_STRING LocalMachine = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\");
-    UNICODE_STRING GuidString;
-    UNICODE_STRING KeyName;
     OBJECT_ATTRIBUTES ObjectAttributes;
     HANDLE InterfaceKey = NULL;
+    UNICODE_STRING GuidString;
+    UNICODE_STRING KeyName;
+    USHORT Size;
     NTSTATUS Status;
 
     GuidString.Buffer = KeyName.Buffer = NULL;
@@ -1309,16 +1294,18 @@ IopOpenInterfaceKey(IN CONST GUID *InterfaceClassGuid,
     Status = RtlStringFromGUID(InterfaceClassGuid, &GuidString);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("RtlStringFromGUID() failed with status 0x%08lx\n", Status);
+        DPRINT1("IopOpenInterfaceKey: RtlStringFromGUID() failed %X\n", Status);
         goto cleanup;
     }
 
+    Size = (((USHORT)wcslen(REGSTR_PATH_DEVICE_CLASSES) + 1) * sizeof(WCHAR));
+    KeyName.MaximumLength = LocalMachine.Length + Size + GuidString.Length;
     KeyName.Length = 0;
-    KeyName.MaximumLength = LocalMachine.Length + ((USHORT)wcslen(REGSTR_PATH_DEVICE_CLASSES) + 1) * sizeof(WCHAR) + GuidString.Length;
+
     KeyName.Buffer = ExAllocatePool(PagedPool, KeyName.MaximumLength);
     if (!KeyName.Buffer)
     {
-        DPRINT("ExAllocatePool() failed\n");
+        DPRINT1("IopOpenInterfaceKey: STATUS_INSUFFICIENT_RESOURCES\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto cleanup;
     }
@@ -1326,41 +1313,43 @@ IopOpenInterfaceKey(IN CONST GUID *InterfaceClassGuid,
     Status = RtlAppendUnicodeStringToString(&KeyName, &LocalMachine);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("RtlAppendUnicodeStringToString() failed with status 0x%08lx\n", Status);
-        goto cleanup;
-    }
-    Status = RtlAppendUnicodeToString(&KeyName, REGSTR_PATH_DEVICE_CLASSES);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT("RtlAppendUnicodeToString() failed with status 0x%08lx\n", Status);
-        goto cleanup;
-    }
-    Status = RtlAppendUnicodeToString(&KeyName, L"\\");
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT("RtlAppendUnicodeToString() failed with status 0x%08lx\n", Status);
-        goto cleanup;
-    }
-    Status = RtlAppendUnicodeStringToString(&KeyName, &GuidString);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT("RtlAppendUnicodeStringToString() failed with status 0x%08lx\n", Status);
+        DPRINT1("IopOpenInterfaceKey: RtlAppendUnicodeStringToString() failed %X\n", Status);
         goto cleanup;
     }
 
-    InitializeObjectAttributes(
-        &ObjectAttributes,
-        &KeyName,
-        OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
-        NULL,
-        NULL);
-    Status = ZwOpenKey(
-        &InterfaceKey,
-        DesiredAccess,
-        &ObjectAttributes);
+    Status = RtlAppendUnicodeToString(&KeyName, REGSTR_PATH_DEVICE_CLASSES);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("ZwOpenKey() failed with status 0x%08lx\n", Status);
+        DPRINT1("IopOpenInterfaceKey: RtlAppendUnicodeToString() failed %X\n", Status);
+        goto cleanup;
+    }
+
+    Status = RtlAppendUnicodeToString(&KeyName, L"\\");
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopOpenInterfaceKey: RtlAppendUnicodeToString() failed %X\n", Status);
+        goto cleanup;
+    }
+
+    Status = RtlAppendUnicodeStringToString(&KeyName, &GuidString);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopOpenInterfaceKey: RtlAppendUnicodeStringToString() failed %X\n", Status);
+        goto cleanup;
+    }
+
+    DPRINT("IopOpenInterfaceKey: KeyName '%wZ'\n", &KeyName);
+
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &KeyName,
+                               (OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE),
+                               NULL,
+                               NULL);
+
+    Status = ZwOpenKey(&InterfaceKey, DesiredAccess, &ObjectAttributes);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopOpenInterfaceKey: ZwOpenKey() failed %X\n", Status);
         goto cleanup;
     }
 
@@ -1368,13 +1357,13 @@ IopOpenInterfaceKey(IN CONST GUID *InterfaceClassGuid,
     Status = STATUS_SUCCESS;
 
 cleanup:
-    if (!NT_SUCCESS(Status))
-    {
-        if (InterfaceKey != NULL)
-            ZwClose(InterfaceKey);
-    }
+
+    if (!NT_SUCCESS(Status) && (InterfaceKey))
+        ZwClose(InterfaceKey);
+
     RtlFreeUnicodeString(&GuidString);
     RtlFreeUnicodeString(&KeyName);
+
     return Status;
 }
 
