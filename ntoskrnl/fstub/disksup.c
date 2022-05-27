@@ -17,6 +17,8 @@
 
 #define EFI_PMBR_OSTYPE_EFI 0xEE
 
+extern BOOLEAN IoRemoteBootClient;
+
 /* PRIVATE FUNCTIONS *********************************************************/
 
 NTSTATUS
@@ -2048,8 +2050,468 @@ IoAssignDriveLetters(
     _Out_ PUCHAR NtSystemPath,
     _Out_ PSTRING NtSystemPathString)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // FsbDbgBreakPointEx();
+    PDRIVE_LAYOUT_INFORMATION DriveLayoutInfo;
+    PCONFIGURATION_INFORMATION ConfigInfo;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    IO_STATUS_BLOCK IoStatusBlock;
+    UNICODE_STRING SymbolicLinkName;
+    UNICODE_STRING CdRomString;
+    UNICODE_STRING FloppyString;
+    UNICODE_STRING DeviceName;
+    UNICODE_STRING PartitionName;
+    WCHAR PartitionStr[50];
+    PCHAR DeviceNameBuffer;
+    PCHAR OutDriveLetter;
+    PCHAR LinkNameBuffer;
+    PULONG NumbersArray;
+    HANDLE FileHandle;
+    ULONG PartitionNumber;
+    ULONG PartitionType;
+    ULONG DeviceNumber;
+    ULONG FloppyCount;
+    ULONG CdRomCount;
+    ULONG DiskCount;
+    ULONG failCount;
+    ULONG realCount;
+    ULONG ix;
+    CHAR DriveLetter;
+    BOOLEAN IsActivePartition;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+ #ifndef NDEBUG
+ {
+    UNICODE_STRING BootDevice;
+    NTSTATUS Status;
+
+    Status = RtlAnsiStringToUnicodeString(&BootDevice, NtDeviceName, TRUE);
+    ASSERT(NT_SUCCESS(Status));
+
+    DPRINT("IoAssignDriveLetters: NtDevice '%wZ'\n", &BootDevice);
+    //ASSERT(FALSE); // FsbDbgBreakPointEx();
+ }
+ #endif
+
+    ConfigInfo = IoGetConfigurationInformation();
+
+    DiskCount = ConfigInfo->DiskCount;
+    FloppyCount = ConfigInfo->FloppyCount;
+    CdRomCount = ConfigInfo->CdRomCount;
+
+    DPRINT("DiskCount %X\n", DiskCount);
+    DPRINT("FloppyCount %X\n", FloppyCount);
+    DPRINT("CdRomCount %X\n", CdRomCount);
+
+    DeviceNameBuffer = ExAllocatePoolWithTag(0, 0x80, 'btsF');
+    if (!DeviceNameBuffer)
+    {
+        DPRINT1("IoAssignDriveLetters: Allocate failed, KeBugCheck()\n");
+        ASSERT(FALSE);KeBugCheck(ASSIGN_DRIVE_LETTERS_FAILED);
+    }
+
+    LinkNameBuffer = ExAllocatePoolWithTag(0, 0x40, 'btsF');
+    if (!LinkNameBuffer)
+    {
+        DPRINT1("IoAssignDriveLetters: Allocate failed, KeBugCheck()\n");
+        ASSERT(FALSE);KeBugCheck(ASSIGN_DRIVE_LETTERS_FAILED);
+    }
+
+    OutDriveLetter = (PCHAR)NtSystemPath;
+
+    if (IoRemoteBootClient)
+    {
+        DPRINT1("IoAssignDriveLetters: FIXME! IoRemoteBootClient is TRUE\n");
+        ASSERT(FALSE); // FsbDbgBreakPointEx();
+    }
+
+    for (ix = 0, failCount = 0, realCount = 0; ix < DiskCount; ix++)
+    {
+        STRING DeviceStr;
+        STRING LinkStr;
+
+        sprintf(DeviceNameBuffer, "\\Device\\Harddisk%d\\Partition%d", (int)ix, 0);
+        RtlInitAnsiString(&DeviceStr, DeviceNameBuffer);
+
+        Status = RtlAnsiStringToUnicodeString(&DeviceName, &DeviceStr, TRUE);
+        if (!NT_SUCCESS(Status))
+        {
+             DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+             goto FailOpen;
+        }
+
+        DPRINT("IoAssignDriveLetters: Device '%wZ'\n", &DeviceName);
+
+        InitializeObjectAttributes(&ObjectAttributes, &DeviceName, OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+        Status = ZwOpenFile(&FileHandle,
+                            (FILE_READ_DATA | SYNCHRONIZE),
+                            &ObjectAttributes,
+                            &IoStatusBlock,
+                            FILE_SHARE_READ,
+                            FILE_SYNCHRONOUS_IO_NONALERT);
+
+        if (!NT_SUCCESS(Status))
+        {
+             DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+             RtlFreeUnicodeString(&DeviceName);
+             goto FailOpen;
+        }
+
+        sprintf(LinkNameBuffer, "\\DosDevices\\PhysicalDrive%d", (int)ix);
+        RtlInitAnsiString(&LinkStr, LinkNameBuffer);
+
+        Status = RtlAnsiStringToUnicodeString(&SymbolicLinkName, &LinkStr, TRUE);
+        if (NT_SUCCESS(Status))
+        {
+            DPRINT("IoAssignDriveLetters: SymbolicLink '%wZ', Device '%wZ'\n", &SymbolicLinkName, &DeviceName);
+            IoCreateSymbolicLink(&SymbolicLinkName, &DeviceName);
+            RtlFreeUnicodeString(&SymbolicLinkName);
+        }
+
+        realCount = (ix + 1);
+
+        ZwClose(FileHandle);
+        RtlFreeUnicodeString(&DeviceName);
+
+        if (NT_SUCCESS(Status))
+            continue;
+
+        DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+
+FailOpen:
+        DPRINT1("IoAssignDriveLetters: Failed to open %wZ\n", DeviceName);
+
+        if (failCount < 0x32)
+        {
+            failCount++;
+            DiskCount++;
+        }
+    }
+
+    ExFreePoolWithTag(DeviceNameBuffer, 'btsF');
+    ExFreePoolWithTag(LinkNameBuffer, 'btsF');
+
+    if (LoaderBlock->LoadOptions)
+    {
+        PCHAR LoadOptions;
+
+        LoadOptions = _strupr(LoaderBlock->LoadOptions);
+
+        if (strstr(LoadOptions, "MININT"))
+        {
+            Status = RtlAnsiStringToUnicodeString(&DeviceName, NtDeviceName, TRUE);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+                ASSERT(FALSE); // FsbDbgBreakPointEx();
+            }
+            else
+            {
+                Status = HalpSetMountLetter(&DeviceName, 'X');
+                if (NT_SUCCESS(Status))
+                {
+                    DPRINT("IoAssignDriveLetters: *OutDriveLetter is 'X'\n");
+                    *OutDriveLetter = 'X';
+                }
+
+                RtlFreeUnicodeString(&DeviceName);
+            }
+        }
+    }
+    else
+    {
+        DPRINT1("IoAssignDriveLetters: LoadOptions is NULL\n");
+    }
+
+    DiskCount -= failCount;
+
+    if (DiskCount < realCount)
+        DiskCount = realCount;
+
+    DPRINT("IoAssignDriveLetters: DiskCount %X\n", DiskCount);
+
+    NumbersArray = IopComputeHarddiskDerangements(DiskCount);
+    
+    for (ix = 0, DeviceNumber = 0; ix < DiskCount; ix++)
+    {
+        if (NumbersArray)
+            DeviceNumber = NumbersArray[ix];
+
+        swprintf(PartitionStr, L"\\Device\\Harddisk%d\\Partition0", DeviceNumber);
+        RtlInitUnicodeString(&PartitionName, PartitionStr);
+
+        Status = HalpQueryDriveLayout(&PartitionName, &DriveLayoutInfo);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+            DriveLayoutInfo = NULL;
+        }
+
+        IsActivePartition = FALSE;
+
+        for (PartitionNumber = 1; ; PartitionNumber++)
+        {
+            swprintf(PartitionStr, L"\\Device\\Harddisk%d\\Partition%d", DeviceNumber, PartitionNumber);
+            RtlInitUnicodeString(&PartitionName, PartitionStr);
+
+            Status = HalpQueryPartitionType(&PartitionName, DriveLayoutInfo, &PartitionType);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+                break;
+            }
+
+            if (PartitionType == 0 || PartitionType == 5)
+            {
+                IsActivePartition = TRUE;
+
+                HalpNextDriveLetter(&PartitionName, NtDeviceName, OutDriveLetter, FALSE);
+
+                if (PartitionType == 0)
+                    break;
+            }
+        }
+
+        if (IsActivePartition)
+        {
+            if (DriveLayoutInfo)
+                ExFreePoolWithTag(DriveLayoutInfo, 'BtsF');
+
+            continue;
+        }
+
+        for (PartitionNumber = 1; ; PartitionNumber++)
+        {
+            swprintf(PartitionStr, L"\\Device\\Harddisk%d\\Partition%d", DeviceNumber, PartitionNumber);
+            RtlInitUnicodeString(&PartitionName, PartitionStr);
+
+            Status = HalpQueryPartitionType(&PartitionName, DriveLayoutInfo, &PartitionType);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+                break;
+            }
+
+            if (PartitionType == 1)
+            {
+                HalpNextDriveLetter(&PartitionName, NtDeviceName, OutDriveLetter, FALSE);
+                break;
+            }
+        }
+
+        if (DriveLayoutInfo)
+            ExFreePoolWithTag(DriveLayoutInfo, 'BtsF');
+
+        DeviceNumber = (ix + 1);
+    }
+
+    for (ix = 0; ix < DiskCount; ix++)
+    {
+        if (NumbersArray)
+            DeviceNumber = NumbersArray[ix];
+        else
+            DeviceNumber = ix;
+
+        swprintf(PartitionStr, L"\\Device\\Harddisk%d\\Partition0", DeviceNumber);
+        RtlInitUnicodeString(&PartitionName, PartitionStr);
+
+        Status = HalpQueryDriveLayout(&PartitionName, &DriveLayoutInfo);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+            DriveLayoutInfo = NULL;
+        }
+
+        for (PartitionNumber = 1; ; PartitionNumber++)
+        {
+            swprintf(PartitionStr, L"\\Device\\Harddisk%d\\Partition%d", DeviceNumber, PartitionNumber);
+            RtlInitUnicodeString(&PartitionName, PartitionStr);
+
+            Status = HalpQueryPartitionType(&PartitionName, DriveLayoutInfo, &PartitionType);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+                break;
+            }
+
+            if (PartitionType == 2)
+                HalpNextDriveLetter(&PartitionName, NtDeviceName, OutDriveLetter, FALSE);
+        }
+
+        if (DriveLayoutInfo)
+            ExFreePoolWithTag(DriveLayoutInfo, 'BtsF');
+    }
+
+    for (ix = 0; ix < DiskCount; ix++)
+    {
+        ULONG number = 0;
+
+        if (NumbersArray)
+            DeviceNumber = NumbersArray[ix];
+        else
+            DeviceNumber = ix;
+
+        swprintf(PartitionStr, L"\\Device\\Harddisk%d\\Partition0", DeviceNumber);
+        RtlInitUnicodeString(&PartitionName, PartitionStr);
+
+        Status = HalpQueryDriveLayout(&PartitionName, &DriveLayoutInfo);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+            DriveLayoutInfo = NULL;
+        }
+
+        for (PartitionNumber = 1; ; PartitionNumber++)
+        {
+            swprintf(PartitionStr, L"\\Device\\Harddisk%d\\Partition%d", DeviceNumber, PartitionNumber);
+            RtlInitUnicodeString(&PartitionName, PartitionStr);
+
+            Status = HalpQueryPartitionType(&PartitionName, DriveLayoutInfo, &PartitionType);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+                break;
+            }
+
+            if ((PartitionType == 0) || (PartitionType == 1 && number == 0))
+            {
+                number = PartitionNumber;
+                DPRINT1("IoAssignDriveLetters: number %X\n", number);
+            }
+        }
+
+        for (PartitionNumber = 1; ; PartitionNumber++)
+        {
+            if (PartitionNumber == number)
+                continue;
+
+            swprintf(PartitionStr, L"\\Device\\Harddisk%d\\Partition%d", DeviceNumber, PartitionNumber);
+            RtlInitUnicodeString(&PartitionName, PartitionStr);
+
+            Status = HalpQueryPartitionType(&PartitionName, DriveLayoutInfo, &PartitionType);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+                break;
+            }
+
+            if (PartitionType == 1 || PartitionType == 3)
+                HalpNextDriveLetter(&PartitionName, NtDeviceName, OutDriveLetter, FALSE);
+        }
+
+        if (DriveLayoutInfo)
+            ExFreePoolWithTag(DriveLayoutInfo, 'BtsF');
+    }
+
+    if (NumbersArray)
+        ExFreePoolWithTag(NumbersArray, 'btsF');
+
+    if (FloppyCount)
+    {
+        DPRINT1("IoAssignDriveLetters: FIXME! FloppyCount %X\n", FloppyCount);
+        ASSERT(FALSE); // FsbDbgBreakPointEx();
+    }
+
+#if 0
+    for (DeviceNumber = 0; DeviceNumber < FloppyCount; DeviceNumber++)
+    {
+        swprintf(PartitionStr, L"\\Device\\Floppy%d", DeviceNumber);
+        RtlInitUnicodeString(&PartitionName, PartitionStr);
+
+        if (HalpIsOldStyleFloppy(&PartitionName))
+            HalpNextDriveLetter(&PartitionName, NtDeviceName, OutDriveLetter, TRUE);
+
+        DeviceNumber++;
+    }
+
+    for (DeviceNumber = 0; DeviceNumber < FloppyCount; DeviceNumber++)
+    {
+        swprintf(PartitionStr, L"\\Device\\Floppy%d", DeviceNumber);
+        RtlInitUnicodeString(&PartitionName, PartitionStr);
+
+        if (!HalpIsOldStyleFloppy(&PartitionName))
+            HalpNextDriveLetter(&PartitionName, NtDeviceName, OutDriveLetter, TRUE);
+    }
+#endif
+
+    for (DeviceNumber = 0; DeviceNumber < CdRomCount; DeviceNumber++)
+    {
+        swprintf(PartitionStr, L"\\Device\\CdRom%d", DeviceNumber);
+        RtlInitUnicodeString(&PartitionName, PartitionStr);
+        HalpNextDriveLetter(&PartitionName, NtDeviceName, OutDriveLetter, TRUE);
+    }
+
+    if (IoRemoteBootClient)
+    {
+        DPRINT1("IoAssignDriveLetters: FIXME! IoRemoteBootClient is TRUE\n");
+        ASSERT(FALSE); // FsbDbgBreakPointEx();
+        goto Exit;
+    }
+
+    Status = RtlAnsiStringToUnicodeString(&DeviceName, NtDeviceName, TRUE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IoAssignDriveLetters: Status %X\n", Status);
+        goto Exit;
+    }
+
+    DriveLetter = HalpNextDriveLetter(&DeviceName, NULL, NULL, TRUE);
+    if (DriveLetter)
+    {
+        if (DriveLetter != -1)
+        {
+            DPRINT1("IoAssignDriveLetters: DriveLetter %X\n", DriveLetter);
+            *OutDriveLetter = DriveLetter;
+        }
+
+        RtlFreeUnicodeString(&DeviceName);
+        goto Exit;
+    }
+
+    RtlInitUnicodeString(&FloppyString, L"\\Device\\Floppy");
+    RtlInitUnicodeString(&CdRomString, L"\\Device\\CdRom");
+
+    if (RtlPrefixUnicodeString(&FloppyString, &DeviceName, TRUE))
+    {
+        DriveLetter = 'A';
+    }
+    else if (!RtlPrefixUnicodeString(&CdRomString, &DeviceName, TRUE))
+    {
+        DriveLetter = 'C';
+    }
+    else
+    {
+        DriveLetter = 'D';
+    }
+
+    for (; (DriveLetter <= 'Z'); DriveLetter++)
+    {
+        Status = HalpSetMountLetter(&DeviceName, DriveLetter);
+        if (NT_SUCCESS(Status))
+        {
+            DPRINT1("IoAssignDriveLetters: DriveLetter %X\n", DriveLetter);
+            *OutDriveLetter = DriveLetter;
+            break;
+        }
+    }
+
+    if (DriveLetter > 'Z')
+    {
+        DPRINT1("IoAssignDriveLetters: Assign letter for drive failed\n");
+        ASSERT(FALSE); // FsbDbgBreakPointEx();
+
+        HalpDeleteMountLetter('Z');
+        HalpSetMountLetter(&DeviceName, 'Z');
+        *OutDriveLetter = 'Z';
+
+        DPRINT1("IoAssignDriveLetters: DriveLetter %X\n", *OutDriveLetter);
+    }
+
+    RtlFreeUnicodeString(&DeviceName);
+
+Exit:
+    HalpEnableAutomaticDriveLetterAssignment();
 }
 
 /* EOF */
