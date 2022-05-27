@@ -1262,440 +1262,6 @@ FstubFixupEfiPartition(IN PPARTITION_DESCRIPTOR PartitionDescriptor,
 
 NTSTATUS
 FASTCALL
-xHalIoReadPartitionTable(IN PDEVICE_OBJECT DeviceObject,
-                         IN ULONG SectorSize,
-                         IN BOOLEAN ReturnRecognizedPartitions,
-                         IN OUT PDRIVE_LAYOUT_INFORMATION *PartitionBuffer)
-{
-    KEVENT Event;
-    IO_STATUS_BLOCK IoStatusBlock;
-    PIRP Irp;
-    PPARTITION_DESCRIPTOR PartitionDescriptor;
-    CCHAR Entry;
-    NTSTATUS Status;
-    PPARTITION_INFORMATION PartitionInfo;
-    PUCHAR Buffer = NULL;
-    ULONG BufferSize = 2048, InputSize;
-    PDRIVE_LAYOUT_INFORMATION DriveLayoutInfo = NULL;
-    LONG j = -1, i = -1, k;
-    DISK_GEOMETRY DiskGeometry;
-    LONGLONG EndSector, MaxSector, StartOffset;
-    ULONGLONG MaxOffset;
-    LARGE_INTEGER Offset, VolumeOffset;
-    BOOLEAN IsPrimary = TRUE, IsEzDrive = FALSE, MbrFound = FALSE;
-    BOOLEAN IsValid, IsEmpty = TRUE;
-    PVOID MbrBuffer;
-    PIO_STACK_LOCATION IoStackLocation;
-    UCHAR PartitionType;
-    LARGE_INTEGER HiddenSectors64;
-    VolumeOffset.QuadPart = Offset.QuadPart = 0;
-    PAGED_CODE();
-
-    /* Allocate the buffer */
-    *PartitionBuffer = ExAllocatePoolWithTag(NonPagedPool,
-                                             BufferSize,
-                                             TAG_FILE_SYSTEM);
-    if (!(*PartitionBuffer)) return STATUS_INSUFFICIENT_RESOURCES;
-
-    /* Normalize the buffer size */
-    InputSize = max(512, SectorSize);
-
-    /* Check for EZ Drive */
-    HalExamineMBR(DeviceObject, InputSize, 0x55, &MbrBuffer);
-    if (MbrBuffer)
-    {
-        /* EZ Drive found, bias the offset */
-        IsEzDrive = TRUE;
-        ExFreePoolWithTag(MbrBuffer, TAG_FILE_SYSTEM);
-        Offset.QuadPart = 512;
-    }
-
-    /* Get drive geometry */
-    Status = HalpGetFullGeometry(DeviceObject, &DiskGeometry, &MaxOffset);
-    if (!NT_SUCCESS(Status))
-    {
-        ExFreePoolWithTag(*PartitionBuffer, TAG_FILE_SYSTEM);
-        *PartitionBuffer = NULL;
-        return Status;
-    }
-
-    /* Get the end and maximum sector */
-    EndSector = MaxOffset;
-    MaxSector = MaxOffset << 1;
-    DPRINT("FSTUB: MaxOffset = %#I64x, MaxSector = %#I64x\n",
-            MaxOffset, MaxSector);
-
-    /* Allocate our buffer */
-    Buffer = ExAllocatePoolWithTag(NonPagedPool, InputSize, TAG_FILE_SYSTEM);
-    if (!Buffer)
-    {
-        /* Fail, free the input buffer */
-        ExFreePoolWithTag(*PartitionBuffer, TAG_FILE_SYSTEM);
-        *PartitionBuffer = NULL;
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    /* Start partition loop */
-    do
-    {
-        /* Assume the partition is valid */
-        IsValid = TRUE;
-
-        /* Initialize the event */
-        KeInitializeEvent(&Event, NotificationEvent, FALSE);
-
-        /* Clear the buffer and build the IRP */
-        RtlZeroMemory(Buffer, InputSize);
-        Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ,
-                                           DeviceObject,
-                                           Buffer,
-                                           InputSize,
-                                           &Offset,
-                                           &Event,
-                                           &IoStatusBlock);
-        if (!Irp)
-        {
-            /* Failed */
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            break;
-        }
-
-        /* Make sure to disable volume verification */
-        IoStackLocation = IoGetNextIrpStackLocation(Irp);
-        IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
-
-        /* Call the driver */
-        Status = IoCallDriver(DeviceObject, Irp);
-        if (Status == STATUS_PENDING)
-        {
-            /* Wait for completion */
-            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
-            Status = IoStatusBlock.Status;
-        }
-
-        /* Normalize status code and check for failure */
-        if (Status == STATUS_NO_DATA_DETECTED) Status = STATUS_SUCCESS;
-        if (!NT_SUCCESS(Status)) break;
-
-        /* If we biased for EZ-Drive, unbias now */
-        if (IsEzDrive && (Offset.QuadPart == 512)) Offset.QuadPart = 0;
-
-        /* Make sure this is a valid MBR */
-        if (((PUSHORT)Buffer)[BOOT_SIGNATURE_OFFSET] != BOOT_RECORD_SIGNATURE)
-        {
-            /* It's not, fail */
-            DPRINT1("FSTUB: (IoReadPartitionTable) No 0xaa55 found in "
-                    "partition table %d\n", j + 1);
-            break;
-        }
-
-        /* At this point we have a valid MBR */
-        MbrFound = TRUE;
-
-        /* Check if we weren't given an offset */
-        if (!Offset.QuadPart)
-        {
-            /* Then read the signature off the disk */
-            (*PartitionBuffer)->Signature = ((PULONG)Buffer)[PARTITION_TABLE_OFFSET / 2 - 1];
-        }
-
-        /* Get the partition descriptor array */
-        PartitionDescriptor = (PPARTITION_DESCRIPTOR)
-                               &(((PUSHORT)Buffer)[PARTITION_TABLE_OFFSET]);
-
-        /* Start looping partitions */
-        j++;
-        DPRINT("FSTUB: Partition Table %d:\n", j);
-        for (Entry = 1, k = 0; Entry <= 4; Entry++, PartitionDescriptor++)
-        {
-            /* Get the partition type */
-            PartitionType = PartitionDescriptor->PartitionType;
-
-            /* Print debug messages */
-            DPRINT("Partition Entry %d,%d: type %#x %s\n",
-                    j,
-                    Entry,
-                    PartitionType,
-                    (PartitionDescriptor->ActiveFlag) ? "Active" : "");
-            DPRINT("\tOffset %#08lx for %#08lx Sectors\n",
-                    GET_STARTING_SECTOR(PartitionDescriptor),
-                    GET_PARTITION_LENGTH(PartitionDescriptor));
-
-            /* Check whether we're facing a protective MBR */
-            if (PartitionType == EFI_PMBR_OSTYPE_EFI)
-            {
-                /* Partition length might be bigger than disk size */
-                FstubFixupEfiPartition(PartitionDescriptor,
-                                       MaxOffset);
-            }
-
-            /* Make sure that the partition is valid, unless it's the first */
-            if (!(HalpIsValidPartitionEntry(PartitionDescriptor,
-                                            MaxOffset,
-                                            MaxSector)) && (j == 0))
-            {
-                /* It's invalid, so fail */
-                IsValid = FALSE;
-                break;
-            }
-
-            /* Check if it's a container */
-            if (IsContainerPartition(PartitionType))
-            {
-                /* Increase the count of containers */
-                if (++k != 1)
-                {
-                    /* More then one table is invalid */
-                    DPRINT1("FSTUB: Multiple container partitions found in "
-                            "partition table %d\n - table is invalid\n",
-                            j);
-                    IsValid = FALSE;
-                    break;
-                }
-            }
-
-            /* Check if the partition is supposedly empty */
-            if (IsEmpty)
-            {
-                /* But check if it actually has a start and/or length */
-                if ((GET_STARTING_SECTOR(PartitionDescriptor)) ||
-                    (GET_PARTITION_LENGTH(PartitionDescriptor)))
-                {
-                    /* So then it's not really empty */
-                    IsEmpty = FALSE;
-                }
-            }
-
-            /* Check if the caller wanted only recognized partitions */
-            if (ReturnRecognizedPartitions)
-            {
-                /* Then check if this one is unused, or a container */
-                if ((PartitionType == PARTITION_ENTRY_UNUSED) ||
-                    IsContainerPartition(PartitionType))
-                {
-                    /* Skip it, since the caller doesn't want it */
-                    continue;
-                }
-            }
-
-            /* Increase the structure count and check if they can fit */
-            if ((sizeof(DRIVE_LAYOUT_INFORMATION) +
-                 (++i * sizeof(PARTITION_INFORMATION))) >
-                BufferSize)
-            {
-                /* Allocate a new buffer that's twice as big */
-                DriveLayoutInfo = ExAllocatePoolWithTag(NonPagedPool,
-                                                        BufferSize << 1,
-                                                        TAG_FILE_SYSTEM);
-                if (!DriveLayoutInfo)
-                {
-                    /* Out of memory, unto this extra structure */
-                    --i;
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    break;
-                }
-
-                /* Copy the contents of the old buffer */
-                RtlMoveMemory(DriveLayoutInfo,
-                              *PartitionBuffer,
-                              BufferSize);
-
-                /* Free the old buffer and set this one as the new one */
-                ExFreePoolWithTag(*PartitionBuffer, TAG_FILE_SYSTEM);
-                *PartitionBuffer = DriveLayoutInfo;
-
-                /* Double the size */
-                BufferSize <<= 1;
-            }
-
-            /* Now get the current structure being filled and initialize it */
-            PartitionInfo = &(*PartitionBuffer)->PartitionEntry[i];
-            PartitionInfo->PartitionType = PartitionType;
-            PartitionInfo->RewritePartition = FALSE;
-
-            /* Check if we're dealing with a partition that's in use */
-            if (PartitionType != PARTITION_ENTRY_UNUSED)
-            {
-                /* Check if it's bootable */
-                PartitionInfo->BootIndicator = PartitionDescriptor->
-                                               ActiveFlag & 0x80 ?
-                                               TRUE : FALSE;
-
-                /* Check if its' a container */
-                if (IsContainerPartition(PartitionType))
-                {
-                    /* Then don't recognize it and use the volume offset */
-                    PartitionInfo->RecognizedPartition = FALSE;
-                    StartOffset = VolumeOffset.QuadPart;
-                }
-                else
-                {
-                    /* Then recognize it and use the partition offset */
-                    PartitionInfo->RecognizedPartition = TRUE;
-                    StartOffset = Offset.QuadPart;
-                }
-
-                /* Get the starting offset */
-                PartitionInfo->StartingOffset.QuadPart =
-                    StartOffset +
-                    UInt32x32To64(GET_STARTING_SECTOR(PartitionDescriptor),
-                                  SectorSize);
-
-                /* Calculate the number of hidden sectors */
-                HiddenSectors64.QuadPart = (PartitionInfo->
-                                            StartingOffset.QuadPart -
-                                            StartOffset) /
-                                            SectorSize;
-                PartitionInfo->HiddenSectors = HiddenSectors64.LowPart;
-
-                /* Get the partition length */
-                PartitionInfo->PartitionLength.QuadPart =
-                    UInt32x32To64(GET_PARTITION_LENGTH(PartitionDescriptor),
-                                  SectorSize);
-
-                /* Get the partition number */
-                PartitionInfo->PartitionNumber = (!IsContainerPartition(PartitionType)) ? i + 1 : 0;
-            }
-            else
-            {
-                /* Otherwise, clear all the relevant fields */
-                PartitionInfo->BootIndicator = FALSE;
-                PartitionInfo->RecognizedPartition = FALSE;
-                PartitionInfo->StartingOffset.QuadPart = 0;
-                PartitionInfo->PartitionLength.QuadPart = 0;
-                PartitionInfo->HiddenSectors = 0;
-
-                PartitionInfo->PartitionNumber = 0;
-            }
-        }
-
-        /* Finish debug log, and check for failure */
-        DPRINT("\n");
-        if (!NT_SUCCESS(Status)) break;
-
-        /* Also check if we hit an invalid entry here */
-        if (!IsValid)
-        {
-            /* We did, so break out of the loop minus one entry */
-            j--;
-            break;
-        }
-
-        /* Reset the offset */
-        Offset.QuadPart = 0;
-
-        /* Go back to the descriptor array and loop it */
-        PartitionDescriptor = (PPARTITION_DESCRIPTOR)
-                               &(((PUSHORT)Buffer)[PARTITION_TABLE_OFFSET]);
-        for (Entry = 1; Entry <= 4; Entry++, PartitionDescriptor++)
-        {
-            /* Check if this is a container partition, since we skipped them */
-            if (IsContainerPartition(PartitionDescriptor->PartitionType))
-            {
-                /* Get its offset */
-                Offset.QuadPart = VolumeOffset.QuadPart +
-                                  UInt32x32To64(
-                                     GET_STARTING_SECTOR(PartitionDescriptor),
-                                     SectorSize);
-
-                /* If this is a primary partition, this is the volume offset */
-                if (IsPrimary) VolumeOffset = Offset;
-
-                /* Also update the maximum sector */
-                MaxSector = GET_PARTITION_LENGTH(PartitionDescriptor);
-                DPRINT1("FSTUB: MaxSector now = %I64d\n", MaxSector);
-                break;
-            }
-        }
-
-        /* Loop the next partitions, which are not primary anymore */
-        IsPrimary = FALSE;
-    } while (Offset.HighPart | Offset.LowPart);
-
-    /* Check if this is a removable device that's probably a super-floppy */
-    if ((DiskGeometry.MediaType == RemovableMedia) &&
-        (j == 0) && (MbrFound) && (IsEmpty))
-    {
-        PBOOT_SECTOR_INFO BootSectorInfo = (PBOOT_SECTOR_INFO)Buffer;
-
-        /* Read the jump bytes to detect super-floppy */
-        if ((BootSectorInfo->JumpByte[0] == 0xeb) ||
-            (BootSectorInfo->JumpByte[0] == 0xe9))
-        {
-            /* Super floppes don't have typical MBRs, so skip them */
-            DPRINT1("FSTUB: Jump byte %#x found along with empty partition "
-                    "table - disk is a super floppy and has no valid MBR\n",
-                    BootSectorInfo->JumpByte);
-            j = -1;
-        }
-    }
-
-    /* Check if we're still at partition -1 */
-    if (j == -1)
-    {
-        /* The likely cause is the super floppy detection above */
-        if ((MbrFound) || (DiskGeometry.MediaType == RemovableMedia))
-        {
-            /* Print out debugging information */
-            DPRINT1("FSTUB: Drive %#p has no valid MBR. Make it into a "
-                    "super-floppy\n",
-                    DeviceObject);
-            DPRINT1("FSTUB: Drive has %I64d sectors and is %#016I64x "
-                    "bytes large\n",
-                    EndSector, EndSector * DiskGeometry.BytesPerSector);
-
-            /* We should at least have some sectors */
-            if (EndSector > 0)
-            {
-                /* Get the entry we'll use */
-                PartitionInfo = &(*PartitionBuffer)->PartitionEntry[0];
-
-                /* Fill it out with data for a super-floppy */
-                PartitionInfo->RewritePartition = FALSE;
-                PartitionInfo->RecognizedPartition = TRUE;
-                PartitionInfo->PartitionType = PARTITION_FAT_16;
-                PartitionInfo->BootIndicator = FALSE;
-                PartitionInfo->HiddenSectors = 0;
-                PartitionInfo->StartingOffset.QuadPart = 0;
-                PartitionInfo->PartitionLength.QuadPart = (EndSector *
-                                                           DiskGeometry.
-                                                           BytesPerSector);
-
-                /* FIXME: REACTOS HACK */
-                PartitionInfo->PartitionNumber = 0;
-
-                /* Set the signature and set the count back to 0 */
-                (*PartitionBuffer)->Signature = 1;
-                i = 0;
-            }
-        }
-        else
-        {
-            /* Otherwise, this isn't a super floppy, so set an invalid count */
-            i = -1;
-        }
-    }
-
-    /* Set the partition count */
-    (*PartitionBuffer)->PartitionCount = ++i;
-
-    /* If we have no count, delete the signature */
-    if (!i) (*PartitionBuffer)->Signature = 0;
-
-    /* Free the buffer and check for success */
-    if (Buffer) ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
-    if (!NT_SUCCESS(Status))
-    {
-        ExFreePoolWithTag(*PartitionBuffer, TAG_FILE_SYSTEM);
-        *PartitionBuffer = NULL;
-    }
-
-    /* Return status */
-    return Status;
-}
-
-NTSTATUS
-FASTCALL
 xHalIoSetPartitionInformation(IN PDEVICE_OBJECT DeviceObject,
                               IN ULONG SectorSize,
                               IN ULONG PartitionNumber,
@@ -2276,20 +1842,423 @@ HalExamineMBR(
     }
 }
 
-/*
- * @implemented
- */
 NTSTATUS
 FASTCALL
-IoReadPartitionTable(IN PDEVICE_OBJECT DeviceObject,
-                     IN ULONG SectorSize,
-                     IN BOOLEAN ReturnRecognizedPartitions,
-                     IN OUT PDRIVE_LAYOUT_INFORMATION *PartitionBuffer)
+IoReadPartitionTable(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG SectorSize,
+    _In_ BOOLEAN ReturnRecognizedPartitions,
+    _Inout_ PDRIVE_LAYOUT_INFORMATION* PartitionBuffer)
 {
-    return HALDISPATCH->HalIoReadPartitionTable(DeviceObject,
-                                                SectorSize,
-                                                ReturnRecognizedPartitions,
-                                                PartitionBuffer);
+    PDRIVE_LAYOUT_INFORMATION DriveLayoutInfo = NULL;
+    PPARTITION_DESCRIPTOR PartitionDescriptor;
+    PPARTITION_INFORMATION PartitionInfo;
+    PIO_STACK_LOCATION IoStackLocation;
+    IO_STATUS_BLOCK IoStatusBlock;
+    LARGE_INTEGER HiddenSectors64;
+    DISK_GEOMETRY DiskGeometry;
+    PUCHAR Buffer = NULL;
+    LONGLONG EndSector;
+    LONGLONG MaxSector;
+    LONGLONG StartOffset;
+    ULONGLONG MaxOffset;
+    LARGE_INTEGER Offset;
+    LARGE_INTEGER VolumeOffset;
+    PVOID MbrBuffer;
+    KEVENT Event;
+    PIRP Irp;
+    ULONG BufferSize = 0x800;
+    ULONG InputSize;
+    LONG jx = -1;
+    LONG ix = -1;
+    LONG kx;
+    BOOLEAN IsPrimary = TRUE;
+    BOOLEAN IsEzDrive = FALSE;
+    BOOLEAN MbrFound = FALSE;
+    BOOLEAN IsValid;
+    BOOLEAN IsEmpty = TRUE;
+    UCHAR PartitionType;
+    CCHAR Entry;
+    NTSTATUS Status;
+
+    DPRINT1("IoReadPartitionTable: DeviceObject %p\n", DeviceObject);
+    PAGED_CODE();
+
+    *PartitionBuffer = ExAllocatePoolWithTag(NonPagedPool, BufferSize, TAG_FILE_SYSTEM);
+    if (!(*PartitionBuffer))
+    {
+        DPRINT1("IoReadPartitionTable: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    InputSize = max(0x200, SectorSize);
+
+    VolumeOffset.QuadPart = 0;
+    Offset.QuadPart = 0;
+
+    /* Check for EZ Drive */
+    HalExamineMBR(DeviceObject, InputSize, 0x55, &MbrBuffer);
+    if (MbrBuffer)
+    {
+        /* EZ Drive found, bias the offset */
+        IsEzDrive = TRUE;
+        ExFreePoolWithTag(MbrBuffer, TAG_FILE_SYSTEM);
+        Offset.QuadPart = 0x200;
+    }
+
+    Status = HalpGetFullGeometry(DeviceObject, &DiskGeometry, &MaxOffset);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IoReadPartitionTable: Status %X\n", Status);
+        ExFreePoolWithTag(*PartitionBuffer, TAG_FILE_SYSTEM);
+        *PartitionBuffer = NULL;
+        return Status;
+    }
+
+    EndSector = MaxOffset;
+    MaxSector = (MaxOffset << 1);
+
+    DPRINT("IoReadPartitionTable: MaxOffset %I64X, MaxSector %I64X\n", MaxOffset, MaxSector);
+
+    Buffer = ExAllocatePoolWithTag(NonPagedPool, InputSize, TAG_FILE_SYSTEM);
+    if (!Buffer)
+    {
+        DPRINT1("IoReadPartitionTable: STATUS_INSUFFICIENT_RESOURCES\n");
+        ExFreePoolWithTag(*PartitionBuffer, TAG_FILE_SYSTEM);
+        *PartitionBuffer = NULL;
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Start partition loop */
+    do
+    {
+        IsValid = TRUE;
+
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+        RtlZeroMemory(Buffer, InputSize);
+
+        Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ,
+                                           DeviceObject,
+                                           Buffer,
+                                           InputSize,
+                                           &Offset,
+                                           &Event,
+                                           &IoStatusBlock);
+        if (!Irp)
+        {
+            DPRINT1("IoReadPartitionTable: STATUS_INSUFFICIENT_RESOURCES\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break;
+        }
+
+        /* Make sure to disable volume verification */
+        IoStackLocation = IoGetNextIrpStackLocation(Irp);
+        IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+
+        Status = IoCallDriver(DeviceObject, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatusBlock.Status;
+        }
+
+        /* Normalize status code and check for failure */
+        if (Status == STATUS_NO_DATA_DETECTED)
+            Status = STATUS_SUCCESS;
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IoReadPartitionTable: Status %X\n", Status);
+            break;
+        }
+
+        /* If we biased for EZ-Drive, unbias now */
+        if (IsEzDrive && (Offset.QuadPart == 0x200))
+            Offset.QuadPart = 0;
+
+        /* Make sure this is a valid MBR */
+        if (((PUSHORT)Buffer)[BOOT_SIGNATURE_OFFSET] != BOOT_RECORD_SIGNATURE)
+        {
+            /* It's not, fail */
+            DPRINT1("IoReadPartitionTable: 0xaa55 not found in %X\n", (jx + 1));
+            break;
+        }
+
+        /* At this point we have a valid MBR */
+        MbrFound = TRUE;
+
+        /* Check if we weren't given an offset */
+        if (!Offset.QuadPart)
+        {
+            /* Then read the signature off the disk */
+            (*PartitionBuffer)->Signature = ((PULONG)Buffer)[PARTITION_TABLE_OFFSET / 2 - 1];
+        }
+
+        /* Get the partition descriptor array */
+        PartitionDescriptor = (PPARTITION_DESCRIPTOR)&(((PUSHORT)Buffer)[PARTITION_TABLE_OFFSET]);
+
+        /* Start looping partitions */
+        jx++;
+
+        DPRINT("IoReadPartitionTable: Partition Table %X\n", jx);
+
+        for (Entry = 1, kx = 0; Entry <= 4; Entry++, PartitionDescriptor++)
+        {
+            PartitionType = PartitionDescriptor->PartitionType;
+
+            DPRINT("IoReadPartitionTable: [%X] Entry %X, Type %X (%s)\n",
+                    jx, Entry, PartitionType, (PartitionDescriptor->ActiveFlag ? "Active" : ""));
+
+            DPRINT("IoReadPartitionTable: Offset %X for %X Sectors\n",
+                   GET_STARTING_SECTOR(PartitionDescriptor), GET_PARTITION_LENGTH(PartitionDescriptor));
+
+            /* Check whether we're facing a protective MBR */
+            if (PartitionType == EFI_PMBR_OSTYPE_EFI)
+            {
+                /* Partition length might be bigger than disk size */
+                FstubFixupEfiPartition(PartitionDescriptor, MaxOffset);
+            }
+
+            /* Make sure that the partition is valid, unless it's the first */
+            if (!(HalpIsValidPartitionEntry(PartitionDescriptor, MaxOffset, MaxSector)) && !jx)
+            {
+                /* It's invalid, so fail */
+                IsValid = FALSE;
+                break;
+            }
+
+            /* Check if it's a container */
+            if (IsContainerPartition(PartitionType))
+            {
+                /* Increase the count of containers */
+                if (++kx != 1)
+                {
+                    /* More then one table is invalid */
+                    DPRINT1("IoReadPartitionTable: Multiple container partitions in %X\n", jx);
+                    IsValid = FALSE;
+                    break;
+                }
+            }
+
+            /* Check if the partition is supposedly empty */
+            if (IsEmpty)
+            {
+                /* But check if it actually has a start and/or length */
+                if ((GET_STARTING_SECTOR(PartitionDescriptor)) ||
+                    (GET_PARTITION_LENGTH(PartitionDescriptor)))
+                {
+                    /* So then it's not really empty */
+                    IsEmpty = FALSE;
+                }
+            }
+
+            /* Check if the caller wanted only recognized partitions */
+            if (ReturnRecognizedPartitions)
+            {
+                /* Then check if this one is unused, or a container */
+                if ((PartitionType == PARTITION_ENTRY_UNUSED) ||
+                    IsContainerPartition(PartitionType))
+                {
+                    /* Skip it, since the caller doesn't want it */
+                    continue;
+                }
+            }
+
+            /* Increase the structure count and check if they can fit */
+            if ((sizeof(DRIVE_LAYOUT_INFORMATION) + (++ix * sizeof(PARTITION_INFORMATION))) > BufferSize)
+            {
+                /* Allocate a new buffer that's twice as big */
+                DriveLayoutInfo = ExAllocatePoolWithTag(NonPagedPool, (BufferSize * 2), TAG_FILE_SYSTEM);
+                if (!DriveLayoutInfo)
+                {
+                    DPRINT1("IoReadPartitionTable: STATUS_INSUFFICIENT_RESOURCES\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    ix--;
+                    break;
+                }
+
+                /* Copy the contents of the old buffer */
+                RtlMoveMemory(DriveLayoutInfo, *PartitionBuffer, BufferSize);
+
+                /* Free the old buffer and set this one as the new one */
+                ExFreePoolWithTag(*PartitionBuffer, TAG_FILE_SYSTEM);
+                *PartitionBuffer = DriveLayoutInfo;
+
+                /* Double the size */
+                BufferSize *= 2;
+            }
+
+            /* Now get the current structure being filled and initialize it */
+            PartitionInfo = &(*PartitionBuffer)->PartitionEntry[ix];
+            PartitionInfo->PartitionType = PartitionType;
+            PartitionInfo->RewritePartition = FALSE;
+
+            /* Check if we're dealing with a partition that's in use */
+            if (PartitionType == PARTITION_ENTRY_UNUSED)
+            {
+                /* Otherwise, clear all the relevant fields */
+                PartitionInfo->BootIndicator = FALSE;
+                PartitionInfo->RecognizedPartition = FALSE;
+                PartitionInfo->StartingOffset.QuadPart = 0;
+                PartitionInfo->PartitionLength.QuadPart = 0;
+                PartitionInfo->HiddenSectors = 0;
+                PartitionInfo->PartitionNumber = 0;
+
+                continue;
+            }
+
+            /* Check if it's bootable */
+            PartitionInfo->BootIndicator = (PartitionDescriptor->ActiveFlag & 0x80 ? TRUE : FALSE);
+
+            /* Check if its' a container */
+            if (IsContainerPartition(PartitionType))
+            {
+                /* Then don't recognize it and use the volume offset */
+                PartitionInfo->RecognizedPartition = FALSE;
+                StartOffset = VolumeOffset.QuadPart;
+            }
+            else
+            {
+                /* Then recognize it and use the partition offset */
+                PartitionInfo->RecognizedPartition = TRUE;
+                StartOffset = Offset.QuadPart;
+            }
+
+            /* Get the starting offset */
+            PartitionInfo->StartingOffset.QuadPart = (StartOffset + UInt32x32To64(GET_STARTING_SECTOR(PartitionDescriptor), SectorSize));
+
+            /* Calculate the number of hidden sectors */
+            HiddenSectors64.QuadPart = ((PartitionInfo->StartingOffset.QuadPart - StartOffset) / SectorSize);
+            PartitionInfo->HiddenSectors = HiddenSectors64.LowPart;
+
+            /* Get the partition length */
+            PartitionInfo->PartitionLength.QuadPart = (UInt32x32To64(GET_PARTITION_LENGTH(PartitionDescriptor), SectorSize));
+
+            /* Get the partition number */
+            PartitionInfo->PartitionNumber = ((!IsContainerPartition(PartitionType)) ? (ix + 1) : 0);
+        }
+
+        /* Finish debug log, and check for failure */
+        DPRINT("\n");
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IoReadPartitionTable: Status %X\n", Status);
+            break;
+        }
+
+        /* Also check if we hit an invalid entry here */
+        if (!IsValid)
+        {
+            /* We did, so break out of the loop minus one entry */
+            jx--;
+            break;
+        }
+
+        Offset.QuadPart = 0;
+
+        /* Go back to the descriptor array and loop it */
+        PartitionDescriptor = (PPARTITION_DESCRIPTOR)&(((PUSHORT)Buffer)[PARTITION_TABLE_OFFSET]);
+
+        for (Entry = 1; Entry <= 4; Entry++, PartitionDescriptor++)
+        {
+            /* Check if this is a container partition, since we skipped them */
+            if (!IsContainerPartition(PartitionDescriptor->PartitionType))
+                continue;
+
+            /* Get its offset */
+            Offset.QuadPart = (VolumeOffset.QuadPart + UInt32x32To64(GET_STARTING_SECTOR(PartitionDescriptor), SectorSize));
+
+            /* If this is a primary partition, this is the volume offset */
+            if (IsPrimary)
+                VolumeOffset = Offset;
+
+            /* Also update the maximum sector */
+            MaxSector = GET_PARTITION_LENGTH(PartitionDescriptor);
+            DPRINT1("IoReadPartitionTable: MaxSector now %I64X\n", MaxSector);
+            break;
+        }
+
+        /* Loop the next partitions, which are not primary anymore */
+        IsPrimary = FALSE;
+    }
+    while (Offset.HighPart | Offset.LowPart);
+
+    /* Check if this is a removable device that's probably a super-floppy */
+    if ((DiskGeometry.MediaType == RemovableMedia) && !jx && MbrFound && IsEmpty)
+    {
+        PBOOT_SECTOR_INFO BootSectorInfo = (PBOOT_SECTOR_INFO)Buffer;
+
+        /* Read the jump bytes to detect super-floppy */
+        if ((BootSectorInfo->JumpByte[0] == 0xeb) ||
+            (BootSectorInfo->JumpByte[0] == 0xe9))
+        {
+            /* Jump byte found along with empty partition table - disk is a super floppy and has no valid MBR
+               Super floppes don't have typical MBRs, so skip them
+            */
+            DPRINT1("IoReadPartitionTable: JumpByte %#x\n", BootSectorInfo->JumpByte);
+            jx = -1;
+        }
+    }
+
+    /* Check if we're still at partition -1 */
+    if (jx == -1)
+    {
+        /* The likely cause is the super floppy detection above */
+        if (MbrFound || (DiskGeometry.MediaType == RemovableMedia))
+        {
+            /* Print out debugging information */
+            DPRINT1("IoReadPartitionTable: DeviceObject %p has no valid MBR.\n", DeviceObject);
+            DPRINT1("IoReadPartitionTable: Drive has %I64X sectors and is %#016I64X bytes large\n", EndSector, (EndSector * DiskGeometry.BytesPerSector));
+
+            /* We should at least have some sectors */
+            if (EndSector > 0)
+            {
+                /* Get the entry we'll use */
+                PartitionInfo = &(*PartitionBuffer)->PartitionEntry[0];
+
+                /* Fill it out with data for a super-floppy */
+                PartitionInfo->RewritePartition = FALSE;
+                PartitionInfo->RecognizedPartition = TRUE;
+                PartitionInfo->PartitionType = PARTITION_FAT_16;
+                PartitionInfo->BootIndicator = FALSE;
+                PartitionInfo->HiddenSectors = 0;
+                PartitionInfo->StartingOffset.QuadPart = 0;
+                PartitionInfo->PartitionLength.QuadPart = (EndSector * DiskGeometry.BytesPerSector);
+
+                /* FIXME: REACTOS HACK */
+                PartitionInfo->PartitionNumber = 0;
+
+                /* Set the signature and set the count back to 0 */
+                (*PartitionBuffer)->Signature = 1;
+                ix = 0;
+            }
+        }
+        else
+        {
+            /* Otherwise, this isn't a super floppy, so set an invalid count */
+            ix = -1;
+        }
+    }
+
+    /* Set the partition count */
+    (*PartitionBuffer)->PartitionCount = ++ix;
+
+    /* If we have no count, delete the signature */
+    if (!ix)
+        (*PartitionBuffer)->Signature = 0;
+
+    if (Buffer)
+        ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IoReadPartitionTable: Status %X\n", Status);
+        ExFreePoolWithTag(*PartitionBuffer, TAG_FILE_SYSTEM);
+        *PartitionBuffer = NULL;
+    }
+
+    return Status;
 }
 
 /*
