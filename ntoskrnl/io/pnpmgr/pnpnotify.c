@@ -1021,29 +1021,60 @@ ErrorExit:
     return Status;
 }
 
-/*
- * @implemented
- */
+/* halfplemented */
 NTSTATUS
 NTAPI
-IoUnregisterPlugPlayNotification(IN PVOID NotificationEntry)
+IoUnregisterPlugPlayNotification(
+    _In_ PVOID NotificationEntry)
 {
-    PPNP_NOTIFY_ENTRY Entry;
+    PPNP_NOTIFY_HEADER NotifyHeader = NotificationEntry;
+    PKGUARDED_MUTEX Lock = NotifyHeader->NotifyLock;
+    BOOLEAN wasDeferred = FALSE;
+
+    DPRINT("IoUnregisterPlugPlayNotification: NotificationEntry %p\n", NotificationEntry);
+
     PAGED_CODE();
+    ASSERT(NotificationEntry);
 
-    Entry = (PPNP_NOTIFY_ENTRY)NotificationEntry;
-    DPRINT("%s(NotificationEntry %p) called\n", __FUNCTION__, Entry);
+    KeAcquireGuardedMutex(&PiNotificationInProgressLock);
 
-    KeAcquireGuardedMutex(&PnpNotifyListLock);
-    RemoveEntryList(&Entry->PnpNotifyList);
-    KeReleaseGuardedMutex(&PnpNotifyListLock);
+    if (PiNotificationInProgress)
+    {
+        DPRINT1("IoUnregisterPlugPlayNotification: PiNotificationInProgress is TRUE\n");
 
-    RtlFreeUnicodeString(&Entry->Guid);
+        KeAcquireGuardedMutex(&IopDeferredRegistrationLock);
 
-    ObDereferenceObject(Entry->DriverObject);
+        if (!IsListEmpty(&IopDeferredRegistrationList))
+        {
+            DPRINT("IoUnregisterPlugPlayNotification: FIXME! Head %p\n", &IopDeferredRegistrationList);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
 
-    ExFreePoolWithTag(Entry, TAG_PNP_NOTIFY);
+        }
 
+        KeReleaseGuardedMutex(&IopDeferredRegistrationLock);
+    }
+    else
+    {
+        ASSERT(IsListEmpty(&IopDeferredRegistrationList));
+    }
+
+    KeReleaseGuardedMutex(&PiNotificationInProgressLock);
+
+    if (Lock)
+        KeAcquireGuardedMutex(Lock);
+
+    ASSERT(wasDeferred == NotifyHeader->Unregistered);
+
+    if (!NotifyHeader->Unregistered || wasDeferred)
+    {
+        NotifyHeader->Unregistered = TRUE;
+        IopDereferenceNotify(NotifyHeader);
+    }
+
+    if (Lock)
+        KeReleaseGuardedMutex(Lock);
+
+    DPRINT("IoUnregisterPlugPlayNotification: return STATUS_SUCCESS\n");
     return STATUS_SUCCESS;
 }
 
