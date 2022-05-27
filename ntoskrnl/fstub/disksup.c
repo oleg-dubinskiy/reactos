@@ -1469,6 +1469,101 @@ IopComputeHarddiskDerangements(
     return NumbersArray;
 }
 
+NTSTATUS
+NTAPI
+HalpQueryDriveLayout(
+    _In_ PUNICODE_STRING DeviceName,
+    _Out_ PDRIVE_LAYOUT_INFORMATION* OutDriveLayoutInfo)
+{
+    PDRIVE_LAYOUT_INFORMATION DriveLayoutInfo;
+    PDEVICE_OBJECT DeviceObject = NULL;
+    IO_STATUS_BLOCK IoStatus;
+    PFILE_OBJECT FileObject;
+    SIZE_T LayoutInfoSize;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("HalpQueryDriveLayout: Device '%wZ'\n", DeviceName);
+
+    Status = IoGetDeviceObjectPointer(DeviceName, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpQueryDriveLayout: Status %X\n", Status);
+        return Status;
+    }
+
+    DeviceObject = IoGetAttachedDeviceReference(FileObject->DeviceObject);
+    ObDereferenceObject(FileObject);
+    if (DeviceObject->Characteristics & 1)
+    {
+        ObDereferenceObject(DeviceObject);
+        return STATUS_NO_MEMORY;
+    }
+
+    LayoutInfoSize = PAGE_SIZE;
+    DriveLayoutInfo = NULL;
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    do
+    {
+        KeClearEvent(&Event);
+
+        if (DriveLayoutInfo)
+        {
+            ExFreePoolWithTag(DriveLayoutInfo, 'BtsF');
+            LayoutInfoSize *= 2;
+        }
+
+        DriveLayoutInfo = ExAllocatePoolWithTag(0, LayoutInfoSize, 'BtsF');
+        if (!DriveLayoutInfo)
+        {
+            DPRINT1("HalpQueryDriveLayout: STATUS_NO_MEMORY\n");
+            Status = STATUS_NO_MEMORY;
+            goto Exit;
+        }
+
+        Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_DRIVE_LAYOUT,
+                                            DeviceObject,
+                                            NULL,
+                                            0UL,
+                                            DriveLayoutInfo,
+                                            LayoutInfoSize,
+                                            FALSE,
+                                            &Event,
+                                            &IoStatus);
+        if (!Irp)
+        {
+            DPRINT1("HalpQueryDriveLayout: STATUS_INSUFFICIENT_RESOURCES\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break;
+        }
+
+        Status = IoCallDriver(DeviceObject, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatus.Status;
+        }
+    }
+    while (Status == STATUS_BUFFER_TOO_SMALL);
+
+Exit:
+
+    if (DeviceObject)
+        ObDereferenceObject(DeviceObject);
+
+    if (NT_SUCCESS(Status))
+    {
+        ASSERT(DriveLayoutInfo);
+        *OutDriveLayoutInfo = DriveLayoutInfo;
+    }
+
+    return Status;
+}
+
 VOID
 FASTCALL
 IoAssignDriveLetters(
