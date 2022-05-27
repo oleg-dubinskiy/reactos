@@ -23,7 +23,7 @@ HAL_DISPATCH HalDispatchTable =
     xHalQueryBusSlots,
     0,
     HalExamineMBR,
-    xHalIoAssignDriveLetters,
+    IoAssignDriveLetters,
     IoReadPartitionTable,
     IoSetPartitionInformation,
     IoWritePartitionTable,
