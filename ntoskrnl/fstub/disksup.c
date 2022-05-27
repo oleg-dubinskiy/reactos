@@ -1788,6 +1788,96 @@ HalpNextMountLetter(
 
     return Status;
 }
+
+NTSTATUS
+NTAPI
+HalpSetMountLetter(
+    _In_ PUNICODE_STRING DeviceName,
+    _In_ CHAR MountLetter)
+{
+    PMOUNTMGR_CREATE_POINT_INPUT CreatePoint;
+    UNICODE_STRING MntMgrDeviceName;
+    UNICODE_STRING LinkName;
+    PDEVICE_OBJECT DeviceObject;
+    PFILE_OBJECT FileObject;
+    IO_STATUS_BLOCK IoStatus;
+    WCHAR SourceString[30];
+    KEVENT Event;
+    PIRP Irp;
+    ULONG InputBufferLength;
+    NTSTATUS Status;
+
+    DPRINT("HalpSetMountLetter: Device '%wZ', MountLetter '%C'\n", DeviceName, MountLetter);
+
+    swprintf(SourceString, L"\\DosDevices\\%c:", MountLetter);
+    RtlInitUnicodeString(&LinkName, SourceString);
+
+    InputBufferLength = (LinkName.Length + DeviceName->Length + sizeof(MOUNTMGR_CREATE_POINT_INPUT));
+
+    DPRINT("HalpSetMountLetter: Link '%wZ', Len %X\n", &LinkName, InputBufferLength);
+
+    CreatePoint = ExAllocatePoolWithTag(PagedPool, InputBufferLength, 'btsF');
+    if (!CreatePoint)
+    {
+        DPRINT1("HalpSetMountLetter: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    CreatePoint->SymbolicLinkNameOffset = sizeof(MOUNTMGR_CREATE_POINT_INPUT);
+    CreatePoint->SymbolicLinkNameLength = LinkName.Length;
+
+    CreatePoint->DeviceNameOffset = (sizeof(MOUNTMGR_CREATE_POINT_INPUT) + LinkName.Length);
+    CreatePoint->DeviceNameLength = DeviceName->Length;
+
+    RtlCopyMemory(&CreatePoint[1], LinkName.Buffer, LinkName.Length);
+
+    RtlCopyMemory((PVOID)((ULONG_PTR)CreatePoint + CreatePoint->DeviceNameOffset),
+                  DeviceName->Buffer,
+                  DeviceName->Length);
+
+    RtlInitUnicodeString(&MntMgrDeviceName, L"\\Device\\MountPointManager");
+
+    Status = IoGetDeviceObjectPointer(&MntMgrDeviceName, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpSetMountLetter: return Status %X\n", Status);
+        ExFreePoolWithTag(CreatePoint, 'btsF');
+        return Status;
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTMGR_CREATE_POINT,
+                                        DeviceObject,
+                                        CreatePoint,
+                                        InputBufferLength,
+                                        NULL,
+                                        0UL,
+                                        FALSE,
+                                        &Event,
+                                        &IoStatus);
+    if (!Irp)
+    {
+        DPRINT1("HalpSetMountLetter: STATUS_INSUFFICIENT_RESOURCES\n");
+        ObDereferenceObject(FileObject);
+        ExFreePoolWithTag(CreatePoint, 'btsF');
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = IoCallDriver(DeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatus.Status;
+    }
+
+    ObDereferenceObject(FileObject);
+    ExFreePoolWithTag(CreatePoint, 'btsF');
+
+    DPRINT("HalpSetMountLetter: return Status %X\n", Status);
+    return Status;
+}
+
 VOID
 FASTCALL
 IoAssignDriveLetters(
