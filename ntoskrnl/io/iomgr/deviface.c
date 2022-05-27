@@ -1862,26 +1862,27 @@ IoRegisterDeviceInterface(
     POBJECT_NAME_INFORMATION PdoNameInfo = (POBJECT_NAME_INFORMATION)PdoNameInfoBuffer;
     UNICODE_STRING DeviceInstance = RTL_CONSTANT_STRING(L"DeviceInstance");
     UNICODE_STRING SymbolicLink = RTL_CONSTANT_STRING(L"SymbolicLink");
-    UNICODE_STRING GuidString;
-    UNICODE_STRING SubKeyName;
     UNICODE_STRING InterfaceKeyName;
     UNICODE_STRING BaseKeyName;
-    OBJECT_ATTRIBUTES ObjectAttributes;
+    UNICODE_STRING GuidString;
+    UNICODE_STRING SubKeyName;
     PUNICODE_STRING InstancePath;
+    OBJECT_ATTRIBUTES ObjectAttributes;
     PDEVICE_NODE DeviceNode;
-    HANDLE ClassKey;
     HANDLE InterfaceKey;
+    HANDLE ClassKey;
     HANDLE SubKey;
     ULONG StartIndex;
     ULONG ix;
-    NTSTATUS Status, SymLinkStatus;
+    NTSTATUS SymLinkStatus;
+    NTSTATUS Status;
 
     PAGED_CODE();
 
     Status = RtlStringFromGUID(InterfaceClassGuid, &GuidString);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("RtlStringFromGUID() failed with status %X\n", Status);
+        DPRINT1("IoRegisterDeviceInterface: RtlStringFromGUID() failed %X\n", Status);
         return Status;
     }
 
@@ -1889,7 +1890,7 @@ IoRegisterDeviceInterface(
 
     if (ReferenceString && ReferenceString->Buffer)
     {
-        DPRINT1("IoRegisterDeviceInterface(): RefString: %wZ\n", ReferenceString);
+        DPRINT1("IoRegisterDeviceInterface(): RefString: '%wZ'\n", ReferenceString);
     }
 
     DeviceNode = IopGetDeviceNode(PhysicalDeviceObject);
@@ -1897,20 +1898,20 @@ IoRegisterDeviceInterface(
     /* 1st level: Presence of a Device Node */
     if (!DeviceNode)
     {
-        DPRINT("PDO %p doesn't have a DeviceNode\n", PhysicalDeviceObject);
+        DPRINT1("IoRegisterDeviceInterface: PDO %p doesn't have a DeviceNode\n", PhysicalDeviceObject);
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
     if (DeviceNode->Flags & DNF_LEGACY_RESOURCE_DEVICENODE)
     {
-        DPRINT("DeviceNode %p have a DNF_LEGACY_RESOURCE_DEVICENODE\n", DeviceNode);
+        DPRINT1("IoRegisterDeviceInterface: DeviceNode %p have a DNF_LEGACY_RESOURCE_DEVICENODE\n", DeviceNode);
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
     /* 2nd level: Presence of an non-zero length InstancePath */
     if (!DeviceNode->InstancePath.Length)
     {
-        DPRINT("PDO's %p DOE has zero-length InstancePath\n", PhysicalDeviceObject);
+        DPRINT1("IoRegisterDeviceInterface: PDO's %p DOE has zero-length InstancePath\n", PhysicalDeviceObject);
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
@@ -1932,7 +1933,7 @@ IoRegisterDeviceInterface(
     Status = RtlStringFromGUID(InterfaceClassGuid, &GuidString);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("RtlStringFromGUID() failed with status %X\n", Status);
+        DPRINT1("IoRegisterDeviceInterface: RtlStringFromGUID() failed %X\n", Status);
         return Status;
     }
 
@@ -1940,7 +1941,7 @@ IoRegisterDeviceInterface(
     Status = ObQueryNameString(PhysicalDeviceObject, PdoNameInfo, sizeof(PdoNameInfoBuffer), &ix);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("ObQueryNameString() failed with status %X\n", Status);
+        DPRINT1("IoRegisterDeviceInterface: ObQueryNameString() failed %X\n", Status);
         return Status;
     }
 
@@ -1973,22 +1974,22 @@ IoRegisterDeviceInterface(
     Status = ZwCreateKey(&ClassKey, KEY_WRITE, &ObjectAttributes, 0, NULL, REG_OPTION_VOLATILE, NULL);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("ZwCreateKey() failed with status %X\n", Status);
+        DPRINT1("IoRegisterDeviceInterface: ZwCreateKey() failed %X\n", Status);
         ExFreePool(BaseKeyName.Buffer);
         return Status;
     }
 
     /* Create key name for this interface: ##?#ACPI#PNP0501#1#{GUID} */
     InterfaceKeyName.Length = 0;
-    InterfaceKeyName.MaximumLength = (4 * sizeof(WCHAR))  + /* 4 = size of ##?# */
+    InterfaceKeyName.MaximumLength = (4 * sizeof(WCHAR))  + /* 4  = size of ##?# */
                                      InstancePath->Length +
-                                     sizeof(WCHAR)        + /* 1 = size of # */
+                                     sizeof(WCHAR)        + /* 1  = size of # */
                                      GuidString.Length;
 
     InterfaceKeyName.Buffer = ExAllocatePool(PagedPool, InterfaceKeyName.MaximumLength);
     if (!InterfaceKeyName.Buffer)
     {
-        DPRINT("ExAllocatePool() failed\n");
+        DPRINT1("IoRegisterDeviceInterface: ExAllocatePool() failed\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -2015,7 +2016,7 @@ IoRegisterDeviceInterface(
     Status = ZwCreateKey(&InterfaceKey, KEY_WRITE, &ObjectAttributes, 0, NULL, REG_OPTION_VOLATILE, NULL);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("ZwCreateKey() failed with status %X\n", Status);
+        DPRINT1("IoRegisterDeviceInterface: ZwCreateKey() failed %X\n", Status);
         ZwClose(ClassKey);
         ExFreePool(BaseKeyName.Buffer);
         return Status;
@@ -2025,7 +2026,7 @@ IoRegisterDeviceInterface(
     Status = ZwSetValueKey(InterfaceKey, &DeviceInstance, 0, REG_SZ, InstancePath->Buffer, InstancePath->Length);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("ZwSetValueKey() failed with status %X\n", Status);
+        DPRINT("IoRegisterDeviceInterface: ZwSetValueKey() failed %X\n", Status);
 
         ZwClose(InterfaceKey);
         ZwClose(ClassKey);
@@ -2072,7 +2073,7 @@ IoRegisterDeviceInterface(
     Status = ZwCreateKey(&SubKey, KEY_WRITE, &ObjectAttributes, 0, NULL, REG_OPTION_VOLATILE, NULL);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("ZwCreateKey() failed with status %X\n", Status);
+        DPRINT1("IoRegisterDeviceInterface: ZwCreateKey() failed %X\n", Status);
 
         ZwClose(InterfaceKey);
         ZwClose(ClassKey);
@@ -2085,12 +2086,11 @@ IoRegisterDeviceInterface(
 
     /* Create symbolic link name: \??\ACPI#PNP0501#1#{GUID}\ReferenceString */
     SymbolicLinkName->Length = 0;
-    SymbolicLinkName->MaximumLength = SymbolicLinkName->Length +
-                                      (4 * sizeof(WCHAR))      + /* size of \??\ */
-                                      InstancePath->Length     +
-                                      sizeof(WCHAR)            + /* size of # */
-                                      GuidString.Length        +
-                                      sizeof(WCHAR);             /* final NULL */
+    SymbolicLinkName->MaximumLength = (4 * sizeof(WCHAR))  + /* size of \??\ */
+                                      InstancePath->Length +
+                                      sizeof(WCHAR)        + /* size of # */
+                                      GuidString.Length    +
+                                      sizeof(WCHAR);         /* final NULL */
 
     if (ReferenceString && ReferenceString->Length)
         SymbolicLinkName->MaximumLength += (sizeof(WCHAR) + ReferenceString->Length);
@@ -2141,7 +2141,7 @@ IoRegisterDeviceInterface(
 
     if (!NT_SUCCESS(SymLinkStatus))
     {
-        DPRINT1("IoCreateSymbolicLink() failed with status %X\n", SymLinkStatus);
+        DPRINT1("IoRegisterDeviceInterface: IoCreateSymbolicLink() failed %X\n", SymLinkStatus);
 
         ZwClose(SubKey);
         ZwClose(InterfaceKey);
@@ -2169,7 +2169,7 @@ IoRegisterDeviceInterface(
     Status = ZwSetValueKey(SubKey, &SymbolicLink, 0, REG_SZ, SymbolicLinkName->Buffer, SymbolicLinkName->Length);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("ZwSetValueKey() failed with status %X\n", Status);
+        DPRINT1("IoRegisterDeviceInterface: ZwSetValueKey() failed %X\n", Status);
         ExFreePool(SymbolicLinkName->Buffer);
     }
     else
@@ -2187,6 +2187,7 @@ IoRegisterDeviceInterface(
 
     return (NT_SUCCESS(Status) ? SymLinkStatus : Status);
 }
+
 
 /* Enables or disables an instance of a previously registered device interface class.
    Documented in WDK.
