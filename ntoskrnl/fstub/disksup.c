@@ -1878,6 +1878,110 @@ HalpSetMountLetter(
     return Status;
 }
 
+CHAR
+NTAPI
+HalpNextDriveLetter(
+    _In_ PUNICODE_STRING PartitionName,
+    _In_ PSTRING NtDeviceName,
+    _Out_ PCHAR OutNextLetter,
+    _In_ BOOLEAN AsiignLetter)
+{
+    UNICODE_STRING FloppyName;
+    UNICODE_STRING SymbolicLinkName;
+    UNICODE_STRING CdRomName;
+    UNICODE_STRING UnicodeString;
+    CHAR NextLetter;
+    WCHAR Buffer[40];
+    CHAR letter;
+    BOOLEAN IsCdRom;
+    BOOLEAN IsFloppy;
+    NTSTATUS Status;
+
+    DPRINT("HalpNextDriveLetter: '%wZ', AsiignLetter %X\n", PartitionName, AsiignLetter);
+
+    Status = HalpNextMountLetter(PartitionName, &NextLetter);
+    if (NT_SUCCESS(Status))
+    {
+        DPRINT("HalpNextDriveLetter: NextLetter '%C'\n", NextLetter);
+        return NextLetter;
+    }
+
+    if (!NtDeviceName || !OutNextLetter)
+    {
+        DPRINT("HalpNextDriveLetter: !NtDeviceName || !OutNextLetter\n");
+        return -1;
+    }
+
+    if (!AsiignLetter)
+    {
+        DPRINT("HalpNextDriveLetter: AsiignLetter is FALSE\n");
+        return 0;
+    }
+
+    RtlInitUnicodeString(&FloppyName, L"\\Device\\Floppy");
+    IsFloppy = RtlPrefixUnicodeString(&FloppyName, PartitionName, TRUE);
+
+    if (IsFloppy)
+    {
+        letter = 'A';
+    }
+    else
+    {
+        RtlInitUnicodeString(&CdRomName, L"\\Device\\CdRom");
+        IsCdRom = RtlPrefixUnicodeString(&CdRomName, PartitionName, TRUE);
+
+        if (IsCdRom)
+            letter = 'D';
+        else
+            letter = 'C';
+    }
+
+    DPRINT("HalpNextDriveLetter: NextLetter '%C'\n", letter);
+    
+    for (NextLetter = letter; NextLetter <= 'Z'; NextLetter++)
+    {
+        Status = HalpSetMountLetter(PartitionName, NextLetter);
+        if (!NT_SUCCESS(Status))
+            continue;
+
+        DPRINT("HalpNextDriveLetter: NextLetter '%C'\n", NextLetter);
+
+        Status = RtlAnsiStringToUnicodeString(&UnicodeString, NtDeviceName, TRUE);
+        if (!NT_SUCCESS(Status))
+            return NextLetter;
+
+        if (RtlEqualUnicodeString(&UnicodeString, PartitionName, TRUE))
+            *OutNextLetter = NextLetter;
+
+        RtlFreeUnicodeString(&UnicodeString);
+        return NextLetter;
+    }
+
+    for (NextLetter = letter; NextLetter <= 'Z'; NextLetter++)
+    {
+        DPRINT("HalpNextDriveLetter: NextLetter '%C'\n", NextLetter);
+
+        swprintf(Buffer, L"\\DosDevices\\%c:", NextLetter);
+        RtlInitUnicodeString(&SymbolicLinkName, Buffer);
+
+        Status = IoCreateSymbolicLink(&SymbolicLinkName, PartitionName);
+        if (!NT_SUCCESS(Status))
+            continue;
+
+        Status = RtlAnsiStringToUnicodeString(&UnicodeString, NtDeviceName, TRUE);
+        if (!NT_SUCCESS(Status))
+            return NextLetter;
+
+        if (RtlEqualUnicodeString(&UnicodeString, PartitionName, TRUE))
+            *OutNextLetter = NextLetter;
+
+        RtlFreeUnicodeString(&UnicodeString);
+        return NextLetter;
+    }
+
+    return 0;
+}
+
 VOID
 FASTCALL
 IoAssignDriveLetters(
