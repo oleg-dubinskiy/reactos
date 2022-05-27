@@ -1246,35 +1246,30 @@ IoOpenDeviceInterfaceRegistryKey(
    return Status;
 }
 
-/*++
- * @name IoGetDeviceInterfaceAlias
- * @unimplemented
- *
- * Returns the alias device interface of the specified device interface
- * instance, if the alias exists.
- * Documented in WDK.
- *
- * @param SymbolicLinkName
- *        Pointer to a string which identifies the device interface instance
- *
- * @param AliasInterfaceClassGuid
- *        See WDK
- *
- * @param AliasSymbolicLinkName
- *        See WDK
- *
- * @return Three different NTSTATUS values in case of errors, and STATUS_SUCCESS
- *         otherwise (see WDK for details)
- *
- * @remarks Must be called at IRQL = PASSIVE_LEVEL in the context of a system thread
- *
- *--*/
+/* unimplemented
+
+   Returns the alias device interface of the specified device interface instance, if the alias exists.
+   Documented in WDK.
+ 
+   SymbolicLinkName
+      Pointer to a string which identifies the device interface instance
+   AliasInterfaceClassGuid
+      See WDK
+   AliasSymbolicLinkName
+      See WDK
+ 
+   return Three different NTSTATUS values in case of errors, and STATUS_SUCCESS otherwise (see WDK for details)
+ 
+   Must be called at IRQL = PASSIVE_LEVEL in the context of a system thread
+*/
 NTSTATUS
 NTAPI
 IoGetDeviceInterfaceAlias(IN PUNICODE_STRING SymbolicLinkName,
-                          IN CONST GUID *AliasInterfaceClassGuid,
+                          IN CONST GUID* AliasInterfaceClassGuid,
                           OUT PUNICODE_STRING AliasSymbolicLinkName)
 {
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//IoDbgBreakPointEx();
     return STATUS_NOT_IMPLEMENTED;
 }
 
