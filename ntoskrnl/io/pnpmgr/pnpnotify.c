@@ -492,6 +492,43 @@ Exit:
 }
 
 VOID
+NTAPI
+IopProcessDeferredRegistrations(
+    VOID)
+{
+    PPNP_DEFER_NOTIFY DeferNotification;
+    PKGUARDED_MUTEX NotifyLock;
+    PLIST_ENTRY Entry;
+
+    DPRINT("IopProcessDeferredRegistrations()\n");
+    PAGED_CODE();
+
+    KeAcquireGuardedMutex(&IopDeferredRegistrationLock);
+
+    while (!IsListEmpty(&IopDeferredRegistrationList))
+    {
+        Entry = RemoveHeadList(&IopDeferredRegistrationList);
+        DeferNotification = CONTAINING_RECORD(Entry, PNP_DEFER_NOTIFY, Link);
+
+        DPRINT("IopProcessDeferredRegistrations: DeferNotification %p\n", DeferNotification);
+
+        NotifyLock = DeferNotification->NotifyHeader->NotifyLock;
+        if (NotifyLock)
+            KeAcquireGuardedMutex(NotifyLock);
+
+        DeferNotification->NotifyHeader->Unregistered = FALSE;
+        IopDereferenceNotify(DeferNotification->NotifyHeader);
+
+        ExFreePool(DeferNotification);
+
+        if (NotifyLock)
+            KeReleaseGuardedMutex(NotifyLock);
+    }
+
+    KeReleaseGuardedMutex(&IopDeferredRegistrationLock);
+}
+
+VOID
 IopNotifyPlugPlayNotification(
     IN PDEVICE_OBJECT DeviceObject,
     IN IO_NOTIFICATION_EVENT_CATEGORY EventCategory,
@@ -846,55 +883,6 @@ IoUnregisterPlugPlayNotification(IN PVOID NotificationEntry)
     ExFreePoolWithTag(Entry, TAG_PNP_NOTIFY);
 
     return STATUS_SUCCESS;
-}
-
-NTSTATUS
-NTAPI
-PiNotifyDriverCallback(
-    _In_ PDRIVER_NOTIFICATION_CALLBACK_ROUTINE CallbackRoutine,
-    _In_ PVOID NotificationStructure,
-    _In_ PVOID Context,
-    _In_ ULONG SessionId,
-    _In_ PVOID OpaqueSession,
-    _Out_ NTSTATUS* OutStatus)
-{
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-VOID
-NTAPI
-IopProcessDeferredRegistrations(VOID)
-{
-    PPNP_DEFER_NOTIFY DeferNotification;
-    PKGUARDED_MUTEX NotifyLock;
-    PLIST_ENTRY Entry;
-
-    PAGED_CODE();
-    DPRINT("IopProcessDeferredRegistrations()\n");
-
-    KeAcquireGuardedMutex(&IopDeferredRegistrationLock);
-
-    while (!IsListEmpty(&IopDeferredRegistrationList))
-    {
-        Entry = RemoveHeadList(&IopDeferredRegistrationList);
-        DeferNotification = CONTAINING_RECORD(Entry, PNP_DEFER_NOTIFY, Link);
-        DPRINT("IopProcessDeferredRegistrations: DeferNotification %X\n", DeferNotification);
-
-        NotifyLock = DeferNotification->NotifyHeader->NotifyLock;
-        if (NotifyLock)
-            KeAcquireGuardedMutex(NotifyLock);
-
-        DeferNotification->NotifyHeader->Unregistered = FALSE;
-        IopDereferenceNotify(DeferNotification->NotifyHeader);
-        ExFreePoolWithTag(DeferNotification, 0);
-
-        if (NotifyLock)
-            KeReleaseGuardedMutex(NotifyLock);
-    }
-
-    KeReleaseGuardedMutex(&IopDeferredRegistrationLock);
 }
 
 /* EOF */
