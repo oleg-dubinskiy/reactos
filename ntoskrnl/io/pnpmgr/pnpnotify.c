@@ -51,6 +51,107 @@ extern BOOLEAN PiNotificationInProgress;
 /* FUNCTIONS *****************************************************************/
 
 VOID
+NTAPI
+IopReferenceNotify(
+    _In_ PPNP_NOTIFY_HEADER NotifyHeader)
+{
+    DPRINT("IopReferenceNotify: NotifyHeader %p\n", NotifyHeader);
+    PAGED_CODE();
+
+    ASSERT(NotifyHeader);
+    ASSERT(NotifyHeader->RefCount);
+
+    NotifyHeader->RefCount++;
+}
+
+VOID
+NTAPI
+IopDereferenceNotify(
+    _In_ PPNP_NOTIFY_HEADER NotifyHeader)
+{
+    DPRINT("IopDereferenceNotify: NotifyHeader %p\n", NotifyHeader);
+    PAGED_CODE();
+
+    ASSERT(NotifyHeader);
+    ASSERT(NotifyHeader->RefCount > 0);
+
+    NotifyHeader->RefCount--;
+
+    if (NotifyHeader->RefCount)
+    {
+        DPRINT("IopDereferenceNotify: NotifyHeader->RefCount %X\n", NotifyHeader->RefCount);
+        return;
+    }
+
+    ASSERT(NotifyHeader->Unregistered);
+    RemoveEntryList(&NotifyHeader->Link);
+
+    ObDereferenceObject(NotifyHeader->DriverObject);
+
+    if (NotifyHeader->EventCategory == EventCategoryTargetDeviceChange)
+    {
+        PTARGET_DEVICE_NOTIFY Notify = (PTARGET_DEVICE_NOTIFY)NotifyHeader;
+
+        if (Notify->PhysicalDeviceObject)
+        {
+            ObDereferenceObject(Notify->PhysicalDeviceObject);
+            Notify->PhysicalDeviceObject = NULL;
+        }
+    }
+
+    if (NotifyHeader->OpaqueSession)
+    {
+        MmQuitNextSession(NotifyHeader->OpaqueSession);
+        NotifyHeader->OpaqueSession = NULL;
+    }
+
+    ExFreePoolWithTag(NotifyHeader, '  pP');
+}
+
+NTSTATUS
+NTAPI
+PiDeferNotification(
+    _In_ PPNP_NOTIFY_HEADER NotifyHeader)
+{
+    PPNP_DEFER_NOTIFY DeferNotification;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("PiDeferNotification: NotifyHeader %p\n", NotifyHeader);
+    PAGED_CODE();
+
+    KeAcquireGuardedMutex(&PiNotificationInProgressLock);
+    if (!PiNotificationInProgress)
+    {
+        DPRINT1("PiNotificationInProgress is FALSE\n");
+        ASSERT(IsListEmpty(&IopDeferredRegistrationList));
+        goto Exit;
+    }
+
+    DeferNotification = ExAllocatePoolWithTag(PagedPool, sizeof(*DeferNotification), '  pP');
+    if (!DeferNotification)
+    {
+        DPRINT1("PiDeferNotification: STATUS_INSUFFICIENT_RESOURCES\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    DeferNotification->NotifyHeader = NotifyHeader;
+    NotifyHeader->Unregistered = TRUE;
+
+    IopReferenceNotify(NotifyHeader);
+
+    KeAcquireGuardedMutex(&IopDeferredRegistrationLock);
+    InsertTailList(&IopDeferredRegistrationList, &DeferNotification->Link);
+    KeReleaseGuardedMutex(&IopDeferredRegistrationLock);
+
+Exit:
+
+    KeReleaseGuardedMutex(&PiNotificationInProgressLock);
+
+    return Status;
+}
+
+VOID
 IopNotifyPlugPlayNotification(
     IN PDEVICE_OBJECT DeviceObject,
     IN IO_NOTIFICATION_EVENT_CATEGORY EventCategory,
@@ -259,46 +360,6 @@ IoPnPDeliverServicePowerNotification(ULONG VetoedPowerOperation OPTIONAL,
     return 0;
 }
 
-VOID
-NTAPI
-IopDereferenceNotify(
-    _In_ PPNP_NOTIFY_HEADER NotifyHeader)
-{
-    PAGED_CODE();
-    DPRINT("IopDereferenceNotify: NotifyHeader %p\n", NotifyHeader);
-
-    ASSERT(NotifyHeader);
-    ASSERT(NotifyHeader->RefCount > 0);
-
-    NotifyHeader->RefCount--;
-    if (NotifyHeader->RefCount != 0)
-        return;
-
-    ASSERT(NotifyHeader->Unregistered);
-
-    RemoveEntryList(&NotifyHeader->Link);
-    ObDereferenceObject(NotifyHeader->DriverObject);
-
-    if (NotifyHeader->EventCategory == EventCategoryTargetDeviceChange)
-    {
-        PTARGET_DEVICE_NOTIFY Notify = (PTARGET_DEVICE_NOTIFY)NotifyHeader;
-
-        if (Notify->PhysicalDeviceObject)
-        {
-            ObDereferenceObject(Notify->PhysicalDeviceObject);
-            Notify->PhysicalDeviceObject = NULL;
-        }
-    }
-
-    if (NotifyHeader->OpaqueSession)
-    {
-        MmQuitNextSession(NotifyHeader->OpaqueSession);
-        NotifyHeader->OpaqueSession = NULL;
-    }
-
-    ExFreePoolWithTag(NotifyHeader, '  pP');
-}
-
 /*
  * @implemented
  */
@@ -445,20 +506,6 @@ IoUnregisterPlugPlayNotification(IN PVOID NotificationEntry)
     ExFreePoolWithTag(Entry, TAG_PNP_NOTIFY);
 
     return STATUS_SUCCESS;
-}
-
-VOID
-NTAPI
-IopReferenceNotify(
-    _In_ PPNP_NOTIFY_HEADER NotifyHeader)
-{
-    DPRINT("IopReferenceNotify: NotifyHeader %p\n", NotifyHeader);
-    PAGED_CODE();
-
-    ASSERT(NotifyHeader);
-    ASSERT(NotifyHeader->RefCount);
-
-    NotifyHeader->RefCount++;
 }
 
 NTSTATUS
