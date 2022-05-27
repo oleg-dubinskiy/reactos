@@ -1352,6 +1352,123 @@ IoWritePartitionTable(
     return Status;
 }
 
+//---------------------------------
+// IoAssignDriveLetters
+//---------------------------------
+
+PULONG
+NTAPI
+IopComputeHarddiskDerangements(
+    _In_ ULONG DiskCount)
+{
+    STORAGE_DEVICE_NUMBER StorageDeviceNumber;
+    UNICODE_STRING DestinationString;
+    PDEVICE_OBJECT DeviceObject;
+    IO_STATUS_BLOCK IoStatus;
+    PFILE_OBJECT FileObject;
+    WCHAR SourceString[50];
+    PULONG NumbersArray;
+    KEVENT Event;
+    PIRP Irp;
+    ULONG ix;
+    ULONG jx;
+    ULONG nx;
+    NTSTATUS Status;
+
+    if (!DiskCount)
+    {
+        DPRINT1("IopComputeHarddiskDerangements: DiskCount is 0\n");
+        return NULL;
+    }
+
+    DPRINT("IopComputeHarddiskDerangements: DiskCount %X\n", DiskCount);
+
+    NumbersArray = ExAllocatePoolWithTag((PagedPool | POOL_COLD_ALLOCATION), (DiskCount * 4), 'btsF');
+    if (!NumbersArray)
+    {
+        DPRINT1("IopComputeHarddiskDerangements: Allocate failed\n");
+        return NULL;
+    }
+
+    for (ix = 0; ix < DiskCount; ix++)
+    {
+        swprintf(SourceString, L"\\ArcName\\multi(0)disk(0)rdisk(%d)", ix);
+        RtlInitUnicodeString(&DestinationString, SourceString);
+
+        Status = IoGetDeviceObjectPointer(&DestinationString, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopComputeHarddiskDerangements: Status %X\n", Status);
+            NumbersArray[ix] = 0xFFFFFFFF;
+            continue;
+        }
+
+        DeviceObject = IoGetAttachedDeviceReference(FileObject->DeviceObject);
+        ObDereferenceObject(FileObject);
+
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+        Irp = IoBuildDeviceIoControlRequest(IOCTL_STORAGE_GET_DEVICE_NUMBER,
+                                            DeviceObject,
+                                            NULL,
+                                            0UL,
+                                            &StorageDeviceNumber,
+                                            sizeof(StorageDeviceNumber),
+                                            FALSE,
+                                            &Event,
+                                            &IoStatus);
+        if (!Irp)
+        {
+            DPRINT1("IopComputeHarddiskDerangements: Build IRP failed\n");
+            ObDereferenceObject(DeviceObject);
+            NumbersArray[ix] = 0xFFFFFFFF;
+            continue;
+        }
+
+        Status = IoCallDriver(DeviceObject, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatus.Status;
+        }
+
+        ObDereferenceObject(DeviceObject);
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopComputeHarddiskDerangements: Status %X\n", Status);
+            NumbersArray[ix] = 0xFFFFFFFF;
+        }
+        else
+        {
+            NumbersArray[ix] = StorageDeviceNumber.DeviceNumber;
+        }
+    }
+
+    for (jx = 0; jx < DiskCount; jx++)
+    {
+        for (nx = 0; nx < DiskCount; nx++)
+        {
+            if (NumbersArray[nx] == jx)
+                break;
+        }
+
+        if (nx < DiskCount)
+            continue;
+
+        for (nx = 0; nx < DiskCount; nx++)
+        {
+            if (NumbersArray[nx] == 0xFFFFFFFF)
+            {
+                NumbersArray[nx] = jx;
+                break;
+            }
+        }
+    }
+
+    return NumbersArray;
+}
+
 VOID
 FASTCALL
 IoAssignDriveLetters(
