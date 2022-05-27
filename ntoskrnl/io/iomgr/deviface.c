@@ -2188,7 +2188,6 @@ IoRegisterDeviceInterface(
     return (NT_SUCCESS(Status) ? SymLinkStatus : Status);
 }
 
-
 /* Enables or disables an instance of a previously registered device interface class.
    Documented in WDK.
 

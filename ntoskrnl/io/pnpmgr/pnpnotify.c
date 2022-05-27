@@ -724,9 +724,7 @@ IopNotifyPlugPlayNotification(
 
 /* PUBLIC FUNCTIONS **********************************************************/
 
-/*
- * @unimplemented
- */
+/* unimplemented */
 ULONG
 NTAPI
 IoPnPDeliverServicePowerNotification(ULONG VetoedPowerOperation OPTIONAL,
@@ -735,6 +733,7 @@ IoPnPDeliverServicePowerNotification(ULONG VetoedPowerOperation OPTIONAL,
                                      BOOLEAN Synchronous)
 {
     UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
     return 0;
 }
 
