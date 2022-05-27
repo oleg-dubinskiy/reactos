@@ -2030,6 +2030,16 @@ Exit:
     return ObDereferenceObject(FileObject);
 }
 
+NTSTATUS
+NTAPI
+HalpDeleteMountLetter(
+    _In_ CHAR MountLetter)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // FsbDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 FASTCALL
 IoAssignDriveLetters(
