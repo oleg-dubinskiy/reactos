@@ -1242,112 +1242,6 @@ Cleanup:
 }
 
 VOID
-FASTCALL
-xHalExamineMBR(IN PDEVICE_OBJECT DeviceObject,
-               IN ULONG SectorSize,
-               IN ULONG MbrTypeIdentifier,
-               OUT PVOID *MbrBuffer)
-{
-    LARGE_INTEGER Offset;
-    PUCHAR Buffer;
-    ULONG BufferSize;
-    KEVENT Event;
-    IO_STATUS_BLOCK IoStatusBlock;
-    PIRP Irp;
-    PPARTITION_DESCRIPTOR PartitionDescriptor;
-    NTSTATUS Status;
-    PIO_STACK_LOCATION IoStackLocation;
-    Offset.QuadPart = 0;
-
-    /* Assume failure */
-    *MbrBuffer = NULL;
-
-    /* Normalize the buffer size */
-    BufferSize = max(SectorSize, 512);
-
-    /* Allocate the buffer */
-    Buffer = ExAllocatePoolWithTag(NonPagedPool,
-                                       PAGE_SIZE > BufferSize ?
-                                       PAGE_SIZE : BufferSize,
-                                       TAG_FILE_SYSTEM);
-    if (!Buffer) return;
-
-    /* Initialize the Event */
-    KeInitializeEvent(&Event, NotificationEvent, FALSE);
-
-    /* Build the IRP */
-    Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ,
-                                       DeviceObject,
-                                       Buffer,
-                                       BufferSize,
-                                       &Offset,
-                                       &Event,
-                                       &IoStatusBlock);
-    if (!Irp)
-    {
-        /* Failed */
-        ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
-        return;
-    }
-
-    /* Make sure to override volume verification */
-    IoStackLocation = IoGetNextIrpStackLocation(Irp);
-    IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
-
-    /* Call the driver */
-    Status = IoCallDriver(DeviceObject, Irp);
-    if (Status == STATUS_PENDING)
-    {
-        /* Wait for completion */
-        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
-        Status = IoStatusBlock.Status;
-    }
-
-    /* Check driver Status */
-    if (NT_SUCCESS(Status))
-    {
-        /* Validate the MBR Signature */
-        if (((PUSHORT)Buffer)[BOOT_SIGNATURE_OFFSET] != BOOT_RECORD_SIGNATURE)
-        {
-            /* Failed */
-            ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
-            return;
-        }
-
-        /* Get the partition entry */
-        PartitionDescriptor = (PPARTITION_DESCRIPTOR)
-                               &(((PUSHORT)Buffer)[PARTITION_TABLE_OFFSET]);
-
-        /* Make sure it's what the caller wanted */
-        if (PartitionDescriptor->PartitionType != MbrTypeIdentifier)
-        {
-            /* It's not, free our buffer */
-            ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
-        }
-        else
-        {
-            /* Check if this is a secondary entry */
-            if (PartitionDescriptor->PartitionType == 0x54)
-            {
-                /* Return our buffer, but at sector 63 */
-                *(PULONG)Buffer = 63;
-                *MbrBuffer = Buffer;
-            }
-            else if (PartitionDescriptor->PartitionType == 0x55)
-            {
-                /* EZ Drive, return the buffer directly */
-                *MbrBuffer = Buffer;
-            }
-            else
-            {
-                /* Otherwise crash on debug builds */
-                ASSERT(PartitionDescriptor->PartitionType == 0x55);
-            }
-        }
-    }
-}
-
-VOID
 NTAPI
 FstubFixupEfiPartition(IN PPARTITION_DESCRIPTOR PartitionDescriptor,
                        IN ULONGLONG MaxOffset)
@@ -2279,20 +2173,107 @@ xHalIoWritePartitionTable(IN PDEVICE_OBJECT DeviceObject,
 
 /* PUBLIC FUNCTIONS **********************************************************/
 
-/*
- * @implemented
- */
 VOID
 FASTCALL
-HalExamineMBR(IN PDEVICE_OBJECT DeviceObject,
-              IN ULONG SectorSize,
-              IN ULONG MbrTypeIdentifier,
-              OUT PVOID *MbrBuffer)
+HalExamineMBR(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG SectorSize,
+    _In_ ULONG MbrTypeIdentifier,
+    _Out_ PVOID* MbrBuffer)
 {
-    HALDISPATCH->HalExamineMBR(DeviceObject,
-                               SectorSize,
-                               MbrTypeIdentifier,
-                               MbrBuffer);
+    PPARTITION_DESCRIPTOR PartitionDescriptor;
+    PIO_STACK_LOCATION IoStackLocation;
+    IO_STATUS_BLOCK IoStatusBlock;
+    LARGE_INTEGER Offset;
+    PUCHAR Buffer;
+    KEVENT Event;
+    PIRP Irp;
+    ULONG BufferSize;
+    NTSTATUS Status;
+
+    *MbrBuffer = NULL;
+
+    BufferSize = max(SectorSize, 0x200);
+    BufferSize = (PAGE_SIZE > BufferSize ? PAGE_SIZE : BufferSize);
+
+    Buffer = ExAllocatePoolWithTag(NonPagedPool, BufferSize, TAG_FILE_SYSTEM);
+    if (!Buffer)
+    {
+        DPRINT1("HalExamineMBR: Allocate failed\n");
+        return;
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    Offset.QuadPart = 0;
+
+    Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ,
+                                       DeviceObject,
+                                       Buffer,
+                                       BufferSize,
+                                       &Offset,
+                                       &Event,
+                                       &IoStatusBlock);
+    if (!Irp)
+    {
+        DPRINT1("HalExamineMBR: Build failed\n");
+        ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
+        return;
+    }
+
+    /* Make sure to override volume verification */
+    IoStackLocation = IoGetNextIrpStackLocation(Irp);
+    IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+
+    Status = IoCallDriver(DeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatusBlock.Status;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalExamineMBR: Status %X\n", Status);
+        return;
+    }
+
+    /* Validate the MBR Signature */
+    if (((PUSHORT)Buffer)[BOOT_SIGNATURE_OFFSET] != BOOT_RECORD_SIGNATURE)
+    {
+        DPRINT1("HalExamineMBR: Signature %X\n", ((PUSHORT)Buffer)[BOOT_SIGNATURE_OFFSET]);
+        ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
+        return;
+    }
+
+    /* Get the partition entry */
+    PartitionDescriptor = (PPARTITION_DESCRIPTOR)&(((PUSHORT)Buffer)[PARTITION_TABLE_OFFSET]);
+
+    /* Make sure it's what the caller wanted */
+    if (PartitionDescriptor->PartitionType != MbrTypeIdentifier)
+    {
+        DPRINT1("HalExamineMBR: PartitionDescriptor->PartitionType %X\n", PartitionDescriptor->PartitionType);
+        ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
+        return;
+    }
+
+    /* Check if this is a secondary entry */
+    if (PartitionDescriptor->PartitionType == 0x54)
+    {
+        /* Return our buffer, but at sector 63 */
+        *(PULONG)Buffer = 63;
+        *MbrBuffer = Buffer;
+    }
+    else if (PartitionDescriptor->PartitionType == 0x55)
+    {
+        /* EZ Drive, return the buffer directly */
+        *MbrBuffer = Buffer;
+    }
+    else
+    {
+        /* Otherwise crash on debug builds */
+        ASSERT(PartitionDescriptor->PartitionType == 0x55);
+    }
 }
 
 /*
