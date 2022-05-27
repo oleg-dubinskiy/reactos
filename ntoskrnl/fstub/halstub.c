@@ -25,7 +25,7 @@ HAL_DISPATCH HalDispatchTable =
     HalExamineMBR,
     xHalIoAssignDriveLetters,
     IoReadPartitionTable,
-    xHalIoSetPartitionInformation,
+    IoSetPartitionInformation,
     xHalIoWritePartitionTable,
     xHalHandlerForBus,
     xHalReferenceHandler,

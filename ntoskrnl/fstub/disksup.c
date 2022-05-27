@@ -1262,194 +1262,6 @@ FstubFixupEfiPartition(IN PPARTITION_DESCRIPTOR PartitionDescriptor,
 
 NTSTATUS
 FASTCALL
-xHalIoSetPartitionInformation(IN PDEVICE_OBJECT DeviceObject,
-                              IN ULONG SectorSize,
-                              IN ULONG PartitionNumber,
-                              IN ULONG PartitionType)
-{
-    PIRP Irp;
-    KEVENT Event;
-    IO_STATUS_BLOCK IoStatusBlock;
-    NTSTATUS Status;
-    LARGE_INTEGER Offset, VolumeOffset;
-    PUCHAR Buffer = NULL;
-    ULONG BufferSize;
-    ULONG i = 0;
-    ULONG Entry;
-    PPARTITION_DESCRIPTOR PartitionDescriptor;
-    BOOLEAN IsPrimary = TRUE, IsEzDrive = FALSE;
-    PVOID MbrBuffer;
-    PIO_STACK_LOCATION IoStackLocation;
-    VolumeOffset.QuadPart = Offset.QuadPart = 0;
-    PAGED_CODE();
-
-    /* Normalize the buffer size */
-    BufferSize = max(512, SectorSize);
-
-    /* Check for EZ Drive */
-    HalExamineMBR(DeviceObject, BufferSize, 0x55, &MbrBuffer);
-    if (MbrBuffer)
-    {
-        /* EZ Drive found, bias the offset */
-        IsEzDrive = TRUE;
-        ExFreePoolWithTag(MbrBuffer, TAG_FILE_SYSTEM);
-        Offset.QuadPart = 512;
-    }
-
-    /* Allocate our partition buffer */
-    Buffer = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, TAG_FILE_SYSTEM);
-    if (!Buffer) return STATUS_INSUFFICIENT_RESOURCES;
-
-    /* Initialize the event we'll use and loop partitions */
-    KeInitializeEvent(&Event, NotificationEvent, FALSE);
-    do
-    {
-        /* Reset the event since we reuse it */
-        KeClearEvent(&Event);
-
-        /* Build the read IRP */
-        Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ,
-                                           DeviceObject,
-                                           Buffer,
-                                           BufferSize,
-                                           &Offset,
-                                           &Event,
-                                           &IoStatusBlock);
-        if (!Irp)
-        {
-            /* Fail */
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            break;
-        }
-
-        /* Make sure to disable volume verification */
-        IoStackLocation = IoGetNextIrpStackLocation(Irp);
-        IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
-
-        /* Call the driver */
-        Status = IoCallDriver(DeviceObject, Irp);
-        if (Status == STATUS_PENDING)
-        {
-            /* Wait for completion */
-            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
-            Status = IoStatusBlock.Status;
-        }
-
-        /* Check for failure */
-        if (!NT_SUCCESS(Status)) break;
-
-        /* If we biased for EZ-Drive, unbias now */
-        if (IsEzDrive && (Offset.QuadPart == 512)) Offset.QuadPart = 0;
-
-        /* Make sure this is a valid MBR */
-        if (((PUSHORT)Buffer)[BOOT_SIGNATURE_OFFSET] != BOOT_RECORD_SIGNATURE)
-        {
-            /* It's not, fail */
-            Status = STATUS_BAD_MASTER_BOOT_RECORD;
-            break;
-        }
-
-        /* Get the partition descriptors and loop them */
-        PartitionDescriptor = (PPARTITION_DESCRIPTOR)
-                              &(((PUSHORT)Buffer)[PARTITION_TABLE_OFFSET]);
-        for (Entry = 1; Entry <= 4; Entry++, PartitionDescriptor++)
-        {
-            /* Check if it's unused or a container partition */
-            if ((PartitionDescriptor->PartitionType ==
-                 PARTITION_ENTRY_UNUSED) ||
-                (IsContainerPartition(PartitionDescriptor->PartitionType)))
-            {
-                /* Go to the next one */
-                continue;
-            }
-
-            /* It's a valid partition, so increase the partition count */
-            if (++i == PartitionNumber)
-            {
-                /* We found a match, set the type */
-                PartitionDescriptor->PartitionType = (UCHAR)PartitionType;
-
-                /* Reset the reusable event */
-                KeClearEvent(&Event);
-
-                /* Build the write IRP */
-                Irp = IoBuildSynchronousFsdRequest(IRP_MJ_WRITE,
-                                                   DeviceObject,
-                                                   Buffer,
-                                                   BufferSize,
-                                                   &Offset,
-                                                   &Event,
-                                                   &IoStatusBlock);
-                if (!Irp)
-                {
-                    /* Fail */
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    break;
-                }
-
-                /* Disable volume verification */
-                IoStackLocation = IoGetNextIrpStackLocation(Irp);
-                IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
-
-                /* Call the driver */
-                Status = IoCallDriver(DeviceObject, Irp);
-                if (Status == STATUS_PENDING)
-                {
-                    /* Wait for completion */
-                    KeWaitForSingleObject(&Event,
-                                          Executive,
-                                          KernelMode,
-                                          FALSE,
-                                          NULL);
-                    Status = IoStatusBlock.Status;
-                }
-
-                /* We're done, break out of the loop */
-                break;
-            }
-        }
-
-        /* If we looped all the partitions, break out */
-        if (Entry <= NUM_PARTITION_TABLE_ENTRIES) break;
-
-        /* Nothing found yet, get the partition array again */
-        PartitionDescriptor = (PPARTITION_DESCRIPTOR)
-                               &(((PUSHORT)Buffer)[PARTITION_TABLE_OFFSET]);
-        for (Entry = 1; Entry <= 4; Entry++, PartitionDescriptor++)
-        {
-            /* Check if this was a container partition (we skipped these) */
-            if (IsContainerPartition(PartitionDescriptor->PartitionType))
-            {
-                /* Update the partition offset */
-                Offset.QuadPart = VolumeOffset.QuadPart +
-                                  GET_STARTING_SECTOR(PartitionDescriptor) *
-                                  SectorSize;
-
-                /* If this was the primary partition, update the volume too */
-                if (IsPrimary) VolumeOffset = Offset;
-                break;
-            }
-        }
-
-        /* Check if we already searched all the partitions */
-        if (Entry > NUM_PARTITION_TABLE_ENTRIES)
-        {
-            /* Then we failed to find a good MBR */
-            Status = STATUS_BAD_MASTER_BOOT_RECORD;
-            break;
-        }
-
-        /* Loop the next partitions, which are not primary anymore */
-        IsPrimary = FALSE;
-    } while (i < PartitionNumber);
-
-    /* Everything done, cleanup */
-    if (Buffer) ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
-    return Status;
-}
-
-NTSTATUS
-FASTCALL
 xHalIoWritePartitionTable(IN PDEVICE_OBJECT DeviceObject,
                           IN ULONG SectorSize,
                           IN ULONG SectorsPerTrack,
@@ -2261,20 +2073,195 @@ IoReadPartitionTable(
     return Status;
 }
 
-/*
- * @implemented
- */
 NTSTATUS
 FASTCALL
-IoSetPartitionInformation(IN PDEVICE_OBJECT DeviceObject,
-                          IN ULONG SectorSize,
-                          IN ULONG PartitionNumber,
-                          IN ULONG PartitionType)
+IoSetPartitionInformation(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG SectorSize,
+    _In_ ULONG PartitionNumber,
+    _In_ ULONG PartitionType)
 {
-    return HALDISPATCH->HalIoSetPartitionInformation(DeviceObject,
-                                                     SectorSize,
-                                                     PartitionNumber,
-                                                     PartitionType);
+    PPARTITION_DESCRIPTOR PartitionDescriptor;
+    PIO_STACK_LOCATION IoStackLocation;
+    IO_STATUS_BLOCK IoStatusBlock;
+    LARGE_INTEGER VolumeOffset;
+    LARGE_INTEGER Offset;
+    PUCHAR Buffer = NULL;
+    PVOID MbrBuffer;
+    PIRP Irp;
+    KEVENT Event;
+    ULONG BufferSize;
+    ULONG ix = 0;
+    ULONG Entry;
+    BOOLEAN IsPrimary = TRUE;
+    BOOLEAN IsEzDrive = FALSE;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    BufferSize = max(0x200, SectorSize);
+
+    Offset.QuadPart = 0;
+    VolumeOffset.QuadPart = 0;
+
+    /* Check for EZ Drive */
+    HalExamineMBR(DeviceObject, BufferSize, 0x55, &MbrBuffer);
+    if (MbrBuffer)
+    {
+        /* EZ Drive found, bias the offset */
+        IsEzDrive = TRUE;
+        ExFreePoolWithTag(MbrBuffer, TAG_FILE_SYSTEM);
+        Offset.QuadPart = 0x200;
+    }
+
+    Buffer = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, TAG_FILE_SYSTEM);
+    if (!Buffer)
+    {
+        DPRINT1("IoSetPartitionInformation: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    do
+    {
+        /* Reset the event since we reuse it */
+        KeClearEvent(&Event);
+
+        Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ,
+                                           DeviceObject,
+                                           Buffer,
+                                           BufferSize,
+                                           &Offset,
+                                           &Event,
+                                           &IoStatusBlock);
+        if (!Irp)
+        {
+            DPRINT1("IoSetPartitionInformation: STATUS_INSUFFICIENT_RESOURCES\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break;
+        }
+
+        /* Make sure to disable volume verification */
+        IoStackLocation = IoGetNextIrpStackLocation(Irp);
+        IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+
+        Status = IoCallDriver(DeviceObject, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatusBlock.Status;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IoSetPartitionInformation: Status %X\n", Status);
+            break;
+        }
+
+        /* If we biased for EZ-Drive, unbias now */
+        if (IsEzDrive && (Offset.QuadPart == 0x200))
+            Offset.QuadPart = 0;
+
+        /* Make sure this is a valid MBR */
+        if (((PUSHORT)Buffer)[BOOT_SIGNATURE_OFFSET] != BOOT_RECORD_SIGNATURE)
+        {
+            /* It's not, fail */
+            Status = STATUS_BAD_MASTER_BOOT_RECORD;
+            break;
+        }
+
+        /* Get the partition descriptors and loop them */
+        PartitionDescriptor = (PPARTITION_DESCRIPTOR)&(((PUSHORT)Buffer)[PARTITION_TABLE_OFFSET]);
+
+        for (Entry = 1; Entry <= 4; Entry++, PartitionDescriptor++)
+        {
+            /* Check if it's unused or a container partition */
+            if (PartitionDescriptor->PartitionType == PARTITION_ENTRY_UNUSED)
+                continue;
+
+            if (IsContainerPartition(PartitionDescriptor->PartitionType))
+                continue;
+
+            /* It's a valid partition, so increase the partition count */
+            if (++ix != PartitionNumber)
+                continue;
+
+            /* We found a match, set the type */
+            PartitionDescriptor->PartitionType = (UCHAR)PartitionType;
+
+            /* Reset the reusable event */
+            KeClearEvent(&Event);
+
+            Irp = IoBuildSynchronousFsdRequest(IRP_MJ_WRITE,
+                                               DeviceObject,
+                                               Buffer,
+                                               BufferSize,
+                                               &Offset,
+                                               &Event,
+                                               &IoStatusBlock);
+            if (!Irp)
+            {
+                DPRINT1("IoSetPartitionInformation: STATUS_INSUFFICIENT_RESOURCES\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                break;
+            }
+
+            /* Disable volume verification */
+            IoStackLocation = IoGetNextIrpStackLocation(Irp);
+            IoStackLocation->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+
+            Status = IoCallDriver(DeviceObject, Irp);
+            if (Status == STATUS_PENDING)
+            {
+                KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+                Status = IoStatusBlock.Status;
+            }
+
+            /* We're done, break out of the loop */
+            break;
+        }
+
+        /* If we looped all the partitions, break out */
+        if (Entry <= NUM_PARTITION_TABLE_ENTRIES)
+            break;
+
+        /* Nothing found yet, get the partition array again */
+        PartitionDescriptor = (PPARTITION_DESCRIPTOR)&(((PUSHORT)Buffer)[PARTITION_TABLE_OFFSET]);
+
+        for (Entry = 1; Entry <= 4; Entry++, PartitionDescriptor++)
+        {
+            /* Check if this was a container partition (we skipped these) */
+            if (!IsContainerPartition(PartitionDescriptor->PartitionType))
+                continue;
+
+            /* Update the partition offset */
+            Offset.QuadPart = (VolumeOffset.QuadPart + GET_STARTING_SECTOR(PartitionDescriptor) * SectorSize);
+
+            /* If this was the primary partition, update the volume too */
+            if (IsPrimary)
+                VolumeOffset = Offset;
+
+            break;
+        }
+
+        /* Check if we already searched all the partitions */
+        if (Entry > NUM_PARTITION_TABLE_ENTRIES)
+        {
+            /* Then we failed to find a good MBR */
+            Status = STATUS_BAD_MASTER_BOOT_RECORD;
+            break;
+        }
+
+        /* Loop the next partitions, which are not primary anymore */
+        IsPrimary = FALSE;
+    }
+    while (ix < PartitionNumber);
+
+    if (Buffer)
+        ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
+
+    return Status;
 }
 
 /*
