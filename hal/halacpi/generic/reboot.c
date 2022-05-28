@@ -69,8 +69,23 @@ VOID
 NTAPI
 HalReturnToFirmware(IN FIRMWARE_REENTRY Action)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
+    DPRINT("HalReturnToFirmware: Action %X\n", Action);
+
+    /* Check what kind of action this is */
+    switch (Action)
+    {
+        /* All recognized actions */
+        case HalHaltRoutine:
+        case HalPowerDownRoutine:
+        case HalRestartRoutine:
+        case HalRebootRoutine:
+            /* Call the internal reboot function */
+            HalpReboot();
+
+        default:
+            DPRINT1("HalReturnToFirmware: Unknown Action %X\n", Action);
+            ASSERT(FALSE); // HalpDbgBreakPointEx();
+    }
 }
 
 /* EOF */
