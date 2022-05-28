@@ -233,4 +233,30 @@ HalpUnmapVirtualAddress(IN PVOID VirtualAddress,
         HalpHeapStart = VirtualAddress;
 }
 
+PVOID
+NTAPI
+HalpMapPhysicalMemoryWriteThrough64(
+    _In_ PHYSICAL_ADDRESS PhysicalAddress,
+    _In_ PFN_COUNT PageCount)
+{
+    PVOID VirtualAddress;
+    PHARDWARE_PTE Pte;
+    ULONG ix;
+
+    VirtualAddress = HalpMapPhysicalMemory64(PhysicalAddress, PageCount);
+
+    /* Get the PTE for this address */
+    Pte = HalAddressToPte(VirtualAddress);
+
+    for (ix = 0; ix < PageCount; ix++)
+    {
+        Pte->CacheDisable = 1;
+        Pte->WriteThrough = 1;
+
+        Pte++;
+    }
+
+    return VirtualAddress;
+}
+
 /* EOF */
