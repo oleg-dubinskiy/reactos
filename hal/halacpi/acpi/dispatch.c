@@ -154,14 +154,38 @@ HaliSetWakeAlarm(_In_ ULONGLONG AlartTime,
     ASSERT(0); // HalpDbgBreakPointEx();
 }
 
+/* halfplemented */
 VOID
 NTAPI
 HalpPowerStateCallback(_In_ PVOID CallbackContext,
                        _In_ PVOID Argument1,
                        _In_ PVOID Argument2)
 {
-    UNIMPLEMENTED;
-    ASSERT(0); // HalpDbgBreakPointEx();
+    DPRINT("HalpPowerStateCallback: CallbackContext %X, Arg1 %X, Arg2 %X\n", CallbackContext, Argument1, Argument2);
+
+    if (Argument1 != ULongToPtr(3))
+    {
+        DPRINT1("HalpPowerStateCallback: Argument1 != 3\n");
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+        return;
+    }
+
+    if (Argument2 == ULongToPtr(0))
+    {
+        DPRINT1("HalpPowerStateCallback: FIXME HalpMapNvsArea()\n");
+        //ASSERT(FALSE); // HalpDbgBreakPointEx();
+        return;
+    }
+
+    if (Argument2 == ULongToPtr(1))
+    {
+        DPRINT1("HalpPowerStateCallback: FIXME HalpFreeNvsBuffers()\n");
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+        return;
+    }
+
+    DPRINT1("HalpPowerStateCallback: Unsupported Arg2 %X\n", Argument2);
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
 }
 
 NTSTATUS
