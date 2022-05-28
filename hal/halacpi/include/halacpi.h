@@ -145,4 +145,10 @@ HalTranslatorDereference(
     IN PVOID Context
 );
 
+VOID
+NTAPI
+HalpWriteResetCommand(
+    VOID
+);
+
 /* EOF */

@@ -886,6 +886,23 @@ HalAcpiGetTable(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
     return TableHeader;
 }
 
+VOID
+NTAPI
+HalpWriteResetCommand(VOID)
+{
+    if (HalpFixedAcpiDescTable.Header.Revision > 1 &&
+        (HalpFixedAcpiDescTable.flags & 4) &&
+        !(HalpFixedAcpiDescTable.boot_arch & 2))
+    {
+        DPRINT1("HalpWriteResetCommand: Revision %X, flags %X, boot_arch %X\n",
+                HalpFixedAcpiDescTable.Header.Revision, HalpFixedAcpiDescTable.flags, HalpFixedAcpiDescTable.boot_arch);
+
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+    }
+
+    /* Generate RESET signal via keyboard controller */
+    WRITE_PORT_UCHAR((PUCHAR)0x64, 0xFE);
+};
 
 typedef VOID
 (NTAPI* PM_ACPI_DISPATCH_FUNCTION0)(ULONG);
