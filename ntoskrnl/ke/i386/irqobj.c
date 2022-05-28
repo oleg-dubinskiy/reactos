@@ -227,9 +227,7 @@ KiChainedDispatch(IN PKTRAP_FRAME TrapFrame,
     BOOLEAN Handled;
     PLIST_ENTRY NextEntry, ListHead;
     UCHAR Vector;
-    BOOLEAN Spurious = TRUE;
-
-ASSERT(FALSE);//KeDbgBreakPointEx();
+    BOOLEAN Result;
 
     /* Increase interrupt count */
     KeGetCurrentPrcb()->InterruptCount++;
@@ -241,66 +239,66 @@ ASSERT(FALSE);//KeDbgBreakPointEx();
         Vector = (UCHAR)TrapFrame->ErrCode;
 
     /* Begin the interrupt, making sure it's not spurious */
-    if (HalBeginSystemInterrupt(Interrupt->Irql, Interrupt->Vector, &OldIrql))
+    Result = HalBeginSystemInterrupt(Interrupt->Irql, Interrupt->Vector, &OldIrql);
+    if (!Result)
     {
-        /* Get list pointers */
-        ListHead = &Interrupt->InterruptListEntry;
-        NextEntry = ListHead; /* The head is an entry! */
-
-        while (TRUE)
-        {
-            /* Check if this interrupt's IRQL is higher than the current one */
-            if (Interrupt->SynchronizeIrql > Interrupt->Irql)
-            {
-                /* Raise to higher IRQL */
-                OldInterruptIrql = KfRaiseIrql(Interrupt->SynchronizeIrql);
-            }
-
-            /* Acquire interrupt lock */
-            KxAcquireSpinLock(Interrupt->ActualLock);
-
-            /* Call the ISR */
-            Handled = Interrupt->ServiceRoutine(Interrupt, Interrupt->ServiceContext);
-
-            /* Release interrupt lock */
-            KxReleaseSpinLock(Interrupt->ActualLock);
-
-            /* Check if this interrupt's IRQL is higher than the current one */
-            if (Interrupt->SynchronizeIrql > Interrupt->Irql)
-            {
-                /* Lower the IRQL back */
-                ASSERT(OldInterruptIrql == Interrupt->Irql);
-                KfLowerIrql(OldInterruptIrql);
-            }
-
-            /* Check if the interrupt got handled and it's level */
-            if ((Handled) && (Interrupt->Mode == LevelSensitive))
-                break;
-
-            /* What's next? */
-            NextEntry = NextEntry->Flink;
-
-            /* Is this the last one? */
-            if (NextEntry == ListHead)
-            {
-                /* Level should not have gotten here */
-                if (Interrupt->Mode == LevelSensitive)
-                    break;
-
-                /* As for edge, we can only exit once nobody can handle the interrupt */
-                if (!Handled)
-                    break;
-            }
-
-            /* Get the interrupt object for the next pass */
-            Interrupt = CONTAINING_RECORD(NextEntry, KINTERRUPT, InterruptListEntry);
-        }
-
-        Spurious = FALSE;
+        /* It's spurious, call the epilogue code */
+        KiEndInterrupt(OldIrql, Vector, TrapFrame, TRUE);
+        return;
     }
 
-    /* Now call the epilogue code */
-    KiEndInterrupt(OldIrql, Vector, TrapFrame, Spurious);
+    ListHead = &Interrupt->InterruptListEntry;
+    NextEntry = ListHead;
+
+    while (TRUE)
+    {
+        /* Check if this interrupt's IRQL is higher than the current one */
+        if (Interrupt->SynchronizeIrql > Interrupt->Irql)
+        {
+            /* Raise to higher IRQL */
+            OldInterruptIrql = KfRaiseIrql(Interrupt->SynchronizeIrql);
+        }
+
+        /* Acquire interrupt lock */
+        KxAcquireSpinLock(Interrupt->ActualLock);
+
+        /* Call the ISR */
+        Handled = Interrupt->ServiceRoutine(Interrupt, Interrupt->ServiceContext);
+
+        /* Release interrupt lock */
+        KxReleaseSpinLock(Interrupt->ActualLock);
+
+        /* Check if this interrupt's IRQL is higher than the current one */
+        if (Interrupt->SynchronizeIrql > Interrupt->Irql)
+        {
+            /* Lower the IRQL back */
+            ASSERT(OldInterruptIrql == Interrupt->Irql);
+            KfLowerIrql(OldInterruptIrql);
+        }
+
+        /* Check if the interrupt got handled and it's level */
+        if ((Handled) && (Interrupt->Mode == LevelSensitive))
+            break;
+
+        NextEntry = NextEntry->Flink;
+
+        /* Is this the last one? */
+        if (NextEntry == ListHead)
+        {
+            /* Level should not have gotten here */
+            if (Interrupt->Mode == LevelSensitive)
+                break;
+
+            /* As for edge, we can only exit once nobody can handle the interrupt */
+            if (!Handled)
+                break;
+        }
+
+        Interrupt = CONTAINING_RECORD(NextEntry, KINTERRUPT, InterruptListEntry);
+    }
+
+    /* Call the epilogue code */
+    KiEndInterrupt(OldIrql, Vector, TrapFrame, FALSE);
 }
 
 VOID
