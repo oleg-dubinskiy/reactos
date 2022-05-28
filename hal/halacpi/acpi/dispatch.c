@@ -3,6 +3,8 @@
 
 #include <hal.h>
 #include "dispatch.h"
+#include "../../../drivers/usb/usbohci/hardware.h"
+#include "../../../drivers/usb/usbuhci/hardware.h"
 
 //#define NDEBUG
 #include <debug.h>
@@ -302,8 +304,45 @@ HalpStopUhciInterrupt(_In_ ULONG BusNumber,
                       _In_ ULONG SlotNumber,
                       _In_ BOOLEAN IsIntel)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);//HalpDbgBreakPointEx();
+    PCI_COMMON_CONFIG PciHeader;
+    PUSHORT Port;
+    ULONG LegacySupport = 0;
+
+    DPRINT("HalpStopUhciInterrupt: Bus %X, Slot %X, IsIntel %X\n", BusNumber, SlotNumber, IsIntel);
+
+    if (!IsIntel)
+    {
+        HalGetBusDataByOffset(PCIConfiguration, BusNumber, SlotNumber, &LegacySupport, PCI_LEGSUP, sizeof(LegacySupport));
+        LegacySupport &= 0x4000;
+        HalSetBusDataByOffset(PCIConfiguration, BusNumber, SlotNumber, &LegacySupport, PCI_LEGSUP, sizeof(LegacySupport));
+
+        goto Exit;
+    }
+
+    LegacySupport = 0;
+    HalSetBusDataByOffset(PCIConfiguration, BusNumber, SlotNumber, &LegacySupport, PCI_LEGSUP, sizeof(LegacySupport));
+
+    HalGetBusData(PCIConfiguration, BusNumber, SlotNumber, &PciHeader, sizeof(PciHeader));
+    if (!(PciHeader.Command & 1))
+        goto Exit;
+
+    Port = (PUSHORT)(PciHeader.u.type0.BaseAddresses[4] & PCI_ADDRESS_IO_ADDRESS_MASK);
+    if (!Port)
+        goto Exit;
+
+    if ((ULONG_PTR)Port >= 0xFFFF)
+        goto Exit;
+
+    if (READ_PORT_USHORT(Port) & 8)
+        goto Exit;
+
+    WRITE_PORT_USHORT(Port, 4);
+    KeStallExecutionProcessor(10000);
+    WRITE_PORT_USHORT(Port, 0);
+
+Exit:
+
+    KeFlushWriteBuffer();
 }
 
 VOID
