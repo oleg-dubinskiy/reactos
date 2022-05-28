@@ -898,8 +898,13 @@ VOID
 NTAPI
 HaliHaltSystem(VOID)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
+    DPRINT1("HaliHaltSystem()\n");
+
+    while (TRUE)
+    {
+        HalpCheckPowerButton();
+        YieldProcessor();
+    }
 }
 
 INIT_FUNCTION
