@@ -40,6 +40,7 @@ BOOLEAN HalpDisableS5Hibernation;
 extern FADT HalpFixedAcpiDescTable;
 extern ULONG HalpWAETDeviceFlags;
 extern ULONG HalpMaxPciBus;
+extern ULONG HalpShutdownContext;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -697,14 +698,12 @@ HaliAcpiMachineStateInit(_In_ ULONG Par1,
             Status = ZwPowerInformation(SystemPowerStateHandler, &handler, sizeof(handler), NULL, 0);
             ASSERT(NT_SUCCESS(Status));
         }
-
-        if (!StateData[4].Data0)
+        else if (!StateData[4].Data0)
         {
             KeFlushWriteBuffer();
             return;
         }
-
-        if (!HalpDisableS5Hibernation)
+        else if (!HalpDisableS5Hibernation)
         {
             handler.Type = PowerStateSleeping4;
             handler.RtcWake = ((HalpFixedAcpiDescTable.flags & 0x80) == 0x80);
@@ -733,6 +732,7 @@ HaliAcpiMachineStateInit(_In_ ULONG Par1,
         Context.Data2 = StateData[4].Data2;
         Context.Flags = 0x8;
 
+        HalpShutdownContext = Context.AsULONG;
         handler.Context = UlongToPtr(Context.AsULONG);
 
         Status = ZwPowerInformation(SystemPowerStateHandler, &handler, sizeof(handler), NULL, 0);

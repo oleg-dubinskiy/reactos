@@ -32,7 +32,7 @@ PVOID HalpVirtAddrForFlush;
 PVOID HalpLowStub;
 ULONG HalpWAETDeviceFlags = 0;
 ULONG HalpInvalidAcpiTable;
-//ULONG HalpShutdownContext = 0;
+ULONG HalpShutdownContext = 0;
 BOOLEAN HalpProcessedACPIPhase0;
 BOOLEAN HalpNMIDumpFlag;
 
@@ -40,6 +40,7 @@ extern BOOLEAN LessThan16Mb;
 extern BOOLEAN HalpPhysicalMemoryMayAppearAbove4GB;
 extern ULONG HalpBusType;
 extern ULONG HalpPicVectorRedirect[16];
+extern PPM_DISPATCH_TABLE PmAcpiDispatchTable;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -885,13 +886,83 @@ HalAcpiGetTable(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
     return TableHeader;
 }
 
+
+typedef VOID
+(NTAPI* PM_ACPI_DISPATCH_FUNCTION0)(ULONG);
+
 INIT_FUNCTION
 VOID
 NTAPI
 HalpCheckPowerButton(VOID)
 {
-    UNIMPLEMENTED;
-    ASSERT(0);//HalpDbgBreakPointEx();
+    PM_ACPI_DISPATCH_FUNCTION0 Function0;
+    PUSHORT Port;
+    ULONG OldContext;
+    USHORT ValueA;
+    USHORT ValueB;
+
+    DPRINT1("HalpCheckPowerButton: HalpShutdownContext %X\n", HalpShutdownContext);
+
+    if ((!KiBugCheckData[0] && !InbvCheckDisplayOwnership()) ||
+       !HalpShutdownContext)
+    {
+        DPRINT1("HalpCheckPowerButton: FIXME\n");
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+        return;
+    }
+
+    Port = (PUSHORT)HalpFixedAcpiDescTable.pm1a_evt_blk_io_port;
+    ValueA = READ_PORT_USHORT(Port);
+
+    DPRINT1("HalpCheckPowerButton: ValueA %X\n", ValueA);
+
+    Port = (PUSHORT)HalpFixedAcpiDescTable.pm1b_evt_blk_io_port;
+    if (Port)
+    {
+        ValueB = (READ_PORT_USHORT(Port) | ValueA);
+        DPRINT1("HalpCheckPowerButton: ValueB %X\n", ValueB);
+    }
+    else
+    {
+        ValueB = ValueA;
+    }
+
+    if (!(ValueB & 0x100))
+    {
+        DPRINT1("HalpCheckPowerButton: ValueB %X\n", ValueB);
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+        return;
+    }
+
+    OldContext = HalpShutdownContext;
+    HalpShutdownContext = 0;
+    DPRINT1("HalpCheckPowerButton: OldContext %X\n", OldContext);
+
+    Function0 = PmAcpiDispatchTable->Function[0];
+    Function0(0);
+
+    Port = (PUSHORT)HalpFixedAcpiDescTable.pm1a_evt_blk_io_port;
+    WRITE_PORT_USHORT(Port, ValueB);
+
+    Port = (PUSHORT)HalpFixedAcpiDescTable.pm1b_evt_blk_io_port;
+    if (Port)
+        WRITE_PORT_USHORT(Port, ValueB);
+
+    Port = (PUSHORT)HalpFixedAcpiDescTable.pm1a_ctrl_blk_io_port;
+    ValueA = READ_PORT_USHORT(Port);
+
+    DPRINT1("HalpCheckPowerButton: ValueA %X\n", ValueA);
+
+    WRITE_PORT_USHORT(Port, ((((OldContext & 7) | 8) << 10) | ValueA) & 0x203);
+
+    Port = (PUSHORT)HalpFixedAcpiDescTable.pm1b_ctrl_blk_io_port;
+    if (!Port)
+        return;
+
+    ValueB = READ_PORT_USHORT(Port);
+    DPRINT1("HalpCheckPowerButton: ValueB %X\n", ValueB);
+
+    WRITE_PORT_USHORT(Port, (((((OldContext >> 4) & 7) | 8) << 10) | ValueB) & 0x203);
 }
 
 VOID
