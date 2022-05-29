@@ -1282,6 +1282,32 @@ IopFreePoDeviceNotifyListHead(
     }
 }
 
+VOID
+NTAPI
+IoFreePoDeviceNotifyList(
+    _In_ PPO_DEVICE_NOTIFY_ORDER Order)
+{
+    ULONG ix;
+
+    DPRINT("IoFreePoDeviceNotifyList: Order %p\n", Order);
+
+    if (Order->DevNodeSequence)
+    {
+        Order->DevNodeSequence = 0;
+        PiUnlockDeviceActionQueue();
+    }
+
+    for (ix = 0; ix < 8; ix++)
+    {
+        IopFreePoDeviceNotifyListHead(&Order->OrderLevel[ix].WaitSleep);
+        IopFreePoDeviceNotifyListHead(&Order->OrderLevel[ix].ReadySleep);
+        IopFreePoDeviceNotifyListHead(&Order->OrderLevel[ix].Pending);
+        IopFreePoDeviceNotifyListHead(&Order->OrderLevel[ix].Complete);
+        IopFreePoDeviceNotifyListHead(&Order->OrderLevel[ix].ReadyS0);
+        IopFreePoDeviceNotifyListHead(&Order->OrderLevel[ix].WaitS0);
+    }
+}
+
 NTSTATUS
 NTAPI
 NtSetSystemPowerState(IN POWER_ACTION SystemAction,
