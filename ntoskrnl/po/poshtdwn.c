@@ -13,7 +13,7 @@
 #include <cache/newcc.h>
 #endif
 
-#define NDEBUG
+//#define NDEBUG
 #include <debug.h>
 
 #include "inbv/logo.h"
@@ -25,10 +25,14 @@ KEVENT PopShutdownEvent;
 PPOP_SHUTDOWN_WAIT_ENTRY PopShutdownThreadList;
 LIST_ENTRY PopShutdownQueue;
 KGUARDED_MUTEX PopShutdownListMutex;
+ULONG PopFullWake;
 BOOLEAN PopShutdownListAvailable;
 
+extern POP_POWER_ACTION PopAction;
 
 /* PRIVATE FUNCTIONS *********************************************************/
+
+VOID NTAPI IoFreePoDeviceNotifyList(_In_ PPO_DEVICE_NOTIFY_ORDER Order);
 
 VOID
 NTAPI
@@ -242,11 +246,21 @@ PopShutdownSystem(IN POWER_ACTION SystemAction)
     KeBugCheckEx(INTERNAL_POWER_ERROR, 5, 0, 0, 0);
 }
 
+NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // PoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
-PopGracefulShutdown(IN PVOID Context)
+PopGracefulShutdown(
+    _In_ PVOID Context)
 {
     PEPROCESS Process = NULL;
+
+    DPRINT("PopGracefulShutdown: Context %p\n", Context);
 
     /* Process the registered waits and work items */
     PopProcessShutDownLists();
@@ -259,7 +273,7 @@ PopGracefulShutdown(IN PVOID Context)
         if ((Process != PsInitialSystemProcess) && (Process != PsIdleProcess))
         {
             /* Print it */
-            DPRINT1("%15s is still RUNNING (%p)\n", Process->ImageFileName, Process->UniqueProcessId);
+            DPRINT1("PopGracefulShutdown: %15s is still RUNNING (%p)\n", Process->ImageFileName, Process->UniqueProcessId);
         }
 
         /* Get the next process */
@@ -267,49 +281,74 @@ PopGracefulShutdown(IN PVOID Context)
     }
 
     /* First, the HAL handles any "end of boot" special functionality */
-    DPRINT("HAL shutting down\n");
-    HalEndOfBoot();
+    DPRINT("PopGracefulShutdown: HAL shutting down\n");
+
+    if (!PopAction.ShutdownBugCode)
+        HalEndOfBoot();
+    else
+        ASSERT(FALSE);
 
     /* Shut down the Shim cache if enabled */
     ApphelpCacheShutdown();
 
     /* In this step, the I/O manager does first-chance shutdown notification */
-    DPRINT("I/O manager shutting down in phase 0\n");
+    DPRINT("PopGracefulShutdown: I/O manager shutting down in phase 0\n");
     IoShutdownSystem(0);
 
     /* In this step, all workers are killed and hives are flushed */
-    DPRINT("Configuration Manager shutting down\n");
+    DPRINT("PopGracefulShutdown: Configuration Manager shutting down\n");
     CmShutdownSystem();
 
     /* Shut down the Executive */
-    DPRINT("Executive shutting down\n");
+    DPRINT("PopGracefulShutdown: Executive shutting down\n");
     ExShutdownSystem();
 
     /* Note that modified pages should be written here (MiShutdownSystem) */
+    DPRINT("PopGracefulShutdown: Mm shutdown phase 0\n");
     MmShutdownSystem(0);
 
     /* Flush all user files before we start shutting down IO */
     /* This is where modified pages are written back by the IO manager */
-    CcShutdownSystem();
-
-    /* In this step, the I/O manager does last-chance shutdown notification */
-    DPRINT("I/O manager shutting down in phase 1\n");
-    IoShutdownSystem(1);
+    DPRINT("PopGracefulShutdown: call CcWaitForCurrentLazyWriterActivity()\n");
     CcWaitForCurrentLazyWriterActivity();
 
-    /* FIXME: Calling Mm shutdown phase 1 here to get page file dereference
-     * but it shouldn't be called here. Only phase 2 should be called.
-     */
-    MmShutdownSystem(1);
+    /* In this step, the I/O manager does last-chance shutdown notification */
+    DPRINT("PopGracefulShutdown: I/O manager shutting down in phase 1\n");
+    IoShutdownSystem(1);
+
+    DPRINT("PopGracefulShutdown: call CcWaitForCurrentLazyWriterActivity()\n");
+    CcWaitForCurrentLazyWriterActivity();
+
+    PopFullWake = 0;
+
+    ASSERT(PopAction.DevState);
+    PopAction.DevState->Thread = KeGetCurrentThread();
+
+    PopSetDevicesSystemState(FALSE);
+
+    IoFreePoDeviceNotifyList(&PopAction.DevState->Order);
+
+    /* In this step, the HAL disables any wake timers */
+    DPRINT("PopGracefulShutdown: Disabling wake timers\n");
+    HalSetWakeEnable(FALSE);
+
+    if (PopAction.ShutdownBugCode)
+    {
+        ASSERT(FALSE);
+        KeBugCheckEx(PopAction.ShutdownBugCode->Code,
+                     PopAction.ShutdownBugCode->Parameter1,
+                     PopAction.ShutdownBugCode->Parameter2,
+                     PopAction.ShutdownBugCode->Parameter3,
+                     PopAction.ShutdownBugCode->Parameter4);
+    }
+
+    DPRINT("PopGracefulShutdown: Mm shutdown phase 2\n");
+    MmShutdownSystem(2);
 
     /* Note that here, we should broadcast the power IRP to devices */
 
-    /* In this step, the HAL disables any wake timers */
-    DPRINT("Disabling wake timers\n");
-    HalSetWakeEnable(FALSE);
-
     /* And finally the power request is sent */
-    DPRINT("Taking the system down\n");
+    DPRINT("PopGracefulShutdown: Taking the system down\n");
     PopShutdownSystem(PopAction.Action);
 }
 
