@@ -1249,6 +1249,39 @@ PiUnlockDeviceActionQueue(VOID)
     DPRINT("PiUnlockDeviceActionQueue: Unlocked\n");
 }
 
+VOID
+NTAPI
+IopFreePoDeviceNotifyListHead(
+    _In_ PLIST_ENTRY NotifyListHead)
+{
+    PPO_DEVICE_NOTIFY Notify;
+    PDEVICE_NODE DeviceNode;
+
+    //DPRINT("IopFreePoDeviceNotifyListHead: NotifyListHead %p\n", NotifyListHead);
+
+    while (!IsListEmpty(NotifyListHead))
+    {
+        Notify = CONTAINING_RECORD(NotifyListHead->Flink, PO_DEVICE_NOTIFY, Link);
+
+        NotifyListHead->Flink = NotifyListHead->Flink->Flink;
+        NotifyListHead->Flink->Flink->Blink = NotifyListHead;
+
+        DeviceNode = Notify->Node;
+        DeviceNode->Notify = NULL;
+
+        ObDereferenceObject(Notify->DeviceObject);
+        ObDereferenceObject(Notify->TargetDevice);
+
+        if (Notify->DeviceName)
+            ExFreePool(Notify->DeviceName);
+
+        if (Notify->DriverName)
+            ExFreePool(Notify->DriverName);
+
+        ExFreePool(Notify);
+    }
+}
+
 NTSTATUS
 NTAPI
 NtSetSystemPowerState(IN POWER_ACTION SystemAction,
