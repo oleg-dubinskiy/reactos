@@ -1308,6 +1308,19 @@ IopQueueDeviceAction(
     _In_ PDEVICE_ACTION_DATA ActionData
 );
 
+/* pnpnode.c */
+VOID
+NTAPI
+PpDevNodeLockTree(
+    _In_ ULONG LockLevel
+);
+
+VOID
+NTAPI
+PpDevNodeUnlockTree(
+    _In_ ULONG LockLevel
+);
+
 //
 // Global I/O Data
 //

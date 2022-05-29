@@ -76,6 +76,11 @@ SYSTEM_POWER_POLICY PopDcPolicy;
 PSYSTEM_POWER_POLICY PopPolicy;
 POWER_STATE_HANDLER PopPowerStateHandlers[7];
 
+extern KSPIN_LOCK IopPnPSpinLock;
+extern LIST_ENTRY IopPnpEnumerationRequestList;
+extern KEVENT PiEnumerationLock;
+extern BOOLEAN PipEnumerationInProgress;
+
 /* PRIVATE FUNCTIONS *********************************************************/
 
 VOID
@@ -1183,6 +1188,65 @@ NtSetThreadExecutionState(IN EXECUTION_STATE esFlags,
 
     /* All is good */
     return STATUS_SUCCESS;
+}
+
+VOID
+NTAPI
+PiLockDeviceActionQueue(VOID)
+{
+    KIRQL OldIrql;
+
+    DPRINT("PiLockDeviceActionQueue()\n");
+
+    PpDevNodeLockTree(1);
+    KeAcquireSpinLock(&IopPnPSpinLock, &OldIrql);
+
+    while (PipEnumerationInProgress)
+    {
+        KeReleaseSpinLock(&IopPnPSpinLock, OldIrql);
+        PpDevNodeUnlockTree(1);
+
+        DPRINT("PiLockDeviceActionQueue: call KeWaitForSingleObject()\n");
+        KeWaitForSingleObject(&PiEnumerationLock, Executive, KernelMode, FALSE, NULL);
+        DPRINT("PiLockDeviceActionQueue: end wait\n");
+
+        PpDevNodeLockTree(1);
+        KeAcquireSpinLock(&IopPnPSpinLock, &OldIrql);
+    }
+
+    KeClearEvent(&PiEnumerationLock);
+    PipEnumerationInProgress = TRUE;
+
+    KeReleaseSpinLock(&IopPnPSpinLock, OldIrql);
+
+    DPRINT("PiLockDeviceActionQueue: Locked\n");
+}
+
+VOID
+NTAPI
+PiUnlockDeviceActionQueue(VOID)
+{
+    KIRQL OldIrql;
+  
+    DPRINT("PiUnlockDeviceActionQueue()\n");
+
+    KeAcquireSpinLock(&IopPnPSpinLock, &OldIrql);
+
+    if (IsListEmpty(&IopPnpEnumerationRequestList))
+    {
+        PipEnumerationInProgress = FALSE;
+        KeSetEvent(&PiEnumerationLock, IO_NO_INCREMENT, FALSE);
+    }
+    else
+    {
+        DPRINT1("PiUnlockDeviceActionQueue: FIXME PipDeviceEnumerationWorkItem\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+    }
+
+    KeReleaseSpinLock(&IopPnPSpinLock, OldIrql);
+    PpDevNodeUnlockTree(1);
+
+    DPRINT("PiUnlockDeviceActionQueue: Unlocked\n");
 }
 
 NTSTATUS

@@ -942,18 +942,6 @@ PpDeviceRegistration(
 /* pnpnode.c */
 VOID
 NTAPI
-PpDevNodeLockTree(
-    _In_ ULONG LockLevel
-);
-
-VOID
-NTAPI
-PpDevNodeUnlockTree(
-    _In_ ULONG LockLevel
-);
-
-VOID
-NTAPI
 PipSetDevNodeState(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ PNP_DEVNODE_STATE NewState,
