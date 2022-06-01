@@ -668,6 +668,14 @@ PopPowerActionString(
     return String;
 }
 
+VOID
+NTAPI
+PopAssertPolicyLockOwned(VOID)
+{
+    PAGED_CODE();
+    ASSERT(PopPolicyLockThread == KeGetCurrentThread());
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
