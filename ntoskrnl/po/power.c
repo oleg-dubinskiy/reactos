@@ -574,6 +574,53 @@ PopResetActionDefaults(
     PopAction.Flags = 0x10000003;
 }
 
+PCHAR
+NTAPI
+PopSystemStateString(
+    _In_ SYSTEM_POWER_STATE SystemState)
+{
+    PCHAR String;
+
+    if (SystemState == PowerSystemUnspecified)
+    {
+        String = "Unspecified";
+        return String;
+    }
+
+    switch (SystemState)
+    {
+        case PowerSystemWorking:
+            String = "Working";
+            break;
+
+        case PowerSystemSleeping1:
+            String = "Sleeping1";
+            break;
+
+        case PowerSystemSleeping2:
+            String = "Sleeping2";
+            break;
+
+        case PowerSystemSleeping3:
+            String = "Sleeping3";
+            break;
+
+        case PowerSystemHibernate:
+            String = "Hibernate";
+            break;
+
+        case PowerSystemShutdown:
+            String = "Shutdown";
+            break;
+
+        default:
+            String = "?";
+            break;
+    }
+
+    return String;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
