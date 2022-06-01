@@ -1246,6 +1246,49 @@ PopAllocateDevState(
     PopAction.DevState = DevState;
 }
 
+VOID
+NTAPI
+PopActionRetrieveInitialState(
+    _Out_ PSYSTEM_POWER_STATE OutMinState,
+    _Out_ PSYSTEM_POWER_STATE OutMaxState,
+    _Out_ PSYSTEM_POWER_STATE OutSystemState,
+    _Out_ PBOOLEAN OutResult)
+{
+    DPRINT("PopActionRetrieveInitialState: *OutMinState %X, *OutMaxState %X, *OutSystemState %X, *OutResult %X\n",
+           *OutMinState, *OutMaxState, *OutSystemState, *OutResult);
+
+    if (PopAction.Action == PowerActionShutdown ||
+        PopAction.Action == PowerActionShutdownReset ||
+        PopAction.Action == PowerActionShutdownOff)
+    {
+        *OutMinState = PowerActionShutdownOff;
+        *OutMaxState = PowerActionShutdownOff;
+    }
+    else if (PopAction.Action == PowerActionWarmEject)
+    {
+        *OutMaxState = PowerActionShutdownReset;
+        PopVerifySystemPowerState(OutMaxState, 0);
+    }
+    else
+    {
+        DPRINT1("PopActionRetrieveInitialState: PopAction.Action %X\n", PopAction.Action);
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+    }
+  
+    if (*OutMaxState < *OutMinState)
+        *OutMaxState = *OutMinState;
+  
+    if ((PopAction.Flags & 0x80000000) && (*OutMinState == *OutMaxState))
+        *OutResult = FALSE;
+    else
+        *OutResult = TRUE;
+  
+    if (PopAction.Flags & 0x10000000)
+        *OutSystemState = *OutMinState;
+    else
+        *OutSystemState = *OutMaxState;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
