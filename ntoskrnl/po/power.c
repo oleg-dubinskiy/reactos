@@ -562,7 +562,7 @@ NTAPI
 PopResetActionDefaults(
     VOID)
 {
-    DPRINT("PopCompleteAction: PopResetActionDefaults()\n");
+    DPRINT("PopResetActionDefaults()\n");
 
     PopAction.Updates = 0;
     PopAction.Shutdown = FALSE;
@@ -999,6 +999,27 @@ PopCompareActions(
     }
 
     return (Action1 - Action2);
+}
+
+VOID
+NTAPI
+PopPromoteActionFlag(
+    _Out_ UCHAR* OutUpdates,
+    _In_ UCHAR Updates,
+    _In_ ULONG PolicyFlags,
+    _In_ BOOLEAN Type,
+    _In_ ULONG Flags)
+{
+    ULONG Mask;
+
+    Mask = (!Type ? Flags : 0);
+    PolicyFlags &= (Mask ^ Flags);
+
+    if (~(PopAction.Flags & (Flags ^ Mask)) & PolicyFlags)
+    {
+        PopAction.Flags = ((PopAction.Flags | PolicyFlags) & ~Mask);
+        *OutUpdates |= Updates;
+    }
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
