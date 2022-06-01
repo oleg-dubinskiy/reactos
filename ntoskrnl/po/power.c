@@ -1289,6 +1289,91 @@ PopActionRetrieveInitialState(
         *OutSystemState = *OutMaxState;
 }
 
+VOID
+NTAPI
+PopAdvanceSystemPowerState(
+    _Inout_ PSYSTEM_POWER_STATE OutSystemState,
+    _In_ ULONG Param2,
+    _In_ SYSTEM_POWER_STATE MinState,
+    _In_ ULONG MaxState)
+{
+    SYSTEM_POWER_STATE SystemState;
+    ULONG SubstitutionPolicy;
+  
+    DPRINT("PopAdvanceSystemPowerState: *OutSystemState %X, Param2 %X, MinState %X, MaxState %X\n", *OutSystemState, Param2, MinState, MaxState);
+    PAGED_CODE();
+
+    if (!OutSystemState)
+    {
+        ASSERT(OutSystemState);
+        return;
+    }
+
+    if (*OutSystemState < PowerSystemSleeping1)
+    {
+        DPRINT1("PopAdvanceSystemPowerState: *OutSystemState %X\n", *OutSystemState);
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+        return;
+    }
+
+    if (*OutSystemState >= PowerSystemShutdown)
+    {
+        *OutSystemState = PowerSystemWorking;
+        return;
+    }
+
+    SystemState = *OutSystemState;
+
+    if (Param2)
+    {
+        if (Param2 == 1)
+        {
+            *OutSystemState = (SystemState - 1);
+            PopVerifySystemPowerState(OutSystemState, 1);
+
+            if (*OutSystemState == SystemState)
+                *OutSystemState = PowerSystemWorking;
+
+            goto Exit;
+        }
+
+        if (Param2 != 2)
+        {
+            DPRINT1("PopAdvanceSystemPowerState: Param2 %X\n", Param2);
+            ASSERT(FALSE); // PoDbgBreakPointEx();
+            goto Exit;
+        }
+
+        /* Param2 == 2 */
+
+        if (SystemState == PowerSystemHibernate)
+        {
+            *OutSystemState = PowerSystemWorking;
+            return;
+        }
+
+        *OutSystemState = (SystemState + 1);
+        SubstitutionPolicy = 2;
+    }
+    else
+    {
+        *OutSystemState = (SystemState - 1);
+        SubstitutionPolicy = 0;
+    }
+
+    PopVerifySystemPowerState(OutSystemState, SubstitutionPolicy);
+
+Exit:
+
+    if (*OutSystemState != PowerSystemWorking)
+    {
+        if (*OutSystemState < MinState || *OutSystemState > MaxState)
+        {
+            *OutSystemState = PowerSystemWorking;
+        }
+    }
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
