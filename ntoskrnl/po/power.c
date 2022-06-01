@@ -621,6 +621,53 @@ PopSystemStateString(
     return String;
 }
 
+PCHAR
+NTAPI
+PopPowerActionString(
+    _In_ POWER_ACTION Action)
+{
+    PCHAR String;
+
+    if (Action == PowerActionNone)
+    {
+        String = "None";
+        return String;
+    }
+
+    switch (Action)
+    {
+        case PowerActionSleep:
+            String = "Sleep";
+            break;
+
+        case PowerActionHibernate:
+            String = "Hibernate";
+            break;
+
+        case PowerActionShutdown:
+            String = "Shutdown";
+            break;
+
+        case PowerActionShutdownReset:
+            String = "ShutdownReset";
+            break;
+
+        case PowerActionShutdownOff:
+            String = "ShutdownOff";
+            break;
+
+        case PowerActionWarmEject:
+            String = "WarmEject";
+            break;
+
+        default:
+            String = "?";
+            break;
+    }
+
+    return String;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
