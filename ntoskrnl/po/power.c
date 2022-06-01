@@ -1374,6 +1374,21 @@ Exit:
     }
 }
 
+VOID
+NTAPI
+PopCallPassiveLevel(
+    _In_ PVOID Context)
+{
+    PIRP Irp;
+    PIO_STACK_LOCATION IoStack;
+
+    DPRINT1("PopCallPassiveLevel: Irp %p\n", Context);
+
+    Irp = Context;
+    IoStack = IoGetNextIrpStackLocation(Irp);
+    IoCallDriver(IoStack->DeviceObject, Irp);
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
