@@ -676,6 +676,27 @@ PopAssertPolicyLockOwned(VOID)
     ASSERT(PopPolicyLockThread == KeGetCurrentThread());
 }
 
+VOID
+NTAPI
+PopCompleteAction(
+    _In_ PPOP_ACTION_TRIGGER ActionTrigger,
+    _In_ NTSTATUS Status)
+{
+    DPRINT("PopCompleteAction: ActionTrigger %X, Status %X\n", ActionTrigger, Status);
+  
+    if (ActionTrigger->Flags & 0x20)
+    {
+        PPOP_TRIGGER_WAIT Wait;
+
+        ActionTrigger->Flags &= ~0x20;
+
+        Wait = ActionTrigger->Wait;
+        Wait->Status = Status;
+
+        KeSetEvent(&Wait->Event, IO_NO_INCREMENT, FALSE);
+    }
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
