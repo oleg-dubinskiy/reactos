@@ -557,6 +557,23 @@ PoInitializePrcb(IN PKPRCB Prcb)
     KeInitializeTimerEx(&Prcb->PowerState.PerfTimer, SynchronizationTimer);
 }
 
+VOID
+NTAPI
+PopResetActionDefaults(
+    VOID)
+{
+    DPRINT("PopCompleteAction: PopResetActionDefaults()\n");
+
+    PopAction.Updates = 0;
+    PopAction.Shutdown = FALSE;
+    PopAction.Action = PowerActionNone;
+    PopAction.LightestState = PowerSystemUnspecified;
+    PopAction.Status = STATUS_SUCCESS;
+    PopAction.IrpMinor = 0;
+    PopAction.SystemState = PowerSystemUnspecified;
+    PopAction.Flags = 0x10000003;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
