@@ -1022,6 +1022,18 @@ PopPromoteActionFlag(
     }
 }
 
+VOID
+NTAPI
+PopGetPolicyWorker(
+    _In_ ULONG WorkerPending)
+{
+    KIRQL OldIrql;
+  
+    KeAcquireSpinLock(&PopWorkerSpinLock, &OldIrql);
+    PopWorkerPending |= WorkerPending;
+    KeReleaseSpinLock(&PopWorkerSpinLock, OldIrql);
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
