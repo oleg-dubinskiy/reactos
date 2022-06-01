@@ -821,6 +821,33 @@ Exit:
     return;
 }
 
+VOID
+NTAPI
+PopFilterCapabilities(
+    _In_ PSYSTEM_POWER_CAPABILITIES Capabilities,
+    _Out_ PSYSTEM_POWER_CAPABILITIES OutCapabilities)
+{
+    DPRINT("PopFilterCapabilities: Capabilities %p, OutCapabilities %p\n", Capabilities, OutCapabilities);
+    PAGED_CODE();
+
+    RtlCopyMemory(OutCapabilities, Capabilities, sizeof(*OutCapabilities));
+
+    DPRINT("PopFilterCapabilities: FIXME IoGetLegacyVetoList()\n");
+
+    if (MmHighestPhysicalPage >= 0x00100000)
+    {
+        DPRINT1("PopFilterCapabilities: FIXME\n");
+    }
+
+    DPRINT("PopFilterCapabilities: FIXME PopFindLoadedModule(VGAPNP.SYS)\n");
+
+    if (PopFailedHibernationAttempt)
+    {
+        OutCapabilities->SystemS4 = FALSE;
+        DPRINT("PopFilterCapabilities: FIXME PopInsertLoggingEntry()\n");
+    }
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
