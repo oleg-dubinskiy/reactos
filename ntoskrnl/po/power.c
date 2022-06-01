@@ -1034,6 +1034,161 @@ PopGetPolicyWorker(
     KeReleaseSpinLock(&PopWorkerSpinLock, OldIrql);
 }
 
+VOID
+NTAPI 
+PopSetPowerAction(
+    _In_ PPOP_ACTION_TRIGGER ActionTrigger,
+    _In_ ULONG Param2,
+    _In_ PPOWER_ACTION_POLICY ActionPolicy,
+    _In_ SYSTEM_POWER_STATE LightestState,
+    _In_ ULONG SubstitutionPolicy)
+{
+    ULONG PolicyFlags;
+    BOOLEAN IsPromote = FALSE;
+    UCHAR Updates;
+
+    DPRINT("PopSetPowerAction: %X, %X, %X, %X, %X\n", ActionTrigger, Param2, ActionPolicy, LightestState, SubstitutionPolicy);
+
+    PopAssertPolicyLockOwned();
+
+    DPRINT("PopSetPowerAction: FIXME PPerfGlobalGroupMask\n");
+
+    if (!(ActionTrigger->Flags & 0x80))
+    {
+        DPRINT("PopSetPowerAction: return\n");
+        PopCompleteAction(ActionTrigger, 0);
+        return;
+    }
+
+  #if DBG
+    {
+        PCHAR MinStateString;
+        PCHAR ActionString;
+
+        MinStateString = PopSystemStateString(LightestState);
+        ActionString = PopPowerActionString(ActionPolicy->Action);
+
+        DPRINT("PopSetPowerAction: Action '%s', Flags %X, Min '%s'\n", ActionString, ActionPolicy->Flags, MinStateString);
+    }
+  #endif
+
+    PopVerifySystemPowerState(&LightestState, SubstitutionPolicy);
+
+    if (PopVerifyPowerActionPolicy(ActionPolicy))
+    {
+        PopCompleteAction(ActionTrigger, STATUS_NOT_SUPPORTED);
+        return;
+    }
+
+    if (!(ActionTrigger->Flags & 2))
+    {
+        ActionTrigger->Flags |= 2;
+        PolicyFlags = ActionPolicy->Flags;
+
+        if (PopAction.State == 0)
+            PopResetActionDefaults();
+
+        if (ActionPolicy->Action)
+        {
+            Updates = 0;
+
+            if (ActionPolicy->Action == PowerActionWarmEject)
+            {
+                ASSERT(LightestState <= PowerSystemHibernate);
+                PolicyFlags |= 0x10000000;
+            }
+
+            if (ActionPolicy->Action == PowerActionHibernate)
+            {
+                ASSERT(LightestState <= PowerSystemHibernate);
+                LightestState = PowerSystemHibernate;
+            }
+
+            if (PopCompareActions(ActionPolicy->Action, PopAction.Action) >= 0)
+            {
+                PopPromoteActionFlag(&Updates, 1, PolicyFlags, FALSE, 0x00000001);
+                PopPromoteActionFlag(&Updates, 1, PolicyFlags, FALSE, 0x00000002);
+                PopPromoteActionFlag(&Updates, 4, PolicyFlags, FALSE, 0x10000000);
+
+                if (ActionPolicy->Action == PowerActionSleep &&
+                    LightestState < PopPolicy->MinSleep)
+                {
+                    LightestState = PopPolicy->MinSleep;
+                }
+
+                if (PopAction.LightestState < LightestState)
+                {
+                    Updates |= 4;
+                    PopAction.LightestState = LightestState;
+                }
+            }
+
+            PopPromoteActionFlag(&Updates, 1, PolicyFlags, TRUE, 0x00000004);
+            PopPromoteActionFlag(&Updates, 5, PolicyFlags, TRUE, 0x80000000);
+            PopPromoteActionFlag(&Updates, 0, PolicyFlags, TRUE, 0x40000000);
+
+            if (PopCompareActions(ActionPolicy->Action, PopAction.Action) > 0)
+            {
+                ASSERT(PopCompareActions(PopAction.Action, PowerActionShutdownOff) < 0);
+
+                if (PopCompareActions(ActionPolicy->Action, PowerActionHibernate) >= 0)
+                {
+                    Updates |= 2;
+                }
+
+                Updates |= 5;
+                PopAction.Action = ActionPolicy->Action;
+            }
+
+            if (PopAction.Action == PowerActionHibernate)
+                PopAction.Action = PowerActionSleep;
+
+            if (Updates)
+            {
+                IsPromote = TRUE;
+
+                if (PopAction.State == 0 || PopAction.State == 1)
+                {
+                    PopAction.Status = 0;
+                    PopAction.State = 1;
+                    PopGetPolicyWorker(4);
+                }
+                else
+                {
+                    PopAction.Updates |= Updates;
+                    PopGetPolicyWorker(2);
+                }
+            }
+        }
+    }
+
+    if (!(ActionTrigger->Flags & 1))
+    {
+        ActionTrigger->Flags |= 1;
+
+        if (ActionPolicy->EventCode)
+        {
+            DPRINT1("PopSetPowerAction: ActionPolicy->EventCode %X\n", ActionPolicy->EventCode);
+            ASSERT(FALSE); // PoDbgBreakPointEx();
+        }
+
+        DPRINT("PopSetPowerAction: FIXME PopSetNotificationWork()\n");
+    }
+
+    if (!(ActionTrigger->Flags & 0x20))
+        return;
+
+    if (IsPromote)
+    {
+        DPRINT1("PopSetPowerAction: FIXME\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+        return;
+    }
+
+    PopCompleteAction(ActionTrigger, 0);
+    return;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
