@@ -2197,14 +2197,24 @@ IoFreePoDeviceNotifyList(
 
 NTSTATUS
 NTAPI
-NtSetSystemPowerState(IN POWER_ACTION SystemAction,
-                      IN SYSTEM_POWER_STATE MinSystemState,
-                      IN ULONG Flags)
+NtSetSystemPowerState(
+    _In_ POWER_ACTION SystemAction,
+    _In_ SYSTEM_POWER_STATE MinSystemState,
+    _In_ ULONG Flags)
 {
     KPROCESSOR_MODE PreviousMode = KeGetPreviousMode();
-    POP_POWER_ACTION Action = {0};
+    SYSTEM_POWER_STATE PopActionSystemState;
+    SYSTEM_POWER_STATE MaxState;
+    POWER_ACTION_POLICY ActionPolicy;
+    POP_ACTION_TRIGGER ActionTrigger;
+    BOOLEAN IsTimerRefreshLocked;
+    BOOLEAN StatesIsNotEqual;
+    BOOLEAN IsPolicyLock;
+    ULONGLONG SleepTime = 0;
+    ULONG FlagBits;
     NTSTATUS Status;
-    ULONG Dummy;
+
+    DPRINT("NtSetSystemPowerState: [%X] SystemAction %X, MinSystemState %X, Flags %X\n", PreviousMode, SystemAction, MinSystemState, Flags);
 
     /* Check for invalid parameter combinations */
     if ((MinSystemState >= PowerSystemMaximum) ||
@@ -2220,9 +2230,9 @@ NtSetSystemPowerState(IN POWER_ACTION SystemAction,
                    POWER_ACTION_CRITICAL)))
     {
         DPRINT1("NtSetSystemPowerState: Bad parameters!\n");
-        DPRINT1("                       SystemAction: 0x%x\n", SystemAction);
-        DPRINT1("                       MinSystemState: 0x%x\n", MinSystemState);
-        DPRINT1("                       Flags: 0x%x\n", Flags);
+        DPRINT1("                       SystemAction: %X\n", SystemAction);
+        DPRINT1("                       MinSystemState: %X\n", MinSystemState);
+        DPRINT1("                       Flags:  %X\n", Flags);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -2233,7 +2243,7 @@ NtSetSystemPowerState(IN POWER_ACTION SystemAction,
         if (!SeSinglePrivilegeCheck(SeShutdownPrivilege, PreviousMode))
         {
             /* Not granted */
-            DPRINT1("ERROR: Privilege not held for shutdown\n");
+            DPRINT1("NtSetSystemPowerState: ERROR - privilege not held for shutdown\n");
             return STATUS_PRIVILEGE_NOT_HELD;
         }
 
@@ -2242,100 +2252,271 @@ NtSetSystemPowerState(IN POWER_ACTION SystemAction,
     }
 
     /* Read policy settings (partial shutdown vs. full shutdown) */
-    if (SystemAction == PowerActionShutdown) PopReadShutdownPolicy();
+    if (SystemAction == PowerActionShutdown)
+        PopReadShutdownPolicy();
 
     /* Disable lazy flushing of registry */
-    DPRINT("Stopping lazy flush\n");
+    DPRINT("NtSetSystemPowerState: Stopping lazy flush\n");
     CmSetLazyFlushState(FALSE);
 
-    /* Setup the power action */
-    Action.Action = SystemAction;
-    Action.Flags = Flags;
+    IsTimerRefreshLocked = FALSE;
+    IsFlushedVolumes = FALSE;
+
+    ActionPolicy.Action = SystemAction;
+    ActionPolicy.Flags = Flags;
+    ActionPolicy.EventCode = 0;
+
+    RtlZeroMemory(&ActionTrigger, sizeof(ActionTrigger));
+
+    ActionTrigger.Battery.Level = 0;
+    ActionTrigger.Type = PolicySetPowerStateAPI;
+    ActionTrigger.Flags = 0x80;
+
+    //ASSERT(ExPageLockHandle);
+    KeWaitForSingleObject(&PopUnlockComplete, WrExecutive, KernelMode, FALSE, NULL);
+    //MmLockPagableSectionByHandle(ExPageLockHandle);
 
     /* Notify callbacks */
-    DPRINT("Notifying callbacks\n");
-    ExNotifyCallback(PowerStateCallback, (PVOID)3, NULL);
+    DPRINT("NtSetSystemPowerState: Notifying callbacks\n");
+    ExNotifyCallback(PowerStateCallback, UlongToPtr(3), NULL);
 
     /* Swap in any worker thread stacks */
-    DPRINT("Swapping worker threads\n");
+    DPRINT("NtSetSystemPowerState: Swapping worker threads\n");
     ExSwapinWorkerThreads(FALSE);
 
-    /* Make our action global */
-    PopAction = Action;
+    PopAcquirePolicyLock();
+    IsPolicyLock = TRUE;
+
+    if (PopAction.State == 0)
+    {
+        PopResetActionDefaults();
+    }
+    else if (PopAction.State != 2)
+    {
+        DPRINT1("NtSetSystemPowerState: already committed, State %X\n", PopAction.State);
+
+        PopReleasePolicyLock(FALSE);
+        //MmUnlockPagableImageSection(ExPageLockHandle);
+        ExSwapinWorkerThreads(TRUE);
+        KeSetEvent(&PopUnlockComplete, IO_NO_INCREMENT, FALSE);
+
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+
+        return STATUS_ALREADY_COMMITTED;
+    }
+
+    /* PopAction.State == 2 */
+
+    PopAction.State = 3;
+    Status = STATUS_CANCELLED;
+
+    //_SEH2_TRY
+    PopSetPowerAction(&ActionTrigger, 0, &ActionPolicy, MinSystemState, 1);
+    //_SEH2_END
+
+    if (SystemAction == PowerActionShutdownOff)
+        PopAction.Action = PowerActionShutdownOff;
+
+    if (SystemAction == PowerActionShutdown ||
+        SystemAction == PowerActionShutdownReset ||
+        SystemAction == PowerActionShutdownOff)
+    {
+        if (PopHiberFile)
+        {
+            DPRINT1("NtSetSystemPowerState: PopHiberFile %X\n", PopHiberFile);
+            ASSERT(FALSE); // PoDbgBreakPointEx();
+        }
+    }
+
+    PopAllocateDevState();
+
+    if (!PopAction.DevState)
+    {
+        DPRINT1("NtSetSystemPowerState: STATUS_INSUFFICIENT_RESOURCES\n");
+        PopAction.State = 0;
+
+        PopReleasePolicyLock(0);
+        //MmUnlockPagableImageSection(ExPageLockHandle);
+        ExSwapinWorkerThreads(TRUE);
+        KeSetEvent(&PopUnlockComplete, IO_NO_INCREMENT, FALSE);
+
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    DPRINT("NtSetSystemPowerState: PopAction.Action %X, PopAction.Flags %X\n", PopAction.Action, PopAction.Flags);
 
     /* Start power loop */
     Status = STATUS_CANCELLED;
+    StatesIsNotEqual = FALSE;
+    MaxState = PowerSystemUnspecified;
+
     while (TRUE)
     {
-        /* Break out if there's nothing to do */
-        if (Action.Action == PowerActionNone) break;
+        DPRINT("NtSetSystemPowerState: PopAction.Action %X\n", PopAction.Action);
 
-        /* Check for first-pass or restart */
+        if (!IsPolicyLock)
+        {
+            PopAcquirePolicyLock();
+            IsPolicyLock = TRUE;
+        }
+
+        if (PopAction.Action == PowerActionNone)
+            goto Exit;
+
+        ASSERT(PopAction.Action != PowerActionHibernate);
+
+        PopAction.Updates &= ~7;
+
         if (Status == STATUS_CANCELLED)
         {
-            /* Check for shutdown action */
-            if ((PopAction.Action == PowerActionShutdown) ||
-                (PopAction.Action == PowerActionShutdownReset) ||
-                (PopAction.Action == PowerActionShutdownOff))
+            DPRINT("NtSetSystemPowerState: Status is STATUS_CANCELLED\n");
+
+            if ((PopAction.Updates & 2) && // FIXME: ? PopAction.Updates always ~7
+                !(PopAction.Flags & POWER_ACTION_CRITICAL) &&
+                (PopAction.Flags & 3))
             {
-                /* Set the action */
-                PopAction.Shutdown = TRUE;
+                PopGetPolicyWorker(4);
+Exit:
+                if (NT_SUCCESS(Status))
+                {
+                    PopAction.SleepTime = SleepTime;
+                    ASSERT(IsTimerRefreshLocked);
+                    ExUpdateSystemTimeFromCmos(1, 1);
+                }
+
+                DPRINT1("NtSetSystemPowerState: Status %X\n", Status);
+                ASSERT(FALSE); // PoDbgBreakPointEx();
+                return Status;
             }
 
-            /* Now we are good to go */
+            PopActionRetrieveInitialState(&PopAction.LightestState, &MaxState, &PopAction.SystemState, &StatesIsNotEqual);
+
+            DPRINT("NtSetSystemPowerState: %X, %X, %X, %X\n",
+                   PopAction.LightestState, MaxState, PopAction.SystemState, StatesIsNotEqual);
+
+            ASSERT(PopAction.SystemState != PowerSystemUnspecified);
+
+            if (PopAction.Action == PowerActionShutdown ||
+                PopAction.Action == PowerActionShutdownReset ||
+                PopAction.Action == PowerActionShutdownOff)
+            {
+                PopAction.Shutdown = TRUE;
+                DPRINT("NtSetSystemPowerState: PopAction.Shutdown - TRUE\n");
+            }
+
             Status = STATUS_SUCCESS;
         }
 
-        /* Check if we're still in an invalid status */
-        if (!NT_SUCCESS(Status)) break;
+        if (StatesIsNotEqual && PopAction.SystemState < PowerSystemShutdown)
+        {
+            PopActionSystemState = PopAction.SystemState;
+            PopVerifySystemPowerState(&PopActionSystemState, 1);
 
-#ifndef NEWCC
-        /* Flush dirty cache pages */
-        /* XXX: Is that still mandatory? As now we'll wait on lazy writer to complete? */
-        CcRosFlushDirtyPages(-1, &Dummy, FALSE, FALSE); //HACK: We really should wait here!
-#else
-        Dummy = 0;
-#endif
+            if (PopActionSystemState != PopAction.SystemState ||
+                PopActionSystemState == PowerSystemWorking)
+            {
+                DPRINT1("KeBugCheckEx(INTERNAL_POWER_ERROR)\n");
+                ASSERT(FALSE); // PoDbgBreakPointEx();
+                KeBugCheckEx(INTERNAL_POWER_ERROR, 2, 0x602FB, 0, 0);
+            }
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("NtSetSystemPowerState: Status %X\n", Status);
+            ASSERT(FALSE); // PoDbgBreakPointEx();
+            return Status;
+        }
+
+        PopReleasePolicyLock(0);
+        IsPolicyLock = FALSE;
+
+        DPRINT("NtSetSystemPowerState: FIXME PopInitializePowerPolicySimulate()\n");
+        //ASSERT(FALSE); // PoDbgBreakPointEx();
+
+        PopReportDevState(FALSE);
+
+        PopAction.NextSystemState = PopAction.SystemState;
+        FlagBits = ((PopAction.Flags >> 27) & 2);
+        PopAdvanceSystemPowerState(&PopAction.NextSystemState, FlagBits, PopAction.LightestState, MaxState);
+
+        DPRINT("NtSetSystemPowerState: Action %X, NextSystemState %X\n", PopAction.Action, PopAction.NextSystemState);
+
+        PopAction.IrpMinor = IRP_MN_QUERY_POWER;
+
+        if (StatesIsNotEqual)
+        {
+            DPRINT1("NtSetSystemPowerState: StatesIsNotEqual is TRUE, FIXME\n");
+            ASSERT(FALSE); // PoDbgBreakPointEx();
+            Status = STATUS_SUCCESS;
+            continue;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("NtSetSystemPowerState: Status %X\n", Status);
+            continue;
+        }
+
+        PopSystemIrpDispatchWorker(TRUE);
+
+        DPRINT1("NtSetSystemPowerState: FIXME RtlGetNtProductType()\n");
+        //...
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("NtSetSystemPowerState: Status %X\n", Status);
+            ASSERT(FALSE); // PoDbgBreakPointEx();
+            continue;
+        }
+
+        if (PopAction.Updates & 6)
+        {
+            DPRINT1("NtSetSystemPowerState: PopAction.Updates %X\n", PopAction.Updates);
+            ASSERT(FALSE); // PoDbgBreakPointEx();
+            continue;
+        }
+
+        DPRINT("NtSetSystemPowerState: FIXME RtlLockBootStatusData()\n");
 
         /* Flush all volumes and the registry */
-        DPRINT("Flushing volumes, cache flushed %lu pages\n", Dummy);
-        PopFlushVolumes(PopAction.Shutdown);
+        if (!IsFlushedVolumes)
+        {
+            IsFlushedVolumes = TRUE;
+            PopFlushVolumes(PopAction.Shutdown);
+        }
 
-        /* Set IRP for drivers */
         PopAction.IrpMinor = IRP_MN_SET_POWER;
+
         if (PopAction.Shutdown)
         {
-            DPRINT("Queueing shutdown thread\n");
+            IoFreePoDeviceNotifyList(&PopAction.DevState->Order);
+            PopAction.DevState->GetNewDeviceList = TRUE;
+
+            DPRINT("NtSetSystemPowerState: Queueing shutdown thread\n");
+
             /* Check if we are running in the system context */
-            if (PsGetCurrentProcess() != PsInitialSystemProcess)
-            {
-                /* We're not, so use a worker thread for shutdown */
-                ExInitializeWorkItem(&PopShutdownWorkItem,
-                                     &PopGracefulShutdown,
-                                     NULL);
-
-                ExQueueWorkItem(&PopShutdownWorkItem, CriticalWorkQueue);
-
-                /* Spend us -- when we wake up, the system is good to go down */
-                KeSuspendThread(KeGetCurrentThread());
-                Status = STATUS_SYSTEM_SHUTDOWN;
-                goto Exit;
-
-            }
-            else
+            if (PsGetCurrentProcess() == PsInitialSystemProcess)
             {
                 /* Do the shutdown inline */
                 PopGracefulShutdown(NULL);
             }
+            else
+            {
+                /* We're not, so use a worker thread for shutdown */
+                ExInitializeWorkItem(&PopShutdownWorkItem, &PopGracefulShutdown, NULL);
+                ExQueueWorkItem(&PopShutdownWorkItem, CriticalWorkQueue);
+
+                KeSuspendThread(KeGetCurrentThread());
+                return STATUS_SYSTEM_SHUTDOWN;
+            }
         }
 
-        /* You should not have made it this far */
-        // ASSERTMSG("System is still up and running?!\n", FALSE);
-        DPRINT1("System is still up and running, you may not have chosen a yet supported power option: %u\n", PopAction.Action);
-        break;
+        DPRINT1("NtSetSystemPowerState: PopAction.Shutdown is 0\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
     }
 
-Exit:
     /* We're done, return */
     return Status;
 }
