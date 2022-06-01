@@ -848,6 +848,132 @@ PopFilterCapabilities(
     }
 }
 
+BOOLEAN
+NTAPI
+PopVerifyPowerActionPolicy(
+    _In_ PPOWER_ACTION_POLICY ActionPolicy)
+{
+    SYSTEM_POWER_CAPABILITIES Capabilities;
+    POWER_ACTION OldAction;
+    ULONG Level;
+    BOOLEAN IsNotHibernate;
+    BOOLEAN Result = FALSE;
+
+    DPRINT("PopVerifyPowerActionPolicy: ActionPolicy %X\n", ActionPolicy);
+    PAGED_CODE();
+
+    if (!ActionPolicy)
+        return FALSE;
+
+    if (ActionPolicy->Flags & ~(POWER_ACTION_QUERY_ALLOWED  |
+                                POWER_ACTION_UI_ALLOWED     |
+                                POWER_ACTION_OVERRIDE_APPS  |
+                                POWER_ACTION_LIGHTEST_FIRST |
+                                POWER_ACTION_LOCK_CONSOLE   |
+                                POWER_ACTION_DISABLE_WAKES  |
+                                POWER_ACTION_CRITICAL))
+    {
+        DPRINT1("PopVerifyPowerActionPolicy: Bad incoming Action\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+        return FALSE;
+    }
+
+    if (ActionPolicy->Flags & POWER_ACTION_CRITICAL)
+    {
+        ActionPolicy->Flags &= ~(POWER_ACTION_QUERY_ALLOWED | POWER_ACTION_UI_ALLOWED);
+        ActionPolicy->Flags |= POWER_ACTION_OVERRIDE_APPS;
+    }
+
+    if (ActionPolicy->Action == PowerActionSleep ||
+        ActionPolicy->Action == PowerActionHibernate)
+    {
+        DPRINT("PopVerifyPowerActionPolicy: FIXME IoGetLegacyVetoList()\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+    }
+
+    PopFilterCapabilities(&PopCapabilities, &Capabilities);
+
+    Level = 0;
+    IsNotHibernate = FALSE;
+
+    if (Capabilities.SystemS1)
+        Level = 1;
+
+    if (Capabilities.SystemS2)
+        Level++;
+
+    if (Capabilities.SystemS3)
+        Level++;
+
+    if (Capabilities.SystemS4 && Capabilities.HiberFilePresent)
+        IsNotHibernate = TRUE;
+
+    do
+    {
+        OldAction = ActionPolicy->Action;
+
+        switch (ActionPolicy->Action)
+        {
+            case PowerActionReserved:
+            {
+                ActionPolicy->Action = PowerActionSleep;
+
+                if (Level < 1)
+                {
+                    Result = 1;
+                    ActionPolicy->Action = 0;
+                }
+
+                break;
+            }
+            case PowerActionSleep:
+            {
+                if (Level < 1)
+                {
+                    Result = 1;
+                    ActionPolicy->Action = 0;
+                }
+
+                break;
+            }
+            case PowerActionHibernate:
+            {
+                if (IsNotHibernate)
+                    break;
+
+                ActionPolicy->Action = PowerActionSleep;
+
+                if (Level < 1)
+                {
+                    Result = 1;
+                    ActionPolicy->Action = 0;
+                }
+
+                break;
+            }
+            case PowerActionShutdownOff:
+            {
+                if (!Capabilities.SystemS5)
+                    ActionPolicy->Action = PowerActionShutdown;
+
+                break;
+            }
+            case PowerActionNone:
+            case PowerActionShutdown:
+            case PowerActionShutdownReset:
+            case PowerActionWarmEject:
+                break;
+
+            default:
+                ASSERT(FALSE); // PoDbgBreakPointEx();
+                break;
+        }
+    }
+    while (OldAction != ActionPolicy->Action);
+
+    return Result;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
