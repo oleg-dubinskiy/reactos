@@ -610,6 +610,39 @@ IoGetPoNotifyParent(
     return Parent->Notify;
 }
 
+BOOLEAN
+NTAPI
+PopCheckSystemPowerIrpStatus(
+    _In_ PPOP_DEVICE_SYS_STATE DevState,
+    _In_ PIRP Irp,
+    _In_ BOOLEAN Param3)
+{
+    NTSTATUS Status;
+
+    DPRINT("PopCheckSystemPowerIrpStatus: DevState %p, Irp %X, Param3 %X\n", DevState, Irp, Param3);
+
+    Status = Irp->IoStatus.Status;
+    DPRINT("PopCheckSystemPowerIrpStatus: Status %X\n", Status);
+
+    if (NT_SUCCESS(Status))
+        return TRUE;
+
+    if (DevState->IgnoreErrors)
+        return TRUE;
+
+    if (Status == STATUS_CANCELLED)
+        return TRUE;
+
+    if (Status == STATUS_NOT_SUPPORTED)
+    {
+        DPRINT1("PopCheckSystemPowerIrpStatus: STATUS_NOT_SUPPORTED\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+    }
+
+    DPRINT("PopCheckSystemPowerIrpStatus: return FALSE \n");
+    return FALSE;
+}
+
 NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)
 {
     UNIMPLEMENTED;
