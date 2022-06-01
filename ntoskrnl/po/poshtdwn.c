@@ -27,8 +27,10 @@ LIST_ENTRY PopShutdownQueue;
 KGUARDED_MUTEX PopShutdownListMutex;
 ULONG PopFullWake;
 BOOLEAN PopShutdownListAvailable;
+PDEVICE_OBJECT IopWarmEjectPdo = NULL;
 
 extern POP_POWER_ACTION PopAction;
+extern ULONG IoDeviceNodeTreeSequence;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -289,6 +291,306 @@ IopCaptureObjectName(
     ObjectName[Size / sizeof(WCHAR)] = UNICODE_NULL;
 
     return ObjectName;
+}
+
+NTSTATUS
+NTAPI
+IoBuildPoDeviceNotifyList(
+    _In_ PPO_DEVICE_NOTIFY_ORDER Order)
+{
+    PPO_DEVICE_NOTIFY notify;
+    PDEVICE_NODE node;
+    PDEVICE_NODE nextnode;
+    PDEVICE_NODE NotifyNode;
+    UCHAR OrderLevel;
+    PLIST_ENTRY OrderHeader;
+    PLIST_ENTRY Entry;
+    LIST_ENTRY list;
+    ULONG ix;
+    LONG Level = -1;
+    UCHAR MaxLevel;
+
+    DPRINT("IoBuildPoDeviceNotifyList: Order %p IopRootDeviceNode %X\n", Order, IopRootDeviceNode);
+
+    PiLockDeviceActionQueue();
+
+    RtlZeroMemory(Order, sizeof(*Order));
+
+    Order->DevNodeSequence = IoDeviceNodeTreeSequence;
+
+    for (ix = 0; ix < 8; ix++)
+    {
+        KeInitializeEvent(&Order->OrderLevel[ix].LevelReady, NotificationEvent, FALSE);
+
+        InitializeListHead(&Order->OrderLevel[ix].WaitSleep);
+        InitializeListHead(&Order->OrderLevel[ix].ReadySleep);
+        InitializeListHead(&Order->OrderLevel[ix].Pending);
+        InitializeListHead(&Order->OrderLevel[ix].Complete);
+        InitializeListHead(&Order->OrderLevel[ix].ReadyS0);
+        InitializeListHead(&Order->OrderLevel[ix].WaitS0);
+    }
+
+    InitializeListHead(&list);
+
+    for (nextnode = IopRootDeviceNode; ; Level++)
+    {
+        node = nextnode;
+
+        nextnode = nextnode->Child;
+        if (!nextnode)
+            break;
+    }
+
+    MaxLevel = Level;
+
+    while (node != IopRootDeviceNode)
+    {
+        notify = ExAllocatePoolWithTag(NonPagedPool, sizeof(*notify), 'rwPD');
+        if (!notify)
+        {
+            DPRINT1("IoBuildPoDeviceNotifyList: STATUS_INSUFFICIENT_RESOURCES\n");
+            Order->DevNodeSequence = 0;
+            PiUnlockDeviceActionQueue();
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(notify, sizeof(*notify));
+
+        ASSERT(node->Notify == NULL);
+        node->Notify = notify;
+        notify->Node = node;
+
+        notify->DeviceObject = node->PhysicalDeviceObject;
+        notify->TargetDevice = IoGetAttachedDeviceReference(node->PhysicalDeviceObject);
+        notify->DriverName = IopCaptureObjectName(notify->TargetDevice->DriverObject);
+        notify->DeviceName = IopCaptureObjectName(notify->TargetDevice);
+
+        ObReferenceObject(notify->DeviceObject);
+
+        DPRINT("IoBuildPoDeviceNotifyList: node %p,  notify %p, DO %p, TargetDO %p, DriverName '%S', DeviceName '%S'\n",
+               node, notify, notify->DeviceObject, notify->TargetDevice, notify->DriverName, notify->DeviceName);
+
+        OrderLevel = 0;
+
+        if (notify->TargetDevice->DeviceType != FILE_DEVICE_SCREEN &&
+            notify->TargetDevice->DeviceType != FILE_DEVICE_VIDEO)
+        {
+            OrderLevel = 1;
+        }
+
+        if (notify->TargetDevice->Flags & DO_POWER_PAGABLE)
+            OrderLevel |= 4;
+
+        notify->OrderLevel = OrderLevel;
+
+        DPRINT("IoBuildPoDeviceNotifyList: OrderLevel %X\n", OrderLevel);
+
+        if (!Level && (node->InterfaceType != Internal) && !(node->Flags & DNF_HAL_NODE))
+        {
+            InsertHeadList(&list, &notify->Link);
+            DPRINT("IoBuildPoDeviceNotifyList: [%X] [%X] &list %X, Entry %X, node %X\n",
+                   Level, OrderLevel, &list, &notify->Link, node);
+        }
+        else
+        {
+            Order->OrderLevel[OrderLevel].DeviceCount++;
+
+            if (node->Child)
+            {
+                OrderHeader = &Order->OrderLevel[OrderLevel].WaitSleep;
+
+                DPRINT("IoBuildPoDeviceNotifyList: [%X] HeaderWaitSleep[%X] %X, Entry %X, node %X\n",
+                       Level, OrderLevel, OrderHeader, notify, node);
+            }
+            else
+            {
+                OrderHeader = &Order->OrderLevel[OrderLevel].ReadySleep;
+
+                DPRINT("IoBuildPoDeviceNotifyList: [%X] HeaderReadySleep[%X] %X, Entry %X, node %X\n",
+                       Level, OrderLevel, OrderHeader, notify, node);
+            }
+
+            InsertHeadList(OrderHeader, &notify->Link);
+        }
+
+        if (!node->Sibling)
+        {
+            Level--;
+            node = node->Parent;
+
+            DPRINT("IoBuildPoDeviceNotifyList: [%X] node %p\n", Level, node);
+
+            continue;
+        }
+
+        DPRINT("IoBuildPoDeviceNotifyList: [%X] node %p, nextnode %X\n", Level, node->Sibling, node->Sibling->Child);
+
+        nextnode = node->Sibling->Child;
+        node = node->Sibling;
+
+        for (; nextnode; nextnode = nextnode->Child)
+        {
+            Level++;
+
+            if (MaxLevel < Level)
+                MaxLevel = Level;
+
+            DPRINT("IoBuildPoDeviceNotifyList: [%X] node %p, nextnode %X\n", Level, nextnode, nextnode->Child);
+
+            node = nextnode;
+        }
+    }
+
+    DPRINT("\n");
+
+    while (!IsListEmpty(&list))
+    {
+        Entry = RemoveHeadList(&list);
+        notify = CONTAINING_RECORD(Entry, PO_DEVICE_NOTIFY, Link);
+
+        notify->OrderLevel |= 2;
+        Order->OrderLevel[notify->OrderLevel].DeviceCount++;
+
+        NotifyNode = notify->Node;
+
+        if (NotifyNode->Child)
+        {
+            OrderHeader = &Order->OrderLevel[notify->OrderLevel].WaitSleep;
+
+            DPRINT("IoBuildPoDeviceNotifyList: [%X] HeaderWaitSleep[%X] %X, Entry %X, NotifyNode %X\n",
+                   Level, notify->OrderLevel, OrderHeader, notify, NotifyNode);
+        }
+        else
+        {
+            OrderHeader = &Order->OrderLevel[notify->OrderLevel].ReadySleep;
+
+            DPRINT("IoBuildPoDeviceNotifyList: [%X] HeaderReadySleep[%X] %X, Entry %X, NotifyNode %X\n",
+                   Level, notify->OrderLevel, OrderHeader, notify, NotifyNode);
+        }
+
+        InsertHeadList(OrderHeader, &notify->Link);
+
+        nextnode = NotifyNode->Child;
+        if (!nextnode)
+            continue;
+
+        do
+        {
+            DPRINT("IoBuildPoDeviceNotifyList: [%X] node %p, nextnode %X\n", Level, nextnode, nextnode->Child);
+            node = nextnode;
+            nextnode = nextnode->Child;
+        }
+        while (nextnode);
+
+        while (node != NotifyNode)
+        {
+            if (node->Notify)
+            {
+                RemoveEntryList(&node->Notify->Link);
+
+                Order->OrderLevel[node->Notify->OrderLevel].DeviceCount--;
+                node->Notify->OrderLevel |= 2;
+                Order->OrderLevel[node->Notify->OrderLevel].DeviceCount++;
+
+                if (node->Child)
+                {
+                    OrderHeader = &Order->OrderLevel[node->Notify->OrderLevel].WaitSleep;
+
+                    DPRINT("IoBuildPoDeviceNotifyList: [%X] HeaderWaitSleep[%X] %X, Entry %X, node %X\n",
+                           Level, OrderLevel, OrderHeader, notify, node);
+                }
+                else
+                {
+                    OrderHeader = &Order->OrderLevel[node->Notify->OrderLevel].ReadySleep;
+                    DPRINT("IoBuildPoDeviceNotifyList: [%X] HeaderReadySleep[%X] %X, Entry %X, node %X\n",
+                           Level, OrderLevel, OrderHeader, notify, node);
+                }
+
+                InsertHeadList(OrderHeader, &node->Notify->Link);
+            }
+
+            nextnode = node->Sibling;
+            if (!nextnode)
+            {
+                node = node->Parent;
+                continue;
+            }
+
+            for (; nextnode; nextnode = nextnode->Child)
+            {
+                DPRINT("IoBuildPoDeviceNotifyList: [%X] node %p, nextnode %X\n", Level, nextnode, nextnode->Child);
+                node = nextnode;
+            }
+        }
+    }
+
+    DPRINT("\n");
+
+    if (!IopRootDeviceNode->Child)
+        goto Exit;
+
+    nextnode = IopRootDeviceNode->Child;
+    do
+    {
+        DPRINT("IoBuildPoDeviceNotifyList: [%X] node %p, nextnode %X\n", Level, nextnode, nextnode->Child);
+        node = nextnode;
+        nextnode = nextnode->Child;
+    }
+    while (nextnode);
+
+    DPRINT("\n");
+
+    while (node != IopRootDeviceNode)
+    {
+        if (node->Parent != IopRootDeviceNode)
+        {
+            notify = node->Parent->Notify;
+            notify->ChildCount++;
+            notify->ActiveChild++;
+
+            DPRINT("IoBuildPoDeviceNotifyList: [%X] notify %p, ChildCount %X, ActiveChild %X\n",
+                   notify->OrderLevel, notify, notify->ChildCount, notify->ActiveChild);
+
+            if (notify->OrderLevel > node->Notify->OrderLevel)
+            {
+                RemoveEntryList(&notify->Link);
+
+                DPRINT("IoBuildPoDeviceNotifyList: [%X] %X, [%X] %X\n",
+                       notify->OrderLevel, (Order->OrderLevel[notify->OrderLevel].DeviceCount - 1), 
+                       node->Notify->OrderLevel, (Order->OrderLevel[node->Notify->OrderLevel].DeviceCount + 1));
+
+                Order->OrderLevel[notify->OrderLevel].DeviceCount--;
+                notify->OrderLevel = node->Notify->OrderLevel;
+                Order->OrderLevel[node->Notify->OrderLevel].DeviceCount++;
+
+                InsertHeadList(&Order->OrderLevel[notify->OrderLevel].WaitSleep, &notify->Link);
+
+                DPRINT("IoBuildPoDeviceNotifyList: [%X] [%X] %X, Entry %X, node %X\n",
+                       Level, notify->OrderLevel, &Order->OrderLevel[notify->OrderLevel].WaitSleep, &notify->Link, node);
+            }
+        }
+
+        nextnode = node->Sibling;
+        if (!nextnode)
+        {
+            DPRINT("IoBuildPoDeviceNotifyList: node %p, node->Parent %X\n", node, node->Parent);
+            node = node->Parent;
+
+            DPRINT("\n");
+            continue;
+        }
+
+        for (; nextnode; nextnode = nextnode->Child)
+        {
+            DPRINT("IoBuildPoDeviceNotifyList: node %p, nextnode %X\n", nextnode, nextnode->Child);
+            node = nextnode;
+        }
+
+        DPRINT("\n");
+    }
+
+Exit:
+    Order->WarmEjectPdoPointer = &IopWarmEjectPdo;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)
