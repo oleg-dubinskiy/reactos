@@ -697,6 +697,130 @@ PopCompleteAction(
     }
 }
 
+VOID
+NTAPI
+PopVerifySystemPowerState(
+    _In_ PSYSTEM_POWER_STATE pPowerState,
+    _In_ ULONG SubstitutionPolicy)
+{
+    SYSTEM_POWER_STATE PowerState;
+    BOOLEAN IsHibernate;
+
+    PAGED_CODE();
+
+    if (!pPowerState)
+    {
+        ASSERT(pPowerState);
+        return;
+    }
+
+    PowerState = *pPowerState;
+
+    DPRINT("PopVerifySystemPowerState: PowerState %X, SubstitutionPolicy %X\n", PowerState, SubstitutionPolicy);
+
+    if (!PowerState || PowerState >= PowerSystemShutdown)
+    {
+        DPRINT1("PopVerifySystemPowerState: Invalid PowerState\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+        return;
+    }
+
+    if (PowerState == PowerSystemWorking)
+        return;
+
+    IsHibernate = 1;
+
+    if (SubstitutionPolicy == 0 || SubstitutionPolicy == 1)
+    {
+        if (PowerState == PowerSystemHibernate)
+        {
+            if (PopCapabilities.SystemS4 && PopCapabilities.HiberFilePresent)
+                goto Exit;
+
+            PowerState = PowerSystemSleeping3;
+        }
+
+        if (PowerState == PowerSystemSleeping3)
+        {
+            if (PopCapabilities.SystemS3)
+                goto Exit;
+
+            PowerState = PowerSystemSleeping2;
+        }
+
+        if (PowerState == PowerSystemSleeping2)
+        {
+            if (PopCapabilities.SystemS2)
+                goto Exit;
+
+            PowerState = PowerSystemSleeping1;
+        }
+
+        if (PowerState == PowerSystemSleeping1)
+        {
+            if (PopCapabilities.SystemS1)
+                goto Exit;
+
+            PowerState = PowerSystemWorking;
+        }
+
+        if (PowerState != PowerSystemWorking || SubstitutionPolicy != 1)
+            goto Exit;
+
+        PowerState = PowerSystemSleeping1;
+
+        IsHibernate = 0;
+    }
+    else if (SubstitutionPolicy != 2)
+    {
+        DPRINT1("PopVerifySystemPowerState: Invalid substitution policy\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+        goto Exit;
+    }
+
+    /* SubstitutionPolicy == 2 */
+
+    if (PowerState == PowerSystemSleeping1)
+    {
+        if (PopCapabilities.SystemS1)
+            goto Exit;
+
+        PowerState = PowerSystemSleeping2;
+    }
+
+    if (PowerState == PowerSystemSleeping2)
+    {
+        if (PopCapabilities.SystemS2)
+            goto Exit;
+
+        PowerState = PowerSystemSleeping3;
+    }
+
+    if (PowerState == PowerSystemSleeping3)
+    {
+        if (PopCapabilities.SystemS3)
+            goto Exit;
+
+        PowerState = PowerSystemHibernate;
+
+        if ((!IsHibernate || !PopCapabilities.SystemS4 || !PopCapabilities.HiberFilePresent))
+            PowerState = PowerSystemWorking;
+
+        goto Exit;
+    }
+
+    if (PowerState == PowerSystemHibernate)
+    {
+        if (!IsHibernate || !PopCapabilities.SystemS4 || !PopCapabilities.HiberFilePresent)
+            PowerState = PowerSystemWorking;
+    }
+
+Exit:
+
+    *pPowerState = PowerState;
+    return;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
