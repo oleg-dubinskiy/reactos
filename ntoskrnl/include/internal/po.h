@@ -190,22 +190,41 @@ typedef struct _POP_DEVICE_SYS_STATE
 {
     UCHAR IrpMinor;
     SYSTEM_POWER_STATE SystemState;
-    PKEVENT Event;
+#if (NTDDI_VERSION < NTDDI_VISTA)
+    KEVENT Event;
+#endif
     KSPIN_LOCK SpinLock;
     PKTHREAD Thread;
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+    PKEVENT AbortEvent;
+    PKSEMAPHORE ReadySemaphore;
+    PKSEMAPHORE FinishedSemaphore;
+#endif
     BOOLEAN GetNewDeviceList;
     PO_DEVICE_NOTIFY_ORDER Order;
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+  #if (NTDDI_VERSION < NTDDI_WIN7)
+    LONG NotifyGdiLevelForPowerOn;
+    LONG NotifyGdiLevelForResumeUI;
+  #endif
+    LIST_ENTRY Pending;
+#endif
     NTSTATUS Status;
     PDEVICE_OBJECT FailedDevice;
     BOOLEAN Waking;
     BOOLEAN Cancelled;
     BOOLEAN IgnoreErrors;
     BOOLEAN IgnoreNotImplemented;
-    BOOLEAN _WaitAny;
-    BOOLEAN _WaitAll;
+#if (NTDDI_VERSION < NTDDI_VISTA)
+    BOOLEAN WaitAny;
+    BOOLEAN WaitAll;
     LIST_ENTRY PresentIrpQueue;
     POP_DEVICE_POWER_IRP Head;
-    POP_DEVICE_POWER_IRP PowerIrpState[20];
+    POP_DEVICE_POWER_IRP PowerIrpState[0x14];
+#endif
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+    BOOLEAN TimeRefreshLockAcquired;
+#endif
 } POP_DEVICE_SYS_STATE, *PPOP_DEVICE_SYS_STATE;
 
 typedef struct _POP_POWER_ACTION
