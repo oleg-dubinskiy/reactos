@@ -1189,6 +1189,63 @@ PopSetPowerAction(
     return;
 }
 
+VOID
+NTAPI
+PopAllocateDevState(
+    VOID)
+{
+    PPOP_DEVICE_SYS_STATE DevState;
+    ULONG ix;
+
+    PAGED_CODE();
+    ASSERT(PopAction.DevState == NULL);
+
+    DevState = ExAllocatePoolWithTag(NonPagedPool, sizeof(*DevState), 'ssDP');
+    if (!DevState)
+    {
+        DPRINT1("PopAllocateDevState: Allocate failed\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+        PopAction.DevState = NULL;
+        return;
+    }
+    RtlZeroMemory(DevState, sizeof(*DevState));
+
+    DevState->Thread = KeGetCurrentThread();
+    DevState->GetNewDeviceList = TRUE;
+
+    KeInitializeSpinLock(&DevState->SpinLock);
+    KeInitializeEvent(&DevState->Event, SynchronizationEvent, FALSE);
+
+    DevState->Head.Free.Next = NULL;
+
+    InitializeListHead(&DevState->Head.Pending);
+    InitializeListHead(&DevState->Head.Complete);
+    InitializeListHead(&DevState->Head.Abort);
+    InitializeListHead(&DevState->Head.Failed);
+    InitializeListHead(&DevState->PresentIrpQueue);
+
+    for (ix = 0; ix < 0x14; ix++)
+    {
+        DevState->PowerIrpState[ix].Irp = NULL;
+        DevState->PowerIrpState[ix].Free.Next = DevState->Head.Free.Next;
+        DevState->Head.Free.Next = &DevState->PowerIrpState[ix].Free;
+    }
+
+    for (ix = 0; ix < 8; ix++)
+    {
+        KeInitializeEvent(&DevState->Order.OrderLevel[ix].LevelReady, NotificationEvent, FALSE);
+
+        InitializeListHead(&DevState->Order.OrderLevel[ix].WaitSleep);
+        InitializeListHead(&DevState->Order.OrderLevel[ix].ReadySleep);
+        InitializeListHead(&DevState->Order.OrderLevel[ix].Pending);
+        InitializeListHead(&DevState->Order.OrderLevel[ix].Complete);
+        InitializeListHead(&DevState->Order.OrderLevel[ix].ReadyS0);
+        InitializeListHead(&DevState->Order.OrderLevel[ix].WaitS0);
+    }
+
+    PopAction.DevState = DevState;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
