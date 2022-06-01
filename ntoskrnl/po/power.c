@@ -1435,6 +1435,15 @@ PopSystemIrpDispatchWorker(
     KeReleaseSpinLock(&PopSubmitWorkerSpinLock, OldIrql);
 }
 
+VOID
+NTAPI
+PopReportDevState(
+    _In_ BOOLEAN IsAbort)
+{
+    UNIMPLEMENTED;
+    //ASSERT(FALSE); // PoDbgBreakPointEx();
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
