@@ -193,12 +193,13 @@ PopShutdownHandler(VOID)
 
 VOID
 NTAPI
-PopShutdownSystem(IN POWER_ACTION SystemAction)
+PopShutdownSystem(
+    _In_ POWER_ACTION SystemAction)
 {
     /* Note should notify caller of NtPowerInformation(PowerShutdownNotification) */
 
     /* Unload symbols */
-    DPRINT("It's the final countdown...%lx\n", SystemAction);
+    DPRINT("PopShutdownSystem: It's the final countdown...%lx\n", SystemAction);
     DbgUnLoadImageSymbols(NULL, (PVOID)-1, 0);
 
     /* Run the thread on the boot processor */
@@ -209,6 +210,7 @@ PopShutdownSystem(IN POWER_ACTION SystemAction)
     {
         /* Reset */
         case PowerActionShutdownReset:
+            DPRINT("PopShutdownSystem: PowerActionShutdownReset\n");
 
             /* Try platform driver first, then legacy */
             //PopInvokeSystemStateHandler(PowerStateShutdownReset, NULL);
@@ -217,21 +219,20 @@ PopShutdownSystem(IN POWER_ACTION SystemAction)
             break;
 
         case PowerActionShutdown:
+            DPRINT("PopShutdownSystem: PowerActionShutdown\n");
 
             /* Check for group policy that says to use "it is now safe" screen */
             if (PopShutdownPowerOffPolicy)
             {
-                /* FIXFIX: Switch to legacy shutdown handler */
+                DPRINT("PopShutdownSystem: FIXME - switch to legacy shutdown handler\n");
                 //PopPowerStateHandlers[PowerStateShutdownOff].Handler = PopShutdownHandler;
             }
 
         case PowerActionShutdownOff:
+            DPRINT("PopShutdownSystem: PowerActionShutdownOff\n");
 
             /* Call shutdown handler */
             //PopInvokeSystemStateHandler(PowerStateShutdownOff, NULL);
-
-            /* ReactOS Hack */
-            //PopSetSystemPowerState(PowerSystemShutdown, SystemAction);
             PopShutdownHandler();
 
             /* If that didn't work, call the HAL */
@@ -244,6 +245,50 @@ PopShutdownSystem(IN POWER_ACTION SystemAction)
 
     /* Anything else should not happen */
     KeBugCheckEx(INTERNAL_POWER_ERROR, 5, 0, 0, 0);
+}
+
+PWSTR
+NTAPI
+IopCaptureObjectName(
+    _In_ PVOID Object)
+{
+    PWCHAR ObjectName = NULL;
+    ULONG ReturnLength;
+    WCHAR ObjectInfo[0x100];
+    NTSTATUS Status;
+    POBJECT_NAME_INFORMATION ObjectNameInfo = (POBJECT_NAME_INFORMATION)ObjectInfo;
+    ULONG Size;
+
+    //DPRINT("IopCaptureObjectName: Object %p\n", Object);
+
+    if (!Object)
+        return ObjectName;
+
+    Status = ObQueryNameString(Object, ObjectNameInfo, 0x200, &ReturnLength);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopCaptureObjectName: Status %X\n", Status);
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+        return ObjectName;
+    }
+
+    if (!ObjectNameInfo->Name.Buffer)
+        return ObjectName;
+
+    Size = ObjectNameInfo->Name.Length;
+
+    ObjectName = ExAllocatePoolWithTag(NonPagedPool, (Size + sizeof(WCHAR)), 'rwPD');
+    if (!ObjectName)
+    {
+        DPRINT1("IopCaptureObjectName: Allocate failed\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+        return ObjectName;
+    }
+
+    RtlCopyMemory(ObjectName, ObjectNameInfo->Name.Buffer, Size);
+    ObjectName[Size / sizeof(WCHAR)] = UNICODE_NULL;
+
+    return ObjectName;
 }
 
 NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)

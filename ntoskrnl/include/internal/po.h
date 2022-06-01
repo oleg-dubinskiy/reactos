@@ -403,6 +403,18 @@ PopFlushVolumes(
     IN BOOLEAN ShuttingDown
 );
 
+VOID
+NTAPI
+PiLockDeviceActionQueue(
+    VOID
+);
+
+VOID
+NTAPI
+PiUnlockDeviceActionQueue(
+    VOID
+);
+
 //
 // Global data inside the Power Manager
 //
