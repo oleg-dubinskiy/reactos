@@ -593,6 +593,23 @@ Exit:
     return STATUS_SUCCESS;
 }
 
+PPO_DEVICE_NOTIFY
+NTAPI
+IoGetPoNotifyParent(
+    _In_ PPO_DEVICE_NOTIFY Notify)
+{
+    PDEVICE_NODE DeviceNode;
+    PDEVICE_NODE Parent;
+
+    DeviceNode = Notify->Node;
+    Parent = DeviceNode->Parent;
+
+    if (DeviceNode == IopRootDeviceNode)
+        return NULL;
+
+    return Parent->Notify;
+}
+
 NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)
 {
     UNIMPLEMENTED;
