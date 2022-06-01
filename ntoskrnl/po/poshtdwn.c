@@ -25,6 +25,7 @@ KEVENT PopShutdownEvent;
 PPOP_SHUTDOWN_WAIT_ENTRY PopShutdownThreadList;
 LIST_ENTRY PopShutdownQueue;
 KGUARDED_MUTEX PopShutdownListMutex;
+ULONG PopCurrentLevel;
 ULONG PopFullWake;
 BOOLEAN PopShutdownListAvailable;
 PDEVICE_OBJECT IopWarmEjectPdo = NULL;
@@ -641,6 +642,91 @@ PopCheckSystemPowerIrpStatus(
 
     DPRINT("PopCheckSystemPowerIrpStatus: return FALSE \n");
     return FALSE;
+}
+
+NTSTATUS
+NTAPI
+PopCompleteSystemPowerIrp(
+    _In_ PDEVICE_OBJECT TargetDevice,
+    _In_ PIRP Irp,
+    _In_ PVOID Context)
+{
+    PPOP_DEVICE_POWER_IRP PowerIrp = Context;
+    PPOP_DEVICE_SYS_STATE DevState;
+    PPO_NOTIFY_ORDER_LEVEL Level;
+    PPO_DEVICE_NOTIFY Notify;
+    PPO_DEVICE_NOTIFY ParentNotify;
+    BOOLEAN IsFireEvent = FALSE;
+    KIRQL OldIrql;
+
+    DPRINT("PopCompleteSystemPowerIrp: TargetDevice %p, Irp %X, Context %X\n", TargetDevice, Irp, PowerIrp);
+
+    DevState = PopAction.DevState;
+
+    KeAcquireSpinLock(&DevState->SpinLock, &OldIrql);
+
+    RemoveEntryList(&PowerIrp->Pending);
+    PowerIrp->Pending.Flink = NULL;
+
+    InsertTailList(&DevState->Head.Complete, &PowerIrp->Complete);
+
+    Notify = PowerIrp->Notify;
+    ASSERT(Notify->OrderLevel == PopCurrentLevel);
+
+    Level = &DevState->Order.OrderLevel[Notify->OrderLevel];
+
+    RemoveEntryList(&Notify->Link);
+    InsertTailList(&Level->Complete, &Notify->Link);
+
+    if (DevState->Waking)
+    {
+        DPRINT1("PopCompleteSystemPowerIrp: FIXME\n");
+        Level->ActiveCount++;
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+    }
+    else if (NT_SUCCESS(Irp->IoStatus.Status) || DevState->IgnoreErrors)
+    {
+        Level->ActiveCount--;
+
+        ParentNotify = IoGetPoNotifyParent(Notify);
+        if (ParentNotify)
+        {
+            ASSERT(ParentNotify->ActiveChild > 0);
+
+            ParentNotify->ActiveChild--;
+            if (!ParentNotify->ActiveChild)
+            {
+                RemoveEntryList(&ParentNotify->Link);
+                InsertTailList(&DevState->Order.OrderLevel[ParentNotify->OrderLevel].ReadySleep, &ParentNotify->Link);
+            }
+        }
+    }
+
+    if (DevState->WaitAny ||
+        (DevState->WaitAll && IsListEmpty(&DevState->Head.Pending)))
+    {
+        IsFireEvent = TRUE;
+    }
+
+    if (!PopCheckSystemPowerIrpStatus(DevState, Irp, TRUE) && NT_SUCCESS(DevState->Status))
+    {
+        if (PopAction.Action != PowerActionWarmEject ||
+            !DevState->FailedDevice ||
+            (PowerIrp->Notify->DeviceObject != *DevState->Order.WarmEjectPdoPointer))
+        {
+            DevState->FailedDevice = PowerIrp->Notify->DeviceObject;
+        }
+
+        DevState->Status = Irp->IoStatus.Status;
+        IsFireEvent = TRUE;
+    }
+
+    KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
+
+    if (IsFireEvent)
+        KeSetEvent(&DevState->Event, IO_NO_INCREMENT, FALSE);
+
+    return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
 NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)
