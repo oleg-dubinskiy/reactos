@@ -261,6 +261,40 @@ typedef struct _POP_SHUTDOWN_WAIT_ENTRY
     PETHREAD Thread;
 } POP_SHUTDOWN_WAIT_ENTRY, *PPOP_SHUTDOWN_WAIT_ENTRY;
 
+typedef enum _POP_POLICY_DEVICE_TYPE
+{
+    PolicyDeviceSystemButton = 0,
+    PolicyDeviceThermalZone = 1,
+    PolicyDeviceBattery = 2,
+    PolicyInitiatePowerActionAPI = 3,
+    PolicySetPowerStateAPI = 4,
+    PolicyImmediateDozeS4 = 5,
+    PolicySystemIdle = 6
+} POP_POLICY_DEVICE_TYPE, *PPOP_POLICY_DEVICE_TYPE;
+
+typedef struct _POP_ACTION_TRIGGER
+{
+    POP_POLICY_DEVICE_TYPE Type;
+    UINT8 Flags;
+    UINT8 Spare[3];
+    union
+    {
+        struct
+        {
+            ULONG32 Level;
+        } Battery;
+        struct _POP_TRIGGER_WAIT* Wait;
+    };
+} POP_ACTION_TRIGGER, *PPOP_ACTION_TRIGGER;
+
+typedef struct _POP_TRIGGER_WAIT
+{
+    KEVENT Event;
+    NTSTATUS Status;
+    LIST_ENTRY Link;
+    PPOP_ACTION_TRIGGER Trigger;
+} POP_TRIGGER_WAIT, *PPOP_TRIGGER_WAIT;
+
 //
 // Initialization routines
 //
