@@ -974,6 +974,33 @@ PopVerifyPowerActionPolicy(
     return Result;
 }
 
+LONG
+NTAPI
+PopCompareActions(
+    _In_ POWER_ACTION Action1,
+    _In_ POWER_ACTION Action2)
+{
+    if (Action1 == PowerActionWarmEject)
+    {
+        Action1 = PowerActionSleep;
+    }
+    else if (Action1 >= PowerActionSleep)
+    {
+        Action1++;
+    }
+
+    if (Action2 == PowerActionWarmEject)
+    {
+        Action2 = PowerActionSleep;
+    }
+    else if (Action2 >= PowerActionSleep)
+    {
+        Action2++;
+    }
+
+    return (Action1 - Action2);
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
