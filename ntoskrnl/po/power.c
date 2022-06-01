@@ -65,7 +65,9 @@ typedef struct _SYSTEM_POWER_POLICY
 } SYSTEM_POWER_POLICY, *PSYSTEM_POWER_POLICY;
 
 PDEVICE_NODE PopSystemPowerDeviceNode = NULL;
+BOOLEAN PopFailedHibernationAttempt = FALSE;
 BOOLEAN PopAcpiPresent = FALSE;
+BOOLEAN IsFlushedVolumes;
 POP_POWER_ACTION PopAction;
 WORK_QUEUE_ITEM PopShutdownWorkItem;
 SYSTEM_POWER_CAPABILITIES PopCapabilities;
@@ -75,6 +77,12 @@ SYSTEM_POWER_POLICY PopAcPolicy;
 SYSTEM_POWER_POLICY PopDcPolicy;
 PSYSTEM_POWER_POLICY PopPolicy;
 POWER_STATE_HANDLER PopPowerStateHandlers[7];
+KEVENT PopUnlockComplete;
+HANDLE PopHiberFile = NULL;
+KSPIN_LOCK PopSubmitWorkerSpinLock;
+KSPIN_LOCK PopWorkerSpinLock;
+ULONG PopWorkerPending = 0;
+ULONG PopCallSystemState;
 
 extern KSPIN_LOCK IopPnPSpinLock;
 extern LIST_ENTRY IopPnpEnumerationRequestList;
@@ -493,6 +501,8 @@ PoInitSystem(IN ULONG BootPhase)
     if (PopAcpiPresent)
         PopCapabilities.SystemS5 = TRUE;
 
+    KeInitializeEvent(&PopUnlockComplete, SynchronizationEvent, TRUE);
+
     /* Initialize support for shutdown waits and work-items */
     PopInitShutdownList();
 
@@ -502,6 +512,9 @@ PoInitSystem(IN ULONG BootPhase)
 
     /* Initialize support for dope */
     KeInitializeSpinLock(&PopDopeGlobalLock);
+
+    KeInitializeSpinLock(&PopSubmitWorkerSpinLock);
+    KeInitializeSpinLock(&PopWorkerSpinLock);
 
     ExInitializeResourceLite(&PopPolicyLock);
 
@@ -1387,6 +1400,39 @@ PopCallPassiveLevel(
     Irp = Context;
     IoStack = IoGetNextIrpStackLocation(Irp);
     IoCallDriver(IoStack->DeviceObject, Irp);
+}
+
+VOID
+NTAPI
+PopSystemIrpDispatchWorker(
+    _In_ BOOLEAN IsResetState)
+{
+    PLIST_ENTRY Entry;
+    PIRP Irp;
+    KIRQL OldIrql;
+
+    ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+    DPRINT("PopSystemIrpDispatchWorker: IsResetState %X\n", IsResetState);
+
+    KeAcquireSpinLock(&PopSubmitWorkerSpinLock, &OldIrql);
+
+    if (PopAction.DevState)
+    {
+        while (!IsListEmpty(&PopAction.DevState->PresentIrpQueue))
+        {
+            Entry = RemoveHeadList(&PopAction.DevState->PresentIrpQueue);
+            Irp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+
+            KeReleaseSpinLock(&PopSubmitWorkerSpinLock, OldIrql);
+            PopCallPassiveLevel(Irp);
+            KeAcquireSpinLock(&PopSubmitWorkerSpinLock, &OldIrql);
+        }
+    }
+
+    if (IsResetState)
+        PopCallSystemState = 0;
+
+    KeReleaseSpinLock(&PopSubmitWorkerSpinLock, OldIrql);
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
