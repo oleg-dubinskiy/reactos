@@ -81,6 +81,7 @@ KEVENT PopUnlockComplete;
 HANDLE PopHiberFile = NULL;
 KSPIN_LOCK PopSubmitWorkerSpinLock;
 KSPIN_LOCK PopWorkerSpinLock;
+KSPIN_LOCK PopWorkerLock;
 ULONG PopWorkerPending = 0;
 ULONG PopCallSystemState;
 

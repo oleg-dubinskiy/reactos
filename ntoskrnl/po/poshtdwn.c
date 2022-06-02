@@ -33,6 +33,7 @@ PDEVICE_OBJECT IopWarmEjectPdo = NULL;
 extern POP_POWER_ACTION PopAction;
 extern ULONG IoDeviceNodeTreeSequence;
 extern ULONG PopCallSystemState;
+extern KSPIN_LOCK PopWorkerLock;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -939,6 +940,123 @@ PopMapInternalActionToIrpAction(
         return PowerActionHibernate;
 
     return Action;
+}
+
+VOID
+NTAPI
+PopNotifyDevice(
+    _In_ PPOP_DEVICE_SYS_STATE DevState,
+    _In_ PPO_DEVICE_NOTIFY Notify)
+{
+    PPOP_DEVICE_POWER_IRP PowerIrp;
+    PIO_STACK_LOCATION IoStack;
+    POWER_ACTION ShutdownType;
+    PDEVICE_OBJECT Device;
+    PIRP Irp;
+    ULONG CallSystemState;
+    BOOLEAN IsResetWarmEject;
+    KIRQL OldIrql;
+
+    DPRINT("PopNotifyDevice: DevState %p, Notify %X\n", DevState,  Notify);
+
+    ASSERT(PopCurrentLevel == Notify->OrderLevel);
+
+    if (!(Notify->OrderLevel & 4))
+        CallSystemState = 3;
+    else
+        CallSystemState = 1;
+
+    if (PopCallSystemState != CallSystemState)
+    {
+        KeAcquireSpinLock(&PopWorkerLock, &OldIrql);
+        PopCallSystemState = CallSystemState;
+        KeReleaseSpinLock(&PopWorkerLock, OldIrql);
+    }
+
+    while (TRUE)
+    {
+        PowerIrp = CONTAINING_RECORD(DevState->Head.Free.Next, POP_DEVICE_POWER_IRP, Free);
+        if (PowerIrp)
+            break;
+
+        PopWaitForSystemPowerIrp(DevState, FALSE);
+    }
+
+    DevState->Head.Free.Next = PowerIrp->Free.Next;
+
+    for (Device = Notify->TargetDevice; ; Device = Notify->TargetDevice)
+    {
+        Irp = IoAllocateIrp(Device->StackSize, FALSE);
+        if (Irp)
+            break;
+
+        PopWaitForSystemPowerIrp(DevState, FALSE);
+    }
+
+    DPRINT("PopNotifyDevice: DevState->Waking %X\n", DevState->Waking);
+
+    if (DevState->Waking)
+    {
+        Notify->WakeNeeded = FALSE;
+    }
+    else
+    {
+        if (DevState->Order.DevNodeSequence != IoDeviceNodeTreeSequence)
+        {
+            DPRINT1("PopNotifyDevice: DevState->Order.DevNodeSequence %X\n", DevState->Order.DevNodeSequence);
+            ASSERT(FALSE); // PoDbgBreakPointEx();
+        }
+
+        if (!NT_SUCCESS(DevState->Status))
+        {
+            PowerIrp->Free.Next = DevState->Head.Free.Next;
+            DevState->Head.Free.Next = &PowerIrp->Free;
+            IoFreeIrp(Irp);
+            return;
+        }
+
+        Notify->WakeNeeded = TRUE;
+    }
+
+    PowerIrp->Notify = Notify;
+    PowerIrp->Irp = Irp;
+
+    ExInterlockedInsertTailList(&DevState->Head.Pending, &PowerIrp->Pending, &DevState->SpinLock);
+
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    Irp->IoStatus.Information = 0;
+    Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
+
+    IoStack--;
+
+    IoStack->MajorFunction = IRP_MJ_POWER;
+    IoStack->MinorFunction = DevState->IrpMinor;
+
+    IoStack->Parameters.Power.SystemContext = 0;
+    IoStack->Parameters.Power.Type = SystemPowerState;
+    IoStack->Parameters.Power.State.SystemState = DevState->SystemState;
+
+    ASSERT(PopAction.Action != PowerActionHibernate);
+
+    IsResetWarmEject = (DevState->Waking || (*DevState->Order.WarmEjectPdoPointer != Notify->DeviceObject));
+    ShutdownType = PopMapInternalActionToIrpAction(PopAction.Action, DevState->SystemState, IsResetWarmEject);
+
+    if (ShutdownType == PowerActionWarmEject &&
+        *DevState->Order.WarmEjectPdoPointer == Notify->DeviceObject &&
+        DevState->IrpMinor == IRP_MN_SET_POWER)
+    {
+        *DevState->Order.WarmEjectPdoPointer = NULL;
+    }
+
+    IoStack->Parameters.Power.ShutdownType = ShutdownType;
+
+    IoSetCompletionRoutine(Irp, PopCompleteSystemPowerIrp, PowerIrp, TRUE, TRUE, TRUE);
+    DPRINT("PopNotifyDevice: PowerIrp %X\n", PowerIrp);
+
+    PoCallDriver(Notify->TargetDevice, Irp);
+
+    DPRINT("PopNotifyDevice: exit\n");
 }
 
 NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)
