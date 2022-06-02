@@ -1059,6 +1059,38 @@ PopNotifyDevice(
     DPRINT("PopNotifyDevice: exit\n");
 }
 
+BOOLEAN
+NTAPI
+IsHackingPdo(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PDEVICE_NODE DeviceNode = IopGetDeviceNode(DeviceObject);
+
+    DPRINT1("IsHackingPdo: DeviceObject %p, DeviceNode %X\n", DeviceObject, DeviceNode);
+
+  #if 1
+    if (DeviceNode &&
+        ((DeviceNode->ServiceName.Buffer && wcsstr(DeviceNode->ServiceName.Buffer, L"ftdisk")) ||
+         (DeviceNode->InstancePath.Buffer && wcsstr(DeviceNode->InstancePath.Buffer, L"STORAGE\\Volume"))))
+    {
+        DPRINT1("IsHackingPdo: Skip ftdisk\n");
+        return TRUE;
+    }
+  #endif
+
+  #if 1
+    if (DeviceNode &&
+        ((DeviceNode->ServiceName.Buffer && wcsstr(DeviceNode->ServiceName.Buffer, L"partmgr")) ||
+         (DeviceNode->InstancePath.Buffer && wcsstr(DeviceNode->InstancePath.Buffer, L"IDE"))))
+    {
+        DPRINT1("IsHackingPdo: Skip partmgr\n");
+        return TRUE;
+    }
+  #endif
+
+    return FALSE;
+}
+
 NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)
 {
     UNIMPLEMENTED;
