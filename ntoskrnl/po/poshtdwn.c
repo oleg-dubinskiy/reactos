@@ -915,6 +915,32 @@ Exit:
     KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
 }
 
+POWER_ACTION
+NTAPI
+PopMapInternalActionToIrpAction(
+    _In_ POWER_ACTION Action,
+    _In_ SYSTEM_POWER_STATE SystemPowerState,
+    _In_ BOOLEAN IsResetWarmEject)
+{
+    ASSERT(Action != PowerActionHibernate);
+
+    if (Action == PowerActionWarmEject)
+    {
+        if (IsResetWarmEject)
+            return (PowerActionSleep + (SystemPowerState == PowerSystemHibernate));
+
+        ASSERT((SystemPowerState >= PowerSystemSleeping1) &&
+               (SystemPowerState <= PowerSystemHibernate));
+
+        return PowerActionWarmEject;
+    }
+
+    if (SystemPowerState == PowerSystemHibernate)
+        return PowerActionHibernate;
+
+    return Action;
+}
+
 NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)
 {
     UNIMPLEMENTED;
