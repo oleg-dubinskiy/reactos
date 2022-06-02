@@ -32,6 +32,7 @@ PDEVICE_OBJECT IopWarmEjectPdo = NULL;
 
 extern POP_POWER_ACTION PopAction;
 extern ULONG IoDeviceNodeTreeSequence;
+extern ULONG PopCallSystemState;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -727,6 +728,191 @@ PopCompleteSystemPowerIrp(
         KeSetEvent(&DevState->Event, IO_NO_INCREMENT, FALSE);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+VOID
+NTAPI
+PopWaitForSystemPowerIrp(
+    _In_ PPOP_DEVICE_SYS_STATE DevState,
+    _In_ BOOLEAN IsWaitAll)
+{
+    BOOLEAN IsCompleteList = FALSE;
+    PPOP_DEVICE_POWER_IRP PowerIrp;
+    PPO_DEVICE_NOTIFY Notify;
+    LARGE_INTEGER Timeout;
+    PLIST_ENTRY Entry;
+    PIRP Irp;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("PopWaitForSystemPowerIrp: DevState %p, IsWaitAll %X\n" , DevState, IsWaitAll);
+
+    KeAcquireSpinLock(&DevState->SpinLock, &OldIrql);
+
+Start:
+
+    if (!IsListEmpty(&DevState->Head.Complete))
+    {
+        PEXTENDED_DEVOBJ_EXTENSION DeviceExtension;
+        PEXTENDED_DEVOBJ_EXTENSION TargetDeviceExtension;
+        POP_DEVICE_EXTENSION_POWER_FLAGS PowerFlags;
+        POP_DEVICE_EXTENSION_POWER_FLAGS TargetPowerFlags;
+
+        IsCompleteList = TRUE;
+
+        do
+        {
+            Entry = DevState->Head.Complete.Flink;
+            RemoveEntryList(Entry);
+            Entry->Flink = NULL;
+
+            PowerIrp = CONTAINING_RECORD(Entry, POP_DEVICE_POWER_IRP, Complete);
+
+            Notify = PowerIrp->Notify;
+            Irp = PowerIrp->Irp;
+
+            DeviceExtension = IoGetDevObjExtension(Notify->DeviceObject);
+            PowerFlags.AsULONG = DeviceExtension->PowerFlags;
+
+            TargetDeviceExtension = IoGetDevObjExtension(Notify->TargetDevice);
+            TargetPowerFlags.AsULONG = TargetDeviceExtension->PowerFlags;
+
+            if (PowerFlags.SystemActive == 1 || TargetPowerFlags.SystemActive == 1)
+            {
+                KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
+                DPRINT1("PopWaitForSystemPowerIrp: KeBugCheckEx(0x9F)\n");
+                ASSERT(FALSE); // PoDbgBreakPointEx();
+                KeBugCheckEx(0x9F, 0x500, 2, (ULONG_PTR)Notify->TargetDevice, (ULONG_PTR)Notify->DeviceObject);
+            }
+
+            if (PopCheckSystemPowerIrpStatus(DevState, Irp, TRUE))
+            {
+                if (!PopCheckSystemPowerIrpStatus(DevState, Irp, FALSE))
+                {
+                    DPRINT1("PopWaitForSystemPowerIrp: ASSERT\n");
+                    ASSERT(FALSE); // PoDbgBreakPointEx();
+                }
+
+                IoFreeIrp(Irp);
+
+                PowerIrp->Irp = NULL;
+                PowerIrp->Notify = NULL;
+
+                PowerIrp->Free.Next = DevState->Head.Free.Next;
+                DevState->Head.Free.Next = &PowerIrp->Free;
+            }
+            else
+            {
+                ASSERT(!DevState->Waking);
+                InsertTailList(&DevState->Head.Failed, &PowerIrp->Failed);
+            }
+        }
+        while (!IsListEmpty(&DevState->Head.Complete));
+    }
+
+    if (!(PopCallSystemState & 2))
+    {
+        KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
+        PopSystemIrpDispatchWorker(FALSE);
+        KeAcquireSpinLock(&DevState->SpinLock, &OldIrql);
+    }
+
+    if (!NT_SUCCESS(DevState->Status) && DevState->Cancelled == FALSE && DevState->Waking == FALSE)
+    {
+        DevState->Cancelled = TRUE;
+
+        for (Entry = DevState->Head.Pending.Flink;
+             Entry != &DevState->Head.Pending;
+             Entry = Entry->Flink)
+        {
+            PowerIrp = CONTAINING_RECORD(Entry, POP_DEVICE_POWER_IRP, Pending);
+            InsertTailList(&DevState->Head.Abort, &PowerIrp->Abort);
+        }
+
+        KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
+        Entry = DevState->Head.Abort.Flink;
+
+        if (!IsListEmpty(&DevState->Head.Abort))
+        {
+            while (TRUE)
+            {
+                PowerIrp = CONTAINING_RECORD(Entry, POP_DEVICE_POWER_IRP, Abort);
+                IoCancelIrp(PowerIrp->Irp);
+
+                Entry = Entry->Flink;
+                if (Entry == &DevState->Head.Abort)
+                    break;
+            }
+        }
+
+        KeAcquireSpinLock(&DevState->SpinLock, &OldIrql);
+        InitializeListHead(&DevState->Head.Abort);
+
+        goto Start;
+    }
+
+    if ((!IsWaitAll && IsCompleteList) || IsListEmpty(&DevState->Head.Pending))
+    {
+        if (!DevState->Head.Free.Next && IsListEmpty(&DevState->Head.Failed))
+        {
+            PowerIrp = CONTAINING_RECORD(DevState->Head.Failed.Blink, POP_DEVICE_POWER_IRP, Failed);
+            RemoveEntryList(DevState->Head.Failed.Blink);
+
+            PowerIrp->Failed.Flink = NULL;
+            PowerIrp->Irp = NULL;
+            PowerIrp->Notify = NULL;
+
+            PowerIrp->Free.Next = DevState->Head.Free.Next;
+            DevState->Head.Free.Next = &PowerIrp->Free;
+        }
+
+        goto Exit;
+    }
+
+    DevState->WaitAll = TRUE;
+    DevState->WaitAny = (IsWaitAll == FALSE);
+
+    KeClearEvent(&DevState->Event);
+
+    KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
+    Timeout.QuadPart = (-10000000ll * (DevState->Cancelled ? 5 : 30));
+    Status = KeWaitForSingleObject(&DevState->Event, Suspended, KernelMode, FALSE, &Timeout);
+    KeAcquireSpinLock(&DevState->SpinLock, &OldIrql);
+
+    DevState->WaitAll = FALSE;
+    DevState->WaitAny = FALSE;
+
+    if (Status == STATUS_TIMEOUT)
+    {
+        for (Entry = DevState->Head.Pending.Flink;
+             Entry != &DevState->Head.Pending;
+             Entry = Entry->Flink)
+        {
+            PowerIrp = CONTAINING_RECORD(Entry, POP_DEVICE_POWER_IRP, Pending);
+            InsertTailList(&DevState->Head.Abort, &PowerIrp->Abort);
+        }
+
+        KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
+        Entry = DevState->Head.Abort.Flink;
+
+        if (!IsListEmpty(&DevState->Head.Abort))
+        {
+            while (TRUE)
+            {
+                Entry = Entry->Flink;
+                if (Entry == &DevState->Head.Abort)
+                    break;
+            }
+        }
+
+        KeAcquireSpinLock(&DevState->SpinLock, &OldIrql);
+        InitializeListHead(&DevState->Head.Abort);
+    }
+
+    goto Start;
+
+Exit:
+    KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
 }
 
 NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)
