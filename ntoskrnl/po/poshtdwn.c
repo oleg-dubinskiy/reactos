@@ -1091,6 +1091,127 @@ IsHackingPdo(
     return FALSE;
 }
 
+VOID
+NTAPI
+PopSleepDeviceList(
+    _In_ PPOP_DEVICE_SYS_STATE DevState,
+    _In_ PPO_NOTIFY_ORDER_LEVEL OrderLevel)
+{
+    PLIST_ENTRY Entry;
+    PPO_DEVICE_NOTIFY Notify;
+    PLIST_ENTRY ListHead;
+    PLIST_ENTRY HeadComplete;
+    KIRQL OldIrql;
+
+    DPRINT("PopSleepDeviceList: DevState %p, OrderLevel %X\n", DevState,  OrderLevel);
+
+    ASSERT(!DevState->Waking);
+    ASSERT(IsListEmpty(&OrderLevel->Pending));
+    ASSERT(IsListEmpty(&OrderLevel->ReadyS0));
+    ASSERT(IsListEmpty(&OrderLevel->WaitS0));
+
+    for (Entry = OrderLevel->ReadyS0.Flink;
+         Entry != &OrderLevel->ReadyS0;
+         )
+    {
+        Notify = CONTAINING_RECORD(Entry, PO_DEVICE_NOTIFY, Link);
+
+        DPRINT("PopSleepDeviceList: Notify->ChildCount %X\n", Notify->ChildCount);
+        if (Notify->ChildCount)
+        {
+            ListHead = &OrderLevel->WaitSleep;
+        }
+        else
+        {
+            ASSERT(Notify->ActiveChild == 0);
+            ListHead = &OrderLevel->ReadySleep;
+        }
+
+        InsertHeadList(ListHead, Entry);
+    }
+
+    HeadComplete = &OrderLevel->Complete;
+
+    while (!IsListEmpty(HeadComplete))
+    {
+        Notify = CONTAINING_RECORD(HeadComplete->Flink, PO_DEVICE_NOTIFY, Link);
+        RemoveEntryList(HeadComplete);
+
+        DPRINT("PopSleepDeviceList: Notify->ChildCount %X\n", Notify->ChildCount);
+
+        if (Notify->ChildCount)
+        {
+            ListHead = &OrderLevel->WaitSleep;
+        }
+        else
+        {
+            ASSERT(Notify->ActiveChild == 0);
+            ListHead = &OrderLevel->ReadySleep;
+        }
+
+        InsertHeadList(ListHead, &Notify->Link);
+    }
+
+    ASSERT(!IsListEmpty(&OrderLevel->ReadySleep));
+
+    OrderLevel->ActiveCount = OrderLevel->DeviceCount;
+    DPRINT("PopSleepDeviceList: OrderLevel->DeviceCount %X\n", OrderLevel->DeviceCount);
+
+    while (TRUE)
+    {
+        KeAcquireSpinLock(&DevState->SpinLock, &OldIrql);
+
+        if (!OrderLevel->ActiveCount || !NT_SUCCESS(DevState->Status))
+            break;
+
+        DPRINT("PopSleepDeviceList: IsListEmpty(&OrderLevel->ReadySleep) %X\n", IsListEmpty(&OrderLevel->ReadySleep));
+
+        if (IsListEmpty(&OrderLevel->ReadySleep))
+        {
+            DPRINT("PopSleepDeviceList: OrderLevel->ActiveCount %X\n", OrderLevel->ActiveCount);
+
+            if (OrderLevel->ActiveCount)
+            {
+                ASSERT(!IsListEmpty(&OrderLevel->Pending));
+                KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
+                PopWaitForSystemPowerIrp(DevState, 0);
+            }
+        }
+        else
+        {
+            PDEVICE_NODE DeviceNode;
+
+            Notify = CONTAINING_RECORD(OrderLevel->ReadySleep.Flink, PO_DEVICE_NOTIFY, Link);
+            DeviceNode = Notify->Node;
+
+            DPRINT("PopSleepDeviceList: Notify %X, DeviceNode %X, Child %X\n", Notify, DeviceNode, DeviceNode->Child);
+
+            RemoveHeadList(&OrderLevel->ReadySleep);
+
+          #if 1
+            if (IsHackingPdo(DeviceNode->PhysicalDeviceObject))
+            {
+                DPRINT("PopSleepDeviceList: IsHackingPdo(%p) ret TRUE\n", DeviceNode->PhysicalDeviceObject);
+                KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
+                return;
+            }
+          #endif
+
+            InsertTailList(&OrderLevel->Pending, &Notify->Link);
+            KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
+
+            if (Notify->ActiveChild)
+            {
+                DPRINT("PopSleepDeviceList: ActiveChild %X, ChildCount %X\n", Notify->ActiveChild, Notify->ChildCount);
+            }
+
+            PopNotifyDevice(DevState, Notify);
+        }
+    }
+
+    KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
+}
+
 NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)
 {
     UNIMPLEMENTED;
