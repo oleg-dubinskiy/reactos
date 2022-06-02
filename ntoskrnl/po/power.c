@@ -82,6 +82,7 @@ HANDLE PopHiberFile = NULL;
 KSPIN_LOCK PopSubmitWorkerSpinLock;
 KSPIN_LOCK PopWorkerSpinLock;
 KSPIN_LOCK PopWorkerLock;
+ULONG PopSimulate = 0x00010000;
 ULONG PopWorkerPending = 0;
 ULONG PopCallSystemState;
 

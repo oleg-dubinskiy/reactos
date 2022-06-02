@@ -33,6 +33,7 @@ PDEVICE_OBJECT IopWarmEjectPdo = NULL;
 extern POP_POWER_ACTION PopAction;
 extern ULONG IoDeviceNodeTreeSequence;
 extern ULONG PopCallSystemState;
+extern ULONG PopSimulate;
 extern KSPIN_LOCK PopWorkerLock;
 
 /* PRIVATE FUNCTIONS *********************************************************/
@@ -1212,11 +1213,178 @@ PopSleepDeviceList(
     KeReleaseSpinLock(&DevState->SpinLock, OldIrql);
 }
 
-NTSTATUS NTAPI PopSetDevicesSystemState(BOOLEAN IsWaking)
+NTSTATUS
+NTAPI
+PopSetDevicesSystemState(
+    _In_ BOOLEAN IsWaking)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // PoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PPOP_DEVICE_SYS_STATE DevState;
+    PPO_NOTIFY_ORDER_LEVEL OrderLevel;
+    LONG ix;
+    BOOLEAN DidIoMmShutdown = FALSE;
+    BOOLEAN IsEventCallout;
+
+    DPRINT("PopSetDevicesSystemState: IsWaking %X\n", IsWaking);
+
+    ASSERT(PopAction.DevState);
+    DevState = PopAction.DevState;
+
+    DevState->IrpMinor = PopAction.IrpMinor;
+    DevState->SystemState = PopAction.SystemState;
+    DevState->Status = STATUS_SUCCESS;
+    DevState->FailedDevice = NULL;
+    DevState->Cancelled = FALSE;
+    DevState->IgnoreErrors = FALSE;
+    DevState->IgnoreNotImplemented = FALSE;
+    DevState->Waking = IsWaking;
+
+    DPRINT("PopSetDevicesSystemState: FIXME PPerfGlobalGroupMask\n");
+
+    if (PopAction.IrpMinor == IRP_MN_SET_POWER && PopFullWake & 5)
+        IsEventCallout = TRUE;
+    else
+        IsEventCallout = FALSE;
+
+    if (PopAction.Shutdown)
+    {
+        DevState->IgnoreNotImplemented = TRUE;
+
+        if (PopAction.IrpMinor == IRP_MN_SET_POWER)
+            DevState->IgnoreErrors = TRUE;
+    }
+
+    ASSERT(DevState->Thread == KeGetCurrentThread());
+
+    if (!IsWaking)
+    {
+        if (DevState->GetNewDeviceList)
+        {
+            DevState->GetNewDeviceList = FALSE;
+
+            DPRINT("PopSetDevicesSystemState: FIXME PPerfGlobalGroupMask\n");
+
+            IoFreePoDeviceNotifyList(&DevState->Order);
+            DevState->Status = IoBuildPoDeviceNotifyList(&DevState->Order);
+
+            DPRINT("PopSetDevicesSystemState: DevState->Status %X\n", DevState->Status);
+        }
+        else
+        {
+            DPRINT1("PopSetDevicesSystemState: DevState->GetNewDeviceList is FALSE\n");
+            ASSERT(FALSE); // PoDbgBreakPointEx();
+        }
+
+        if (NT_SUCCESS(DevState->Status))
+        {
+            OrderLevel = &DevState->Order.OrderLevel[7];
+
+            for (ix = 7; ix >= 0; ix--, OrderLevel--)
+            {
+                DPRINT("PopSetDevicesSystemState: ix %X\n", ix);
+
+                if (OrderLevel->DeviceCount)
+                {
+                    if (IsEventCallout)
+                    {
+                        if (ix <= 4)
+                        {
+                            IsEventCallout = FALSE;
+                            InterlockedExchange((PLONG)&PopFullWake, 0);
+
+                            DPRINT1("PopSetDevicesSystemState: FIXME PopEventCallout()\n");
+                            ASSERT(FALSE); // PoDbgBreakPointEx();
+                        }
+                    }
+
+                    if (PopAction.Shutdown && !DidIoMmShutdown && PopAction.IrpMinor == IRP_MN_SET_POWER && ix < 4)
+                    {
+                        DPRINT1("PopSetDevicesSystemState: FIXME IoConfigureCrashDump\n");
+                        //ASSERT(FALSE); // PoDbgBreakPointEx();
+
+                        DPRINT1("PopSetDevicesSystemState: Mm shutdown phase 1\n");
+                        MmShutdownSystem(1);
+
+                        DidIoMmShutdown = 1;
+
+                        //
+                        // !- HACK -!
+                        //
+                        DPRINT1("PopSetDevicesSystemState: FIXFIX !- HACK -!\n");
+                        break;
+                        //
+                        // !- HACK -!
+                        //
+                    }
+
+                    DPRINT("PopSetDevicesSystemState: PopAction.Flags %X\n", PopAction.Flags);
+
+                    if (PopAction.Flags & 0x80000000)
+                    {
+                        DPRINT("PopSetDevicesSystemState: DevState->Order.WarmEjectPdoPointer %X\n",
+                               DevState->Order.WarmEjectPdoPointer);
+
+                        ASSERT(DevState->Order.WarmEjectPdoPointer);
+
+                        if (DevState->Order.WarmEjectPdoPointer)
+                            *DevState->Order.WarmEjectPdoPointer = NULL;
+                    }
+
+                    PopCurrentLevel = ix;
+                    PopSleepDeviceList(DevState, OrderLevel);
+                    PopWaitForSystemPowerIrp(DevState, TRUE);
+                }
+
+                if (!NT_SUCCESS(DevState->Status))
+                {
+                    DPRINT1("PopSetDevicesSystemState: DevState->Status %X\n", DevState->Status);
+
+                    IsWaking = TRUE;
+
+                    DPRINT("PopSetDevicesSystemState: DevState->FailedDevice %X, PopAction.NextSystemState %X\n",
+                           DevState->FailedDevice, PopAction.NextSystemState);
+
+                    if (DevState->FailedDevice && PopAction.NextSystemState == PowerSystemWorking)
+                    {
+                        DPRINT1("PopSetDevicesSystemState: PopSimulate %X, PopAction.IrpMinor %X\n",
+                                PopSimulate, PopAction.IrpMinor);
+                        ASSERT(FALSE); // PoDbgBreakPointEx();
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        DPRINT("PopSetDevicesSystemState: PopSimulate %X, PopAction.IrpMinor %X\n", PopSimulate, PopAction.IrpMinor);
+
+        if ((PopSimulate & 0x00020000) && PopAction.IrpMinor == IRP_MN_SET_POWER)
+        {
+            DPRINT1("PopSetDevicesSystemState: POP_WAKE_DEVICE_AFTER_SLEEP enabled.\n");
+            ASSERT(FALSE); // PoDbgBreakPointEx();
+            IsWaking = TRUE;
+            DevState->Status = STATUS_UNSUCCESSFUL;
+        }
+    }
+
+    ASSERT((!PopAction.Shutdown) || (PopAction.IrpMinor != IRP_MN_SET_POWER) || DidIoMmShutdown);
+
+    while (PopSimulate & 0x80)
+    {
+        DPRINT1("PopSetDevicesSystemState: PopSimulate & 0x80\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+    }
+
+    DevState->Waking = IsWaking;
+
+    if (IsWaking)
+    {
+        DPRINT1("PopSetDevicesSystemState: IsWaking\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+    }
+
+    DPRINT("PopSetDevicesSystemState: FIXME PPerfGlobalGroupMask\n");
+
+    return DevState->Status;
 }
 
 VOID
