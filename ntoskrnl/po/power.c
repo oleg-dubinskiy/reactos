@@ -1688,15 +1688,313 @@ PoSetSystemState(
     //DPRINT("PoSetSystemState: Flags %X. UNIMPLEMENTED\n", Flags);
 }
 
+static
+PIRP
+NTAPI
+PopFindIrpByDevice(IN PDEVICE_OBJECT DeviceObject,
+                   IN POWER_STATE_TYPE Type)
+{
+    PIO_STACK_LOCATION IoStack;
+    PLIST_ENTRY Entry;
+    PIRP Irp;
+
+    for (Entry = PopIrpSerialList.Flink;
+         Entry != &PopIrpSerialList;
+         Entry = Entry->Flink)
+    {
+        Irp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+        IoStack = IoGetNextIrpStackLocation(Irp);
+
+        if (IoStack->DeviceObject == DeviceObject && IoStack->Parameters.Power.Type == Type)
+            return Irp;
+    }
+
+    return NULL;
+}
+
+static
+PIRP
+NTAPI
+PopFindIrpByInrush()
+{
+    PIO_STACK_LOCATION IoStack;
+    PLIST_ENTRY Entry;
+    PIRP Irp;
+
+    for (Entry = PopIrpSerialList.Flink;
+         Entry != &PopIrpSerialList;
+         Entry = Entry->Flink)
+    {
+        Irp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+        IoStack = IoGetNextIrpStackLocation(Irp);
+
+        if (IoStack->Parameters.Power.SystemContext == POP_INRUSH_CONTEXT)
+            return Irp;
+    }
+
+    return NULL;
+}
 
 VOID
 NTAPI
-PoStartNextPowerIrp(
-    _In_ PIRP Irp)
+PoStartNextPowerIrp(IN PIRP Irp)
 {
-    //UNIMPLEMENTED_ONCE;
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // PoDbgBreakPointEx();
+    PEXTENDED_DEVOBJ_EXTENSION DeviceExtension;
+    PEXTENDED_DEVOBJ_EXTENSION NextDeviceExtension;
+    PIO_STACK_LOCATION IoStack;
+    PIO_STACK_LOCATION NextSp = NULL;
+    PIO_STACK_LOCATION SecondSp = NULL;
+    PDEVICE_OBJECT DeviceObject;
+    PIRP SecondIrp = NULL;
+    PIRP NextIrp = NULL;
+    PIRP irp;
+    ULONG Context;
+    KIRQL OldIrql;
+
+    DPRINT("PoStartNextPowerIrp: Irp %p\n", Irp);
+
+    ASSERT(Irp);
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    ASSERT(IoStack->MajorFunction == IRP_MJ_POWER);
+    ASSERT(KeGetCurrentIrql() <= DISPATCH_LEVEL);
+
+    DeviceObject = IoStack->DeviceObject;
+    DeviceExtension = IoGetDevObjExtension(DeviceObject);
+
+    KeAcquireSpinLock(&PopIrpSerialSpinLock, &OldIrql);
+
+    if (PopInrushIrpPointer == Irp)
+    {
+        ASSERT((IoStack->Parameters.Power.SystemContext & POP_INRUSH_CONTEXT) == POP_INRUSH_CONTEXT);
+
+        if (PopInrushIrpReferenceCount > 1)
+        {
+            PopInrushIrpReferenceCount--;
+            ASSERT(PopInrushIrpReferenceCount >= 0);
+
+            NextIrp = PopFindIrpByDevice(DeviceObject, DevicePowerState);
+
+            if (!NextIrp)
+            {
+                DeviceExtension->PowerFlags &= ~0xC00;
+            }
+            else
+            {
+                NextSp = IoGetNextIrpStackLocation(NextIrp);
+                Context = NextSp->Parameters.Power.SystemContext;
+
+                if ((Context & POP_INRUSH_CONTEXT) == POP_INRUSH_CONTEXT)
+                {
+                    NextIrp = NULL;
+                }
+                else
+                {
+                    RemoveEntryList(&NextIrp->Tail.Overlay.ListEntry);
+                    PopIrpSerialListLength--;
+                }
+
+                if (!NextIrp)
+                    DeviceExtension->PowerFlags &= ~0xC00;
+            }
+
+            KeReleaseSpinLock(&PopIrpSerialSpinLock, OldIrql);
+
+            if (NextIrp)
+            {
+                DeviceExtension = IoGetDevObjExtension(NextSp->DeviceObject);
+                ASSERT(DeviceExtension->PowerFlags & 0x400); // POPF_DEVICE_ACTIVE
+                PopSubmitIrp(NextSp, NextIrp);
+            }
+
+            return;
+        }
+
+        PopInrushIrpReferenceCount--;
+        ASSERT(PopInrushIrpReferenceCount == 0);
+
+        NextIrp = PopFindIrpByInrush();
+
+        if (NextIrp)
+        {
+            ASSERT(PopInrushPending);
+
+            NextSp = IoGetNextIrpStackLocation(NextIrp);
+            NextDeviceExtension = IoGetDevObjExtension(NextSp->DeviceObject);
+
+            irp = PopFindIrpByDevice(NextSp->DeviceObject, DevicePowerState);
+
+            if (irp)
+            {
+                PopInrushIrpPointer = NULL;
+                PopInrushIrpReferenceCount = 0;
+
+                NextIrp = irp;
+                NextSp = IoGetNextIrpStackLocation(irp);
+
+                if (NextDeviceExtension->PowerFlags & 0x400)
+                {
+                    NextIrp = NULL;
+                    NextSp = NULL;
+                }
+                else
+                {
+                    RemoveEntryList(&NextIrp->Tail.Overlay.ListEntry);
+
+                    NextDeviceExtension->PowerFlags |= 0x400;
+                    PopIrpSerialListLength--;
+                }
+            }
+            else
+            {
+                RemoveEntryList(&NextIrp->Tail.Overlay.ListEntry);
+
+                NextDeviceExtension->PowerFlags |= 0x400;
+                PopIrpSerialListLength--;
+
+                PopInrushIrpPointer = NextIrp;
+                PopInrushIrpReferenceCount = 1;
+            }
+        }
+        else
+        {
+            PopInrushIrpPointer = NULL;
+            PopInrushIrpReferenceCount = 0;
+        }
+
+        if (NextSp && NextSp->DeviceObject == DeviceObject)
+        {
+            SecondIrp = NULL;
+            SecondSp = NULL;
+        }
+        else
+        {
+            SecondIrp = PopFindIrpByDevice(DeviceObject, DevicePowerState);
+
+            if (SecondIrp)
+            {
+                SecondSp = IoGetNextIrpStackLocation(SecondIrp);
+                RemoveEntryList(&SecondIrp->Tail.Overlay.ListEntry);
+
+                (IoGetDevObjExtension(SecondSp->DeviceObject))->PowerFlags |= 0x400;
+                PopIrpSerialListLength--;
+            }
+            else
+            {
+                SecondSp = NULL;
+                DeviceExtension->PowerFlags &= ~0xC00;
+            }
+        }
+    }
+    else if (IoStack->MinorFunction == IRP_MN_SET_POWER || IoStack->MinorFunction == IRP_MN_QUERY_POWER)
+    {
+        if (IoStack->Parameters.Power.Type == DevicePowerState)
+        {
+            if (!PopInrushIrpPointer && PopInrushPending)
+            {
+                NextIrp = PopFindIrpByInrush();
+
+                if (!NextIrp)
+                {
+                    PopInrushPending = FALSE;
+                    NextSp = NULL;
+                }
+                else
+                {
+                    NextSp = IoGetNextIrpStackLocation(NextIrp);
+                    NextDeviceExtension = IoGetDevObjExtension(NextSp->DeviceObject);
+
+                    if (!(NextDeviceExtension->PowerFlags & 0x400))
+                    {
+                        RemoveEntryList(&NextIrp->Tail.Overlay.ListEntry);
+
+                        PopIrpSerialListLength--;
+                        NextDeviceExtension->PowerFlags |= 0x400;
+
+                        PopInrushIrpPointer = NextIrp;
+                        PopInrushIrpReferenceCount = 1;
+                    }
+                    else
+                    {
+                        NextIrp = NULL;
+                        NextSp = NULL;
+                    }
+                }
+            }
+            else
+            {
+                NextIrp = NULL;
+                NextSp = NULL;
+            }
+
+            if (NextIrp && NextSp->DeviceObject == DeviceObject)
+            {
+                SecondIrp = NULL;
+            }
+            else
+            {
+                SecondIrp = PopFindIrpByDevice(DeviceObject, DevicePowerState);
+
+                if (!SecondIrp)
+                {
+                    DeviceExtension->PowerFlags &= ~0xC00;
+                }
+                else
+                {
+                    SecondSp = IoGetNextIrpStackLocation(SecondIrp);
+                    RemoveEntryList(&SecondIrp->Tail.Overlay.ListEntry);
+                    PopIrpSerialListLength--;
+                }
+            }
+
+        }
+        else if (IoStack->Parameters.Power.Type == SystemPowerState)
+        {
+            NextSp = NULL;
+            NextIrp = NULL;
+
+            SecondIrp = PopFindIrpByDevice(DeviceObject, SystemPowerState);
+
+            if (!SecondIrp)
+            {
+                DeviceExtension->PowerFlags &= ~0x300;
+            }
+            else
+            {
+                SecondSp = IoGetNextIrpStackLocation(SecondIrp);
+                RemoveEntryList(&SecondIrp->Tail.Overlay.ListEntry);
+                PopIrpSerialListLength--;
+            }
+        }
+    }
+    else
+    {
+        DPRINT1("PoStartNextPowerIrp: Irp %p, MinorFunction %X\n", Irp, IoStack->MinorFunction);
+    }
+
+    KeReleaseSpinLock(&PopIrpSerialSpinLock, OldIrql);
+
+    if (NextIrp)
+    {
+        NextDeviceExtension = IoGetDevObjExtension(DeviceObject);
+
+        ASSERT(NextSp);
+        ASSERT(NextDeviceExtension->PowerFlags & 0x500); // (POPF_DEVICE_ACTIVE | POPF_SYSTEM_ACTIVE)
+
+        DPRINT1("PoStartNextPowerIrp: PopSubmitIrp(NextIrp %p)\n", NextIrp);
+        PopSubmitIrp(NextSp, NextIrp);
+    }
+
+    if (SecondIrp)
+    {
+        DeviceExtension = IoGetDevObjExtension(DeviceObject);
+
+        ASSERT(SecondSp);
+        ASSERT(DeviceExtension->PowerFlags & 0x500); // (POPF_DEVICE_ACTIVE | POPF_SYSTEM_ACTIVE)
+
+        DPRINT1("PoStartNextPowerIrp: PopSubmitIrp(SecondIrp %p)\n", SecondIrp);
+        PopSubmitIrp(SecondSp, SecondIrp);
+    }
 }
 
 /* unimplemented */
