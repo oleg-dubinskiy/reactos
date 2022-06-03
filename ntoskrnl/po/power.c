@@ -154,27 +154,31 @@ PopDefaultPolicy(
 static
 NTSTATUS
 NTAPI
-PopRequestPowerIrpCompletion(IN PDEVICE_OBJECT DeviceObject,
-                             IN PIRP Irp,
-                             IN PVOID Context)
+PopCompleteRequestIrp(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PVOID Context)
 {
-    PIO_STACK_LOCATION Stack;
-    PREQUEST_POWER_COMPLETE CompletionRoutine;
+    PREQUEST_POWER_COMPLETE CompletionRoutine = Context;
+    PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
     POWER_STATE PowerState;
 
-    Stack = IoGetCurrentIrpStackLocation(Irp);
-    CompletionRoutine = Context;
+    if (CompletionRoutine)
+    {
+        PowerState.DeviceState = (ULONG_PTR)Stack->Parameters.Others.Argument3;
 
-    PowerState.DeviceState = (ULONG_PTR)Stack->Parameters.Others.Argument3;
-    CompletionRoutine(Stack->Parameters.Others.Argument1,
-                      (UCHAR)(ULONG_PTR)Stack->Parameters.Others.Argument2,
-                      PowerState,
-                      Stack->Parameters.Others.Argument4,
-                      &Irp->IoStatus);
+        CompletionRoutine(Stack->Parameters.Others.Argument1,
+                          (UCHAR)(ULONG_PTR)Stack->Parameters.Others.Argument2,
+                          PowerState,
+                          Stack->Parameters.Others.Argument4,
+                          &Irp->IoStatus);
+    }
 
     IoSkipCurrentIrpStackLocation(Irp);
-    IoFreeIrp(Irp);
+    Irp->CurrentLocation = (Irp->StackCount + 2);
+
     ObDereferenceObject(DeviceObject);
+    IoFreeIrp(Irp);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
@@ -1543,41 +1547,39 @@ PoRegisterSystemState(IN PVOID StateHandle,
     return NULL;
 }
 
-/*
- * @implemented
- */
 NTSTATUS
 NTAPI
-PoRequestPowerIrp(IN PDEVICE_OBJECT DeviceObject,
-                  IN UCHAR MinorFunction,
-                  IN POWER_STATE PowerState,
-                  IN PREQUEST_POWER_COMPLETE CompletionFunction,
-                  IN PVOID Context,
-                  OUT PIRP *pIrp OPTIONAL)
+PoRequestPowerIrp(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ UCHAR MinorFunction,
+    _In_ POWER_STATE PowerState,
+    _In_ PREQUEST_POWER_COMPLETE CompletionFunction,
+    _In_ PVOID Context,
+    _Out_ PIRP* OutIrp OPTIONAL)
 {
     PDEVICE_OBJECT TopDeviceObject;
+    POWER_ACTION ShutdownType;
     PIO_STACK_LOCATION Stack;
     PIRP Irp;
 
-    if (MinorFunction != IRP_MN_QUERY_POWER
-        && MinorFunction != IRP_MN_SET_POWER
-        && MinorFunction != IRP_MN_WAIT_WAKE)
-        return STATUS_INVALID_PARAMETER_2;
-
     /* Always call the top of the device stack */
+    ASSERT(DeviceObject);
     TopDeviceObject = IoGetAttachedDeviceReference(DeviceObject);
 
-    Irp = IoAllocateIrp(TopDeviceObject->StackSize + 2, FALSE);
+    Irp = IoAllocateIrp((TopDeviceObject->StackSize + 2), FALSE);
     if (!Irp)
     {
+        DPRINT1("PoRequestPowerIrp: Failed IoAllocateIrp()\n");
         ObDereferenceObject(TopDeviceObject);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
-    Irp->IoStatus.Information = 0;
 
     IoSetNextIrpStackLocation(Irp);
+
+    Stack = IoGetCurrentIrpStackLocation(Irp);
+    Stack->Parameters.Others.Argument3 = Irp; // ?
 
     Stack = IoGetNextIrpStackLocation(Irp);
     Stack->Parameters.Others.Argument1 = DeviceObject;
@@ -1585,30 +1587,42 @@ PoRequestPowerIrp(IN PDEVICE_OBJECT DeviceObject,
     Stack->Parameters.Others.Argument3 = (PVOID)(ULONG_PTR)PowerState.DeviceState;
     Stack->Parameters.Others.Argument4 = Context;
     Stack->DeviceObject = TopDeviceObject;
+
     IoSetNextIrpStackLocation(Irp);
 
     Stack = IoGetNextIrpStackLocation(Irp);
     Stack->MajorFunction = IRP_MJ_POWER;
     Stack->MinorFunction = MinorFunction;
+    Stack->DeviceObject = TopDeviceObject;
+
     if (MinorFunction == IRP_MN_WAIT_WAKE)
     {
         Stack->Parameters.WaitWake.PowerState = PowerState.SystemState;
     }
-    else
+    else if (MinorFunction == IRP_MN_SET_POWER || MinorFunction == IRP_MN_QUERY_POWER)
     {
+        Stack->Parameters.Power.SystemContext = 3;
         Stack->Parameters.Power.Type = DevicePowerState;
         Stack->Parameters.Power.State = PowerState;
+
+        ShutdownType = PopMapInternalActionToIrpAction(PopAction.Action, PopAction.SystemState, TRUE);
+        Stack->Parameters.Power.ShutdownType = ShutdownType;
+    }
+    else
+    {
+        DPRINT1("PoRequestPowerIrp: Unsupported MinorFunction %X\n", MinorFunction);
+        ObDereferenceObject(TopDeviceObject);
+        IoFreeIrp(Irp);
+        return STATUS_INVALID_PARAMETER_2;
     }
 
-    if (pIrp != NULL)
-        *pIrp = Irp;
+    if (OutIrp)
+        *OutIrp = Irp;
 
-    IoSetCompletionRoutine(Irp, PopRequestPowerIrpCompletion, CompletionFunction, TRUE, TRUE, TRUE);
+    IoSetCompletionRoutine(Irp, PopCompleteRequestIrp, CompletionFunction, TRUE, TRUE, TRUE);
     PoCallDriver(TopDeviceObject, Irp);
 
-    /* Always return STATUS_PENDING. The completion routine
-     * will call CompletionFunction and complete the Irp.
-     */
+    /* Always return STATUS_PENDING. The completion routine will call CompletionFunction and complete the Irp. */
     return STATUS_PENDING;
 }
 
