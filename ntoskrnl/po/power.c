@@ -61,6 +61,9 @@ PDEVICE_NODE PopSystemPowerDeviceNode = NULL;
 BOOLEAN PopFailedHibernationAttempt = FALSE;
 BOOLEAN PopAcpiPresent = FALSE;
 BOOLEAN IsFlushedVolumes;
+BOOLEAN PopInrushPending;
+PIRP PopInrushIrpPointer;
+ULONG PopInrushIrpReferenceCount;
 POP_POWER_ACTION PopAction;
 WORK_QUEUE_ITEM PopShutdownWorkItem;
 SYSTEM_POWER_CAPABILITIES PopCapabilities;
@@ -73,8 +76,11 @@ POWER_STATE_HANDLER PopPowerStateHandlers[7];
 KEVENT PopUnlockComplete;
 HANDLE PopHiberFile = NULL;
 KSPIN_LOCK PopSubmitWorkerSpinLock;
+KSPIN_LOCK PopIrpSerialSpinLock;
 KSPIN_LOCK PopWorkerSpinLock;
 KSPIN_LOCK PopWorkerLock;
+LIST_ENTRY PopIrpSerialList;
+ULONG PopIrpSerialListLength;
 ULONG PopSimulate = 0x00010000;
 ULONG PopWorkerPending = 0;
 ULONG PopCallSystemState;
@@ -143,100 +149,6 @@ PopDefaultPolicy(
 
     for (ix = 0; ix < NUM_DISCHARGE_POLICIES; ix++)
         Policy->DischargePolicy[ix].MinSystemState = PowerSystemSleeping1;
-}
-
-static WORKER_THREAD_ROUTINE PopPassivePowerCall;
-_Use_decl_annotations_
-static
-VOID
-NTAPI
-PopPassivePowerCall(
-    PVOID Parameter)
-{
-    PIRP Irp = Parameter;
-    PIO_STACK_LOCATION IoStack;
-
-    ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
-
-    _Analysis_assume_(Irp != NULL);
-    IoStack = IoGetNextIrpStackLocation(Irp);
-
-    (VOID)IoCallDriver(IoStack->DeviceObject, Irp);
-}
-
-_IRQL_requires_max_(DISPATCH_LEVEL)
-_IRQL_requires_same_
-static
-NTSTATUS
-PopPresentIrp(
-    _In_ PIO_STACK_LOCATION NextStack,
-    _In_ PIRP Irp)
-{
-    NTSTATUS Status;
-    BOOLEAN CallAtPassiveLevel;
-    PDEVICE_OBJECT DeviceObject;
-    PWORK_QUEUE_ITEM WorkQueueItem;
-
-    ASSERT(NextStack->MajorFunction == IRP_MJ_POWER);
-
-    DeviceObject = NextStack->DeviceObject;
-
-    /* Determine whether the IRP must be handled at PASSIVE_LEVEL.
-     * Only SET_POWER to working state can happen at raised IRQL. */
-    CallAtPassiveLevel = TRUE;
-    if ((NextStack->MinorFunction == IRP_MN_SET_POWER) &&
-        !(DeviceObject->Flags & DO_POWER_PAGABLE))
-    {
-        if (NextStack->Parameters.Power.Type == DevicePowerState &&
-            NextStack->Parameters.Power.State.DeviceState == PowerDeviceD0)
-        {
-            CallAtPassiveLevel = FALSE;
-        }
-        if (NextStack->Parameters.Power.Type == SystemPowerState &&
-            NextStack->Parameters.Power.State.SystemState == PowerSystemWorking)
-        {
-            CallAtPassiveLevel = FALSE;
-        }
-    }
-
-    if (CallAtPassiveLevel)
-    {
-        /* We need to fit a work item into the DriverContext below */
-        C_ASSERT(sizeof(Irp->Tail.Overlay.DriverContext) >= sizeof(WORK_QUEUE_ITEM));
-
-        if (KeGetCurrentIrql() == PASSIVE_LEVEL)
-        {
-            /* Already at passive, call next driver directly */
-            return IoCallDriver(DeviceObject, Irp);
-        }
-
-        /* Need to schedule a work item and return pending */
-        NextStack->Control |= SL_PENDING_RETURNED;
-
-        WorkQueueItem = (PWORK_QUEUE_ITEM)&Irp->Tail.Overlay.DriverContext;
-        ExInitializeWorkItem(WorkQueueItem,
-                             PopPassivePowerCall,
-                             Irp);
-        ExQueueWorkItem(WorkQueueItem, DelayedWorkQueue);
-
-        return STATUS_PENDING;
-    }
-
-    /* Direct call. Raise IRQL in debug to catch invalid paged memory access. */
-#if DBG
-    {
-    KIRQL OldIrql;
-    KeRaiseIrql(DISPATCH_LEVEL, &OldIrql);
-#endif
-
-    Status = IoCallDriver(DeviceObject, Irp);
-
-#if DBG
-    KeLowerIrql(OldIrql);
-    }
-#endif
-
-    return Status;
 }
 
 static
@@ -1347,38 +1259,262 @@ PoSetHiberRange(IN PVOID HiberContext,
     return;
 }
 
-/*
- * @implemented
- */
-_IRQL_requires_max_(DISPATCH_LEVEL)
+NTSTATUS
+NTAPI
+PopSubmitIrp(
+    _In_ PIO_STACK_LOCATION IoStack,
+    _In_ PIRP Irp)
+{
+    PWORK_QUEUE_ITEM PopCallWorkItem;
+    PDEVICE_OBJECT DeviceObject;
+    BOOLEAN IsLowLevelDispatch = TRUE;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("PopSubmitIrp: IoStack %p, Irp %p\n", IoStack, Irp);
+
+    DeviceObject = IoStack->DeviceObject;
+    ASSERT(IoStack->MajorFunction == IRP_MJ_POWER);
+
+    if (IoStack->MinorFunction == IRP_MN_SET_POWER)
+    {
+        if (!(DeviceObject->Flags & DO_POWER_PAGABLE) ||
+            (DeviceObject->Flags & DO_POWER_INRUSH))
+        {
+            if (PopCallSystemState & 2)
+            {
+                IsLowLevelDispatch = FALSE;
+            }
+            else
+            {
+                POWER_STATE State = IoStack->Parameters.Power.State;
+                ULONG Type = IoStack->Parameters.Power.Type;
+
+                if ((Type == DevicePowerState && State.DeviceState == PowerDeviceD0) ||
+                    (Type == SystemPowerState && State.SystemState == PowerSystemWorking))
+                {
+                    IsLowLevelDispatch = FALSE;
+                }
+            }
+        }
+    }
+
+    if (!IsLowLevelDispatch)
+    {
+        KeRaiseIrql(DISPATCH_LEVEL, &OldIrql);
+        Status = IoCallDriver(IoStack->DeviceObject, Irp);
+        KeLowerIrql(OldIrql);
+        return Status;
+    }
+
+    if ((IoStack->Parameters.Power.SystemContext & POP_INRUSH_CONTEXT) == POP_INRUSH_CONTEXT)
+    {
+        DPRINT("PopSubmitIrp: inrush irp to passive level dispatch !!!\n");
+        DPRINT1("KeBugCheckEx(INTERNAL_POWER_ERROR)\n");
+        ASSERT(FALSE); // PoDbgBreakPointEx();
+        KeBugCheckEx(INTERNAL_POWER_ERROR, 0x404, 5, (ULONG_PTR)IoStack, (ULONG_PTR)DeviceObject);
+    }
+
+    if (!KeGetCurrentIrql())
+    {
+        Status = IoCallDriver(IoStack->DeviceObject, Irp);
+        return Status;
+    }
+
+    IoStack->Control |= SL_PENDING_RETURNED;
+    Status = STATUS_PENDING;
+
+    KeAcquireSpinLock(&PopWorkerLock, &OldIrql);
+
+    if (PopCallSystemState & 1)
+    {
+        InsertTailList(&PopAction.DevState->PresentIrpQueue, &Irp->Tail.Overlay.ListEntry);
+        KeSetEvent(&PopAction.DevState->Event, IO_NO_INCREMENT, FALSE);
+    }
+    else
+    {
+        PopCallWorkItem = (PWORK_QUEUE_ITEM)Irp->Tail.Overlay.DriverContext;
+        ExInitializeWorkItem(PopCallWorkItem, PopCallPassiveLevel, Irp);
+        ExQueueWorkItem(PopCallWorkItem, DelayedWorkQueue);
+    }
+
+    KeReleaseSpinLock(&PopWorkerLock, OldIrql);
+    return Status;
+}
+
 NTSTATUS
 NTAPI
 PoCallDriver(
     _In_ PDEVICE_OBJECT DeviceObject,
-    _Inout_ __drv_aliasesMem PIRP Irp)
+    _In_ _Out_ PIRP Irp)
 {
-    PIO_STACK_LOCATION NextStack;
-
-    ASSERT(KeGetCurrentIrql() <= DISPATCH_LEVEL);
+    PEXTENDED_DEVOBJ_EXTENSION DeviceExtension;
+    POP_DEVICE_EXTENSION_POWER_FLAGS PowerFlags;
+    PIO_STACK_LOCATION IoStack;
+    UCHAR MinorFunction;
+    KIRQL OldIrql;
 
     ASSERT(DeviceObject);
     ASSERT(Irp);
+    ASSERT(KeGetCurrentIrql() <= DISPATCH_LEVEL);
 
-    NextStack = IoGetNextIrpStackLocation(Irp);
-    ASSERT(NextStack->MajorFunction == IRP_MJ_POWER);
+    KeAcquireSpinLock(&PopIrpSerialSpinLock, &OldIrql);
 
-    /* Set DeviceObject for PopPresentIrp */
-    NextStack->DeviceObject = DeviceObject;
+    IoStack = IoGetNextIrpStackLocation(Irp);
+    IoStack->DeviceObject = DeviceObject;
 
-    /* Only QUERY_POWER and SET_POWER use special handling */
-    if (NextStack->MinorFunction != IRP_MN_SET_POWER &&
-        NextStack->MinorFunction != IRP_MN_QUERY_POWER)
+    ASSERT(IoStack->MajorFunction == IRP_MJ_POWER);
+    MinorFunction = IoStack->MinorFunction;
+
+    DPRINT("PoCallDriver(%p, %p). %08X, %X, %X, %X, %X, %X\n", DeviceObject, Irp, DeviceObject->Flags, MinorFunction, 
+           IoStack->Parameters.Power.SystemContext, IoStack->Parameters.Power.Type,
+           IoStack->Parameters.Power.State, IoStack->Parameters.Power.ShutdownType);
+
+    if (DeviceObject->Flags & 0x8000)
     {
+        /* 0x8000 ? DO_POWER_NOOP ? (https://www-user.tu-chemnitz.de/~heha/oney_wdm/ch08d.htm) */
+        Irp->IoStatus.Status = STATUS_SUCCESS;
+        Irp->IoStatus.Information = 0;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        KeReleaseSpinLock(&PopIrpSerialSpinLock, OldIrql);
+        return STATUS_SUCCESS;
+    }
+
+    if (MinorFunction != IRP_MN_SET_POWER &&
+        MinorFunction != IRP_MN_QUERY_POWER)
+    {
+        KeReleaseSpinLock(&PopIrpSerialSpinLock, OldIrql);
         return IoCallDriver(DeviceObject, Irp);
     }
 
-    /* Call the next driver, either directly or at PASSIVE_LEVEL */
-    return PopPresentIrp(NextStack, Irp);
+    DeviceExtension = IoGetDevObjExtension(DeviceObject);
+    PowerFlags.AsULONG = DeviceExtension->PowerFlags;
+
+    if (MinorFunction == IRP_MN_SET_POWER)
+    {
+        if (IoStack->Parameters.Power.Type == DevicePowerState &&
+            IoStack->Parameters.Power.State.DeviceState == PowerDeviceD0 &&
+            (PowerFlags.DeviceState != 1) &&
+            (DeviceObject->Flags & DO_POWER_INRUSH))
+        {
+            if (PopInrushIrpPointer == Irp)
+            {
+                ASSERT((IoStack->Parameters.Power.SystemContext & POP_INRUSH_CONTEXT) == POP_INRUSH_CONTEXT);
+
+                PopInrushIrpReferenceCount++;
+                if (PopInrushIrpReferenceCount > 256)
+                {
+                    DPRINT1("PoCallDriver: PopInrushIrpReferenceCount > 256 !!!\n");
+                    /* A device has overrun its maximum number of reference counts. */
+                    DPRINT1("KeBugCheckEx(INTERNAL_POWER_ERROR)\n");
+                    ASSERT(FALSE); // PoDbgBreakPointEx();
+                    KeBugCheckEx(INTERNAL_POWER_ERROR, 0x400, 1, (ULONG_PTR)IoStack, (ULONG_PTR)DeviceObject);
+                }
+            }
+            else
+            {
+                if (PopInrushIrpPointer || PopInrushPending)
+                {
+                    PowerFlags.DeviceSerialOn = 1;
+                    IoStack->Parameters.Power.SystemContext = POP_INRUSH_CONTEXT;
+
+                    InsertTailList(&PopIrpSerialList, &Irp->Tail.Overlay.ListEntry);
+                    PopIrpSerialListLength++;
+
+                    if (PopIrpSerialListLength > 10)
+                    {
+                        DPRINT1("PoCallDriver: PopIrpSerialListLength > 10!\n");
+                    }
+
+                    if (PopIrpSerialListLength > 100)
+                    {
+                        DPRINT1("PoCallDriver: PopIrpSerialListLength > 100 !!!\n");
+                        /* Too many inrush power IRPs have been queued. */
+                        DPRINT1("KeBugCheckEx(INTERNAL_POWER_ERROR)\n");
+                        ASSERT(FALSE); // PoDbgBreakPointEx();
+                        KeBugCheckEx(INTERNAL_POWER_ERROR, 0x401, 2, (ULONG_PTR)&PopIrpSerialList, (ULONG_PTR)DeviceObject);
+                    }
+
+                    PopInrushPending = 1;
+                    KeReleaseSpinLock(&PopIrpSerialSpinLock, OldIrql);
+                    return STATUS_PENDING;
+                }
+                else
+                {
+                    PopInrushIrpPointer = Irp;
+                    PopInrushIrpReferenceCount = 1;
+                    IoStack->Parameters.Power.SystemContext = POP_INRUSH_CONTEXT;
+                }
+            }
+        }
+    }
+
+    if (IoStack->Parameters.Power.Type == SystemPowerState)
+    {
+        if (PowerFlags.SystemActive)
+        {
+            PowerFlags.SystemSerialOn = 1;
+
+            InsertTailList(&PopIrpSerialList, &Irp->Tail.Overlay.ListEntry);
+            PopIrpSerialListLength++;
+
+            if (PopIrpSerialListLength > 10)
+            {
+                DPRINT1("PoCallDriver: PopIrpSerialListLength > 10!\n");
+            }
+
+            if (PopIrpSerialListLength > 100)
+            {
+                DPRINT1("PoCallDriver: PopIrpSerialListLength > 100 !!!\n");
+                /* Too many inrush power IRPs have been queued. */
+                DPRINT1("KeBugCheckEx(INTERNAL_POWER_ERROR)\n");
+                ASSERT(FALSE); // PoDbgBreakPointEx();
+                KeBugCheckEx(INTERNAL_POWER_ERROR, 0x402, 3, (ULONG_PTR)&PopIrpSerialList, (ULONG_PTR)DeviceObject);
+            }
+
+            KeReleaseSpinLock(&PopIrpSerialSpinLock, OldIrql);
+            return STATUS_PENDING;
+        }
+        else
+        {
+            PowerFlags.SystemActive = 1;
+        }
+    }
+
+    if (IoStack->Parameters.Power.Type == DevicePowerState)
+    {
+        if (PowerFlags.DeviceActive == 1 ||
+            PowerFlags.DeviceSerialOn == 1)
+        {
+            PowerFlags.DeviceSerialOn = 1;
+
+            InsertTailList(&PopIrpSerialList, &Irp->Tail.Overlay.ListEntry);
+            PopIrpSerialListLength++;
+
+            if (PopIrpSerialListLength > 10)
+                DPRINT1("PoCallDriver: PopIrpSerialListLength > 10!\n");
+
+            if (PopIrpSerialListLength > 100)
+            {
+                /* Too many inrush power IRPs have been queued. */
+                DPRINT1("PoCallDriver: KeBugCheckEx(INTERNAL_POWER_ERROR). PopIrpSerialListLength > 100 !!!\n");
+                ASSERT(FALSE); // PoDbgBreakPointEx();
+                KeBugCheckEx(INTERNAL_POWER_ERROR, 0x403, 4, (ULONG_PTR)&PopIrpSerialList, (ULONG_PTR)DeviceObject);
+            }
+
+            KeReleaseSpinLock(&PopIrpSerialSpinLock, OldIrql);
+            return STATUS_PENDING;
+        }
+        else
+        {
+            PowerFlags.DeviceActive = 1;
+        }
+    }
+
+    ASSERT(PowerFlags.SystemActive | PowerFlags.DeviceActive);
+
+    KeReleaseSpinLock(&PopIrpSerialSpinLock, OldIrql);
+    return PopSubmitIrp(IoStack, Irp);
 }
 
 /*
