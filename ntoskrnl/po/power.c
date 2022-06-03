@@ -10,7 +10,7 @@
 /* INCLUDES ******************************************************************/
 
 #include <ntoskrnl.h>
-#define NDEBUG
+//#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS *******************************************************************/
@@ -186,7 +186,8 @@ PopCompleteRequestIrp(
 
 VOID
 NTAPI
-PopCleanupPowerState(IN PPOWER_STATE PowerState)
+PopCleanupPowerState(
+    _In_ PPOWER_STATE PowerState)
 {
     //UNIMPLEMENTED;
 }
@@ -302,17 +303,19 @@ PoInitSystem(
 
 VOID
 NTAPI
-PopPerfIdle(PPROCESSOR_POWER_STATE PowerState)
+PopPerfIdle(
+    _In_ PPROCESSOR_POWER_STATE PowerState)
 {
     DPRINT1("PerfIdle function: %p\n", PowerState);
 }
 
 VOID
 NTAPI
-PopPerfIdleDpc(IN PKDPC Dpc,
-               IN PVOID DeferredContext,
-               IN PVOID SystemArgument1,
-               IN PVOID SystemArgument2)
+PopPerfIdleDpc(
+    _In_ PKDPC Dpc,
+    _In_ PVOID DeferredContext,
+    _In_ PVOID SystemArgument1,
+    _In_ PVOID SystemArgument2)
 {
     /* Call the Perf Idle function */
     PopPerfIdle(&((PKPRCB)DeferredContext)->PowerState);
@@ -320,7 +323,8 @@ PopPerfIdleDpc(IN PKDPC Dpc,
 
 VOID
 FASTCALL
-PopIdle0(IN PPROCESSOR_POWER_STATE PowerState)
+PopIdle0(
+    _In_ PPROCESSOR_POWER_STATE PowerState)
 {
     /* FIXME: Extremly naive implementation */
     HalProcessorIdle();
@@ -329,7 +333,8 @@ PopIdle0(IN PPROCESSOR_POWER_STATE PowerState)
 INIT_FUNCTION
 VOID
 NTAPI
-PoInitializePrcb(IN PKPRCB Prcb)
+PoInitializePrcb(
+    _In_ PKPRCB Prcb)
 {
     /* Initialize the Power State */
     RtlZeroMemory(&Prcb->PowerState, sizeof(Prcb->PowerState));
@@ -1220,44 +1225,41 @@ PopReportDevState(
 
 /* PUBLIC FUNCTIONS **********************************************************/
 
-/*
- * @unimplemented
- */
+/* unimplemented */
 NTSTATUS
 NTAPI
-PoCancelDeviceNotify(IN PVOID NotifyBlock)
+PoCancelDeviceNotify(
+    _In_ PVOID NotifyBlock)
 {
     UNIMPLEMENTED;
     return STATUS_NOT_IMPLEMENTED;
 }
 
-/*
- * @unimplemented
- */
+/* unimplemented */
 NTSTATUS
 NTAPI
-PoRegisterDeviceNotify(OUT PVOID Unknown0,
-                       IN ULONG Unknown1,
-                       IN ULONG Unknown2,
-                       IN ULONG Unknown3,
-                       IN PVOID Unknown4,
-                       IN PVOID Unknown5)
+PoRegisterDeviceNotify(
+    _Out_ PVOID Unknown0,
+    _In_ ULONG Unknown1,
+    _In_ ULONG Unknown2,
+    _In_ ULONG Unknown3,
+    _In_ PVOID Unknown4,
+    _In_ PVOID Unknown5)
 {
     UNIMPLEMENTED;
     return STATUS_NOT_IMPLEMENTED;
 }
 
-/*
- * @unimplemented
- */
+/* unimplemented */
 VOID
 NTAPI
-PoShutdownBugCheck(IN BOOLEAN LogError,
-                   IN ULONG BugCheckCode,
-                   IN ULONG_PTR BugCheckParameter1,
-                   IN ULONG_PTR BugCheckParameter2,
-                   IN ULONG_PTR BugCheckParameter3,
-                   IN ULONG_PTR BugCheckParameter4)
+PoShutdownBugCheck(
+    _In_ BOOLEAN LogError,
+    _In_ ULONG BugCheckCode,
+    _In_ ULONG_PTR BugCheckParameter1,
+    _In_ ULONG_PTR BugCheckParameter2,
+    _In_ ULONG_PTR BugCheckParameter3,
+    _In_ ULONG_PTR BugCheckParameter4)
 {
     DPRINT1("PoShutdownBugCheck called\n");
 
@@ -1272,16 +1274,15 @@ PoShutdownBugCheck(IN BOOLEAN LogError,
                  BugCheckParameter4);
 }
 
-/*
- * @unimplemented
- */
+/* unimplemented */
 VOID
 NTAPI
-PoSetHiberRange(IN PVOID HiberContext,
-                IN ULONG Flags,
-                IN OUT PVOID StartPage,
-                IN ULONG Length,
-                IN ULONG PageTag)
+PoSetHiberRange(
+    _In_ PVOID HiberContext,
+    _In_ ULONG Flags,
+    _Inout_ PVOID StartPage,
+    _In_ ULONG Length,
+    _In_ ULONG PageTag)
 {
     UNIMPLEMENTED;
     return;
@@ -1545,27 +1546,25 @@ PoCallDriver(
     return PopSubmitIrp(IoStack, Irp);
 }
 
-/*
- * @unimplemented
- */
+/* unimplemented */
 PULONG
 NTAPI
-PoRegisterDeviceForIdleDetection(IN PDEVICE_OBJECT DeviceObject,
-                                 IN ULONG ConservationIdleTime,
-                                 IN ULONG PerformanceIdleTime,
-                                 IN DEVICE_POWER_STATE State)
+PoRegisterDeviceForIdleDetection(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG ConservationIdleTime,
+    _In_ ULONG PerformanceIdleTime,
+    _In_ DEVICE_POWER_STATE State)
 {
     UNIMPLEMENTED;
     return NULL;
 }
 
-/*
- * @unimplemented
- */
+/* unimplemented */
 PVOID
 NTAPI
-PoRegisterSystemState(IN PVOID StateHandle,
-                      IN EXECUTION_STATE Flags)
+PoRegisterSystemState(
+    _In_ PVOID StateHandle,
+    _In_ EXECUTION_STATE Flags)
 {
     UNIMPLEMENTED;
     return NULL;
@@ -1650,21 +1649,23 @@ PoRequestPowerIrp(
     return STATUS_PENDING;
 }
 
-/*
- * @unimplemented
- */
+/* unimplemented */
 POWER_STATE
 NTAPI
-PoSetPowerState(IN PDEVICE_OBJECT DeviceObject,
-                IN POWER_STATE_TYPE Type,
-                IN POWER_STATE State)
+PoSetPowerState(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ POWER_STATE_TYPE Type,
+    _In_ POWER_STATE State)
 {
     POWER_STATE ps;
+    //KIRQL OldIrql;
 
     ASSERT_IRQL_LESS_OR_EQUAL(DISPATCH_LEVEL);
 
+    //KeAcquireSpinLock(&PopIrpSerialSpinLock, &OldIrql);
     ps.SystemState = PowerSystemWorking;  // Fully on
     ps.DeviceState = PowerDeviceD0;       // Fully on
+    //KeReleaseSpinLock(&PopIrpSerialSpinLock, OldIrql);
 
     return ps;
 }
@@ -1672,7 +1673,8 @@ PoSetPowerState(IN PDEVICE_OBJECT DeviceObject,
 /* @unimplemented */
 VOID
 NTAPI
-PoSetSystemState(IN EXECUTION_STATE Flags)
+PoSetSystemState(
+    _In_ EXECUTION_STATE Flags)
 {
     if (Flags & ~(ES_SYSTEM_REQUIRED |
                   ES_DISPLAY_REQUIRED |
@@ -1683,38 +1685,37 @@ PoSetSystemState(IN EXECUTION_STATE Flags)
     }
 
     //UNIMPLEMENTED;
-    DPRINT("PoSetSystemState: Flags %X. UNIMPLEMENTED\n", Flags);
+    //DPRINT("PoSetSystemState: Flags %X. UNIMPLEMENTED\n", Flags);
 }
 
-/*
- * @unimplemented
- */
+
 VOID
 NTAPI
-PoStartNextPowerIrp(IN PIRP Irp)
+PoStartNextPowerIrp(
+    _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_ONCE;
+    //UNIMPLEMENTED_ONCE;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // PoDbgBreakPointEx();
 }
 
-/*
- * @unimplemented
- */
+/* unimplemented */
 VOID
 NTAPI
-PoUnregisterSystemState(IN PVOID StateHandle)
+PoUnregisterSystemState(
+    _In_ PVOID StateHandle)
 {
     UNIMPLEMENTED;
 }
 
-/*
- * @unimplemented
- */
+/* unimplemented */
 NTSTATUS
 NTAPI
-NtInitiatePowerAction(IN POWER_ACTION SystemAction,
-                      IN SYSTEM_POWER_STATE MinSystemState,
-                      IN ULONG Flags,
-                      IN BOOLEAN Asynchronous)
+NtInitiatePowerAction(
+    _In_ POWER_ACTION SystemAction,
+    _In_ SYSTEM_POWER_STATE MinSystemState,
+    _In_ ULONG Flags,
+    _In_ BOOLEAN Asynchronous)
 {
     UNIMPLEMENTED;
     return STATUS_NOT_IMPLEMENTED;
@@ -1722,8 +1723,9 @@ NtInitiatePowerAction(IN POWER_ACTION SystemAction,
 
 VOID
 NTAPI
-PopChangeCapability(_In_ PBOOLEAN StateSupport,
-                    _In_ BOOLEAN IsSupport)
+PopChangeCapability(
+    _In_ PBOOLEAN StateSupport,
+    _In_ BOOLEAN IsSupport)
 {
     DPRINT("PopChangeCapability: IsSupport %X\n", IsSupport);
 
@@ -1741,11 +1743,12 @@ PopChangeCapability(_In_ PBOOLEAN StateSupport,
 /* halfplemented */
 NTSTATUS
 NTAPI
-NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
-                   IN PVOID InputBuffer  OPTIONAL,
-                   IN ULONG InputBufferLength,
-                   OUT PVOID OutputBuffer  OPTIONAL,
-                   IN ULONG OutputBufferLength)
+NtPowerInformation(
+    _In_ POWER_INFORMATION_LEVEL PowerInformationLevel,
+    _In_ PVOID InputBuffer  OPTIONAL,
+    _In_ ULONG InputBufferLength,
+    _Out_ PVOID OutputBuffer  OPTIONAL,
+    _In_ ULONG OutputBufferLength)
 {
     NTSTATUS Status;
     KPROCESSOR_MODE PreviousMode = KeGetPreviousMode();
@@ -1781,6 +1784,7 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
 
             if (InputBuffer != NULL)
                 return STATUS_INVALID_PARAMETER;
+
             if (OutputBufferLength < sizeof(SYSTEM_BATTERY_STATE))
                 return STATUS_BUFFER_TOO_SMALL;
 
@@ -1807,15 +1811,13 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
 
             if (InputBuffer != NULL)
                 return STATUS_INVALID_PARAMETER;
+
             if (OutputBufferLength < sizeof(SYSTEM_POWER_CAPABILITIES))
                 return STATUS_BUFFER_TOO_SMALL;
 
             _SEH2_TRY
             {
-                RtlCopyMemory(PowerCapabilities,
-                              &PopCapabilities,
-                              sizeof(SYSTEM_POWER_CAPABILITIES));
-
+                RtlCopyMemory(PowerCapabilities, &PopCapabilities, sizeof(SYSTEM_POWER_CAPABILITIES));
                 Status = STATUS_SUCCESS;
             }
             _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
@@ -1832,6 +1834,7 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
 
             if (InputBuffer != NULL)
                 return STATUS_INVALID_PARAMETER;
+
             if (OutputBufferLength < sizeof(PROCESSOR_POWER_INFORMATION))
                 return STATUS_BUFFER_TOO_SMALL;
 
@@ -1994,10 +1997,10 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
 
 Exit:
 
-    if (LoggingInfo != NULL)
+    if (LoggingInfo)
     {
         DPRINT1("NtPowerInformation: FIXME free LoggingInfo\n");
-        ASSERT(FALSE);//ExFreePoolWithTag(LoggingInfo, 0);
+        ASSERT(FALSE);//ExFreePool(LoggingInfo);
     }
 
     return Status;
@@ -2005,8 +2008,9 @@ Exit:
 
 NTSTATUS
 NTAPI
-NtGetDevicePowerState(IN HANDLE Device,
-                      IN PDEVICE_POWER_STATE PowerState)
+NtGetDevicePowerState(
+    _In_ HANDLE Device,
+    _In_ PDEVICE_POWER_STATE PowerState)
 {
     UNIMPLEMENTED;
     return STATUS_NOT_IMPLEMENTED;
@@ -2022,7 +2026,8 @@ NtIsSystemResumeAutomatic(VOID)
 
 NTSTATUS
 NTAPI
-NtRequestWakeupLatency(IN LATENCY_TIME Latency)
+NtRequestWakeupLatency(
+    _In_ LATENCY_TIME Latency)
 {
     UNIMPLEMENTED;
     return STATUS_NOT_IMPLEMENTED;
@@ -2030,8 +2035,9 @@ NtRequestWakeupLatency(IN LATENCY_TIME Latency)
 
 NTSTATUS
 NTAPI
-NtSetThreadExecutionState(IN EXECUTION_STATE esFlags,
-                          OUT EXECUTION_STATE *PreviousFlags)
+NtSetThreadExecutionState(
+    _In_ EXECUTION_STATE esFlags,
+    _Out_ EXECUTION_STATE *PreviousFlags)
 {
     PKTHREAD Thread = KeGetCurrentThread();
     KPROCESSOR_MODE PreviousMode = KeGetPreviousMode();
@@ -2294,6 +2300,7 @@ NtSetSystemPowerState(
 
     PopAcquirePolicyLock();
     IsPolicyLock = TRUE;
+    DPRINT("NtSetSystemPowerState: IsPolicyLock %X\n", IsPolicyLock);
 
     if (PopAction.State == 0)
     {
@@ -2301,7 +2308,7 @@ NtSetSystemPowerState(
     }
     else if (PopAction.State != 2)
     {
-        DPRINT1("NtSetSystemPowerState: already committed, State %X\n", PopAction.State);
+        DPRINT("NtSetSystemPowerState: already committed\n");
 
         PopReleasePolicyLock(FALSE);
         //MmUnlockPagableImageSection(ExPageLockHandle);
@@ -2312,8 +2319,6 @@ NtSetSystemPowerState(
 
         return STATUS_ALREADY_COMMITTED;
     }
-
-    /* PopAction.State == 2 */
 
     PopAction.State = 3;
     Status = STATUS_CANCELLED;
@@ -2331,7 +2336,6 @@ NtSetSystemPowerState(
     {
         if (PopHiberFile)
         {
-            DPRINT1("NtSetSystemPowerState: PopHiberFile %X\n", PopHiberFile);
             ASSERT(FALSE); // PoDbgBreakPointEx();
         }
     }
@@ -2456,7 +2460,6 @@ Exit:
 
         if (StatesIsNotEqual)
         {
-            DPRINT1("NtSetSystemPowerState: StatesIsNotEqual is TRUE, FIXME\n");
             ASSERT(FALSE); // PoDbgBreakPointEx();
             Status = STATUS_SUCCESS;
             continue;
