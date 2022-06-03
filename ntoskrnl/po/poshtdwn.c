@@ -67,12 +67,14 @@ PoRequestShutdownWait(
 {
     PPOP_SHUTDOWN_WAIT_ENTRY ShutDownWaitEntry;
     NTSTATUS Status;
+
     PAGED_CODE();
 
     /* Allocate a new shutdown wait entry */
     ShutDownWaitEntry = ExAllocatePoolWithTag(PagedPool, sizeof(*ShutDownWaitEntry), 'LSoP');
-    if (ShutDownWaitEntry == NULL)
+    if (!ShutDownWaitEntry)
     {
+        DPRINT1("PoRequestShutdownWait: STATUS_NO_MEMORY\n");
         return STATUS_NO_MEMORY;
     }
 
@@ -96,6 +98,7 @@ PoRequestShutdownWait(
     else
     {
         /* We cannot proceed, cleanup and return failure */
+        DPRINT1("PoRequestShutdownWait: STATUS_UNSUCCESSFUL\n");
         ObDereferenceObject(Thread);
         ExFreePoolWithTag(ShutDownWaitEntry, 'LSoP');
         Status = STATUS_UNSUCCESSFUL;
@@ -1406,11 +1409,9 @@ PopGracefulShutdown(
         /* Make sure this isn't the idle or initial process */
         if ((Process != PsInitialSystemProcess) && (Process != PsIdleProcess))
         {
-            /* Print it */
             DPRINT1("PopGracefulShutdown: %15s is still RUNNING (%p)\n", Process->ImageFileName, Process->UniqueProcessId);
         }
 
-        /* Get the next process */
         Process = PsGetNextProcess(Process);
     }
 
@@ -1490,17 +1491,17 @@ VOID
 NTAPI
 PopReadShutdownPolicy(VOID)
 {
-    UNICODE_STRING KeyString;
-    OBJECT_ATTRIBUTES ObjectAttributes;
-    NTSTATUS Status;
-    HANDLE KeyHandle;
-    ULONG Length;
     UCHAR Buffer[sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(ULONG)];
     PKEY_VALUE_PARTIAL_INFORMATION Info = (PVOID)Buffer;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    UNICODE_STRING KeyString;
+    HANDLE KeyHandle;
+    ULONG Length;
+    NTSTATUS Status;
 
     /* Setup object attributes */
-    RtlInitUnicodeString(&KeyString,
-                         L"\\Registry\\Machine\\Software\\Policies\\Microsoft\\Windows NT");
+    RtlInitUnicodeString(&KeyString, L"\\Registry\\Machine\\Software\\Policies\\Microsoft\\Windows NT");
+
     InitializeObjectAttributes(&ObjectAttributes,
                                &KeyString,
                                OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
@@ -1509,32 +1510,33 @@ PopReadShutdownPolicy(VOID)
 
     /* Open the key */
     Status = ZwOpenKey(&KeyHandle, KEY_READ, &ObjectAttributes);
-    if (NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status))
     {
-        /* Open the policy value and query it */
-        RtlInitUnicodeString(&KeyString, L"DontPowerOffAfterShutdown");
-        Status = ZwQueryValueKey(KeyHandle,
-                                 &KeyString,
-                                 KeyValuePartialInformation,
-                                 &Info,
-                                 sizeof(Info),
-                                 &Length);
-        if ((NT_SUCCESS(Status)) && (Info->Type == REG_DWORD))
-        {
-            /* Read the policy */
-            PopShutdownPowerOffPolicy = *Info->Data == 1;
-        }
-
-        /* Close the key */
-        ZwClose(KeyHandle);
+        DPRINT1("PopReadShutdownPolicy: Status %X\n", Status);
+        return;
     }
+
+    /* Open the policy value and query it */
+    RtlInitUnicodeString(&KeyString, L"DontPowerOffAfterShutdown");
+
+    Status = ZwQueryValueKey(KeyHandle,
+                             &KeyString,
+                             KeyValuePartialInformation,
+                             &Info,
+                             sizeof(Info),
+                             &Length);
+
+    if ((NT_SUCCESS(Status)) && (Info->Type == REG_DWORD))
+    {
+        /* Read the policy */
+        PopShutdownPowerOffPolicy = (*Info->Data == 1);
+    }
+
+    ZwClose(KeyHandle);
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
 
-/*
- * @unimplemented
- */
 NTSTATUS
 NTAPI
 PoQueueShutdownWorkItem(
@@ -1564,28 +1566,31 @@ PoQueueShutdownWorkItem(
     return Status;
 }
 
-/*
- * @implemented
- */
 NTSTATUS
 NTAPI
-PoRequestShutdownEvent(OUT PVOID *Event)
+PoRequestShutdownEvent(
+    _Out_ PVOID* Event)
 {
     NTSTATUS Status;
     PAGED_CODE();
 
     /* Initialize to NULL */
-    if (Event) *Event = NULL;
+    if (Event)
+        *Event = NULL;
 
     /* Request a shutdown wait */
     Status = PoRequestShutdownWait(PsGetCurrentThread());
     if (!NT_SUCCESS(Status))
     {
+        DPRINT1("PoRequestShutdownEvent: Status %X\n", Status);
         return Status;
     }
 
     /* Return the global shutdown event */
-    if (Event) *Event = &PopShutdownEvent;
+    if (Event)
+       *Event = &PopShutdownEvent;
+
     return STATUS_SUCCESS;
 }
 
+/* EOF */
