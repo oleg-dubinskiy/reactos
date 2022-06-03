@@ -84,6 +84,7 @@ ULONG PopIrpSerialListLength;
 ULONG PopSimulate = 0x00010000;
 ULONG PopWorkerPending = 0;
 ULONG PopCallSystemState;
+ULONG PopFullWake;
 
 extern KSPIN_LOCK IopPnPSpinLock;
 extern LIST_ENTRY IopPnpEnumerationRequestList;
@@ -193,15 +194,52 @@ PopCleanupPowerState(IN PPOWER_STATE PowerState)
 INIT_FUNCTION
 BOOLEAN
 NTAPI
-PoInitSystem(IN ULONG BootPhase)
+PoInitSystem(
+    _In_ ULONG BootPhase)
 {
     PVOID NotificationEntry;
-    PCHAR CommandLine;
-    BOOLEAN ForceAcpiDisable = FALSE;
+    NTSTATUS Status = STATUS_SUCCESS;
 
     /* Check if this is phase 1 init */
     if (BootPhase == 1)
     {
+        DPRINT("PoInitSystem: FIXME PopInitializePowerPolicySimulate()\n");
+
+        if (PopSimulate & 1)
+        {
+            PopCapabilities.SystemBatteriesPresent = TRUE;
+            PopCapabilities.BatteryScale[0].Granularity = 100;
+            PopCapabilities.BatteryScale[0].Capacity = 400;
+            PopCapabilities.BatteryScale[1].Granularity = 10;
+            PopCapabilities.BatteryScale[1].Capacity = 0xFFFF;
+            PopCapabilities.RtcWake = 4;
+            PopCapabilities.DefaultLowLatencyWake = 2;
+        }
+
+        if (PopSimulate & 2)
+        {
+            ASSERT(FALSE); // PoDbgBreakPointEx();
+
+            PopCapabilities.PowerButtonPresent = TRUE;
+            PopCapabilities.SleepButtonPresent = TRUE;
+            PopCapabilities.LidPresent = TRUE;
+            PopCapabilities.SystemS1 = TRUE;
+            PopCapabilities.SystemS2 = TRUE;
+            PopCapabilities.SystemS3 = TRUE;
+            PopCapabilities.SystemS4 = TRUE;
+        }
+
+        PopAcquirePolicyLock();
+
+        DPRINT("PoInitSystem: FIXME read [Heuristics] key\n");
+        DPRINT("PoInitSystem: FIXME read [PolicyOverrides] key\n");
+
+        DPRINT("PoInitSystem: FIXME PopResetCurrentPolicies() - read xxxPolicy keys from registry \n");
+        Status = 0;//PopResetCurrentPolicies();
+        PopReleasePolicyLock(0);
+
+        DPRINT("PoInitSystem: FIXME PopIdleScanTimer \n");
+
         /* Register power button notification */
         IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange,
                                        PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
@@ -221,44 +259,23 @@ PoInitSystem(IN ULONG BootPhase)
                                        PopAddRemoveSysCapsCallback,
                                        NULL,
                                        &NotificationEntry);
-        return TRUE;
+        return NT_SUCCESS(Status);
     }
 
-    /* Initialize the power capabilities */
-    RtlZeroMemory(&PopCapabilities, sizeof(SYSTEM_POWER_CAPABILITIES));
+    KeInitializeSpinLock(&PopIrpSerialSpinLock);
+    PopIrpSerialListLength = 0;
+    InitializeListHead(&PopIrpSerialList);
 
-    /* Get the Command Line */
-    CommandLine = KeLoaderBlock->LoadOptions;
+    PopInrushPending = FALSE;
+    PopInrushIrpPointer = NULL;
+    PopInrushIrpReferenceCount = 0;
 
-    /* Upcase it */
-    _strupr(CommandLine);
-
-    /* Check for ACPI disable */
-    if (strstr(CommandLine, "NOACPI")) ForceAcpiDisable = TRUE;
-
-    if (ForceAcpiDisable)
-    {
-        /* Set the ACPI State to False if it's been forced that way */
-        PopAcpiPresent = FALSE;
-    }
-    else
-    {
-        /* Otherwise check if the LoaderBlock has a ACPI Table  */
-        PopAcpiPresent = KeLoaderBlock->Extension->AcpiTable != NULL ? TRUE : FALSE;
-    }
-
-    /* Enable shutdown by power button */
-    if (PopAcpiPresent)
-        PopCapabilities.SystemS5 = TRUE;
+    PopCallSystemState = 0;
 
     KeInitializeEvent(&PopUnlockComplete, SynchronizationEvent, TRUE);
 
     /* Initialize support for shutdown waits and work-items */
     PopInitShutdownList();
-
-    /* Initialize volume support */
-    InitializeListHead(&PopVolumeDevices);
-    KeInitializeGuardedMutex(&PopVolumeLock);
 
     /* Initialize support for dope */
     KeInitializeSpinLock(&PopDopeGlobalLock);
@@ -268,10 +285,17 @@ PoInitSystem(IN ULONG BootPhase)
 
     ExInitializeResourceLite(&PopPolicyLock);
 
+    /* Initialize volume support */
+    KeInitializeGuardedMutex(&PopVolumeLock);
+    InitializeListHead(&PopVolumeDevices);
+
+    PopAction.Action = PowerActionNone;
+
     PopDefaultPolicy(&PopAcPolicy);
     PopDefaultPolicy(&PopDcPolicy);
     PopPolicy = &PopAcPolicy;
 
+    PopFullWake = 5;
 
     return TRUE;
 }

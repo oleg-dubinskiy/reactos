@@ -436,6 +436,14 @@ PopSystemIrpDispatchWorker(
     _In_ BOOLEAN IsResetState
 );
 
+POWER_ACTION
+NTAPI
+PopMapInternalActionToIrpAction(
+    _In_ POWER_ACTION Action,
+    _In_ SYSTEM_POWER_STATE SystemPowerState,
+    _In_ BOOLEAN IsResetWarmEject
+);
+
 //
 // Global data inside the Power Manager
 //
