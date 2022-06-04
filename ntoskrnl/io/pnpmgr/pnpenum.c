@@ -384,7 +384,7 @@ PiProcessQueryDeviceState(
 
         if (!(DeviceNode->UserFlags & DNUF_NOT_DISABLEABLE))
         {
-            DeviceNode->UserFlags = DeviceNode->UserFlags | DNUF_NOT_DISABLEABLE;
+            DeviceNode->UserFlags = (DeviceNode->UserFlags | DNUF_NOT_DISABLEABLE);
             IopIncDisableableDepends(DeviceNode);
         }
     }
@@ -399,8 +399,11 @@ PiProcessQueryDeviceState(
 
     if (State & (PNP_DEVICE_REMOVED | PNP_DEVICE_DISABLED))
     {
-        DPRINT("PiProcessQueryDeviceState: FIXME PipRequestDeviceRemoval\n");
-        ASSERT(FALSE);
+        if (State & PNP_DEVICE_DISABLED)
+            PipRequestDeviceRemoval(DeviceNode, FALSE, CM_PROB_HARDWARE_DISABLED);
+        else
+            PipRequestDeviceRemoval(DeviceNode, FALSE, CM_PROB_DEVICE_NOT_THERE);
+
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -412,8 +415,7 @@ PiProcessQueryDeviceState(
 
     if (State & PNP_DEVICE_FAILED)
     {
-        DPRINT("PiProcessQueryDeviceState: FIXME PipRequestDeviceRemoval\n");
-        ASSERT(FALSE);
+        PipRequestDeviceRemoval(DeviceNode, FALSE, CM_PROB_FAILED_POST_START);
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -755,10 +757,7 @@ PipEnumerateCompleted(
             !(ChildDeviceNode->Flags & DNF_DEVICE_GONE))
         {
             ChildDeviceNode->Flags |= DNF_DEVICE_GONE;
-
-            DPRINT1("PipEnumerateCompleted: FIXME PipRequestDeviceRemoval\n");
-            ASSERT(FALSE);
-
+            PipRequestDeviceRemoval(ChildDeviceNode, TRUE, CM_PROB_DEVICE_NOT_THERE);
             RemovalChild = TRUE;
         }
 
