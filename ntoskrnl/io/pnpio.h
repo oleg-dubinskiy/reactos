@@ -647,6 +647,14 @@ IopFreeRelationList(
     _In_ PRELATION_LIST RelationsList
 );
 
+VOID
+NTAPI
+PipRequestDeviceRemoval(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ UCHAR TreeDeletion,
+    _In_ ULONG Problem
+);
+
 /* pnpenum.c */
 NTSTATUS
 NTAPI
@@ -696,6 +704,12 @@ PDRIVER_OBJECT
 NTAPI
 IopReferenceDriverObjectByName(
     _In_ PUNICODE_STRING Name
+);
+
+NTSTATUS
+NTAPI
+IopRestartDeviceNode(
+    _In_ PDEVICE_NODE DeviceNode
 );
 
 /* pnpevent.c */
