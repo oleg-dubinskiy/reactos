@@ -15,6 +15,21 @@ extern ULONG IopMaxDeviceNodeLevel;
 
 /* FUNCTIONS *****************************************************************/
 
+BOOLEAN
+NTAPI
+IopEnumerateRelations(
+    _In_ PRELATION_LIST RelationsList,
+    _In_ PULONG Marker,
+    _Out_ PDEVICE_OBJECT * OutEnumDevice,
+    _Out_ PUCHAR OutIsDirectDescendant,
+    _Out_ PBOOLEAN OutIsTagged,
+    _In_ BOOLEAN Direction)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return FALSE;
+}
+
 PRELATION_LIST
 NTAPI
 IopAllocateRelationList(
@@ -299,7 +314,7 @@ PipRequestDeviceRemoval(
     NTSTATUS Status;
 
     PAGED_CODE();
-    DPRINT("PipRequestDeviceRemoval: DeviceNode - %p, TreeDeletion - %X, Problem - %X\n", DeviceNode, TreeDeletion, Problem);
+    DPRINT("PipRequestDeviceRemoval: [%p] TreeDeletion %X, Problem %X\n", DeviceNode, TreeDeletion, Problem);
 
     if (DeviceNode == NULL)
     {
@@ -308,9 +323,9 @@ PipRequestDeviceRemoval(
         return;
     }
 
-    if (DeviceNode->InstancePath.Length == 0)
+    if (!DeviceNode->InstancePath.Length == 0)
     {
-        DPRINT("PipRequestDeviceRemoval: Driver - %wZ, child DeviceNode - %p\n", &DeviceNode->Parent->ServiceName, DeviceNode);
+        DPRINT("PipRequestDeviceRemoval: Driver '%wZ', child DeviceNode %p\n", &DeviceNode->Parent->ServiceName, DeviceNode);
         ASSERT(DeviceNode->InstancePath.Length != 0);
     }
 
@@ -326,7 +341,7 @@ PipRequestDeviceRemoval(
 
     Status = IopTraverseDeviceTree(&Context);
 
-    DPRINT("PipRequestDeviceRemoval: Status - %X\n", Status);
+    DPRINT("PipRequestDeviceRemoval: Status %X\n", Status);
     ASSERT(NT_SUCCESS(Status));
 
     PpSetTargetDeviceRemove(DeviceNode->PhysicalDeviceObject,
