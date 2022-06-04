@@ -882,4 +882,64 @@ IopMarkHalDeviceNode(VOID)
     }
 }
 
+BOOLEAN
+NTAPI
+PipIsProblemReadonly(
+    _In_ ULONG Problem)
+{
+    BOOLEAN Result;
+
+    PAGED_CODE();
+
+    switch (Problem)
+    {
+        case CM_PROB_NOT_CONFIGURED:
+        case CM_PROB_FAILED_START:
+        case CM_PROB_NEED_RESTART:
+        case CM_PROB_REINSTALL:
+        case CM_PROB_REGISTRY:
+        case CM_PROB_WILL_BE_REMOVED:
+        case CM_PROB_DISABLED:
+        case CM_PROB_FAILED_INSTALL:
+        case CM_PROB_FAILED_ADD:
+        case CM_PROB_DISABLED_SERVICE:
+        case CM_PROB_FAILED_DRIVER_ENTRY:
+        case CM_PROB_DRIVER_FAILED_PRIOR_UNLOAD:
+        case CM_PROB_DRIVER_FAILED_LOAD:
+        case CM_PROB_DRIVER_SERVICE_KEY_INVALID:
+        case CM_PROB_LEGACY_SERVICE_NO_DEVICES:
+        case CM_PROB_FAILED_POST_START:
+        case CM_PROB_HALTED:
+        case CM_PROB_DRIVER_BLOCKED:
+            Result = FALSE;
+            break;
+
+        case CM_PROB_OUT_OF_MEMORY:
+        case CM_PROB_INVALID_DATA:
+        case CM_PROB_NORMAL_CONFLICT:
+        case CM_PROB_PARTIAL_LOG_CONF:
+        case CM_PROB_DEVICE_NOT_THERE:
+        case CM_PROB_HARDWARE_DISABLED:
+        case CM_PROB_TRANSLATION_FAILED:
+        case CM_PROB_NO_SOFTCONFIG:
+        case CM_PROB_BIOS_TABLE:
+        case CM_PROB_IRQ_TRANSLATION_FAILED:
+        case CM_PROB_DUPLICATE_DEVICE:
+        case CM_PROB_SYSTEM_SHUTDOWN:
+        case CM_PROB_HELD_FOR_EJECT:
+        case CM_PROB_REGISTRY_TOO_LARGE:
+        case CM_PROB_SETPROPERTIES_FAILED:
+            Result = TRUE;
+            break;
+
+        default:
+            DPRINT1("PipIsProblemReadonly: Problem %X\n", Problem);
+            ASSERT(FALSE);
+            Result = TRUE;
+            break;
+    }
+
+    return Result;
+}
+
 /* EOF */

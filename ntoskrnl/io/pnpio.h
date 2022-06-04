@@ -1026,6 +1026,12 @@ PpDevNodeAssertLockLevel(
     _In_ LONG Level
 );
 
+BOOLEAN
+NTAPI
+PipIsProblemReadonly(
+    _In_ ULONG Problem
+);
+
 /* pnpnotify.c */
 VOID
 NTAPI
