@@ -460,9 +460,9 @@ PnpEventThread(IN PVOID Parameter)
             ULONG len;
             ULONG DeviceIdLength;
 
-            DPRINT("Device enumerated: %S\n", PnpEvent->TargetDevice.DeviceIds);
+            DPRINT("Device enumerated: %S\n", PnpEvent->u.TargetDevice.DeviceIds);
 
-            DeviceIdLength = wcslen(PnpEvent->TargetDevice.DeviceIds);
+            DeviceIdLength = wcslen(PnpEvent->u.TargetDevice.DeviceIds);
             if (DeviceIdLength)
             {
                 /* Allocate a new device-install event */
@@ -470,7 +470,7 @@ PnpEventThread(IN PVOID Parameter)
                 Params = RtlAllocateHeap(ProcessHeap, 0, len);
                 if (Params)
                 {
-                    wcscpy(Params->DeviceIds, PnpEvent->TargetDevice.DeviceIds);
+                    wcscpy(Params->DeviceIds, PnpEvent->u.TargetDevice.DeviceIds);
 
                     /* Queue the event (will be dequeued by DeviceInstallThread) */
                     NtWaitForSingleObject(hDeviceInstallListMutex, FALSE, NULL);

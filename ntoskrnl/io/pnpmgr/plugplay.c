@@ -90,7 +90,7 @@ IopQueueTargetDeviceEvent(const GUID *Guid,
     Copy.Length = 0;
     Copy.MaximumLength = DeviceIds->Length + sizeof(UNICODE_NULL);
     TotalSize =
-        FIELD_OFFSET(PLUGPLAY_EVENT_BLOCK, TargetDevice.DeviceIds) +
+        FIELD_OFFSET(PLUGPLAY_EVENT_BLOCK, u.TargetDevice.DeviceIds) +
         Copy.MaximumLength;
 
     EventEntry = ExAllocatePool(NonPagedPool,
@@ -106,7 +106,7 @@ IopQueueTargetDeviceEvent(const GUID *Guid,
     EventEntry->Event.TotalSize = TotalSize;
 
     /* Fill the device id */
-    Copy.Buffer = EventEntry->Event.TargetDevice.DeviceIds;
+    Copy.Buffer = EventEntry->Event.u.TargetDevice.DeviceIds;
     Status = RtlAppendUnicodeStringToString(&Copy, DeviceIds);
     if (!NT_SUCCESS(Status))
     {

@@ -121,7 +121,7 @@ PiResizeTargetDeviceBlock(
     SizeHead = (sizeof(**pEventEntry) - sizeof(PLUGPLAY_EVENT_BLOCK));
 
     CurrentSize = (SizeHead + (*pEventEntry)->Data.TotalSize);
-    NewSize = (CurrentSize - wcslen((*pEventEntry)->Data.TargetDevice.DeviceIds) * sizeof(WCHAR));
+    NewSize = (CurrentSize - wcslen((*pEventEntry)->Data.u.TargetDevice.DeviceIds) * sizeof(WCHAR));
 
     DPRINT("PiResizeTargetDeviceBlock: CurrentSize %X NewSize %X\n", CurrentSize, NewSize);
 
@@ -160,7 +160,7 @@ PiResizeTargetDeviceBlock(
     RtlCopyMemory(NewEventEntry, *pEventEntry, CurrentSize);
 
     NewEventEntry->Data.TotalSize = (NewSize - SizeHead);
-    pChar = (NewEventEntry->Data.TargetDevice.DeviceIds + wcslen((*pEventEntry)->Data.TargetDevice.DeviceIds) + 1);
+    pChar = (NewEventEntry->Data.u.TargetDevice.DeviceIds + wcslen((*pEventEntry)->Data.u.TargetDevice.DeviceIds) + 1);
 
     Marker = 0;
     while (IopEnumerateRelations(RelationsList, &Marker, &DeviceObject, &OutIsDirectDescendant, NULL, FALSE))
@@ -311,10 +311,10 @@ PiWalkDeviceList(
             case DeviceClassChangeEvent:
                 DPRINT("PiWalkDeviceList: DeviceClassChangeEvent - kernel notifying\n");
 
-                RtlInitUnicodeString(&SymbolicLinkName, EventEntry->Data.DeviceClass.SymbolicLinkName);
+                RtlInitUnicodeString(&SymbolicLinkName, EventEntry->Data.u.DeviceClass.SymbolicLinkName);
 
                 IopNotifyDeviceClassChange(&EventEntry->Data,
-                                           &EventEntry->Data.DeviceClass.ClassGuid,
+                                           &EventEntry->Data.u.DeviceClass.ClassGuid,
                                            &SymbolicLinkName);
 
                 DPRINT("PiWalkDeviceList: FIXME PiNotifyUserMode()\n");
@@ -541,10 +541,10 @@ PpSetDeviceClassChange(
     EventEntry->Data.TotalSize = DataTotalSize;
 
     RtlCopyMemory(&EventEntry->Data.EventGuid, EventGuid, sizeof(GUID));
-    RtlCopyMemory(&EventEntry->Data.DeviceClass.ClassGuid, ClassGuid, sizeof(GUID));
-    RtlCopyMemory(EventEntry->Data.DeviceClass.SymbolicLinkName, SymbolicLinkName->Buffer, Length);
+    RtlCopyMemory(&EventEntry->Data.u.DeviceClass.ClassGuid, ClassGuid, sizeof(GUID));
+    RtlCopyMemory(EventEntry->Data.u.DeviceClass.SymbolicLinkName, SymbolicLinkName->Buffer, Length);
 
-    EventEntry->Data.DeviceClass.SymbolicLinkName[Length / sizeof(WCHAR)] = UNICODE_NULL;
+    EventEntry->Data.u.DeviceClass.SymbolicLinkName[Length / sizeof(WCHAR)] = UNICODE_NULL;
 
     Status = PiInsertEventInQueue(EventEntry);
 
@@ -641,12 +641,12 @@ PpSetTargetDeviceRemove(
 
     if (InstanceLength)
     {
-        RtlCopyMemory(&EventEntry->Data.TargetDevice.DeviceIds,
+        RtlCopyMemory(&EventEntry->Data.u.TargetDevice.DeviceIds,
                       DeviceNode->InstancePath.Buffer,
                       InstanceLength);
     }
 
-    EventEntry->Data.TargetDevice.DeviceIds[InstanceLength / sizeof(WCHAR)] = UNICODE_NULL;
+    EventEntry->Data.u.TargetDevice.DeviceIds[InstanceLength / sizeof(WCHAR)] = UNICODE_NULL;
 
     Status = PiInsertEventInQueue(EventEntry);
 

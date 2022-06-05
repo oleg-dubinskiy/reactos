@@ -438,7 +438,7 @@ typedef struct _PLUGPLAY_EVENT_BLOCK
         {
             GUID BlockedDriverGuid;
         } BlockedDriverNotification;
-    };
+    } u;
 } PLUGPLAY_EVENT_BLOCK, *PPLUGPLAY_EVENT_BLOCK;
 
 //

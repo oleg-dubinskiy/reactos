@@ -99,9 +99,9 @@ PnpEventThread(LPVOID lpParameter)
             DWORD len;
             DWORD DeviceIdLength;
 
-            DPRINT("Device enumerated: %S\n", PnpEvent->TargetDevice.DeviceIds);
+            DPRINT("Device enumerated: %S\n", PnpEvent->u.TargetDevice.DeviceIds);
 
-            DeviceIdLength = lstrlenW(PnpEvent->TargetDevice.DeviceIds);
+            DeviceIdLength = lstrlenW(PnpEvent->u.TargetDevice.DeviceIds);
             if (DeviceIdLength)
             {
                 /* Allocate a new device-install event */
@@ -109,7 +109,7 @@ PnpEventThread(LPVOID lpParameter)
                 Params = HeapAlloc(GetProcessHeap(), 0, len);
                 if (Params)
                 {
-                    wcscpy(Params->DeviceIds, PnpEvent->TargetDevice.DeviceIds);
+                    wcscpy(Params->DeviceIds, PnpEvent->u.TargetDevice.DeviceIds);
 
                     /* Queue the event (will be dequeued by DeviceInstallThread) */
                     WaitForSingleObject(hDeviceInstallListMutex, INFINITE);
@@ -124,7 +124,7 @@ PnpEventThread(LPVOID lpParameter)
         {
 //            DWORD dwRecipient;
 
-            DPRINT("Device arrival: %S\n", PnpEvent->TargetDevice.DeviceIds);
+            DPRINT("Device arrival: %S\n", PnpEvent->u.TargetDevice.DeviceIds);
 
 //            dwRecipient = BSM_ALLDESKTOPS | BSM_APPLICATIONS;
 //            BroadcastSystemMessageW(BSF_POSTMESSAGE,
@@ -136,17 +136,17 @@ PnpEventThread(LPVOID lpParameter)
         }
         else if (UuidEqual(&PnpEvent->EventGuid, (UUID*)&GUID_DEVICE_EJECT_VETOED, &RpcStatus))
         {
-            DPRINT1("Eject vetoed: %S\n", PnpEvent->TargetDevice.DeviceIds);
+            DPRINT1("Eject vetoed: %S\n", PnpEvent->u.TargetDevice.DeviceIds);
         }
         else if (UuidEqual(&PnpEvent->EventGuid, (UUID*)&GUID_DEVICE_KERNEL_INITIATED_EJECT, &RpcStatus))
         {
-            DPRINT1("Kernel initiated eject: %S\n", PnpEvent->TargetDevice.DeviceIds);
+            DPRINT1("Kernel initiated eject: %S\n", PnpEvent->u.TargetDevice.DeviceIds);
         }
         else if (UuidEqual(&PnpEvent->EventGuid, (UUID*)&GUID_DEVICE_SAFE_REMOVAL, &RpcStatus))
         {
 //            DWORD dwRecipient;
 
-            DPRINT1("Safe removal: %S\n", PnpEvent->TargetDevice.DeviceIds);
+            DPRINT1("Safe removal: %S\n", PnpEvent->u.TargetDevice.DeviceIds);
 
 //            dwRecipient = BSM_ALLDESKTOPS | BSM_APPLICATIONS;
 //            BroadcastSystemMessageW(BSF_POSTMESSAGE,
@@ -160,7 +160,7 @@ PnpEventThread(LPVOID lpParameter)
         {
 //            DWORD dwRecipient;
 
-            DPRINT1("Surprise removal: %S\n", PnpEvent->TargetDevice.DeviceIds);
+            DPRINT1("Surprise removal: %S\n", PnpEvent->u.TargetDevice.DeviceIds);
 
 //            dwRecipient = BSM_ALLDESKTOPS | BSM_APPLICATIONS;
 //            BroadcastSystemMessageW(BSF_POSTMESSAGE,
@@ -172,11 +172,11 @@ PnpEventThread(LPVOID lpParameter)
         }
         else if (UuidEqual(&PnpEvent->EventGuid, (UUID*)&GUID_DEVICE_REMOVAL_VETOED, &RpcStatus))
         {
-            DPRINT1("Removal vetoed: %S\n", PnpEvent->TargetDevice.DeviceIds);
+            DPRINT1("Removal vetoed: %S\n", PnpEvent->u.TargetDevice.DeviceIds);
         }
         else if (UuidEqual(&PnpEvent->EventGuid, (UUID*)&GUID_DEVICE_REMOVE_PENDING, &RpcStatus))
         {
-            DPRINT1("Removal pending: %S\n", PnpEvent->TargetDevice.DeviceIds);
+            DPRINT1("Removal pending: %S\n", PnpEvent->u.TargetDevice.DeviceIds);
         }
         else
         {
