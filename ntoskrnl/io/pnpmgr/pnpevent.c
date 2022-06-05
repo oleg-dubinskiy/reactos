@@ -185,6 +185,30 @@ PiResizeTargetDeviceBlock(
     return STATUS_SUCCESS;
 }
 
+BOOLEAN
+NTAPI
+PipIsBeingRemovedSafely(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    DPRINT("PipIsBeingRemovedSafely: DeviceNode %p, State %X\n", DeviceNode, DeviceNode->State);
+    PAGED_CODE();
+
+    ASSERT(DeviceNode->State == DeviceNodeAwaitingQueuedDeletion);
+
+    if (((DeviceNode->CapabilityFlags) & 0x0200)) // SurpriseRemovalOK
+        return TRUE;
+
+    if (DeviceNode->PreviousState == DeviceNodeStarted ||
+        DeviceNode->PreviousState == DeviceNodeStopped ||
+        DeviceNode->PreviousState == DeviceNodeStartPostWork ||
+        DeviceNode->PreviousState == DeviceNodeRestartCompletion)
+    {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 NTSTATUS
 NTAPI
 PiProcessQueryRemoveAndEject(
