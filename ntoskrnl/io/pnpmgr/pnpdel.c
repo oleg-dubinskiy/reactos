@@ -278,6 +278,40 @@ IopAddRelationToList(
 
 NTSTATUS
 NTAPI
+PiProcessBusRelations(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ PIP_TYPE_REMOVAL_DEVICE RemovalType,
+    _In_ BOOLEAN IsDirectDescendant,
+    _In_ PPNP_VETO_TYPE VetoType,
+    _In_ PUNICODE_STRING VetoName,
+    _In_ PRELATION_LIST RelationsList)
+{
+    NTSTATUS Status;
+
+    DPRINT("PiProcessBusRelations: [%p] %X, %X, %p\n", DeviceNode, RemovalType, IsDirectDescendant, RelationsList);
+    PAGED_CODE();
+
+    for (DeviceNode = DeviceNode->Child; ; DeviceNode = DeviceNode->Sibling)
+    {
+        if (!DeviceNode)
+            return STATUS_SUCCESS;
+
+        Status = IopProcessRelation(DeviceNode, RemovalType, IsDirectDescendant, VetoType, VetoName, RelationsList);
+
+        ASSERT(Status == STATUS_SUCCESS || Status == STATUS_UNSUCCESSFUL);
+
+        if (Status == STATUS_SUCCESS)
+            continue;
+
+        if (!NT_SUCCESS(Status))
+            break;
+    }
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 IopProcessRelation(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ PIP_TYPE_REMOVAL_DEVICE RemovalType,
