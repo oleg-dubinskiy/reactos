@@ -164,6 +164,120 @@ IopAllocateRelationList(
 
 NTSTATUS
 NTAPI
+IopAddRelationToList(
+    _In_ PRELATION_LIST RelationsList,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ BOOLEAN IsDirectDescendant,
+    _In_ BOOLEAN IsMarkObject)
+{
+    PRELATION_LIST_ENTRY Entry;
+    PDEVICE_NODE DeviceNode;
+    ULONG TagCount;
+    ULONG Flags;
+    ULONG FirstLevel;
+    ULONG Level;
+    ULONG Size;
+    ULONG ix;
+
+    DPRINT("IopAddRelationToList: RelationsList %p, DeviceObject %p, IsDirectDescendant %X IsMarkObject %X\n",
+           RelationsList, DeviceObject, IsDirectDescendant, IsMarkObject);
+
+    PAGED_CODE();
+
+    if (IsMarkObject == FALSE)
+    {
+        TagCount = 0;
+        Flags = 0;
+    }
+    else
+    {
+        TagCount = 1;
+        Flags = 1;
+    }
+
+    if (IsDirectDescendant)
+        Flags |= 2;
+
+    DeviceNode = IopGetDeviceNode(DeviceObject);
+    if (!DeviceNode)
+    {
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    Level = DeviceNode->Level;
+    FirstLevel = RelationsList->FirstLevel;
+
+    DPRINT("IopAddRelationToList: DeviceNode %p, Level %X\n", DeviceNode, DeviceNode->Level);
+    DPRINT("IopAddRelationToList: RelationsList %p, FirstLevel %X MaxLevel %X\n",
+           RelationsList, RelationsList->FirstLevel, RelationsList->MaxLevel);
+
+    if (Level < FirstLevel || Level > RelationsList->MaxLevel)
+    {
+        ASSERT(Level >= FirstLevel && Level <= RelationsList->MaxLevel);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Entry = RelationsList->Entries[Level - FirstLevel];
+    if (!Entry)
+    {
+        Size = (sizeof(RELATION_LIST_ENTRY) + (IopNumberDeviceNodes * sizeof(PDEVICE_OBJECT)));
+
+        Entry = ExAllocatePoolWithTag(PagedPool, Size, 'lrpP');
+        if (!Entry)
+        {
+            DPRINT1("IopAddRelationToList: STATUS_INSUFFICIENT_RESOURCES\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        Entry->Count = 0;
+        Entry->MaxCount = IopNumberDeviceNodes;
+
+        RelationsList->Entries[Level - FirstLevel] = Entry;
+    }
+
+    if (Entry->Count >= Entry->MaxCount)
+    {
+        ASSERT(Entry->Count < Entry->MaxCount);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    for (ix = 0; ix < Entry->Count; ix++)
+    {
+        if (((ULONG_PTR)Entry->Devices[ix] & (~3)) == (ULONG_PTR)DeviceObject)
+        {
+            if (IsDirectDescendant)
+                Entry->Devices[ix] = (PDEVICE_OBJECT)((ULONG_PTR)Entry->Devices[ix] | 2);
+
+            DPRINT1("IopAddRelationToList: STATUS_OBJECT_NAME_COLLISION\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            return STATUS_OBJECT_NAME_COLLISION;
+        }
+    }
+
+    ObReferenceObject(DeviceObject);
+
+    if (!IsDirectDescendant)
+    {
+        DPRINT("IopAddRelationToList: %wZ added as a relation\n", &DeviceNode->InstancePath);
+    }
+    else
+    {
+        DPRINT("IopAddRelationToList: %wZ added as a relation (direct descendant)\n", &DeviceNode->InstancePath);
+    }
+
+    Entry->Devices[ix] = (PDEVICE_OBJECT)((ULONG_PTR)DeviceObject | Flags);
+    Entry->Count++;
+
+    RelationsList->Count++;
+    RelationsList->TagCount += TagCount;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 IopProcessRelation(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ PIP_TYPE_REMOVAL_DEVICE RemovalType,
