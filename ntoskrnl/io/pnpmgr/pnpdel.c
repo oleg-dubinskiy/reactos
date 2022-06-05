@@ -320,9 +320,144 @@ IopProcessRelation(
     _In_ PUNICODE_STRING VetoName,
     _In_ PRELATION_LIST RelationsList)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_RELATIONS DeviceRelations;
+    PNP_DEVNODE_STATE DeviceNodeState;
+    NTSTATUS Status;
+
+    DPRINT("IopProcessRelation: [%p] %X, %X, %X, %p\n",
+           DeviceNode, RemovalType, IsDirectDescendant, *VetoType, RelationsList);
+
+    PAGED_CODE();
+
+    if (RemovalType == PipQueryRemove || RemovalType == PipEject)
+    {
+        if (DeviceNode->State == DeviceNodeDeleted ||
+            DeviceNode->State == DeviceNodeAwaitingQueuedRemoval ||
+            DeviceNode->State == DeviceNodeAwaitingQueuedDeletion)
+        {
+            DPRINT1("IopProcessRelation: STATUS_UNSUCCESSFUL\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        if (DeviceNode->State == DeviceNodeRemovePendingCloses ||
+            DeviceNode->State == DeviceNodeDeletePendingCloses)
+        {
+            DPRINT1("IopProcessRelation: STATUS_UNSUCCESSFUL\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+
+            *VetoType = PNP_VetoOutstandingOpen;
+            RtlCopyUnicodeString(VetoName, &DeviceNode->InstancePath);
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        if (DeviceNode->State == DeviceNodeStopped ||
+            DeviceNode->State == DeviceNodeRestartCompletion)
+        {
+            DPRINT1("IopProcessRelation: STATUS_INVALID_DEVICE_REQUEST\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            return STATUS_INVALID_DEVICE_REQUEST;
+        }
+    }
+    else
+    {
+        if (DeviceNode->State == DeviceNodeDeleted)
+        {
+            DPRINT("IopProcessRelation: DeviceNode->State == DeviceNodeDeleted\n");
+            ASSERT(!IsDirectDescendant);
+            return STATUS_SUCCESS;
+        }
+    }
+
+    Status = IopAddRelationToList(RelationsList, DeviceNode->PhysicalDeviceObject, IsDirectDescendant, FALSE);
+    if (Status != STATUS_SUCCESS)
+    {
+        if (Status == STATUS_OBJECT_NAME_COLLISION)
+        {
+            DPRINT1("IopProcessRelation: FIXME Duplicate relation (%p)\n", DeviceNode->PhysicalDeviceObject);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            return Status;
+        }
+
+        if (Status == STATUS_INSUFFICIENT_RESOURCES)
+        {
+            DPRINT1("IopProcessRelation: STATUS_INSUFFICIENT_RESOURCES\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            return Status;
+        }
+
+        DPRINT1("IopProcessRelation: KeBugCheckEx(PNP_DETECTED_FATAL_ERROR)\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+
+        KeBugCheckEx(PNP_DETECTED_FATAL_ERROR,
+                     7,
+                     (ULONG_PTR)DeviceNode->PhysicalDeviceObject,
+                     (ULONG_PTR)RelationsList,
+                     Status);
+
+        return Status;
+    }
+
+    if (DeviceNode->Flags & DNF_LOCKED_FOR_EJECT)
+    {
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return Status;
+    }
+
+    Status = PiProcessBusRelations(DeviceNode, RemovalType, IsDirectDescendant, VetoType, VetoName, RelationsList);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopProcessRelation: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return Status;
+    }
+
+    DeviceNodeState = DeviceNode->State;
+
+    if (DeviceNodeState == DeviceNodeAwaitingQueuedRemoval ||
+        DeviceNodeState == DeviceNodeAwaitingQueuedDeletion)
+    {
+        DeviceNodeState = DeviceNode->PreviousState;
+    }
+
+    if (DeviceNodeState == DeviceNodeStarted ||
+        DeviceNodeState == DeviceNodeStopped ||
+        DeviceNodeState == DeviceNodeStartPostWork ||
+        DeviceNodeState == DeviceNodeRestartCompletion)
+    {
+        Status = IopQueryDeviceRelations(RemovalRelations, DeviceNode->PhysicalDeviceObject, &DeviceRelations);
+
+        if (NT_SUCCESS(Status) && DeviceRelations)
+        {
+            DPRINT1("IopProcessRelation: !!!FIXME!!! Status %X\n", Status);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+        }
+        else if (Status != STATUS_NOT_SUPPORTED)
+        {
+            DPRINT1("IopProcessRelation: failed, Device %p, Status %X\n", DeviceNode->PhysicalDeviceObject, Status);
+        }
+    }
+
+    if (RemovalType == PipQueryRemove ||
+        RemovalType == PipRemoveFailed ||
+        RemovalType == PipRemoveFailedNotStarted)
+    {
+        return STATUS_SUCCESS;
+    }
+
+    Status = IopQueryDeviceRelations(EjectionRelations, DeviceNode->PhysicalDeviceObject, &DeviceRelations);
+
+    if (NT_SUCCESS(Status) && DeviceRelations)
+    {
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        ExFreePool(DeviceRelations);
+    }
+    else if (Status != STATUS_NOT_SUPPORTED)
+    {
+        DPRINT1("IopProcessRelation: failed, Device %p, Status %X\n", DeviceNode->PhysicalDeviceObject, Status);
+    }
+
+    return STATUS_SUCCESS;
 }
 
 VOID
