@@ -25,9 +25,114 @@ IopEnumerateRelations(
     _Out_ PBOOLEAN OutIsTagged,
     _In_ BOOLEAN Direction)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
+    PRELATION_LIST_ENTRY Entry;
+    PDEVICE_OBJECT * pDevObject;
+    LONG OldIndex;
+    ULONG Index;
+    LONG Levels;
+    LONG ix;
+
+    DPRINT("IopEnumerateRelations: [%p] Direction %X, FirstLevel %X, MaxLevel %X\n", RelationsList, Direction, RelationsList->FirstLevel, RelationsList->MaxLevel);
+    PAGED_CODE();
+
+    OldIndex = -1;
+
+    if (*Marker == -1)
+    {
+        DPRINT("IopEnumerateRelations: *Marker == -1. return FALSE\n");
+        return FALSE;
+    }
+
+    if (*Marker)
+    {
+        ASSERT(*Marker & ((ULONG)1 << 31));
+
+        ix = ((*Marker >> 24) & 0x7F);
+        OldIndex = (*Marker & 0xFFFFFF);
+
+        DPRINT("IopEnumerateRelations: *Marker %X, ix %X, OldIndex %X\n", *Marker, ix, OldIndex);
+    }
+    else if (Direction)
+    {
+        ix = (RelationsList->MaxLevel - RelationsList->FirstLevel);
+
+        DPRINT("IopEnumerateRelations: ix %X, MaxLevel %X, FirstLevel %X\n",
+               ix, RelationsList->MaxLevel, RelationsList->FirstLevel);
+    }
+    else
+    {
+        DPRINT("IopEnumerateRelations: ix is 0\n");
+        ix = 0;
+    }
+
+    if (!Direction)
+    {
+        Levels = (RelationsList->MaxLevel - RelationsList->FirstLevel);
+
+        for (; ix <= Levels; ix++)
+        {
+            Entry = RelationsList->Entries[ix];
+            if (Entry)
+            {
+                Index = (OldIndex + 1);
+                if (Index < Entry->Count)
+                {
+                    DPRINT("IopEnumerateRelations: Index %X, Entry->Count %X\n", Index, Entry->Count);
+                    goto FindOk;
+                }
+            }
+
+            OldIndex = -1;
+        }
+    }
+    else
+    {
+        for (; ix >= 0; ix--)
+        {
+            Entry = RelationsList->Entries[ix];
+            if (Entry)
+            {
+                if (OldIndex > Entry->Count)
+                    OldIndex = Entry->Count;
+
+                if (OldIndex > 0)
+                {
+                    Index = (OldIndex - 1);
+                    DPRINT("IopEnumerateRelations: Index %X, Entry->Count %X\n", Index, Entry->Count);
+                    goto FindOk;
+                }
+            }
+
+            OldIndex = -1;
+        }
+    }
+
+    *Marker = -1;
+    *OutEnumDevice = 0;
+
+    if (OutIsTagged)
+        *OutIsTagged = 0;
+
+    if (OutIsDirectDescendant)
+        *OutIsDirectDescendant = 0;
+
     return FALSE;
+
+FindOk:
+
+    pDevObject = &Entry->Devices[Index];
+
+    *OutEnumDevice = (PDEVICE_OBJECT)((ULONG_PTR)(*pDevObject) & ~3);
+
+    if (OutIsTagged)
+        *OutIsTagged = ((*(PUCHAR)pDevObject & 1) != 0);
+
+    if (OutIsDirectDescendant)
+        *OutIsDirectDescendant = (*(PUCHAR)pDevObject & 2);
+
+    *Marker = (((ix | 0xFFFFFF80) << 24) | (Index & 0xFFFFFF));
+
+    return TRUE;
 }
 
 PRELATION_LIST
