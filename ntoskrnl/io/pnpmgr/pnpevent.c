@@ -93,6 +93,100 @@ IopNotifyPnpWhenChainDereferenced(
 
 NTSTATUS
 NTAPI
+PiResizeTargetDeviceBlock(
+    _Out_ PPNP_DEVICE_EVENT_ENTRY*  pEventEntry,
+    _In_ PIP_TYPE_REMOVAL_DEVICE RemovalType,
+    _In_ PRELATION_LIST RelationsList,
+    _In_ BOOLEAN IsNoInstance)
+{
+    PPNP_DEVICE_EVENT_ENTRY NewEventEntry;
+    PDEVICE_OBJECT DeviceObject;
+    PDEVICE_NODE DeviceNode;
+    PWCHAR pChar;
+    ULONG SizeHead;
+    ULONG CurrentSize;
+    ULONG NewSize;
+    ULONG Marker;
+    UCHAR OutIsDirectDescendant;
+  
+    DPRINT("PiResizeTargetDeviceBlock: EventEntry %p\n", *pEventEntry);
+    PAGED_CODE();
+
+    if (!RelationsList)
+    {
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        return STATUS_SUCCESS;
+    }
+
+    SizeHead = (sizeof(**pEventEntry) - sizeof(PLUGPLAY_EVENT_BLOCK));
+
+    CurrentSize = (SizeHead + (*pEventEntry)->Data.TotalSize);
+    NewSize = (CurrentSize - wcslen((*pEventEntry)->Data.TargetDevice.DeviceIds) * sizeof(WCHAR));
+
+    DPRINT("PiResizeTargetDeviceBlock: CurrentSize %X NewSize %X\n", CurrentSize, NewSize);
+
+    Marker = 0;
+    while (IopEnumerateRelations(RelationsList, &Marker, &DeviceObject, &OutIsDirectDescendant, NULL, FALSE))
+    {
+        if (!IsNoInstance || OutIsDirectDescendant)
+        {
+            DeviceNode = IopGetDeviceNode(DeviceObject);
+            if (DeviceNode)
+            {
+                if (DeviceNode->InstancePath.Length)
+                    NewSize += (DeviceNode->InstancePath.Length + sizeof(WCHAR));
+            }
+        }
+    }
+
+    DPRINT("PiResizeTargetDeviceBlock: NewSize %X CurrentSize %X\n", NewSize, CurrentSize);
+
+    ASSERT(NewSize >= CurrentSize);
+
+    if (NewSize == CurrentSize)
+        return STATUS_SUCCESS;
+
+    if (NewSize < CurrentSize)
+        NewSize = CurrentSize;
+
+    NewEventEntry = PiAllocateCriticalMemory(RemovalType, PagedPool, NewSize, 'EEpP');
+    if (!NewEventEntry)
+    {
+        DPRINT1("PiResizeTargetDeviceBlock: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(NewEventEntry, NewSize);
+    RtlCopyMemory(NewEventEntry, *pEventEntry, CurrentSize);
+
+    NewEventEntry->Data.TotalSize = (NewSize - SizeHead);
+    pChar = (NewEventEntry->Data.TargetDevice.DeviceIds + wcslen((*pEventEntry)->Data.TargetDevice.DeviceIds) + 1);
+
+    Marker = 0;
+    while (IopEnumerateRelations(RelationsList, &Marker, &DeviceObject, &OutIsDirectDescendant, NULL, FALSE))
+    {
+        if (DeviceObject != NewEventEntry->Data.DeviceObject && (!IsNoInstance || OutIsDirectDescendant))
+        {
+            DeviceNode = IopGetDeviceNode(DeviceObject);
+
+            if (DeviceNode && DeviceNode->InstancePath.Length)
+            {
+                RtlCopyMemory(pChar, DeviceNode->InstancePath.Buffer, DeviceNode->InstancePath.Length);
+                pChar += ((DeviceNode->InstancePath.Length / sizeof(WCHAR)) + 1);
+            }
+        }
+    }
+ 
+    *pChar = UNICODE_NULL;
+
+    ExFreePool(*pEventEntry);
+    *pEventEntry = NewEventEntry;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 PiProcessQueryRemoveAndEject(
     _In_ PPNP_DEVICE_EVENT_ENTRY* pEventEntry)
 {
