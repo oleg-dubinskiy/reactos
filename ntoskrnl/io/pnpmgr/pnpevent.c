@@ -208,6 +208,96 @@ PipIsBeingRemovedSafely(
 
     return TRUE;
 }
+VOID
+NTAPI
+PiBuildUnsafeRemovalDeviceBlock(
+    _In_ PPNP_DEVICE_EVENT_ENTRY EventEntry,
+    _In_ PRELATION_LIST RelationsList,
+    _Out_ PPNP_DEVICE_EVENT_ENTRY* OutEventEntry)
+{
+    PPNP_DEVICE_EVENT_ENTRY UnsafeEventEntry;
+    PDEVICE_OBJECT DeviceObject;
+    PDEVICE_NODE DeviceNode;
+    PWCHAR pChar;
+    ULONG Marker;
+    ULONG SizeHead;
+    ULONG SizeDataBlockHead;
+    ULONG SizeInstances;
+    ULONG NewSize;
+    BOOLEAN OutIsDirectDescendant;
+
+    DPRINT("PiBuildUnsafeRemovalDeviceBlock: EventEntry %p, RelationsList %p\n", EventEntry, RelationsList);
+    PAGED_CODE();
+
+    *OutEventEntry = NULL;
+
+    if (!RelationsList)
+        return;
+
+    SizeInstances = 0;
+    Marker = 0;
+
+    while (IopEnumerateRelations(RelationsList, &Marker, &DeviceObject, &OutIsDirectDescendant, NULL, FALSE))
+    {
+        if (OutIsDirectDescendant)
+        {
+            DeviceNode = IopGetDeviceNode(DeviceObject);
+            if (DeviceNode)
+            {
+                if (!PipIsBeingRemovedSafely(DeviceNode))
+                {
+                    if (DeviceNode->InstancePath.Length)
+                        SizeInstances += DeviceNode->InstancePath.Length + sizeof(WCHAR);
+                }
+            }
+        }
+    }
+
+    if (!SizeInstances)
+        return;
+
+    SizeHead = (sizeof(*UnsafeEventEntry) - sizeof(UnsafeEventEntry->Data.u));
+
+    NewSize = SizeHead + SizeInstances + sizeof(WCHAR);
+
+    UnsafeEventEntry = ExAllocatePoolWithTag(PagedPool, NewSize, 'EEpP');
+    if (!UnsafeEventEntry)
+    {
+        DPRINT1("PiBuildUnsafeRemovalDeviceBlock: Allocate failed\n");
+        return;
+    }
+
+    RtlZeroMemory(UnsafeEventEntry, NewSize);
+    RtlCopyMemory(UnsafeEventEntry, EventEntry, SizeHead);
+
+    pChar = (PWCHAR)((int)UnsafeEventEntry + SizeHead);
+
+    SizeDataBlockHead = (sizeof(UnsafeEventEntry->Data) - sizeof(UnsafeEventEntry->Data.u));
+    UnsafeEventEntry->Data.TotalSize = (SizeDataBlockHead + SizeInstances + sizeof(WCHAR));
+
+    Marker = 0;
+    while (IopEnumerateRelations(RelationsList, &Marker, &DeviceObject, &OutIsDirectDescendant, NULL, FALSE))
+    {
+        if (OutIsDirectDescendant)
+        {
+            DeviceNode = IopGetDeviceNode(DeviceObject);
+            if (DeviceNode)
+            {
+                if (!PipIsBeingRemovedSafely(DeviceNode))
+                {
+                    if (DeviceNode->InstancePath.Length)
+                    {
+                        RtlCopyMemory(pChar, DeviceNode->InstancePath.Buffer, DeviceNode->InstancePath.Length);
+                        pChar += ((DeviceNode->InstancePath.Length / sizeof(WCHAR)) + 1);
+                    }
+                }
+            }
+        }
+    }
+
+    *pChar = UNICODE_NULL;
+    *OutEventEntry = UnsafeEventEntry;
+}
 
 NTSTATUS
 NTAPI
