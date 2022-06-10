@@ -744,6 +744,59 @@ PipRequestDeviceRemoval(
                             NULL);
 }
 
+NTSTATUS
+NTAPI
+IopDeleteLockedDeviceNodes(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PRELATION_LIST RelationsList,
+    _In_ PIP_TYPE_REMOVAL_DEVICE RemovalType,
+    _In_ BOOLEAN IsForceDescendant,
+    _In_ ULONG Problem,
+    _In_ PPNP_VETO_TYPE VetoType,
+    _In_ PUNICODE_STRING VetoName)
+{
+    PDEVICE_OBJECT deviceObject;
+    PDEVICE_NODE DeviceNode;
+    ULONG Marker = 0;
+    BOOLEAN IsDirectDescendant;
+    BOOLEAN Result;
+
+    DPRINT("IopDeleteLockedDeviceNodes: [%p] List %p, Type %X\n", DeviceObject, RelationsList, RemovalType);
+    PAGED_CODE();
+
+    while (TRUE)
+    {
+        Result = IopEnumerateRelations(RelationsList, &Marker, &deviceObject, &IsDirectDescendant, NULL, TRUE);
+        if (!Result)
+            break;
+
+        if (IsDirectDescendant && IsForceDescendant)
+            continue;
+
+        DeviceNode = IopGetDeviceNode(deviceObject);
+        DPRINT("IopDeleteLockedDeviceNodes: DeviceNode %p\n", DeviceNode);
+
+        if (IopDeleteLockedDeviceNode(DeviceNode, RemovalType, RelationsList, Problem, VetoType, VetoName))
+            continue;
+
+        DPRINT("IopDeleteLockedDeviceNodes: RemovalType %X\n", RemovalType);
+        ASSERT(RemovalType == PipQueryRemove);
+
+        while (IopEnumerateRelations(RelationsList, &Marker, &deviceObject, NULL, NULL, FALSE))
+        {
+            DeviceNode = IopGetDeviceNode(deviceObject);
+            DPRINT("IopDeleteLockedDeviceNodes: DeviceNode %p\n", DeviceNode);
+            IopDeleteLockedDeviceNode(DeviceNode, PipCancelRemove, RelationsList, Problem, VetoType, VetoName);
+        }
+
+        DPRINT("IopDeleteLockedDeviceNodes: return STATUS_UNSUCCESSFUL\n");
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    DPRINT("IopDeleteLockedDeviceNodes: return STATUS_SUCCESS\n");
+    return STATUS_SUCCESS;
+}
+
 VOID
 NTAPI
 IopFreeRelationList(
