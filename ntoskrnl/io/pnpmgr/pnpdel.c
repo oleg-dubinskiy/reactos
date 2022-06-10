@@ -750,8 +750,83 @@ IopSurpriseRemoveLockedDeviceNode(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ PRELATION_LIST RelationsList)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
+    PNP_DEVNODE_STATE SchedulerState = DeviceNode->State;
+    PNP_DEVNODE_STATE RestoredState;
+    PNP_DEVNODE_STATE NewState;
+    PDEVICE_NODE ChildNode;
+    PDEVICE_NODE Sibling;
+    NTSTATUS Status;
+  
+    DPRINT("IopSurpriseRemoveLockedDeviceNode: [%p] %p, SchedulerState %X\n", DeviceNode, RelationsList, SchedulerState);
+    PAGED_CODE();
+
+    ASSERT((SchedulerState == DeviceNodeAwaitingQueuedDeletion) || (SchedulerState == DeviceNodeAwaitingQueuedRemoval));
+
+    PipRestoreDevNodeState(DeviceNode);
+    RestoredState = DeviceNode->State;
+
+    PpHotSwapInitRemovalPolicy(DeviceNode);
+
+    if (RestoredState == DeviceNodeRemovePendingCloses)
+    {
+        ASSERT(SchedulerState == DeviceNodeAwaitingQueuedDeletion);
+        PipSetDevNodeState(DeviceNode, DeviceNodeDeletePendingCloses, NULL);
+        return;
+    }
+
+    for (ChildNode = DeviceNode->Child; ChildNode; ChildNode = Sibling)
+    {
+        Sibling = ChildNode->Sibling;
+
+        if (ChildNode->Flags & DNF_ENUMERATED)
+            ChildNode->Flags &= ~DNF_ENUMERATED;
+
+        if (ChildNode->ResourceList || ChildNode->BootResources || ChildNode->Flags & DNF_HAS_BOOT_CONFIG)
+        {
+            DPRINT("IopSurpriseRemoveLockedDeviceNode: Releasing resources for %p\n", ChildNode->PhysicalDeviceObject);
+            IopReleaseDeviceResources(ChildNode, FALSE);
+        }
+
+        PipSetDevNodeState(ChildNode, DeviceNodeDeletePendingCloses, NULL);
+    }
+
+    Status = IopRemoveDevice(DeviceNode->PhysicalDeviceObject, IRP_MN_SURPRISE_REMOVAL);
+
+    if (RestoredState != DeviceNodeStarted &&
+        RestoredState != DeviceNodeStopped &&
+        RestoredState != DeviceNodeStartPostWork &&
+        RestoredState != DeviceNodeRestartCompletion)
+    {
+        ASSERT(DeviceNode->DockInfo.DockStatus != DOCK_ARRIVING);
+        return;
+    }
+
+    DPRINT("IopSurpriseRemoveLockedDeviceNode: Sending surprise remove to %p\n", DeviceNode->PhysicalDeviceObject);
+    IopDisableDeviceInterfaces(&DeviceNode->InstancePath);
+
+    if (NT_SUCCESS(Status))
+    {
+        DPRINT("IopSurpriseRemoveLockedDeviceNode: Releasing devices resources\n");
+        IopReleaseDeviceResources(DeviceNode, FALSE);
+    }
+    else
+    {
+        DPRINT("IopSurpriseRemoveLockedDeviceNode: Status %X\n", Status);
+    }
+
+    if (DeviceNode->Flags & DNF_ENUMERATED)
+    {
+        NewState = DeviceNodeRemovePendingCloses;
+    }
+    else
+    {
+        ASSERT(SchedulerState == DeviceNodeAwaitingQueuedDeletion);
+        NewState = DeviceNodeDeletePendingCloses;
+    }
+
+    PipSetDevNodeState(DeviceNode, NewState, NULL);
+
+    ASSERT(DeviceNode->DockInfo.DockStatus != DOCK_ARRIVING);
 }
 
 VOID
