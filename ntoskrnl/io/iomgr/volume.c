@@ -1447,9 +1447,143 @@ NTAPI
 IopInvalidateVolumesForDevice(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_OBJECT FileDeviceObject;
+    PIO_STACK_LOCATION IoStack;
+    IO_STATUS_BLOCK IoStatus;
+    PFILE_OBJECT FileObject;
+    PLIST_ENTRY FileSystemQueueHead;
+    PLIST_ENTRY Entry;
+    PKTHREAD Thread;
+    KEVENT Event;
+    HANDLE Handle;
+    PIRP Irp;
+    NTSTATUS status;
+    NTSTATUS Status = STATUS_SUCCESS;
+  
+    DPRINT1("IopInvalidateVolumesForDevice: DeviceObject %p\n", DeviceObject);
+    PAGED_CODE();
+
+    for (; DeviceObject; DeviceObject = DeviceObject->AttachedDevice)
+    {
+        if (!DeviceObject->Vpb)
+            continue;
+
+        KeWaitForSingleObject(&DeviceObject->DeviceLock, Executive, KernelMode, FALSE, NULL);
+
+        Handle = NULL;
+        FileObject = NULL;
+
+        _SEH2_TRY
+        {
+            FileObject = (PFILE_OBJECT)IoCreateStreamFileObjectLite(NULL, DeviceObject);
+            FileObject->Vpb = DeviceObject->Vpb;
+
+            Status = ObOpenObjectByPointer(FileObject, OBJ_KERNEL_HANDLE, NULL, 0, IoFileObjectType, KernelMode, &Handle);
+
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            Status = _SEH2_GetExceptionCode();
+        }
+        _SEH2_END;
+
+        if (!NT_SUCCESS(Status))
+        {
+            goto Next;
+        }
+
+        Thread = KeGetCurrentThread ();
+        KeEnterCriticalRegionThread(Thread);
+        ExAcquireResourceSharedLite(&IopDatabaseResource, TRUE);
+
+        if (DeviceObject->DeviceType == FILE_DEVICE_DISK || DeviceObject->DeviceType == FILE_DEVICE_VIRTUAL_DISK)
+        {
+            FileSystemQueueHead = &IopDiskFileSystemQueueHead;
+        }
+        else if (DeviceObject->DeviceType == FILE_DEVICE_CD_ROM)
+        {
+            FileSystemQueueHead = &IopCdRomFileSystemQueueHead;
+        }
+        else
+        {
+            FileSystemQueueHead = &IopTapeFileSystemQueueHead;
+        }
+
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+        status = STATUS_SUCCESS;
+
+        for (Entry = FileSystemQueueHead->Flink; Entry != FileSystemQueueHead; Entry = Entry->Flink)
+        {
+            if (Entry->Flink == FileSystemQueueHead)
+                break;
+
+            FileDeviceObject  = CONTAINING_RECORD(Entry, DEVICE_OBJECT, Queue.ListEntry);
+
+            for (;
+                 FileDeviceObject->AttachedDevice;
+                 FileDeviceObject = FileDeviceObject->AttachedDevice)
+            {
+                ;
+            }
+
+            KeClearEvent(&Event);
+
+            Irp = IoBuildDeviceIoControlRequest(FSCTL_INVALIDATE_VOLUMES,
+                                                FileDeviceObject,
+                                                &Handle,
+                                                sizeof(HANDLE),
+                                                NULL,
+                                                0,
+                                                FALSE,
+                                                &Event,
+                                                &IoStatus);
+            if (!Irp)
+            {
+                DPRINT1("IopInvalidateVolumesForDevice: STATUS_INSUFFICIENT_RESOURCES\n");
+                status = STATUS_INSUFFICIENT_RESOURCES;
+                break;
+            }
+
+            IoStack = IoGetNextIrpStackLocation(Irp);
+            IoStack->MajorFunction = IRP_MJ_FILE_SYSTEM_CONTROL;
+
+            Status = IoCallDriver(FileDeviceObject, Irp);
+
+            if (Status == STATUS_PENDING)
+            {
+                KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+                Status = IoStatus.Status;
+            }
+            else
+            {
+                IoStatus.Status = Status;
+                IoStatus.Information = 0;
+            }
+
+            if (Status == STATUS_INVALID_DEVICE_REQUEST || Status == STATUS_NOT_IMPLEMENTED)
+                Status = STATUS_SUCCESS;
+
+            if (NT_SUCCESS(status) && !NT_SUCCESS(Status))
+                status = Status;
+        }
+
+        ExReleaseResourceLite(&IopDatabaseResource);
+        KeLeaveCriticalRegionThread(Thread);
+
+        if (!FileObject)
+            goto Next;
+
+        ObDereferenceObject(FileObject);
+
+        if (Handle)
+            ZwClose(Handle);
+
+Next:
+        KeSetEvent(&DeviceObject->DeviceLock, IO_NO_INCREMENT, FALSE);
+    }
+
+    return Status;
 }
 
 /* EOF */
