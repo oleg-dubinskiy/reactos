@@ -301,12 +301,517 @@ PiBuildUnsafeRemovalDeviceBlock(
 
 NTSTATUS
 NTAPI
-PiProcessQueryRemoveAndEject(
-    _In_ PPNP_DEVICE_EVENT_ENTRY* pEventEntry)
+IopRemoveIndirectRelationsFromList(
+    _In_ PRELATION_LIST RelationsList)
 {
     UNIMPLEMENTED;
     ASSERT(FALSE); // IoDbgBreakPointEx();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PiProcessQueryRemoveAndEject(
+    _In_ PPNP_DEVICE_EVENT_ENTRY* pEventEntry)
+{
+    PPNP_DEVICE_EVENT_ENTRY EventEntry = *pEventEntry;
+    PPNP_DEVICE_EVENT_ENTRY UnsafeRemovalEntry = NULL;
+    PIP_TYPE_REMOVAL_DEVICE RemovalType;
+    UNICODE_STRING VetoString;
+    PDEVICE_OBJECT DeviceObject;
+    PDEVICE_OBJECT EnumDevice;
+    PDEVICE_OBJECT* RemovalDevices;
+    PDEVICE_NODE DeviceNode;
+    PDEVICE_NODE RelatedDeviceNode;
+    PRELATION_LIST RelationsList;
+    PNP_VETO_TYPE Reason;
+    PVOID DockInterface = NULL;
+    PVOID VetoBuffer;
+    ULONG RelationsCount;
+    ULONG Marker;
+    ULONG ix;
+    BOOLEAN IsTransitionHwProfile = FALSE;
+    BOOLEAN IsDirectDescendant;
+    BOOLEAN IsForceDescendant;
+    BOOLEAN WarmEjectSupported;
+    BOOLEAN EjectSupported;
+    BOOLEAN ResizeParam;
+    NTSTATUS Status;
+
+    DPRINT("PiProcessQueryRemoveAndEject: EventEntry %p\n", EventEntry);
+    PAGED_CODE();
+
+    DeviceObject = EventEntry->Data.DeviceObject;
+    DeviceNode = IopGetDeviceNode(DeviceObject);
+
+    PpDevNodeLockTree(1);
+
+    if (PiCompareGuid(&EventEntry->Data.EventGuid, &GUID_DEVICE_EJECT))
+    {
+        RemovalType = PipEject;
+    }
+    else if (EventEntry->Data.Flags & 4)
+    {
+        if (DeviceNode->Flags & DNF_ENUMERATED)
+        {
+            ASSERT(DeviceNode->State == DeviceNodeAwaitingQueuedRemoval);
+
+            if (DeviceNode->PreviousState == DeviceNodeStarted ||
+                DeviceNode->PreviousState == DeviceNodeStopped ||
+                DeviceNode->PreviousState == DeviceNodeStartPostWork ||
+                DeviceNode->PreviousState == DeviceNodeRestartCompletion)
+            {
+                RemovalType = PipRemoveFailed;
+            }
+            else
+            {
+                RemovalType = PipRemoveFailedNotStarted;
+            }
+        }
+        else
+        {
+            ASSERT(DeviceNode->State == DeviceNodeAwaitingQueuedDeletion);
+
+            if (DeviceNode->PreviousState == DeviceNodeStarted ||
+                DeviceNode->PreviousState == DeviceNodeStopped ||
+                DeviceNode->PreviousState == DeviceNodeStartPostWork ||
+                DeviceNode->PreviousState == DeviceNodeRestartCompletion)
+            {
+                RemovalType = PipSurpriseRemove;
+            }
+            else
+            {
+                RemovalType = PipRemove;
+            }
+        }
+    }
+    else
+    {
+        RemovalType = PipQueryRemove;
+    }
+
+    DPRINT("PiProcessQueryRemoveAndEject: Removal type %X\n", RemovalType);
+
+    if ((RemovalType == PipQueryRemove || RemovalType == PipEject) &&
+        (DeviceNode->Flags & DNF_LEGACY_DRIVER))
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: Vetoed by legacy driver\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();//PiFinalizeVetoedRemove(..);
+
+        PpDevNodeUnlockTree(1);
+        return STATUS_PLUGPLAY_QUERY_VETOED;
+    }
+
+    if (RemovalType == PipQueryRemove &&
+        EventEntry->Argument == CM_PROB_DISABLED &&
+        DeviceNode->DisableableDepends > 0)
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: Device is non-disableable\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();//PiFinalizeVetoedRemove(..);
+
+        PpDevNodeUnlockTree(1);
+        return STATUS_PLUGPLAY_QUERY_VETOED;
+    }
+
+    VetoBuffer = PiAllocateCriticalMemory(RemovalType, PagedPool, 0x400, 'rcpP');
+    if (!VetoBuffer)
+    {
+        DPRINT("PiProcessQueryRemoveAndEject: Vetoed due to failure to allocate VetoBuffer\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();//PiFinalizeVetoedRemove(..);
+
+        PpDevNodeUnlockTree(1);
+        return STATUS_PLUGPLAY_QUERY_VETOED;
+    }
+
+    Reason = 0;
+
+    VetoString.Length = 0;
+    VetoString.MaximumLength = 0x200;
+    VetoString.Buffer = VetoBuffer;
+
+    if (RemovalType == PipEject)
+    {
+        if (DeviceNode->Flags & DNF_LOCKED_FOR_EJECT)
+        {
+            DPRINT("PiProcessQueryRemoveAndEject: Device already being ejected\n");
+            ExFreePool(VetoBuffer);
+            PpDevNodeUnlockTree(1);
+            return STATUS_SUCCESS;
+        }
+
+        if (EventEntry->Data.Flags & 4)
+        {
+            DPRINT1("PiProcessQueryRemoveAndEject: Kernel initiated eject vetoed by user mode\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();//Status = PiNotifyUserModeKernelInitiatedEject(..);
+
+            Status = STATUS_PLUGPLAY_QUERY_VETOED;
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("PiProcessQueryRemoveAndEject: Status %X\n", Status);
+                ASSERT(FALSE); // IoDbgBreakPointEx();//PiFinalizeVetoedRemove(..);
+
+                ExFreePool(VetoBuffer);
+                PpDevNodeUnlockTree(1);
+                return STATUS_PLUGPLAY_QUERY_VETOED;
+            }
+        }
+
+        if (DeviceNode->DockInfo.DockStatus == DOCK_DEPARTING ||
+            DeviceNode->DockInfo.DockStatus == DOCK_EJECTIRP_COMPLETED)
+        {
+            DPRINT("PiProcessQueryRemoveAndEject: Dock already being ejected\n");
+            ExFreePool(VetoBuffer);
+            PpDevNodeUnlockTree(1);
+            return STATUS_SUCCESS;
+        }
+
+        if (!(DeviceNode->CapabilityFlags & 0x10))
+        {
+            DPRINT1("PiProcessQueryRemoveAndEject: Device not removable\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();//PiFinalizeVetoedRemove(..);
+
+            ExFreePool(VetoBuffer);
+            PpDevNodeUnlockTree(1);
+            return STATUS_PLUGPLAY_QUERY_VETOED;
+        }
+    }
+    else if (RemovalType == PipQueryRemove && !PipAreDriversLoaded(DeviceNode))
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: PipQueryRemove\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+
+        Status = STATUS_SUCCESS;
+        if (DeviceNode->State == DeviceNodeInitialized || DeviceNode->State == DeviceNodeRemoved)
+        {
+            if (DeviceNode->Flags & (DNF_HAS_PRIVATE_PROBLEM | DNF_HAS_PROBLEM))
+            {
+                if (!PipIsProblemReadonly(DeviceNode->Problem))
+                    PipClearDevNodeProblem(DeviceNode);
+            }
+
+            if (DeviceNode->Flags & (DNF_HAS_PRIVATE_PROBLEM | DNF_HAS_PROBLEM))
+            {
+                if (!(EventEntry->Data.Flags & 2))
+                    Status = STATUS_INVALID_PARAMETER;
+            }
+            else
+            {
+                if (EventEntry->Data.Flags & 2)
+                    PipSetDevNodeProblem(DeviceNode, EventEntry->Argument);
+                else
+                    IopRestartDeviceNode(DeviceNode);
+            }
+        }
+
+        PpDevNodeUnlockTree(1);
+        ExFreePool(VetoBuffer);
+        return Status;
+    }
+
+    Status = IopBuildRemovalRelationList(DeviceObject, RemovalType, &Reason, &VetoString, &RelationsList);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: Status %X\n", Status);
+
+        DPRINT1("PiProcessQueryRemoveAndEject: Failed to build removal relations\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();//PiFinalizeVetoedRemove(..);
+
+        ExFreePool(VetoBuffer);
+        PpDevNodeUnlockTree(1);
+        return STATUS_PLUGPLAY_QUERY_VETOED;
+    }
+
+    ASSERT(RelationsList != NULL);
+    ASSERT(!RelationsList->TagCount);
+
+    RelationsCount = RelationsList->Count;
+    DPRINT("PiProcessQueryRemoveAndEject: RelationsCount %X\n", RelationsCount);
+
+    RemovalDevices = PiAllocateCriticalMemory(RemovalType, NonPagedPool, (RelationsCount * sizeof(PDEVICE_OBJECT)), 'rcpP');
+    if (!RemovalDevices)
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: STATUS_INSUFFICIENT_RESOURCES\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+    else
+    {
+        RelationsCount = 0;
+        Marker = 0;
+
+        while (IopEnumerateRelations(RelationsList, &Marker, &EnumDevice, &IsDirectDescendant, NULL, TRUE))
+        {
+            if (!IsDirectDescendant && (RemovalType != PipEject) && (RemovalType != PipQueryRemove))
+                continue;
+
+            RelatedDeviceNode = IopGetDeviceNode(EnumDevice);
+
+            ASSERT(RelatedDeviceNode->DockInfo.DockStatus != DOCK_ARRIVING);
+
+            if (RemovalType != PipRemove && RemovalType != PipQueryRemove)
+            {
+                if (RelatedDeviceNode->DockInfo.DockStatus == DOCK_QUIESCENT)
+                {
+                    IsTransitionHwProfile = TRUE;
+                }
+                else if (RelatedDeviceNode->DockInfo.DockStatus != DOCK_NOTDOCKDEVICE)
+                {
+                    DPRINT1("PiProcessQueryRemoveAndEject: FIXME\n");
+                    ASSERT(FALSE); // IoDbgBreakPointEx();
+                }
+            }
+
+            if (RemovalType == PipQueryRemove || RemovalType == PipEject)
+            {
+                if (RelatedDeviceNode->Flags & DNF_LEGACY_DRIVER)
+                {
+                    DPRINT1("PiProcessQueryRemoveAndEject: Vetoed by legacy driver relation\n");
+                    ASSERT(FALSE); // IoDbgBreakPointEx();//PiFinalizeVetoedRemove(..);
+
+                    Status = STATUS_UNSUCCESSFUL;
+                    break;
+                }
+
+                if (RelatedDeviceNode->State == DeviceNodeRemovePendingCloses)
+                {
+                    DPRINT1("PiProcessQueryRemoveAndEject: Vetoed due to device in DeviceNodeRemovePendingCloses\n");
+                    ASSERT(FALSE); // IoDbgBreakPointEx();//PiFinalizeVetoedRemove(..);
+
+                    Status = STATUS_UNSUCCESSFUL;
+                    break;
+                }
+            }
+
+            RemovalDevices[RelationsCount++] = EnumDevice;
+        }
+    }
+
+    if (NT_SUCCESS(Status))
+    {
+        if (RemovalType == PipSurpriseRemove ||
+            RemovalType == PipRemoveFailed ||
+            RemovalType == PipRemoveFailedNotStarted ||
+            RemovalType == PipRemove)
+        {
+            ResizeParam = TRUE;
+        }
+        else
+        {
+            ResizeParam = FALSE;
+        }
+
+        Status = PiResizeTargetDeviceBlock(pEventEntry, RemovalType, RelationsList, ResizeParam);
+
+        EventEntry = *pEventEntry;
+
+        if (RemovalType == PipSurpriseRemove)
+            PiBuildUnsafeRemovalDeviceBlock(EventEntry, RelationsList, &UnsafeRemovalEntry);
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        IopFreeRelationList(RelationsList);
+
+        if (RemovalDevices)
+            ExFreePool(RemovalDevices);
+
+        ExFreePool(VetoBuffer);
+
+        DPRINT1("PiProcessQueryRemoveAndEject: Status %X\n", Status);
+        ASSERT(FALSE); // IoDbgBreakPointEx();//PiFinalizeVetoedRemove(..);
+
+        PpDevNodeUnlockTree(1);
+        return Status;
+    }
+
+    if (IsTransitionHwProfile)
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: FIXME PpProfileBeginHardwareProfileTransition()\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();//PpProfileBeginHardwareProfileTransition(..);
+
+        for (ix = (RelationsCount - 1); ix >= 0; ix--)
+        {
+            EnumDevice = RemovalDevices[ix];
+            RelatedDeviceNode = IopGetDeviceNode(EnumDevice);
+
+            ASSERT(RelatedDeviceNode->DockInfo.DockStatus != DOCK_ARRIVING);
+
+            if (RelatedDeviceNode->DockInfo.DockStatus == DOCK_QUIESCENT)
+            {
+                DPRINT1("PiProcessQueryRemoveAndEject: FIXME PpProfileIncludeInHardwareProfileTransition()\n");
+                ASSERT(FALSE); // IoDbgBreakPointEx();//PpProfileIncludeInHardwareProfileTransition(..);
+            }
+        }
+
+        ASSERT(RemovalType != PipQueryRemove && RemovalType != PipRemoveFailed);
+
+        if (RemovalType == PipEject)
+        {
+            DPRINT1("PiProcessQueryRemoveAndEject: FIXME IoGetLegacyVetoList()\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();//Status = IoGetLegacyVetoList(..)
+        }
+    }
+
+    if (RemovalType != PipQueryRemove && RemovalType != PipEject)
+    {
+        if (RemovalType == PipSurpriseRemove || RemovalType == PipRemoveFailed)
+        {
+            IopDeleteLockedDeviceNodes(DeviceObject, RelationsList, PipSurpriseRemove, FALSE, 0, NULL, NULL);
+        }
+    }
+    else
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: FIXME PiNotifyUserModeDeviceRemoval()\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+        Status = STATUS_NOT_IMPLEMENTED;//PiNotifyUserModeDeviceRemoval(..);
+    }
+
+    /* Tell the user-mode PnP manager that a device was removed */
+    if (RemovalType == PipSurpriseRemove)
+    {
+        if (UnsafeRemovalEntry)
+        {
+            DPRINT1("PiProcessQueryRemoveAndEject: FIXME PiNotifyUserModeDeviceRemoval()\n");
+            //ASSERT(FALSE); // IoDbgBreakPointEx();
+            //PiNotifyUserModeDeviceRemoval(..);
+// FIXME
+IopQueueTargetDeviceEvent(&GUID_DEVICE_SURPRISE_REMOVAL, &DeviceNode->InstancePath);
+
+            ExFreePool(UnsafeRemovalEntry);
+        }
+
+        DPRINT1("PiProcessQueryRemoveAndEject: FIXME PiNotifyUserModeDeviceRemoval()\n");
+        //ASSERT(FALSE); // IoDbgBreakPointEx();
+        //PiNotifyUserModeDeviceRemoval(..);
+
+// FIXME
+IopQueueTargetDeviceEvent(&GUID_TARGET_DEVICE_REMOVE_COMPLETE, &DeviceNode->InstancePath);
+    }
+    else
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: FIXME PiNotifyUserModeDeviceRemoval()\n");
+        //ASSERT(FALSE); // IoDbgBreakPointEx();
+        //PiNotifyUserModeDeviceRemoval(..);
+
+// FIXME
+IopQueueTargetDeviceEvent(&GUID_DEVICE_REMOVE_PENDING, &DeviceNode->InstancePath);
+    }
+
+    DPRINT("PiProcessQueryRemoveAndEject: REMOVE_COMPLETE - notifying kernel-mode (%X)\n", RelationsCount);
+
+    for (ix = 0; ix < RelationsCount; ix++)
+    {
+        EnumDevice = RemovalDevices[ix];
+
+        Status = IopNotifyTargetDeviceChange((PGUID)&GUID_TARGET_DEVICE_REMOVE_COMPLETE, EnumDevice, NULL, NULL);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("PiProcessQueryRemoveAndEject: Status %X\n", Status);
+            ASSERT(NT_SUCCESS(Status)); // IoDbgBreakPointEx();
+        }
+    }
+
+    if (RemovalType == PipRemove ||
+        RemovalType == PipRemoveFailed ||
+        RemovalType == PipSurpriseRemove)
+    {
+        IopInvalidateRelationsInList(RelationsList, RemovalType, TRUE, FALSE);
+        IopRemoveIndirectRelationsFromList(RelationsList);
+    }
+
+    if (RemovalType == PipRemoveFailed ||
+        RemovalType == PipSurpriseRemove)
+    {
+        IopUnlinkDeviceRemovalRelations(DeviceObject, RelationsList, (RemovalType != PipSurpriseRemove) + 1);
+        IopQueuePendingSurpriseRemoval(DeviceObject, RelationsList, EventEntry->Argument);
+
+        PpDevNodeUnlockTree(1);
+        IopNotifyPnpWhenChainDereferenced(RemovalDevices, RelationsCount, FALSE, TRUE, NULL);
+
+        ExFreePool(RemovalDevices);
+        ExFreePool(VetoBuffer);
+
+        return STATUS_SUCCESS;
+    }
+
+    if (DeviceNode->DockInfo.DockStatus)
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: FIXME IopQueryDockRemovalInterface()\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();//IopQueryDockRemovalInterface(..);
+    }
+
+    IsForceDescendant = (RemovalType == PipQueryRemove || RemovalType == PipEject);
+    IopDeleteLockedDeviceNodes(DeviceObject, RelationsList, PipRemove, IsForceDescendant, EventEntry->Argument, NULL, NULL);
+
+    EjectSupported = (((DeviceNode->CapabilityFlags >> 3) & 1) != 0);
+    WarmEjectSupported = (((DeviceNode->CapabilityFlags >> 16) & 1) != 0);
+
+    if (RemovalType != PipEject)
+    {
+        if (!(EventEntry->Data.Flags & 2))
+        {
+            DPRINT1("PiProcessQueryRemoveAndEject: FIXME\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+        }
+
+        DPRINT1("PiProcessQueryRemoveAndEject: FIXME IopUnlinkDeviceRemovalRelations()\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();//IopUnlinkDeviceRemovalRelations(..);
+
+        IopFreeRelationList(RelationsList);
+        goto Finish;
+    }
+
+    if (EjectSupported || WarmEjectSupported)
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: FIXME\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+
+        PpDevNodeUnlockTree(1);
+
+        DPRINT1("PiProcessQueryRemoveAndEject: FIXME IopEjectDevice()\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();//IopEjectDevice(..);
+
+        ExFreePool(RemovalDevices);
+        ExFreePool(VetoBuffer);
+
+        return STATUS_PENDING;
+    }
+
+    ASSERT(!DockInterface);
+
+    DPRINT1("PiProcessQueryRemoveAndEject: FIXME IopUnlinkDeviceRemovalRelations()\n");
+    ASSERT(FALSE); // IoDbgBreakPointEx();//IopUnlinkDeviceRemovalRelations(..);
+
+    IopFreeRelationList(RelationsList);
+
+    if (!EventEntry->VetoName)
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: FIXME PpNotifyUserModeRemovalSafe()\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();//PpNotifyUserModeRemovalSafe(DeviceObject);
+    }
+
+Finish:
+
+    if (RemovalType == PipRemove)
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: FIXME PiNotifyUserModeDeviceRemoval()\n");
+        //ASSERT(FALSE); // IoDbgBreakPointEx();//PiNotifyUserModeDeviceRemoval(..);
+
+/* Tell the user-mode PnP manager that a device was removed */
+IopQueueTargetDeviceEvent(&GUID_TARGET_DEVICE_REMOVE_COMPLETE, &DeviceNode->InstancePath);
+    }
+
+    ExFreePool(RemovalDevices);
+
+    if (DockInterface)
+    {
+        DPRINT1("PiProcessQueryRemoveAndEject: FIXME\n");
+        ASSERT(FALSE); // IoDbgBreakPointEx();
+    }
+
+    ExFreePool(VetoBuffer);
+    PpDevNodeUnlockTree(1);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS

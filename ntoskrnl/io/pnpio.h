@@ -647,6 +647,18 @@ PipRequestDeviceRemoval(
     _In_ ULONG Problem
 );
 
+NTSTATUS
+NTAPI
+IopDeleteLockedDeviceNodes(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PRELATION_LIST RelationsList,
+    _In_ PIP_TYPE_REMOVAL_DEVICE RemovalType,
+    _In_ BOOLEAN IsForceDescendant,
+    _In_ ULONG Problem,
+    _In_ PPNP_VETO_TYPE VetoType,
+    _In_ PUNICODE_STRING VetoName
+);
+
 VOID
 NTAPI
 IopFreeRelationList(
@@ -1095,6 +1107,15 @@ IopNotifyDeviceClassChange(
     _In_ PPLUGPLAY_EVENT_BLOCK EventBlock,
     _In_ GUID * ClassGuid,
     _In_ PUNICODE_STRING SymbolicLinkName
+);
+
+NTSTATUS
+NTAPI
+IopNotifyTargetDeviceChange(
+    _In_ GUID* EventGuid,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PTARGET_DEVICE_CUSTOM_NOTIFICATION CustomStructure,
+    _Out_ PDRIVER_OBJECT* OutDriverObject
 );
 
 /* pnpres.c */
