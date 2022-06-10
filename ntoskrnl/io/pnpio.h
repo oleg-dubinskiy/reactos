@@ -1013,6 +1013,12 @@ PpHotSwapGetDevnodeRemovalPolicy(
 
 VOID
 NTAPI
+PpHotSwapInitRemovalPolicy(
+    _In_ PDEVICE_NODE DeviceNode
+);
+
+VOID
+NTAPI
 IopInsertLegacyBusDeviceNode(
     _In_ PDEVICE_NODE LegacyDeviceNode,
     _In_ INTERFACE_TYPE InterfaceType,
