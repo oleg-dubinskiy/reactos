@@ -996,6 +996,16 @@ IopDoDeferredSetInterfaceState(
     KeLeaveCriticalRegion();
 }
 
+NTSTATUS
+NTAPI
+IopDisableDeviceInterfaces(
+    _In_ PUNICODE_STRING InstancePath)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 static PWCHAR BaseKeyString = L"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\DeviceClasses\\";

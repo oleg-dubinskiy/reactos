@@ -423,6 +423,12 @@ IopDoDeferredSetInterfaceState(
     _In_ PDEVICE_NODE DeviceNode
 );
 
+NTSTATUS
+NTAPI
+IopDisableDeviceInterfaces(
+    _In_ PUNICODE_STRING InstancePath
+);
+
 /* driver.c */
 NTSTATUS
 NTAPI
