@@ -972,4 +972,38 @@ IopFreeRelationList(
     ExFreePoolWithTag(RelationsList, 0);
 }
 
+VOID
+NTAPI
+IopInvalidateRelationsInList(
+    _In_ PRELATION_LIST RelationsList,
+    _In_ PIP_TYPE_REMOVAL_DEVICE RemovalType,
+    _In_ BOOLEAN Param3,
+    _In_ BOOLEAN Param4)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+}
+
+VOID
+NTAPI
+IopUnlinkDeviceRemovalRelations(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PRELATION_LIST RelationsList,
+    _In_ ULONG Type)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+}
+
+VOID
+NTAPI
+IopQueuePendingSurpriseRemoval(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PRELATION_LIST RelationsList,
+    _In_ ULONG Problem)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+}
+
 /* EOF */

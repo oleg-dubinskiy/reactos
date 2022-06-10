@@ -670,6 +670,21 @@ IopInvalidateRelationsInList(
     _In_ BOOLEAN Param4
 );
 
+VOID
+NTAPI
+IopUnlinkDeviceRemovalRelations(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PRELATION_LIST RelationsList,
+    _In_ ULONG Type);
+
+VOID
+NTAPI
+IopQueuePendingSurpriseRemoval(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PRELATION_LIST RelationsList,
+    _In_ ULONG Problem
+);
+
 /* pnpenum.c */
 NTSTATUS
 NTAPI
