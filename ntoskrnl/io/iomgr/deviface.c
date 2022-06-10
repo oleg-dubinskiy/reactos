@@ -998,6 +998,36 @@ IopDoDeferredSetInterfaceState(
 
 NTSTATUS
 NTAPI
+IopAllocateBuffer(
+    _In_ PCLASS_INFO_BUFFER Info,
+    _In_ SIZE_T NumberOfBytes)
+{
+    PCHAR Buffer;
+
+    DPRINT("IopAllocateBuffer: Info %p, NumberOfBytes %X\n", Info, NumberOfBytes);
+    PAGED_CODE();
+
+    ASSERT(Info);
+
+    Buffer = ExAllocatePoolWithTag(PagedPool, NumberOfBytes, '  pP');
+
+    Info->StartBuffer = Buffer;
+    Info->LastBuffer = Buffer;
+
+    if (!Buffer)
+    {
+        DPRINT1("IopAllocateBuffer: Allocate failed\n");
+        Info->MaxSize = 0;
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Info->MaxSize = NumberOfBytes;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 IopDisableDeviceInterfaces(
     _In_ PUNICODE_STRING InstancePath)
 {
