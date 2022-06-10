@@ -744,6 +744,75 @@ PipRequestDeviceRemoval(
                             NULL);
 }
 
+VOID
+NTAPI
+IopSurpriseRemoveLockedDeviceNode(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ PRELATION_LIST RelationsList)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+}
+
+VOID
+NTAPI
+IopRemoveLockedDeviceNode(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ ULONG Problem,
+    _In_ PRELATION_LIST RelationsList)
+
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+}
+
+BOOLEAN
+NTAPI
+IopDeleteLockedDeviceNode(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ PIP_TYPE_REMOVAL_DEVICE RemovalType,
+    _In_ PRELATION_LIST RelationsList,
+    _In_ ULONG Problem,
+    _In_ PPNP_VETO_TYPE VetoType,
+    _In_ PUNICODE_STRING VetoName)
+{
+    BOOLEAN Result = TRUE;
+
+    DPRINT("IopDeleteLockedDeviceNode: [%p] %p, %X, %X\n", DeviceNode, RelationsList, RemovalType, Problem);
+    PAGED_CODE();
+
+    switch (RemovalType)
+    {
+        case PipQueryRemove:
+            ASSERT(VetoType && VetoName);
+            DPRINT1("IopDeleteLockedDeviceNode: FIXME IopQueryRemoveLockedDeviceNode()\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            //Result = IopQueryRemoveLockedDeviceNode(DeviceNode, VetoType, VetoName);
+            return Result;
+
+        case PipCancelRemove:
+            DPRINT1("IopDeleteLockedDeviceNode: FIXME IopCancelRemoveLockedDeviceNode()\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            //IopCancelRemoveLockedDeviceNode(DeviceNode);
+            break;
+
+        case PipRemove:
+            IopRemoveLockedDeviceNode(DeviceNode, Problem, RelationsList);
+            break;
+
+        case PipSurpriseRemove:
+            IopSurpriseRemoveLockedDeviceNode(DeviceNode, RelationsList);
+            break;
+
+        default:
+            DPRINT("IopDeleteLockedDeviceNode: Unknown RemovalType %X\n", RemovalType);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+            break;
+    }
+
+    return Result;
+}
+
 NTSTATUS
 NTAPI
 IopDeleteLockedDeviceNodes(
