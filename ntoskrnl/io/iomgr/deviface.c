@@ -1028,6 +1028,49 @@ IopAllocateBuffer(
 
 NTSTATUS
 NTAPI
+IopResizeBuffer(
+    _In_ PCLASS_INFO_BUFFER Info,
+    _In_ SIZE_T NewSize,
+    _In_ BOOLEAN IsCopyBuffer)
+{
+    PCHAR NewBuffer;
+    ULONG Used;
+
+    DPRINT("IopResizeBuffer: Info %p, NewSize %X, IsCopyBuffer %X\n", Info, NewSize, IsCopyBuffer);
+    PAGED_CODE();
+
+    ASSERT(Info);
+
+    NewBuffer = ExAllocatePoolWithTag(PagedPool, NewSize, '  pP');
+    if (!NewBuffer)
+    {
+        DPRINT1("IopResizeBuffer: Allocate failed\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (IsCopyBuffer)
+    {
+        Used = (Info->LastBuffer - Info->StartBuffer);
+        ASSERT(Used < NewSize);
+
+        RtlCopyMemory(NewBuffer, Info->StartBuffer, Used);
+        Info->LastBuffer = (NewBuffer + Used);
+    }
+    else
+    {
+        Info->LastBuffer = NewBuffer;
+    }
+
+    ExFreePoolWithTag(Info->StartBuffer, '  pP');
+
+    Info->MaxSize = NewSize;
+    Info->StartBuffer = NewBuffer;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 IopDisableDeviceInterfaces(
     _In_ PUNICODE_STRING InstancePath)
 {

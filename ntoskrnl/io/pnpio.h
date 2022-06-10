@@ -346,6 +346,13 @@ typedef struct _PNP_REMOVAL_WALK_CONTEXT
     UCHAR Pad[2];
 } PNP_REMOVAL_WALK_CONTEXT, *PPNP_REMOVAL_WALK_CONTEXT;
 
+typedef struct _CLASS_INFO_BUFFER
+{
+    PCHAR StartBuffer;
+    PCHAR LastBuffer;
+    ULONG MaxSize;
+} CLASS_INFO_BUFFER, *PCLASS_INFO_BUFFER;
+
 typedef struct _RELATION_LIST_ENTRY
 {
     ULONG Count;
