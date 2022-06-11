@@ -953,4 +953,65 @@ PipIsProblemReadonly(
     return Result;
 }
 
+VOID
+NTAPI
+PpDevNodeRemoveFromTree(
+    _In_ PDEVICE_NODE DeviceNode)
+{
+    PDEVICE_NODE* pNode;
+    KIRQL OldIrql;
+
+    DPRINT1("PpDevNodeRemoveFromTree: DeviceNode %p\n", DeviceNode);
+
+    KeAcquireSpinLock(&IopPnPSpinLock, &OldIrql);
+
+    DPRINT1("DeviceNode->Parent %p\n", DeviceNode->Parent);
+    DPRINT1("DeviceNode->Parent->Child %p\n", DeviceNode->Parent->Child);
+
+    pNode = &DeviceNode->Parent->Child;
+    DPRINT1("PpDevNodeRemoveFromTree: pNode %p\n", pNode);
+
+    while (*pNode != DeviceNode)
+    {
+        pNode = (PDEVICE_NODE *)*pNode;
+        DPRINT1("PpDevNodeRemoveFromTree: pNode %p\n", pNode);
+    }
+
+    DPRINT1("DeviceNode->Sibling %p\n", DeviceNode->Sibling);
+    *pNode = DeviceNode->Sibling;
+    DPRINT1("DeviceNode->Parent->Child %p\n", DeviceNode->Parent->Child);
+
+    if (DeviceNode->Parent->Child)
+    {
+        while (*pNode)
+        {
+            pNode = (PDEVICE_NODE *)*pNode;
+            DPRINT1("PpDevNodeRemoveFromTree: pNode %p\n", pNode);
+        }
+
+        DeviceNode->Parent->LastChild = (PDEVICE_NODE)pNode;
+    }
+    else
+    {
+        DeviceNode->Parent->LastChild = NULL;
+    }
+
+    KeReleaseSpinLock(&IopPnPSpinLock, OldIrql);
+
+    DPRINT1("FIXME RemoveEntryList(&DeviceNode->LegacyBusListEntry)\n");
+    //RemoveEntryList(&DeviceNode->LegacyBusListEntry);
+
+    DPRINT1("FIXME IopOrphanNotification\n");
+    //IopOrphanNotification(DeviceNode);
+
+    DeviceNode->PreviousParent = DeviceNode->Parent;
+
+    DeviceNode->Parent = NULL;
+    DeviceNode->Child = NULL;
+    DeviceNode->Sibling = NULL;
+    DeviceNode->LastChild = NULL;
+
+    DPRINT1("DeviceNode->PreviousParent %p\n", DeviceNode->PreviousParent);
+}
+
 /* EOF */

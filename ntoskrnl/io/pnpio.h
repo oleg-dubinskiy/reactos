@@ -1101,6 +1101,12 @@ PipIsProblemReadonly(
     _In_ ULONG Problem
 );
 
+VOID
+NTAPI
+PpDevNodeRemoveFromTree(
+    _In_ PDEVICE_NODE DeviceNode
+);
+
 /* pnpnotify.c */
 VOID
 NTAPI
