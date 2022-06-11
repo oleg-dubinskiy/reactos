@@ -1177,8 +1177,85 @@ IopUnlinkDeviceRemovalRelations(
     _In_ PRELATION_LIST RelationsList,
     _In_ ULONG Type)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
+    PDEVICE_NODE DeviceNode;
+    PDEVICE_OBJECT EnumDevice;
+    ULONG Marker;
+
+    DPRINT("IopUnlinkDeviceRemovalRelations: Device %p, List %p, Type %X\n", DeviceObject, RelationsList, Type);
+    PAGED_CODE();
+
+    PpDevNodeLockTree(3);
+
+    if (!RelationsList)
+    {
+        DPRINT1("IopUnlinkDeviceRemovalRelations: RelationsList is NULL\n");
+        PpDevNodeUnlockTree(3);
+        return;
+    }
+
+    Marker = 0;
+    while (IopEnumerateRelations(RelationsList, &Marker, &EnumDevice, NULL, NULL, TRUE))
+    {
+        DeviceNode = IopGetDeviceNode(EnumDevice);
+
+        if (Type == 0)
+        {
+            ASSERT(DeviceNode->State != DeviceNodeDeletePendingCloses);
+        }
+        else if (Type == 1)
+        {
+            ASSERT((DeviceNode->State == DeviceNodeDeletePendingCloses) ||
+                   (DeviceNode->State == DeviceNodeDeleted));
+        }
+        else if (Type == 2)
+        {
+            if (DeviceObject == EnumDevice)
+                ASSERT(DeviceNode->State == DeviceNodeRemovePendingCloses);
+            else
+                ASSERT((DeviceNode->State == DeviceNodeDeletePendingCloses) ||
+                       (DeviceNode->State == DeviceNodeDeleted));
+        }
+        else
+        {
+            DPRINT1("IopUnlinkDeviceRemovalRelations: Type %X\n", Type);
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+        }
+
+        if (DeviceNode->State != DeviceNodeDeletePendingCloses &&
+            DeviceNode->State != DeviceNodeDeleted)
+        {
+            ASSERT(DeviceNode->Flags & DNF_ENUMERATED);
+            continue;
+        }
+
+        ASSERT(!(DeviceNode->Flags & DNF_ENUMERATED));
+
+        DPRINT("IopUnlinkDeviceRemovalRelations: [%p] Instance '%wZ'\n", DeviceNode, &DeviceNode->InstancePath);
+
+        KeEnterCriticalRegion();
+        ExAcquireResourceExclusiveLite(&PpRegistryDeviceResource, TRUE);
+
+        IopCleanupDeviceRegistryValues(&DeviceNode->InstancePath);
+        PpDevNodeRemoveFromTree(DeviceNode);
+
+        ExReleaseResourceLite(&PpRegistryDeviceResource);
+        KeLeaveCriticalRegion();
+
+        if (DeviceNode->State == DeviceNodeDeleted)
+        {
+            if (!(DeviceNode->Flags & (DNF_HAS_PROBLEM | DNF_HAS_PRIVATE_PROBLEM)))
+            {
+                DPRINT1("IopUnlinkDeviceRemovalRelations: FIXME. Node %p\n", DeviceNode);
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+            }
+
+            IopRemoveRelationFromList(RelationsList, EnumDevice);
+        }
+
+        ObDereferenceObject(EnumDevice);
+    }
+
+    PpDevNodeUnlockTree(3);
 }
 
 VOID
