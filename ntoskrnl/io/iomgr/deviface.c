@@ -1069,6 +1069,24 @@ IopResizeBuffer(
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+IopFreeBuffer(
+    _In_ PCLASS_INFO_BUFFER Info)
+{
+    DPRINT("IopFreeBuffer: Info %p\n", Info);
+    PAGED_CODE();
+
+    ASSERT(Info);
+
+    if (Info->StartBuffer)
+        ExFreePoolWithTag(Info->StartBuffer, '  pP');
+
+    Info->StartBuffer = NULL;
+    Info->LastBuffer = NULL;
+    Info->MaxSize = 0;
+}
+
 NTSTATUS
 NTAPI
 IopDisableDeviceInterfaces(
