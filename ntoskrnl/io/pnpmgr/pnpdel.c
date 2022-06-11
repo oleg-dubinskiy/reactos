@@ -10,6 +10,7 @@
 /* GLOBALS *******************************************************************/
 
 extern ULONG IopMaxDeviceNodeLevel; 
+extern ERESOURCE PpRegistryDeviceResource;
 
 /* DATA **********************************************************************/
 
@@ -1083,6 +1084,90 @@ IopInvalidateRelationsInList(
         PipRequestDeviceAction(DeviceObject, PipEnumDeviceTree, 0, 0, NULL, NULL);
 
     IopFreeRelationList(NewRelationList);
+}
+
+NTSTATUS
+NTAPI
+IopRemoveRelationFromList(
+    _In_ PRELATION_LIST RelationsList,
+    _In_ PDEVICE_OBJECT EnumDevice)
+{
+    PRELATION_LIST_ENTRY Entry;
+    PDEVICE_NODE DeviceNode;
+    ULONG level;
+    LONG ix;
+
+    DPRINT("IopRemoveRelationFromList: RelationsList %p,  Device %p, \n", RelationsList, EnumDevice);
+    PAGED_CODE();
+
+    DeviceNode = IopGetDeviceNode(EnumDevice);
+    if (!DeviceNode)
+    {
+        DPRINT1("IopRemoveRelationFromList: [%X] DeviceNode is NULL\n", EnumDevice);
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    level = DeviceNode->Level;
+    ASSERT((RelationsList->FirstLevel <= level) && (level <= RelationsList->MaxLevel));
+
+    if (level < RelationsList->FirstLevel)
+    {
+        DPRINT1("IopRemoveRelationFromList: level %X, FirstLevel %X\n", EnumDevice, RelationsList->FirstLevel);
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    if (level > RelationsList->MaxLevel)
+    {
+        DPRINT1("IopRemoveRelationFromList: level %X, MaxLevel %X\n", EnumDevice, RelationsList->MaxLevel);
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    Entry = RelationsList->Entries[level - RelationsList->FirstLevel];
+    if (!Entry)
+    {
+        DPRINT1("IopRemoveRelationFromList: Entry is NULL\n");
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    if (Entry->Count < 1)
+    {
+        DPRINT1("IopRemoveRelationFromList: STATUS_NO_SUCH_DEVICE\n");
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    for (ix = (Entry->Count - 1); ; ix--)
+    {
+        if ((PDEVICE_OBJECT)((ULONG_PTR)Entry->Devices[ix] & 0xFFFFFFFC) == EnumDevice)
+            break;
+
+        if (ix < 1)
+        {
+            DPRINT1("IopRemoveRelationFromList: STATUS_NO_SUCH_DEVICE\n");
+            return STATUS_NO_SUCH_DEVICE;
+        }
+    }
+
+    ObDereferenceObject(EnumDevice);
+
+    if ((ULONG_PTR)Entry->Devices[ix] & 1)
+        RelationsList->TagCount--;
+
+    if (ix < (LONG)(Entry->Count - 1))
+    {
+        RtlCopyMemory(&Entry->Devices[ix],
+                      &Entry->Devices[ix + 1],
+                      ((Entry->Count - (ix + 1)) * sizeof(*Entry->Devices)));
+    }
+
+    if (Entry->Count-- == 1)
+    {
+        RelationsList->Entries[level - RelationsList->FirstLevel] = 0;
+        ExFreePoolWithTag(Entry, 0);
+    }
+
+    RelationsList->Count--;
+
+    return STATUS_SUCCESS;
 }
 
 VOID
