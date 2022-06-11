@@ -1591,9 +1591,107 @@ NTAPI
 IopDisableDeviceInterfaces(
     _In_ PUNICODE_STRING InstancePath)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    UNICODE_STRING DeviceClassesKeyName = RTL_CONSTANT_STRING(IO_REG_KEY_DEVICECLASSES);
+    PKEY_BASIC_INFORMATION KeyInformation;
+    CLASS_INFO_BUFFER ClassInfoBuffer;
+    UNICODE_STRING InterfaceString;
+    UNICODE_STRING GuidString;
+    HANDLE KeyHandle = NULL;
+    PWSTR SourceString;
+    PWCHAR String;
+    GUID Guid;
+    ULONG ResultLength;
+    ULONG DummySize;
+    ULONG Index;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT1("IopDisableDeviceInterfaces: Instance '%wZ'\n", InstancePath);
+
+    Status = IopAllocateBuffer(&ClassInfoBuffer, 0x66);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDisableDeviceInterfaces: Status %X\n", Status);
+        return Status;
+    }
+
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(&PpRegistryDeviceResource, TRUE);
+
+    Status = IopOpenRegistryKeyEx(&KeyHandle, NULL, &DeviceClassesKeyName, KEY_READ);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopDisableDeviceInterfaces: Status %X\n", Status);
+        goto Exit;
+    }
+
+    ASSERT(ClassInfoBuffer.MaxSize >= sizeof(KEY_BASIC_INFORMATION));
+
+    for (Index = 0; ; Index++)
+    {
+        Status = ZwEnumerateKey(KeyHandle,
+                                Index,
+                                KeyBasicInformation,
+                                ClassInfoBuffer.StartBuffer,
+                                ClassInfoBuffer.MaxSize,
+                                &ResultLength);
+
+        if (Status == STATUS_NO_MORE_ENTRIES)
+            break;
+
+        ASSERT(Status != STATUS_BUFFER_TOO_SMALL);
+
+        if (Status == STATUS_BUFFER_OVERFLOW)
+        {
+            IopResizeBuffer(&ClassInfoBuffer, ResultLength, FALSE);
+            continue;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopDisableDeviceInterfaces: Status %X\n", Status);
+            break;
+        }
+
+        KeyInformation = (PKEY_BASIC_INFORMATION)ClassInfoBuffer.StartBuffer;
+
+        GuidString.Length = (USHORT)KeyInformation->NameLength;
+        GuidString.MaximumLength = GuidString.Length;
+        GuidString.Buffer = KeyInformation->Name;
+
+        RtlGUIDFromString(&GuidString, &Guid);
+
+        Status = IopGetDeviceInterfaces(&Guid, InstancePath, 0, FALSE, &SourceString, &DummySize);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopDisableDeviceInterfaces: Status %X\n", Status);
+            continue;
+        }
+
+        for (String = SourceString;
+             *String;
+             String += ((InterfaceString.Length + sizeof(WCHAR)) / sizeof(WCHAR)))
+        {
+            RtlInitUnicodeString(&InterfaceString, String);
+            DPRINT1("IopDisableDeviceInterfaces: '%wZ', '%wZ'\n", &InterfaceString, InstancePath);
+
+            IoSetDeviceInterfaceState(&InterfaceString, FALSE);
+        }
+
+        ExFreePool(SourceString);
+    }
+
+    ZwClose(KeyHandle);
+
+Exit:
+
+    IopFreeBuffer(&ClassInfoBuffer);
+
+    ExReleaseResourceLite(&PpRegistryDeviceResource);
+    KeLeaveCriticalRegion();
+
+    DPRINT1("IopDisableDeviceInterfaces: return %X\n", Status);
+    return Status;
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
