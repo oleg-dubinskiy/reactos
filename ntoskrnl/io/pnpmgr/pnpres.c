@@ -26,6 +26,7 @@ extern ERESOURCE PpRegistryDeviceResource;
 extern PDEVICE_NODE IopRootDeviceNode;
 extern PDEVICE_NODE IopInitHalDeviceNode;
 extern PCM_RESOURCE_LIST IopInitHalResources;
+extern PNP_ALLOCATE_RESOURCES_ROUTINE IopAllocateBootResourcesRoutine;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -3703,9 +3704,93 @@ IopReleaseDeviceResources(
     _In_ PDEVICE_NODE DeviceNode,
     _In_ BOOLEAN IsAllocateBootResources)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    UNICODE_STRING BootConfigName = RTL_CONSTANT_STRING(L"BootConfig");
+    UNICODE_STRING LogConfName = RTL_CONSTANT_STRING(L"LogConf");
+    PCM_RESOURCE_LIST ResourceList;
+    HANDLE Handle;
+    HANDLE KeyHandle;
+    ULONG ResourceListSize;
+    NTSTATUS Status;
+
+    DPRINT("IopReleaseDeviceResources: [%p] IsAllocateBootResources %X\n", DeviceNode, IsAllocateBootResources);
+    PAGED_CODE();
+
+    if (!DeviceNode->ResourceList && !(DeviceNode->Flags & DNF_BOOT_CONFIG_RESERVED))
+        goto Exit;
+
+    ResourceList = NULL;
+    ResourceListSize = 0;
+
+    if (IsAllocateBootResources && !(DeviceNode->Flags & DNF_MADEUP))
+    {
+        Status = PpIrpQueryResources(DeviceNode->PhysicalDeviceObject, &ResourceList, &ResourceListSize);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopReleaseDeviceResources: Status %X\n", Status);
+            ResourceList = NULL;
+            ResourceListSize = 0;
+        }
+    }
+
+    Status = IopLegacyResourceAllocation(ArbiterRequestUndefined,
+                                         IopRootDriverObject,
+                                         DeviceNode->PhysicalDeviceObject,
+                                         NULL,
+                                         NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopReleaseDeviceResources: Status %X\n", Status);
+        return Status;
+    }
+
+    PipRequestDeviceAction(NULL, PipEnumAssignResources, 0, 0, NULL, NULL);
+
+    if (!IsAllocateBootResources || (DeviceNode->Flags & DNF_MADEUP))
+        goto Exit;
+
+    ASSERT(DeviceNode->BootResources == NULL);
+
+    KeyHandle = NULL;
+
+    Status = PnpDeviceObjectToDeviceInstance(DeviceNode->PhysicalDeviceObject, &Handle, KEY_ALL_ACCESS);
+    if (NT_SUCCESS(Status))
+    {
+        Status = IopCreateRegistryKeyEx(&KeyHandle, Handle, &LogConfName, KEY_ALL_ACCESS, 0, NULL);
+        ZwClose(Handle);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopReleaseDeviceResources: Status %X\n", Status);
+            KeyHandle = NULL;
+        }
+    }
+
+    if (KeyHandle)
+    {
+        KeEnterCriticalRegion();
+        ExAcquireResourceSharedLite(&PpRegistryDeviceResource, TRUE);
+
+        if (ResourceList)
+            ZwSetValueKey(KeyHandle, &BootConfigName, 0, REG_RESOURCE_LIST, ResourceList, ResourceListSize);
+        else
+            ZwDeleteValueKey(KeyHandle, &BootConfigName);
+
+        ExReleaseResourceLite(&PpRegistryDeviceResource);
+        KeLeaveCriticalRegion();
+
+        ZwClose(KeyHandle);
+    }
+
+    if (!ResourceList)
+        goto Exit;
+
+    DeviceNode->Flags |= DNF_HAS_BOOT_CONFIG;
+    DeviceNode->BootResources = ResourceList;
+
+    IopAllocateBootResourcesRoutine(ArbiterRequestPnpEnumerated, DeviceNode->PhysicalDeviceObject, ResourceList);
+
+Exit:
+
+    return STATUS_SUCCESS;
 }
 
 VOID
