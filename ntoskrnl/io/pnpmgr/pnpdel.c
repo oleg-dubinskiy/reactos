@@ -1030,8 +1030,59 @@ IopInvalidateRelationsInList(
     _In_ BOOLEAN Param3,
     _In_ BOOLEAN Param4)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
+    PRELATION_LIST NewRelationList;
+    PDEVICE_OBJECT ParentPdo;
+    PDEVICE_NODE DeviceNode;
+    PDEVICE_NODE ParentNode;
+    PDEVICE_OBJECT DeviceObject;
+    ULONG Marker;
+    BOOLEAN OutIsDirectDescendant;
+    BOOLEAN IsTagged;
+  
+    DPRINT("IopInvalidateRelationsInList: RelationsList %p\n", RelationsList);
+    PAGED_CODE();
+
+    NewRelationList = IopAllocateRelationList(RemovalType);
+    if (!NewRelationList)
+        return;
+
+    IopSetAllRelationsTags(RelationsList, FALSE);
+
+    Marker = 0;
+    while (IopEnumerateRelations(RelationsList, &Marker, &DeviceObject, &OutIsDirectDescendant, &IsTagged, TRUE))
+    {
+        if ((Param3 && OutIsDirectDescendant) || IsTagged)
+            continue;
+
+        for (ParentPdo = DeviceObject;
+             !IopSetRelationsTag(RelationsList, ParentPdo, TRUE);
+             ParentPdo = ParentNode->PhysicalDeviceObject)
+        {
+            DeviceNode = IopGetDeviceNode(ParentPdo);
+
+            if (Param4)
+            {
+                DPRINT1("IopInvalidateRelationsInList: Param4 is TRUE. FIXME\n");
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+            }
+
+            ParentNode = DeviceNode->Parent;
+            if (!ParentNode)
+            {
+                ParentPdo = NULL;
+                break;
+            }
+        }
+
+        if (ParentPdo)
+            IopAddRelationToList(NewRelationList, ParentPdo, FALSE, FALSE);
+    }
+
+    Marker = 0;
+    while (IopEnumerateRelations(NewRelationList, &Marker, &DeviceObject, NULL, NULL, FALSE))
+        PipRequestDeviceAction(DeviceObject, PipEnumDeviceTree, 0, 0, NULL, NULL);
+
+    IopFreeRelationList(NewRelationList);
 }
 
 VOID
