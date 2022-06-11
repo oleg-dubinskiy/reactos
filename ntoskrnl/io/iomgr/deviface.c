@@ -1089,6 +1089,505 @@ IopFreeBuffer(
 
 NTSTATUS
 NTAPI
+IopGetDeviceInterfaces(
+    _In_ GUID* InterfaceClassGuid,
+    _In_ PUNICODE_STRING InstancePath,
+    _In_ ULONG Flags,
+    _In_ BOOLEAN Param4,
+    _Out_ PWSTR* SymbolicLinkList,
+    _Out_ ULONG* OutSize)
+{
+    UNICODE_STRING DeviceClassesName = RTL_CONSTANT_STRING(IO_REG_KEY_DEVICECLASSES);
+    UNICODE_STRING DeviceInstanceName = RTL_CONSTANT_STRING(L"DeviceInstance");
+    UNICODE_STRING SymbolicLinkName = RTL_CONSTANT_STRING(L"SymbolicLink");
+    UNICODE_STRING ControlName = RTL_CONSTANT_STRING(L"Control");
+    UNICODE_STRING LinkedName = RTL_CONSTANT_STRING(L"Linked");
+    UNICODE_STRING DefaultClassName;
+    UNICODE_STRING ClassGuidName;
+    UNICODE_STRING SymbolicLink;
+    UNICODE_STRING DevnodeName;
+    UNICODE_STRING KeyName;
+    PKEY_VALUE_FULL_INFORMATION ValueInfo = NULL;
+    PKEY_VALUE_PARTIAL_INFORMATION PartialInfo;
+    PKEY_BASIC_INFORMATION BasicInfo;
+    CLASS_INFO_BUFFER DevnodeNameBuffer;
+    CLASS_INFO_BUFFER SymLinkBuffer;
+    CLASS_INFO_BUFFER ReturnBuffer;
+    CLASS_INFO_BUFFER InfoBuffer;
+    HANDLE DeviceClassesHandle;
+    HANDLE InstanceHandle;
+    HANDLE ControlHandle;
+    HANDLE ClassHandle;
+    HANDLE Handle;
+    ULONG ResultLength;
+    ULONG ix;
+    ULONG jx;
+    USHORT Length;
+    BOOLEAN IsDefaultClass = FALSE;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    *SymbolicLinkList = NULL;
+
+    Status = RtlStringFromGUID(InterfaceClassGuid, &ClassGuidName);
+
+    if (NT_SUCCESS(Status))
+    {
+        DPRINT("IopGetDeviceInterfaces: Instance '%wZ', Flags %X, Guid '%wZ'\n", InstancePath, Flags, &ClassGuidName);
+    }
+    else
+    {
+        DPRINT1("IopGetDeviceInterfaces: Instance '%wZ', Flags %X, Status %X\n", InstancePath, Flags, Status);
+        goto Exit;
+    }
+
+    Status = IopAllocateBuffer(&ReturnBuffer, 0x1000);
+    if (!NT_SUCCESS(Status))
+    {
+        RtlFreeUnicodeString(&ClassGuidName);
+        goto Exit;
+    }
+
+    Status = IopAllocateBuffer(&InfoBuffer, 0x200);
+    if (!NT_SUCCESS(Status))
+    {
+        IopFreeBuffer(&ReturnBuffer);
+        RtlFreeUnicodeString(&ClassGuidName);
+        goto Exit;
+    }
+
+    Status = IopAllocateBuffer(&SymLinkBuffer, 0x400);
+    if (!NT_SUCCESS(Status))
+    {
+        IopFreeBuffer(&InfoBuffer);
+        IopFreeBuffer(&ReturnBuffer);
+        RtlFreeUnicodeString(&ClassGuidName);
+        goto Exit;
+    }
+
+    Status = IopAllocateBuffer(&DevnodeNameBuffer, 0x19C);
+    if (!NT_SUCCESS(Status))
+    {
+        IopFreeBuffer(&SymLinkBuffer);
+        IopFreeBuffer(&InfoBuffer);
+        IopFreeBuffer(&ReturnBuffer);
+        RtlFreeUnicodeString(&ClassGuidName);
+        goto Exit;
+    }
+
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(&PpRegistryDeviceResource, TRUE);
+
+    Status = IopCreateRegistryKeyEx(&DeviceClassesHandle,
+                                    NULL,
+                                    &DeviceClassesName,
+                                    KEY_ALL_ACCESS,
+                                    REG_OPTION_NON_VOLATILE,
+                                    NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+        goto Exit1;
+    }
+
+    Status = IopOpenRegistryKeyEx(&ClassHandle, DeviceClassesHandle, &ClassGuidName, KEY_ALL_ACCESS);
+    ZwClose(DeviceClassesHandle);
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND || Status == STATUS_OBJECT_PATH_NOT_FOUND)
+    {
+        goto Exit3;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+        goto Exit1;
+    }
+
+    Status = IopGetRegistryValue(ClassHandle, REGSTR_VAL_DEFAULT, &ValueInfo);
+
+    if (NT_SUCCESS(Status) && ValueInfo->Type == REG_SZ && ValueInfo->DataLength >= sizeof(WCHAR))
+    {
+        DefaultClassName.Length = (ValueInfo->DataLength - sizeof(WCHAR));
+        DefaultClassName.MaximumLength = DefaultClassName.Length;
+        DefaultClassName.Buffer = (PWSTR)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset);
+
+        DPRINT("IopGetDeviceInterfaces: DefaultClassName '%wZ'\n", &DefaultClassName);
+
+        IsDefaultClass = TRUE;
+
+        Status = IopOpenOrCreateDeviceInterfaceSubKeys(NULL,
+                                                       NULL,
+                                                       &Handle,
+                                                       NULL,
+                                                       ClassHandle,
+                                                       &DefaultClassName,
+                                                       KEY_READ,
+                                                       FALSE);
+        if (NT_SUCCESS(Status))
+        {
+            if (!(Flags & 1))
+            {
+                IsDefaultClass = FALSE;
+
+                Status = IopOpenRegistryKeyEx(&ControlHandle, Handle, &ControlName, KEY_ALL_ACCESS);
+                if (NT_SUCCESS(Status))
+                {
+                    ASSERT(InfoBuffer.MaxSize < 0x10);
+
+                    Status = ZwQueryValueKey(ControlHandle,
+                                             &LinkedName,
+                                             KeyValuePartialInformation,
+                                             InfoBuffer.StartBuffer,
+                                             InfoBuffer.MaxSize,
+                                             &ResultLength);
+
+                    ASSERT(Status == STATUS_BUFFER_TOO_SMALL);
+
+                    ZwClose(ControlHandle);
+
+                    PartialInfo = (PKEY_VALUE_PARTIAL_INFORMATION)InfoBuffer.StartBuffer;
+
+                    if (NT_SUCCESS(Status) &&
+                        PartialInfo->Type == REG_DWORD &&
+                        PartialInfo->DataLength == sizeof(ULONG))
+                    {
+                        IsDefaultClass = (*(PULONG)PartialInfo->Data != 0);
+                    }
+                }
+            }
+
+            ZwClose(Handle);
+
+            if (IsDefaultClass)
+            {
+                DPRINT1("IopGetDeviceInterfaces: IsDefaultClass TRUE\n");
+                ASSERT(FALSE); // IoDbgBreakPointEx();
+            }
+            else
+            {
+                ExFreePool(ValueInfo);
+            }
+        }
+        else
+        {
+            IsDefaultClass = FALSE;
+            ExFreePool(ValueInfo);
+        }
+    }
+    else if (Status != STATUS_OBJECT_NAME_NOT_FOUND && Status != STATUS_OBJECT_PATH_NOT_FOUND)
+    {
+        if (NT_SUCCESS(Status))
+        {
+            ExFreePool(ValueInfo);
+            Status = STATUS_UNSUCCESSFUL;
+        }
+
+        ZwClose(ClassHandle);
+        goto Exit1;
+    }
+
+    ASSERT(InfoBuffer.MaxSize >= 0x18);
+
+    ix = 0;
+    while (TRUE)
+    {
+        Status = ZwEnumerateKey(ClassHandle,
+                                ix,
+                                KeyBasicInformation,
+                                InfoBuffer.StartBuffer,
+                                InfoBuffer.MaxSize,
+                                &ResultLength);
+
+        if (Status == STATUS_NO_MORE_ENTRIES)
+            break;
+
+        ASSERT(Status != STATUS_BUFFER_TOO_SMALL);
+
+        if (Status == STATUS_BUFFER_OVERFLOW)
+        {
+            IopResizeBuffer(&InfoBuffer, ResultLength, FALSE);
+            continue;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+            ZwClose(ClassHandle);
+            goto Exit2;
+        }
+
+        BasicInfo = (PKEY_BASIC_INFORMATION)InfoBuffer.StartBuffer;
+
+        KeyName.Length = BasicInfo->NameLength;
+        KeyName.MaximumLength = KeyName.Length;
+        KeyName.Buffer = BasicInfo->Name;
+
+        DPRINT("IopGetDeviceInterfaces: ix %X, Key '%wZ'\n", ix, &KeyName);
+
+        Status = IopOpenRegistryKeyEx(&Handle, ClassHandle, &KeyName, KEY_READ);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+            ix++;
+            continue;
+        }
+
+        ASSERT(DevnodeNameBuffer.MaxSize >= 0x10);
+
+        while (TRUE)
+        {
+            Status = ZwQueryValueKey(Handle,
+                                     &DeviceInstanceName,
+                                     KeyValuePartialInformation,
+                                     DevnodeNameBuffer.StartBuffer,
+                                     DevnodeNameBuffer.MaxSize,
+                                     &ResultLength);
+
+            if (Status != STATUS_BUFFER_OVERFLOW)
+                break;
+
+            Status = IopResizeBuffer(&DevnodeNameBuffer, ResultLength, FALSE);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+                ZwClose(Handle);
+                ZwClose(ClassHandle);
+                goto Exit2;
+            }
+        }
+
+        ASSERT(Status != STATUS_BUFFER_TOO_SMALL);
+
+        PartialInfo = (PKEY_VALUE_PARTIAL_INFORMATION)DevnodeNameBuffer.StartBuffer;
+
+        if (!(NT_SUCCESS(Status) && PartialInfo->Type == REG_SZ && PartialInfo->DataLength > sizeof(WCHAR)))
+        {
+            DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+            ZwClose(Handle);
+            ix++;
+            continue;
+        }
+
+        DevnodeName.Length = (PartialInfo->DataLength - sizeof(WCHAR));
+        DevnodeName.MaximumLength = KeyName.Length;
+        DevnodeName.Buffer = (PWSTR)PartialInfo->Data;
+
+        ASSERT(InfoBuffer.MaxSize >= 0x18);
+
+        jx = 0;
+        while (TRUE)
+        {
+            Status = ZwEnumerateKey(Handle,
+                                    jx,
+                                    KeyBasicInformation,
+                                    InfoBuffer.StartBuffer,
+                                    InfoBuffer.MaxSize,
+                                    &ResultLength);
+
+            if (Status == STATUS_NO_MORE_ENTRIES)
+                break;
+
+            ASSERT(Status != STATUS_BUFFER_TOO_SMALL);
+
+            if (Status == STATUS_BUFFER_OVERFLOW)
+            {
+                IopResizeBuffer(&InfoBuffer, ResultLength, FALSE);
+                continue;
+            }
+
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+                ZwClose(Handle);
+                ZwClose(ClassHandle);
+                goto Exit2;
+            }
+
+            BasicInfo = (PKEY_BASIC_INFORMATION)InfoBuffer.StartBuffer;
+
+            KeyName.Length = BasicInfo->NameLength;
+            KeyName.MaximumLength = KeyName.Length;
+            KeyName.Buffer = BasicInfo->Name;
+
+            DPRINT("IopGetDeviceInterfaces: Instance key %X enumerated '%wZ'\n", jx, &KeyName);
+
+            Status = IopOpenRegistryKeyEx(&InstanceHandle, Handle, &KeyName, KEY_READ);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+                jx++;
+                continue;
+            }
+
+            if (!(Flags & 1))
+            {
+                Status = IopOpenRegistryKeyEx(&ControlHandle, InstanceHandle, &ControlName, KEY_READ);
+                if (!NT_SUCCESS(Status))
+                {
+                    DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+                    goto Next;
+                }
+
+                ASSERT(InfoBuffer.MaxSize >= 0x10);
+
+                Status = ZwQueryValueKey(ControlHandle,
+                                         &LinkedName,
+                                         KeyValuePartialInformation,
+                                         InfoBuffer.StartBuffer,
+                                         InfoBuffer.MaxSize,
+                                         &ResultLength);
+
+                ASSERT(Status != STATUS_BUFFER_TOO_SMALL);
+
+                ZwClose(ControlHandle);
+
+                PartialInfo = (PKEY_VALUE_PARTIAL_INFORMATION)InfoBuffer.StartBuffer;
+
+                if (!NT_SUCCESS(Status) ||
+                    PartialInfo->Type != REG_DWORD ||
+                    PartialInfo->DataLength != sizeof(ULONG) ||
+                    *(PULONG)PartialInfo->Data == 0)
+                {
+                    DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+                    goto Next;
+                }
+            }
+
+            ASSERT(SymLinkBuffer.MaxSize >= 0x10);
+
+            while (TRUE)
+            {
+                Status = ZwQueryValueKey(InstanceHandle,
+                                         &SymbolicLinkName,
+                                         KeyValuePartialInformation,
+                                         SymLinkBuffer.StartBuffer,
+                                         SymLinkBuffer.MaxSize,
+                                         &ResultLength);
+
+                if (Status != STATUS_BUFFER_OVERFLOW)
+                    break;
+
+                Status = IopResizeBuffer(&SymLinkBuffer, ResultLength, FALSE);
+                if (!NT_SUCCESS(Status))
+                {
+                    DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+                    ZwClose(InstanceHandle);
+                    ZwClose(Handle);
+                    ZwClose(ClassHandle);
+                    goto Exit2;
+                }
+            }
+
+            ASSERT(Status != STATUS_BUFFER_TOO_SMALL);
+
+            PartialInfo = (PKEY_VALUE_PARTIAL_INFORMATION)SymLinkBuffer.StartBuffer;
+
+            if (!(NT_SUCCESS(Status) && PartialInfo->Type == REG_SZ && PartialInfo->DataLength > sizeof(WCHAR)))
+            {
+                DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+                goto Next;
+            }
+
+            Length = (PartialInfo->DataLength - sizeof(WCHAR));
+
+            SymbolicLink.Length = Length;
+            SymbolicLink.MaximumLength = SymbolicLink.Length;
+            SymbolicLink.Buffer = (PWSTR)PartialInfo->Data;
+
+            if (IsDefaultClass)
+            {
+                if (!RtlCompareUnicodeString(&DefaultClassName, &SymbolicLink, TRUE))
+                {
+                    DPRINT("IopGetDeviceInterfaces: '%wZ', '%wZ'\n", &DefaultClassName, &SymbolicLink);
+                    goto Next;
+                }
+            }
+
+            if (InstancePath)
+            {
+                if (RtlCompareUnicodeString(InstancePath, &DevnodeName, TRUE))
+                {
+                    DPRINT("IopGetDeviceInterfaces: '%wZ', '%wZ'\n", InstancePath, &DevnodeName);
+                    goto Next;
+                }
+            }
+
+            DPRINT1("IopGetDeviceInterfaces: FIXME IopAppendBuffer()\n");
+            ASSERT(FALSE); // IoDbgBreakPointEx();
+
+            ASSERT(((PWSTR)ReturnBuffer.LastBuffer)[-1] == UNICODE_NULL);
+
+            DPRINT("IopGetDeviceInterfaces: Added to return buffer\n");
+
+            if (!Param4)
+            {
+                Length = (sizeof(L"\\??\\") - sizeof(WCHAR));
+                RtlCopyMemory((ReturnBuffer.LastBuffer - (SymbolicLink.Length + sizeof(WCHAR))), L"\\??\\", Length);
+            }
+
+Next:
+            ZwClose(InstanceHandle);
+            jx++;
+        }
+
+        ZwClose(Handle);
+        ix++;
+    }
+
+    ZwClose(ClassHandle);
+
+Exit3:
+
+    Length = (ReturnBuffer.LastBuffer - ReturnBuffer.StartBuffer + sizeof(WCHAR));
+
+    Status = IopResizeBuffer(&ReturnBuffer, Length, TRUE);
+    if (NT_SUCCESS(Status))
+        *(PWCHAR *)ReturnBuffer.LastBuffer = UNICODE_NULL;
+
+Exit2:
+
+    if (IsDefaultClass)
+        ExFreePool(ValueInfo);
+
+Exit1:
+
+    ExReleaseResourceLite(&PpRegistryDeviceResource);
+    KeLeaveCriticalRegion();
+
+    IopFreeBuffer(&DevnodeNameBuffer);
+    IopFreeBuffer(&SymLinkBuffer);
+    IopFreeBuffer(&InfoBuffer);
+
+    if (!NT_SUCCESS(Status))
+        IopFreeBuffer(&ReturnBuffer);
+
+    RtlFreeUnicodeString(&ClassGuidName);
+
+Exit:
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IopGetDeviceInterfaces: Status %X\n", Status);
+
+        *SymbolicLinkList = NULL;
+
+        if (OutSize)
+            *OutSize = 0;
+    }
+    else
+    {
+        *SymbolicLinkList = (PWSTR)ReturnBuffer.StartBuffer;
+
+        if (OutSize)
+            *OutSize = ReturnBuffer.MaxSize;
+    }
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 IopDisableDeviceInterfaces(
     _In_ PUNICODE_STRING InstancePath)
 {
