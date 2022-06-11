@@ -986,6 +986,44 @@ IopSetRelationsTag(
 
 VOID
 NTAPI
+IopSetAllRelationsTags(
+    _In_ PRELATION_LIST RelationsList,
+    _In_ BOOLEAN IsTaggedCount)
+{
+    PRELATION_LIST_ENTRY RelationEntry;
+    ULONG TagCount;
+    ULONG Level;
+    ULONG ix;
+  
+    DPRINT("IopSetAllRelationsTags: [%p] First %X Max %X\n", RelationsList, RelationsList->FirstLevel, RelationsList->MaxLevel);
+    PAGED_CODE();
+
+    for (Level = RelationsList->FirstLevel;
+         Level <= RelationsList->MaxLevel;
+         Level++)
+    {
+        RelationEntry = RelationsList->Entries[Level - RelationsList->FirstLevel];
+        ASSERT(RelationEntry);
+
+        for (ix = 0; ix < RelationEntry->Count; ix++)
+        {
+            if (IsTaggedCount)
+                RelationEntry->Devices[ix] = (PDEVICE_OBJECT)((ULONG_PTR)RelationEntry->Devices[ix] | 1);
+            else
+                RelationEntry->Devices[ix] = (PDEVICE_OBJECT)((ULONG_PTR)RelationEntry->Devices[ix] & ~1);
+        }
+    }
+
+    if (IsTaggedCount)
+        TagCount = RelationsList->Count;
+    else
+        TagCount = 0;
+
+    RelationsList->TagCount = TagCount;
+}
+
+VOID
+NTAPI
 IopInvalidateRelationsInList(
     _In_ PRELATION_LIST RelationsList,
     _In_ PIP_TYPE_REMOVAL_DEVICE RemovalType,
