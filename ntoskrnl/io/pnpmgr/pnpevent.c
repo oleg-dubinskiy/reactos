@@ -304,9 +304,49 @@ NTAPI
 IopRemoveIndirectRelationsFromList(
     _In_ PRELATION_LIST RelationsList)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PRELATION_LIST_ENTRY RelationEntry;
+    ULONG Level;
+    LONG ix;
+  
+    DPRINT("IopRemoveIndirectRelationsFromList: RelationsList %p\n", RelationsList);
+    PAGED_CODE();
+
+    for (Level = RelationsList->FirstLevel;
+         Level <= RelationsList->MaxLevel;
+         Level++)
+    {
+        RelationEntry = RelationsList->Entries[Level - RelationsList->FirstLevel];
+        if (!RelationEntry)
+            continue;
+
+        ix = (RelationEntry->Count - 1);
+
+        for (; ix >= 0; ix--, RelationsList->Count--)
+        {
+            if ((ULONG_PTR)RelationEntry->Devices[ix] & 2)
+                continue;
+
+            ObDereferenceObject((PVOID)((ULONG_PTR)RelationEntry->Devices[ix] & 0xFFFFFFFC));
+
+            if ((ULONG_PTR)RelationEntry->Devices[ix] & 1)
+                RelationsList->TagCount--;
+
+            if (ix < (LONG)(RelationEntry->Count - 1))
+            {
+                RtlMoveMemory(&RelationEntry->Devices[ix],
+                              &RelationEntry->Devices[ix + 1],
+                              ((RelationEntry->Count - (ix + 1)) * sizeof(*RelationEntry->Devices)));
+            }
+
+            if (RelationEntry->Count-- == 1)
+            {
+                RelationsList->Entries[Level - RelationsList->FirstLevel] = NULL;
+                ExFreePool(RelationEntry);
+            }
+        }
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
