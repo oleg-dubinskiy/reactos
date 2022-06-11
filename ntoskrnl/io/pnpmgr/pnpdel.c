@@ -972,6 +972,18 @@ IopFreeRelationList(
     ExFreePoolWithTag(RelationsList, 0);
 }
 
+NTSTATUS
+NTAPI
+IopSetRelationsTag(
+    _In_ PRELATION_LIST RelationsList,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ BOOLEAN IsTaggedCount)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // IoDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 IopInvalidateRelationsInList(
