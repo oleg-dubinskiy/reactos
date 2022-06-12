@@ -1365,6 +1365,144 @@ PiFindDevInstMatch(
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+PiRearrangeDeviceInstances(
+    _In_ HANDLE KeyHandle,
+    _In_ ULONG Count,
+    _In_ ULONG InstanceNum)
+{
+    PKEY_VALUE_FULL_INFORMATION ValueInfo = NULL;
+    KEY_FULL_INFORMATION KeyInformation;
+    UNICODE_STRING ValueName;
+    WCHAR InstanceStr[10];
+    PWSTR InstanceStrEnd;
+    PVOID Data;
+    ULONG InstanceStrLength;
+    ULONG KeyCount = 0x200;
+    ULONG ResultLength;
+    ULONG ix;
+    ULONG jx;
+    NTSTATUS Status;
+
+    DPRINT("PiRearrangeDeviceInstances: KeyHandle %X, Count %X, InstanceNum %X\n", KeyHandle, Count, InstanceNum);
+
+    Status = ZwQueryKey(KeyHandle, KeyFullInformation, &KeyInformation, sizeof(KeyInformation), &ResultLength);
+
+    if (NT_SUCCESS(Status) && KeyInformation.Values)
+    {
+        KeyCount = KeyInformation.Values;
+
+        if (KeyCount > 0x1C)
+        {
+            RtlStringCchPrintfExW(InstanceStr, 0xA, &InstanceStrEnd, NULL, 0, L"%u", Count);
+
+            InstanceStrLength = (InstanceStrEnd - InstanceStr);
+
+            if (InstanceStrLength == 0xFFFFFFFF)
+                ValueName.Length = 0x14;
+            else
+                ValueName.Length = (InstanceStrLength * sizeof(WCHAR));
+
+            ValueName.MaximumLength = 0x14;
+            ValueName.Buffer = InstanceStr;
+
+            Status = IopGetRegistryValue(KeyHandle, InstanceStr, &ValueInfo);
+            if (!NT_SUCCESS(Status))
+            {
+                goto Exit;
+            }
+
+            ZwDeleteValueKey(KeyHandle, &ValueName);
+
+            RtlStringCchPrintfExW(InstanceStr, 0xA, &InstanceStrEnd, NULL, 0, L"%u", InstanceNum);
+
+            InstanceStrLength = (InstanceStrEnd - InstanceStr);
+
+            if (InstanceStrLength == 0xFFFFFFFF)
+                ValueName.Length = 0x14;
+            else
+                ValueName.Length = (InstanceStrLength * sizeof(WCHAR));
+
+            ValueName.MaximumLength = 0x14;
+            ValueName.Buffer = InstanceStr;
+
+            Data = (PVOID)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset);
+            ZwSetValueKey(KeyHandle, &ValueName, 0, REG_SZ, Data, ValueInfo->DataLength);
+
+            ExFreePool(ValueInfo);
+            ValueInfo = NULL;
+
+            goto Exit;
+        }
+    }
+
+    if (Count <= 0)
+        goto Exit;
+
+    jx = 0;
+
+    for (ix = 0; ix < KeyCount; ix++)
+    {
+        RtlStringCchPrintfExW(InstanceStr, 0xA, &InstanceStrEnd, NULL, 0, L"%u", ix);
+
+        InstanceStrLength = (InstanceStrEnd - InstanceStr);
+
+        if (InstanceStrLength == 0xFFFFFFFF)
+            ValueName.Length = 0x14;
+        else
+            ValueName.Length = (InstanceStrLength * sizeof(WCHAR));
+
+        ValueName.MaximumLength = 0x14;
+        ValueName.Buffer = InstanceStr;
+
+        Status = ZwQueryValueKey(KeyHandle, &ValueName, KeyValueFullInformation, NULL, 0, &ResultLength);
+
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND || Status == STATUS_OBJECT_PATH_NOT_FOUND)
+            goto Next;
+
+        if (ix != jx)
+        {
+            Status = IopGetRegistryValue(KeyHandle, ValueName.Buffer, &ValueInfo);
+            if (!NT_SUCCESS(Status))
+            {
+                break;
+            }
+
+            ZwDeleteValueKey(KeyHandle, &ValueName);
+
+            RtlStringCchPrintfExW(InstanceStr, 0xA, &InstanceStrEnd, NULL, 0, L"%u", jx);
+
+            InstanceStrLength = (InstanceStrEnd - InstanceStr);
+
+            if (InstanceStrLength == 0xFFFFFFFF)
+                ValueName.Length = 0x14;
+            else
+                ValueName.Length = (InstanceStrLength * sizeof(WCHAR));
+
+            ValueName.MaximumLength = 0x14;
+            ValueName.Buffer = InstanceStr;
+
+            Data = (PVOID)((ULONG_PTR)ValueInfo + ValueInfo->DataOffset);
+            ZwSetValueKey(KeyHandle, &ValueName, 0, REG_SZ, Data, ValueInfo->DataLength);
+
+            ExFreePool(ValueInfo);
+            ValueInfo = NULL;
+        }
+
+        jx++;
+
+Next:
+        if (jx >= Count)
+            break;
+    }
+
+Exit:
+
+    if (ValueInfo)
+        ExFreePool(ValueInfo);
+}
+
 NTSTATUS
 NTAPI
 PiProcessDriverInstance(
@@ -1427,10 +1565,7 @@ PiProcessDriverInstance(
         Data--;
 
         if (Data)
-        {
-            DPRINT("PiProcessDriverInstance: FIXME PiRearrangeDeviceInstances\n");
-            ASSERT(FALSE);
-        }
+            PiRearrangeDeviceInstances(KeyHandle, Data, InstanceNum);
     }
     else
     {
