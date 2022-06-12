@@ -42,6 +42,8 @@ BOOLEAN PpDisableFirmwareMapper = FALSE;
 BOOLEAN PiCriticalDeviceDatabaseEnabled = TRUE;
 BOOLEAN PnpSystemInit = FALSE;
 BOOLEAN PpPnpShuttingDown = FALSE;
+LIST_ENTRY IopPendingSurpriseRemovals;
+ERESOURCE IopSurpriseRemoveListLock;
 ERESOURCE PiEngineLock;
 ERESOURCE PiDeviceTreeLock;
 KSEMAPHORE PpRegistrySemaphore;
@@ -637,10 +639,12 @@ IopInitializePlugPlayServices(
     KeInitializeSpinLock(&IopDeviceActionLock);
     InitializeListHead(&IopDeviceActionRequestList);
     InitializeListHead(&IopPnpEnumerationRequestList);
+    InitializeListHead(&IopPendingSurpriseRemovals);
     KeInitializeEvent(&PiEnumerationLock, NotificationEvent, TRUE);
     KeInitializeEvent(&PiEventQueueEmpty, NotificationEvent, TRUE);
     ExInitializeResourceLite(&PiEngineLock);
     ExInitializeResourceLite(&PiDeviceTreeLock);
+    ExInitializeResourceLite(&IopSurpriseRemoveListLock);
     KeInitializeSemaphore(&PpRegistrySemaphore, 1, 1);
 
     /* Get the default interface */

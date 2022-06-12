@@ -369,6 +369,42 @@ typedef struct _RELATION_LIST
     PRELATION_LIST_ENTRY Entries[1];
 } RELATION_LIST, *PRELATION_LIST;
 
+typedef enum _IRPLOCK
+{
+    IRPLOCK_CANCELABLE      = 0,
+    IRPLOCK_CANCEL_STARTED  = 1,
+    IRPLOCK_CANCEL_COMPLETE = 2,
+    IRPLOCK_COMPLETED       = 3
+} IRPLOCK, *PIRPLOCK;
+
+typedef struct _DOCK_INTERFACE
+{
+    UINT16 Size;
+    UINT16 Version;
+    PVOID Context;
+    PVOID InterfaceReference;
+    PVOID InterfaceDereference;
+    PVOID ProfileDepartureSetMode;
+    PVOID ProfileDepartureUpdate;
+} DOCK_INTERFACE, *PDOCK_INTERFACE;
+
+typedef struct _PENDING_RELATIONS_LIST_ENTRY
+{
+    LIST_ENTRY Link;
+    WORK_QUEUE_ITEM WorkItem;
+    PPNP_DEVICE_EVENT_ENTRY DeviceEvent;
+    PDEVICE_OBJECT DeviceObject;
+    PRELATION_LIST RelationsList;
+    PIRP EjectIrp;
+    IRPLOCK Lock;
+    ULONG Problem;
+    BOOLEAN ProfileChangingEject;
+    BOOLEAN DisplaySafeRemovalDialog;
+    BOOLEAN Padding[0x2];
+    SYSTEM_POWER_STATE LightestSleepState;
+    PDOCK_INTERFACE DockInterface;
+} PENDING_RELATIONS_LIST_ENTRY, *PPENDING_RELATIONS_LIST_ENTRY;
+
 typedef struct _PNP_NOTIFY_HEADER
 {
     LIST_ENTRY Link;

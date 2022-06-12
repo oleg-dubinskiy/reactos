@@ -11,6 +11,8 @@
 
 extern ULONG IopMaxDeviceNodeLevel; 
 extern ERESOURCE PpRegistryDeviceResource;
+extern ERESOURCE IopSurpriseRemoveListLock;
+extern LIST_ENTRY IopPendingSurpriseRemovals;
 
 /* DATA **********************************************************************/
 
@@ -1265,8 +1267,38 @@ IopQueuePendingSurpriseRemoval(
     _In_ PRELATION_LIST RelationsList,
     _In_ ULONG Problem)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
+    PPENDING_RELATIONS_LIST_ENTRY Entry;
+    PDEVICE_NODE DeviceNode;
+  
+    DPRINT("IopQueuePendingSurpriseRemoval: [%p] RelationsList %p, Problem %X\n", DeviceObject, RelationsList, Problem);
+    PAGED_CODE();
+
+    Entry = PiAllocateCriticalMemory(PipSurpriseRemove, NonPagedPool, sizeof(*Entry), 'rcpP');
+    ASSERT(Entry != NULL);
+
+    Entry->RelationsList = RelationsList;
+    Entry->DeviceObject = DeviceObject;
+    Entry->Problem = Problem;
+    Entry->ProfileChangingEject = 0;
+
+    if (DeviceObject)
+        DeviceNode = IopGetDeviceNode(DeviceObject);
+    else
+        DeviceNode = NULL;
+
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(&IopSurpriseRemoveListLock, TRUE);
+
+    if (DeviceNode->Parent == NULL)
+    {
+        ASSERT(DeviceNode->PreviousParent != NULL);
+        InterlockedIncrement((PLONG)&DeviceNode->PreviousParent->DeletedChildren);
+    }
+
+    InsertTailList(&IopPendingSurpriseRemovals, &Entry->Link);
+
+    ExReleaseResourceLite(&IopSurpriseRemoveListLock);
+    KeLeaveCriticalRegion();
 }
 
 /* EOF */
