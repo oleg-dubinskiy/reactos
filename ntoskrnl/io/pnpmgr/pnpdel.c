@@ -1395,4 +1395,60 @@ IopDelayedRemoveWorker(
     PpDevNodeUnlockTree(1);
 }
 
+VOID
+NTAPI
+IopChainDereferenceComplete(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ BOOLEAN IsAllowRunWorker)
+{
+    PPENDING_RELATIONS_LIST_ENTRY Entry;
+    PLIST_ENTRY Link;
+    ULONG RelationsCount;
+    ULONG TaggedCount;
+    NTSTATUS Status;
+
+    DPRINT("IopChainDereferenceComplete: DeviceObject %p, IsAllowRunWorker %X\n", DeviceObject, IsAllowRunWorker);
+    PAGED_CODE();
+
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(&IopSurpriseRemoveListLock, TRUE);
+
+    for (Link = IopPendingSurpriseRemovals.Flink;
+         Link != &IopPendingSurpriseRemovals;
+         Link = Link->Flink)
+    {
+        Entry = CONTAINING_RECORD(Link, PENDING_RELATIONS_LIST_ENTRY, Link);
+
+        Status = IopSetRelationsTag(Entry->RelationsList, DeviceObject, TRUE);
+        if (!NT_SUCCESS(Status))
+            continue;
+
+        TaggedCount = Entry->RelationsList->TagCount;
+        RelationsCount = Entry->RelationsList->Count;
+
+        if (TaggedCount != RelationsCount)
+            break;
+
+        RemoveEntryList(Link);
+
+        ExReleaseResourceLite(&IopSurpriseRemoveListLock);
+        KeLeaveCriticalRegion();
+
+        if (IsAllowRunWorker && PsGetCurrentProcess() == PsInitialSystemProcess)
+        {
+            IopDelayedRemoveWorker(Entry);
+            return;
+        }
+
+        ExInitializeWorkItem(&Entry->WorkItem, IopDelayedRemoveWorker, Entry);
+        ExQueueWorkItem(&Entry->WorkItem, DelayedWorkQueue);
+        return;
+    }
+
+    ExReleaseResourceLite(&IopSurpriseRemoveListLock);
+    KeLeaveCriticalRegion();
+
+    ASSERT(Link != &IopPendingSurpriseRemovals);
+}
+
 /* EOF */
