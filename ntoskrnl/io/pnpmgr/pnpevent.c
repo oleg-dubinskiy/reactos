@@ -77,20 +77,6 @@ PpCompleteDeviceEvent(
     ExFreePoolWithTag(EventEntry, 'EEpP');
 }
 
-BOOLEAN
-NTAPI
-IopNotifyPnpWhenChainDereferenced(
-    _In_ PDEVICE_OBJECT* RemovalDevices,
-    _In_ ULONG DevicesCount,
-    _In_ BOOLEAN IsQueryRemove,
-    _In_ BOOLEAN IsAllowRunWorker,
-    _Out_ PDEVICE_OBJECT* OutDeviceObject)
-{
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return FALSE;
-}
-
 NTSTATUS
 NTAPI
 PiResizeTargetDeviceBlock(

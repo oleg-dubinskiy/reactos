@@ -1451,4 +1451,111 @@ IopChainDereferenceComplete(
     ASSERT(Link != &IopPendingSurpriseRemovals);
 }
 
+BOOLEAN
+NTAPI
+IopNotifyPnpWhenChainDereferenced(
+    _In_ PDEVICE_OBJECT* RemovalDevices,
+    _In_ ULONG DevicesCount,
+    _In_ BOOLEAN IsQueryRemove,
+    _In_ BOOLEAN IsAllowRunWorker,
+    _Out_ PDEVICE_OBJECT* OutDeviceObject)
+{
+    PEXTENDED_DEVOBJ_EXTENSION Extension;
+    PDEVICE_OBJECT DeviceObject = 0;
+    PDEVICE_OBJECT attachedDevice;
+    PDEVICE_NODE DeviceNode;
+    ULONG Pass1SetFlag;
+    ULONG Pass1ClearFlag;
+    ULONG ReferenceCount = 0;
+    LONG ix;
+    LONG jx;
+    KIRQL OldIrql;
+
+    DPRINT("IopNotifyPnpWhenChainDereferenced: %p, %X, %X, %X\n", RemovalDevices, DevicesCount, IsQueryRemove, IsAllowRunWorker);
+
+    if (IsQueryRemove)
+    {
+        Pass1SetFlag = 8;
+        Pass1ClearFlag = ~0;
+    }
+    else
+    {
+        Pass1SetFlag = 4;
+        Pass1ClearFlag = ~8;
+    }
+
+    DPRINT("IopNotifyPnpWhenChainDereferenced: Pass1SetFlag %X, Pass1ClearFlag %X\n", Pass1SetFlag, Pass1ClearFlag);
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
+
+    for (ix = 0; ix < DevicesCount; ix++)
+    {
+        DeviceObject = RemovalDevices[ix];
+        DeviceNode = IopGetDeviceNode(DeviceObject);
+        ASSERT(DeviceNode);
+
+        ReferenceCount = DeviceNode->DeletedChildren;
+
+        for (attachedDevice = DeviceObject;
+             attachedDevice;
+             attachedDevice = attachedDevice->AttachedDevice)
+        {
+            Extension = IoGetDevObjExtension(attachedDevice);
+
+            ASSERT(Extension != NULL);
+            ASSERT(!(Extension->ExtensionFlags & Pass1SetFlag));
+
+            Extension->ExtensionFlags &= Pass1ClearFlag;
+            Extension->ExtensionFlags |= Pass1SetFlag;
+
+            ReferenceCount |= attachedDevice->ReferenceCount;
+        }
+
+        if (IsQueryRemove)
+        {
+            if (ReferenceCount)
+                break;
+        }
+        else if (!ReferenceCount)
+        {
+            for (attachedDevice = DeviceObject;
+                 attachedDevice;
+                 attachedDevice = attachedDevice->AttachedDevice)
+            {
+                Extension = IoGetDevObjExtension(attachedDevice);
+                Extension->ExtensionFlags &= ~4;
+                Extension->ExtensionFlags |= 8;
+            }
+
+            KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+            IopChainDereferenceComplete(DeviceObject, IsAllowRunWorker);
+            OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
+        }
+    }
+
+    if (IsQueryRemove && ReferenceCount)
+    {
+        if (OutDeviceObject)
+            *OutDeviceObject = DeviceObject;
+
+        for (jx = ix; jx >= 0; jx--)
+        {
+            for (attachedDevice = RemovalDevices[jx];
+                 attachedDevice;
+                 attachedDevice = attachedDevice->AttachedDevice)
+            {
+                Extension = IoGetDevObjExtension(attachedDevice);
+                Extension->ExtensionFlags &= ~8;
+            }
+        }
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+
+    if (IsQueryRemove && !ReferenceCount)
+        return FALSE;
+
+    return TRUE;
+}
+
 /* EOF */

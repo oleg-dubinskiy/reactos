@@ -740,6 +740,16 @@ IopQueuePendingSurpriseRemoval(
     _In_ ULONG Problem
 );
 
+BOOLEAN
+NTAPI
+IopNotifyPnpWhenChainDereferenced(
+    _In_ PDEVICE_OBJECT* RemovalDevices,
+    _In_ ULONG DevicesCount,
+    _In_ BOOLEAN IsQueryRemove,
+    _In_ BOOLEAN IsAllowRunWorker,
+    _Out_ PDEVICE_OBJECT* OutDeviceObject
+);
+
 /* pnpenum.c */
 NTSTATUS
 NTAPI
