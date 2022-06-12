@@ -1359,4 +1359,40 @@ IopQueuePendingSurpriseRemoval(
     KeLeaveCriticalRegion();
 }
 
+VOID
+NTAPI
+IopDelayedRemoveWorker(
+    _In_ PVOID Parameter)
+{
+    PPENDING_RELATIONS_LIST_ENTRY Entry = Parameter;
+    PDEVICE_OBJECT DeviceObject;
+    PDEVICE_NODE DeviceNode;
+    BOOLEAN IsUnlink = FALSE;
+
+    PAGED_CODE();
+    DPRINT("IopDelayedRemoveWorker: Entry %p\n", Entry);
+
+    PpDevNodeLockTree(1);
+
+    DeviceObject = Entry->DeviceObject;
+
+    if (DeviceObject)
+        DeviceNode = IopGetDeviceNode(DeviceObject);
+    else
+        DeviceNode = NULL;
+
+    if (!(DeviceNode->Flags & DNF_ENUMERATED) && DeviceNode->Parent)
+        IsUnlink = TRUE;
+
+    IopDeleteLockedDeviceNodes(DeviceObject, Entry->RelationsList, PipRemove, FALSE, Entry->Problem, NULL, NULL);
+
+    if (IsUnlink)
+        IopUnlinkDeviceRemovalRelations(Entry->DeviceObject, Entry->RelationsList, 0);
+
+    IopFreeRelationList(Entry->RelationsList);
+    ExFreePoolWithTag(Entry, 0);
+
+    PpDevNodeUnlockTree(1);
+}
+
 /* EOF */
