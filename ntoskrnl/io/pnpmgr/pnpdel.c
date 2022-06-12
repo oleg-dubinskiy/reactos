@@ -982,9 +982,67 @@ IopSetRelationsTag(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ BOOLEAN IsTaggedCount)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // IoDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PRELATION_LIST_ENTRY RelationEntry;
+    PDEVICE_NODE DeviceNode;
+    ULONG Level;
+    ULONG FirstLevel;
+    LONG ix;
+
+    PAGED_CODE();
+    DPRINT("IopSetRelationsTag: [%p] First %X Max %X\n", RelationsList, RelationsList->FirstLevel, RelationsList->MaxLevel);
+
+    DeviceNode = IopGetDeviceNode(DeviceObject);
+    if (!DeviceNode)
+    {
+        DPRINT1("IopSetRelationsTag: STATUS_NO_SUCH_DEVICE\n");
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    Level = DeviceNode->Level;
+    FirstLevel = RelationsList->FirstLevel;
+
+    if (Level < FirstLevel)
+    {
+        DPRINT1("IopSetRelationsTag: STATUS_NO_SUCH_DEVICE\n");
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    if (Level > RelationsList->MaxLevel)
+    {
+        DPRINT1("IopSetRelationsTag: STATUS_NO_SUCH_DEVICE\n");
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    RelationEntry = RelationsList->Entries[Level - FirstLevel];
+    if (!RelationEntry)
+    {
+        DPRINT1("IopSetRelationsTag: STATUS_NO_SUCH_DEVICE\n");
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    for (ix = (RelationEntry->Count - 1); ix >= 0; ix--)
+    {
+        if ((PDEVICE_OBJECT)((ULONG_PTR)RelationEntry->Devices[ix] & 0xFFFFFFFC) == DeviceObject)
+        {
+            if ((ULONG_PTR)RelationEntry->Devices[ix] & 1)
+                RelationsList->TagCount--;
+
+            if (IsTaggedCount)
+            {
+                RelationEntry->Devices[ix] = (PDEVICE_OBJECT)((ULONG_PTR)RelationEntry->Devices[ix] | 1);
+                RelationsList->TagCount++;
+            }
+            else
+            {
+                RelationEntry->Devices[ix] = (PDEVICE_OBJECT)((ULONG_PTR)RelationEntry->Devices[ix] & ~1);
+            }
+
+            return STATUS_SUCCESS;
+        }
+    }
+
+    DPRINT1("IopSetRelationsTag: STATUS_NO_SUCH_DEVICE\n");
+    return STATUS_NO_SUCH_DEVICE;
 }
 
 VOID
