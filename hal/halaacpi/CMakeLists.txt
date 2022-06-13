@@ -13,6 +13,7 @@ list(APPEND HAL_SOURCE
     apic/apic.c
     generic/display.c
     generic/halinit.c
+    generic/memory.c
 )
 
 add_library(halaacpi MODULE
