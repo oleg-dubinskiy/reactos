@@ -102,6 +102,60 @@ HalpAcpiFindRsdtPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
     return STATUS_SUCCESS;
 }
 
+PVOID
+NTAPI
+HalpAcpiCopyBiosTable(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
+                      IN PDESCRIPTION_HEADER TableHeader)
+{
+    ULONG Size;
+    PFN_COUNT PageCount;
+    PHYSICAL_ADDRESS PhysAddress;
+    PACPI_CACHED_TABLE CachedTable;
+    PDESCRIPTION_HEADER CopiedTable;
+
+    /* Size we'll need for the cached table */
+    Size = TableHeader->Length + FIELD_OFFSET(ACPI_CACHED_TABLE, Header);
+
+    if (LoaderBlock)
+    {
+        /* Phase 0: Convert to pages and use the HAL heap */
+        PageCount = BYTES_TO_PAGES(Size);
+        PhysAddress.QuadPart = HalpAllocPhysicalMemory(LoaderBlock, 0x1000000, PageCount, FALSE);
+
+        if (PhysAddress.QuadPart)
+        {
+            /* Map it */
+            CachedTable = HalpMapPhysicalMemory64(PhysAddress, PageCount);
+        }
+        else
+        {
+            /* No memory, so nothing to map */
+            CachedTable = NULL;
+        }
+    }
+    else
+    {
+        /* Use Mm pool */
+        CachedTable = ExAllocatePoolWithTag(NonPagedPool, Size, TAG_HAL);
+    }
+
+    /* Do we have the cached table? */
+    if (CachedTable)
+    {
+        /* Copy the data */
+        CopiedTable = &CachedTable->Header;
+        RtlCopyMemory(CopiedTable, TableHeader, TableHeader->Length);
+    }
+    else
+    {
+        /* Nothing to return */
+        CopiedTable = NULL;
+    }
+
+    /* Return the table */
+    return CopiedTable;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 
