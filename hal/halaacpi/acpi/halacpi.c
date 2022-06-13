@@ -1,0 +1,108 @@
+
+/* INCLUDES *******************************************************************/
+
+#include <hal.h>
+//#define NDEBUG
+#include <debug.h>
+
+/* GLOBALS ********************************************************************/
+
+PACPI_BIOS_MULTI_NODE HalpAcpiMultiNode;
+
+/* PRIVATE FUNCTIONS **********************************************************/
+
+NTSTATUS
+NTAPI
+HalpAcpiFindRsdtPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
+                       OUT PACPI_BIOS_MULTI_NODE* AcpiMultiNode)
+{
+    PCONFIGURATION_COMPONENT_DATA ComponentEntry;
+    PCONFIGURATION_COMPONENT_DATA Next = NULL;
+    PCM_PARTIAL_RESOURCE_LIST ResourceList;
+    PACPI_BIOS_MULTI_NODE NodeData;
+    SIZE_T NodeLength;
+    PFN_COUNT PageCount;
+    PVOID MappedAddress;
+    PHYSICAL_ADDRESS PhysicalAddress;
+
+    DPRINT("HalpAcpiFindRsdtPhase0: ... \n");
+
+    /* Did we already do this once? */
+    if (HalpAcpiMultiNode)
+    {
+        /* Return what we know */
+        *AcpiMultiNode = HalpAcpiMultiNode;
+        return STATUS_SUCCESS;
+    }
+
+    /* Assume failure */
+    *AcpiMultiNode = NULL;
+
+    /* Find the multi function adapter key */
+    ComponentEntry = KeFindConfigurationNextEntry(LoaderBlock->ConfigurationRoot, AdapterClass, MultiFunctionAdapter, NULL, &Next);
+
+    while (ComponentEntry)
+    {
+        /* Find the ACPI BIOS key */
+        if (!_stricmp(ComponentEntry->ComponentEntry.Identifier, "ACPI BIOS"))
+        {
+            /* Found it */
+            break;
+        }
+
+        /* Keep searching */
+        Next = ComponentEntry;
+        ComponentEntry = KeFindConfigurationNextEntry(LoaderBlock->ConfigurationRoot, AdapterClass, MultiFunctionAdapter, NULL, &Next);
+    }
+
+    /* Make sure we found it */
+    if (!ComponentEntry)
+    {
+        DPRINT1("**** HalpAcpiFindRsdtPhase0: did NOT find RSDT\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    /* The configuration data is a resource list, and the BIOS node follows */
+    ResourceList = ComponentEntry->ConfigurationData;
+    NodeData = (PACPI_BIOS_MULTI_NODE)(ResourceList + 1);
+
+    /* How many E820 memory entries are there? */
+    NodeLength = sizeof(ACPI_BIOS_MULTI_NODE) + ((NodeData->Count - 1) * sizeof(ACPI_E820_ENTRY));
+
+    /* Convert to pages */
+    PageCount = (PFN_COUNT)BYTES_TO_PAGES(NodeLength);
+
+    /* Allocate the memory */
+    PhysicalAddress.QuadPart = HalpAllocPhysicalMemory(LoaderBlock, 0x1000000, PageCount, FALSE);
+
+    if (PhysicalAddress.QuadPart)
+    {
+        /* Map it if the allocation worked */
+        MappedAddress = HalpMapPhysicalMemory64(PhysicalAddress, PageCount);
+    }
+    else
+    {
+        /* Otherwise we'll have to fail */
+        MappedAddress = NULL;
+    }
+
+    /* Save the multi node, bail out if we didn't find it */
+    HalpAcpiMultiNode = MappedAddress;
+    if (!HalpAcpiMultiNode) {
+        DPRINT1("STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Copy the multi-node data */
+    RtlCopyMemory(MappedAddress, NodeData, NodeLength);
+
+    /* Return the data */
+    *AcpiMultiNode = HalpAcpiMultiNode;
+
+    return STATUS_SUCCESS;
+}
+
+/* PUBLIC FUNCTIONS **********************************************************/
+
+
+/* EOF */

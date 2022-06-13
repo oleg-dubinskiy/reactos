@@ -10,6 +10,7 @@ spec2def(halaacpi.dll halaacpi.spec ADD_IMPORTLIB)
 
 # The components generic
 list(APPEND HAL_SOURCE
+    acpi/halacpi.c
     apic/apic.c
     generic/display.c
     generic/halinit.c
