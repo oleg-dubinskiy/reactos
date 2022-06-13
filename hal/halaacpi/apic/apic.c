@@ -2,9 +2,12 @@
 /* INCLUDES ******************************************************************/
 
 #include <hal.h>
+
 //#define NDEBUG
 #include <debug.h>
+
 #include "apic.h"
+#include "apicacpi.h"
 
 #ifdef ALLOC_PRAGMA
   #pragma alloc_text(INIT, DetectAcpiMP)

@@ -11,6 +11,7 @@
 
 #ifdef ALLOC_PRAGMA
   #pragma alloc_text(INIT, HalpInitMpInfo)
+  #pragma alloc_text(INIT, HalpVerifyIOUnit)
 #endif
 
 /* DATA ***********************************************************************/
@@ -34,6 +35,36 @@ extern ULONG HalpPicVectorRedirect[HAL_PIC_VECTORS];
 extern ULONG HalpPicVectorFlags[HAL_PIC_VECTORS];
 
 /* FUNCTIONS ******************************************************************/
+
+INIT_FUNCTION
+BOOLEAN
+NTAPI 
+HalpVerifyIOUnit(
+    _In_ PIO_APIC_REGISTERS IOUnitRegs)
+{
+    IO_APIC_VERSION_REGISTER IoApicVersion1;
+    IO_APIC_VERSION_REGISTER IoApicVersion2;
+
+    IOUnitRegs->IoRegisterSelect = IOAPIC_VER;
+    IOUnitRegs->IoWindow = 0;
+
+    IOUnitRegs->IoRegisterSelect = IOAPIC_VER;
+    IoApicVersion1.AsULONG = IOUnitRegs->IoWindow;
+
+    IOUnitRegs->IoRegisterSelect = IOAPIC_VER;
+    IOUnitRegs->IoWindow = 0;
+
+    IOUnitRegs->IoRegisterSelect = IOAPIC_VER;
+    IoApicVersion2.AsULONG = IOUnitRegs->IoWindow;
+
+    if (IoApicVersion1.ApicVersion != IoApicVersion2.ApicVersion ||
+        IoApicVersion1.MaxRedirectionEntry != IoApicVersion2.MaxRedirectionEntry)
+    {
+        return FALSE;
+    }
+
+    return TRUE;
+}
 
 INIT_FUNCTION
 VOID

@@ -28,4 +28,11 @@ typedef struct _LOCAL_APIC
 #define LOCAL_APIC_SIZE sizeof(LOCAL_APIC)
 #include <poppack.h>
 
+INIT_FUNCTION
+BOOLEAN
+NTAPI 
+HalpVerifyIOUnit(
+    _In_ PIO_APIC_REGISTERS IOUnitRegs
+);
+
 #endif /* !_APICACPI_H_ */
