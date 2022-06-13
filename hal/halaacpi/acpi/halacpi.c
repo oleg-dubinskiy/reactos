@@ -239,6 +239,135 @@ HalpAcpiGetTable(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
     return TableAddress;
 }
 
+NTSTATUS
+NTAPI
+HalpAcpiTableCacheInit(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    PLOADER_PARAMETER_EXTENSION LoaderExtension;
+    PACPI_BIOS_MULTI_NODE AcpiMultiNode;
+    PHYSICAL_ADDRESS PhysicalAddress;
+    PVOID MappedAddress;
+    ULONG TableLength;
+    PRSDT Rsdt;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    //DPRINT("HalpAcpiTableCacheInit: LoaderBlock %X\n", LoaderBlock);
+
+    /* Only initialize once */
+    if (HalpAcpiTableCacheList.Flink)
+        return Status;
+
+    /* Setup the lock and table */
+    ExInitializeFastMutex(&HalpAcpiTableCacheLock);
+    InitializeListHead(&HalpAcpiTableCacheList);
+
+    /* Find the RSDT */
+    Status = HalpAcpiFindRsdtPhase0(LoaderBlock, &AcpiMultiNode);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    PhysicalAddress.QuadPart = AcpiMultiNode->RsdtAddress.QuadPart;
+
+    /* Map the RSDT */
+    if (LoaderBlock)
+    {
+        /* Phase0: Use HAL Heap to map the RSDT, we assume it's about 2 pages */
+        MappedAddress = HalpMapPhysicalMemory64(PhysicalAddress, 2);
+    }
+    else
+    {
+        /* Use an I/O map */
+        MappedAddress = MmMapIoSpace(PhysicalAddress, PAGE_SIZE * 2, MmNonCached);
+    }
+
+    /* Get the RSDT */
+    Rsdt = MappedAddress;
+    if (!MappedAddress)
+    {
+        /* Fail, no memory */
+        DPRINT1("HAL: Failed to map RSDT\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Validate it */
+    if ((Rsdt->Header.Signature != RSDT_SIGNATURE) &&
+        (Rsdt->Header.Signature != XSDT_SIGNATURE))
+    {
+        /* Very bad: crash */
+        HalDisplayString("Bad RSDT pointer\r\n");
+        KeBugCheckEx(MISMATCHED_HAL, 4, __LINE__, 0, 0);
+    }
+
+    /* We assumed two pages -- do we need less or more? */
+    TableLength = ADDRESS_AND_SIZE_TO_SPAN_PAGES(PhysicalAddress.LowPart, Rsdt->Header.Length);
+
+    if (TableLength != 2)
+    {
+        /* Are we in phase 0 or 1? */
+        if (!LoaderBlock)
+        {
+            /* Unmap the old table, remap the new one, using Mm I/O space */
+            MmUnmapIoSpace(MappedAddress, 2 * PAGE_SIZE);
+            MappedAddress = MmMapIoSpace(PhysicalAddress, (TableLength << PAGE_SHIFT), MmNonCached);
+        }
+        else
+        {
+            /* Unmap the old table, remap the new one, using HAL heap */
+            HalpUnmapVirtualAddress(MappedAddress, 2);
+            MappedAddress = HalpMapPhysicalMemory64(PhysicalAddress, TableLength);
+        }
+
+        /* Get the remapped table */
+        Rsdt = MappedAddress;
+        if (!MappedAddress)
+        {
+            /* Fail, no memory */
+            DPRINT1("HAL: Couldn't remap RSDT\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
+
+    /* Now take the BIOS copy and make our own local copy */
+    Rsdt = HalpAcpiCopyBiosTable(LoaderBlock, &Rsdt->Header);
+    if (!Rsdt)
+    {
+        /* Fail, no memory */
+        DPRINT1("HAL: Couldn't remap RSDT\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Get rid of the BIOS mapping */
+    if (LoaderBlock)
+    {
+        /* Use HAL heap */
+        HalpUnmapVirtualAddress(MappedAddress, TableLength);
+        LoaderExtension = LoaderBlock->Extension;
+    }
+    else
+    {
+        /* Use Mm */
+        MmUnmapIoSpace(MappedAddress, TableLength << PAGE_SHIFT);
+        LoaderExtension = NULL;
+    }
+
+    /* Cache the RSDT */
+    HalpAcpiCacheTable(&Rsdt->Header);
+
+    /* Check for compatible loader block extension */
+    if (LoaderExtension && (LoaderExtension->Size >= 0x58))
+    {
+        /* Compatible loader: did it provide an ACPI table override? */
+        if ((LoaderExtension->AcpiTable) && (LoaderExtension->AcpiTableSize))
+        {
+            /* Great, because we don't support it! */
+            DPRINT1("ACPI Table Overrides Not Supported!\n");
+        }
+    }
+
+    /* Done */
+    return Status;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 
