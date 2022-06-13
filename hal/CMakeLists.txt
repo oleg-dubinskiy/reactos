@@ -1,6 +1,7 @@
 
 project(HAL)
 if(ARCH STREQUAL "i386")
+    add_subdirectory(halaacpi)
     add_subdirectory(halacpi)
     add_subdirectory(halx86)
 elseif(ARCH STREQUAL "amd64")
