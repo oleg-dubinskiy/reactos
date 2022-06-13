@@ -71,4 +71,20 @@ HalpFlushTLB(
     VOID
 );
 
+/* pcibus.c */
+INIT_FUNCTION
+NTSTATUS
+NTAPI
+HalpSetupPciDeviceForDebugging(
+    _In_ PVOID LoaderBlock,
+    _Inout_ OUT PDEBUG_DEVICE_DESCRIPTOR PciDevice
+);
+
+INIT_FUNCTION
+NTSTATUS
+NTAPI
+HalpReleasePciDeviceForDebugging(
+    _Inout_ PDEBUG_DEVICE_DESCRIPTOR PciDevice
+);
+
 /* EOF */

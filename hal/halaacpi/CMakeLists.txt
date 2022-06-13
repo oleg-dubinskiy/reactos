@@ -13,6 +13,7 @@ list(APPEND HAL_SOURCE
     acpi/halacpi.c
     apic/apic.c
     apic/apicacpi.c
+    bus/pcibus.c
     generic/i386/portio.c
     generic/display.c
     generic/halinit.c
