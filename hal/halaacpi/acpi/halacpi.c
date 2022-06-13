@@ -198,6 +198,47 @@ HalpAcpiGetCachedTable(IN ULONG Signature)
     return NULL;
 }
 
+PVOID
+NTAPI
+HalpAcpiGetTable(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
+                 IN ULONG Signature)
+{
+    PFN_COUNT PageCount;
+    PDESCRIPTION_HEADER TableAddress, BiosCopy;
+
+    //DPRINT("HalpAcpiGetTable: Signature %X\n", Signature);
+
+    /* See if we have a cached table? */
+    TableAddress = HalpAcpiGetCachedTable(Signature);
+    if (TableAddress)
+        return TableAddress;
+
+    /* No cache, search the BIOS */
+    TableAddress = HalpAcpiGetTableFromBios(LoaderBlock, Signature);
+    if (!TableAddress)
+        return NULL;
+
+    /* Found it, copy it into our own memory */
+    BiosCopy = HalpAcpiCopyBiosTable(LoaderBlock, TableAddress);
+
+    /* Get the pages, and unmap the BIOS copy */
+    PageCount = BYTES_TO_PAGES(TableAddress->Length);
+
+    if (LoaderBlock)
+        /* Phase 0, use the HAL heap */
+        HalpUnmapVirtualAddress(TableAddress, PageCount);
+    else
+        /* Phase 1, use Mm */
+        MmUnmapIoSpace(TableAddress, PageCount << PAGE_SHIFT);
+
+    /* Cache the bios copy */
+    TableAddress = BiosCopy;
+    if (BiosCopy)
+        HalpAcpiCacheTable(BiosCopy);
+
+    return TableAddress;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 
