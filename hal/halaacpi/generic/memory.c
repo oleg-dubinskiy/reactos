@@ -200,5 +200,36 @@ HalpMapPhysicalMemory64(IN PHYSICAL_ADDRESS PhysicalAddress,
 
     return VirtualAddress;
 }
+VOID
+NTAPI
+HalpUnmapVirtualAddress(IN PVOID VirtualAddress,
+                        IN PFN_COUNT PageCount)
+{
+    PHARDWARE_PTE PointerPte;
+    ULONG ix;
+
+    /* Only accept valid addresses */
+    if (VirtualAddress < (PVOID)MM_HAL_VA_START)
+        return;
+
+    /* Align it down to page size */
+    VirtualAddress = (PVOID)((ULONG_PTR)VirtualAddress & ~(PAGE_SIZE - 1));
+
+    /* Loop PTEs */
+    PointerPte = HalAddressToPte(VirtualAddress);
+
+    for (ix = 0; ix < PageCount; ix++)
+    {
+        *(PULONG)PointerPte = 0;
+        PointerPte++;
+    }
+
+    /* Flush the TLB */
+    HalpFlushTLB();
+
+    /* Put the heap back */
+    if (HalpHeapStart > VirtualAddress)
+        HalpHeapStart = VirtualAddress;
+}
 
 /* EOF */

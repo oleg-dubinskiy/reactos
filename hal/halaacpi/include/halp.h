@@ -36,4 +36,11 @@ HalpMapPhysicalMemory64(
     IN PFN_COUNT PageCount
 );
 
+VOID
+NTAPI
+HalpUnmapVirtualAddress(
+    IN PVOID VirtualAddress,
+    IN PFN_COUNT NumberPages
+);
+
 /* EOF */
