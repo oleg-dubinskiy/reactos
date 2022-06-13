@@ -649,6 +649,15 @@ HalAcpiGetTable(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
     return TableHeader;
 }
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpCheckPowerButton(VOID)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 

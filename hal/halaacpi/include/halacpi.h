@@ -167,4 +167,11 @@ HalAcpiGetTable(
     IN ULONG Signature
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpCheckPowerButton(
+    VOID
+);
+
 /* EOF */
