@@ -8,6 +8,7 @@
 /* GLOBALS ********************************************************************/
 
 PACPI_BIOS_MULTI_NODE HalpAcpiMultiNode;
+LIST_ENTRY HalpAcpiTableCacheList;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -165,6 +166,36 @@ HalpAcpiCacheTable(IN PDESCRIPTION_HEADER TableHeader)
     /* Get the cached table and link it */
     CachedTable = CONTAINING_RECORD(TableHeader, ACPI_CACHED_TABLE, Header);
     InsertTailList(&HalpAcpiTableCacheList, &CachedTable->Links);
+}
+
+PDESCRIPTION_HEADER
+NTAPI
+HalpAcpiGetCachedTable(IN ULONG Signature)
+{
+    PLIST_ENTRY ListHead, NextEntry;
+    PACPI_CACHED_TABLE CachedTable;
+
+    //DPRINT("HalpAcpiGetCachedTable: Signature %X\n", Signature);
+
+    /* Loop cached tables */
+    ListHead = &HalpAcpiTableCacheList;
+    NextEntry = ListHead->Flink;
+
+    while (NextEntry != ListHead)
+    {
+        /* Get the table */
+        CachedTable = CONTAINING_RECORD(NextEntry, ACPI_CACHED_TABLE, Links);
+
+        /* Compare signatures */
+        if (CachedTable->Header.Signature == Signature)
+            return &CachedTable->Header;
+
+        /* Keep going */
+        NextEntry = NextEntry->Flink;
+    }
+
+    /* Nothing found */
+    return NULL;
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
