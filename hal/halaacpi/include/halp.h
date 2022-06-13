@@ -1,6 +1,10 @@
 
 #pragma once
 
+/* Mm PTE/PDE to Hal PTE/PDE */
+#define HalAddressToPde(x) (PHARDWARE_PTE)MiAddressToPde(x)
+#define HalAddressToPte(x) (PHARDWARE_PTE)MiAddressToPte(x)
+
 /* halinit.c */
 INIT_FUNCTION
 VOID
@@ -41,6 +45,13 @@ NTAPI
 HalpUnmapVirtualAddress(
     IN PVOID VirtualAddress,
     IN PFN_COUNT NumberPages
+);
+
+PVOID
+NTAPI
+HalpMapPhysicalMemoryWriteThrough64(
+    _In_ PHYSICAL_ADDRESS PhysicalAddress,
+    _In_ PFN_COUNT PageCount
 );
 
 /* EOF */
