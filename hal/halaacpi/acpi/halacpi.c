@@ -5,10 +5,18 @@
 //#define NDEBUG
 #include <debug.h>
 
+#if defined(ALLOC_PRAGMA) && !defined(_MINIHAL_)
+  #pragma alloc_text(INIT, HalAcpiGetTable)
+#endif
+
 /* GLOBALS ********************************************************************/
+
+PWCHAR HalName = L"ACPI 1.0 - APIC platform UP";
 
 PACPI_BIOS_MULTI_NODE HalpAcpiMultiNode;
 LIST_ENTRY HalpAcpiTableCacheList;
+ULONG HalpInvalidAcpiTable;
+FAST_MUTEX HalpAcpiTableCacheLock;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -598,6 +606,45 @@ HalpAcpiTableCacheInit(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* Done */
     return Status;
+}
+
+INIT_FUNCTION
+PVOID
+NTAPI
+HalAcpiGetTable(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
+                IN ULONG Signature)
+{
+    PDESCRIPTION_HEADER TableHeader;
+    NTSTATUS Status;
+
+    DPRINT("HalAcpiGetTable: Signature %X\n", Signature);
+
+    /* Is this phase0 */
+    if (LoaderBlock)
+    {
+        /* Initialize the cache first */
+        Status = HalpAcpiTableCacheInit(LoaderBlock);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("HalAcpiGetTable: Status %X\n", Status);
+            return NULL;
+        }
+    }
+    else
+    {
+        /* Lock the cache */
+        ExAcquireFastMutex(&HalpAcpiTableCacheLock);
+    }
+
+    /* Get the table */
+    TableHeader = HalpAcpiGetTable(LoaderBlock, Signature);
+
+    /* Release the lock in phase 1 */
+    if (!LoaderBlock)
+        ExReleaseFastMutex(&HalpAcpiTableCacheLock);
+
+    /* Return the table */
+    return TableHeader;
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
