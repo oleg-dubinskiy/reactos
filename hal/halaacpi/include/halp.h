@@ -54,4 +54,11 @@ HalpMapPhysicalMemoryWriteThrough64(
     _In_ PFN_COUNT PageCount
 );
 
+/* mics.c */
+VOID
+NTAPI
+HalpFlushTLB(
+    VOID
+);
+
 /* EOF */

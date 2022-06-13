@@ -14,6 +14,7 @@ list(APPEND HAL_SOURCE
     generic/display.c
     generic/halinit.c
     generic/memory.c
+    generic/misc.c
 )
 
 add_library(halaacpi MODULE
