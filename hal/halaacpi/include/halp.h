@@ -29,4 +29,11 @@ HalpAllocPhysicalMemory(
     IN BOOLEAN Aligned
 );
 
+PVOID
+NTAPI
+HalpMapPhysicalMemory64(
+    IN PHYSICAL_ADDRESS PhysicalAddress,
+    IN PFN_COUNT PageCount
+);
+
 /* EOF */
