@@ -5,6 +5,7 @@
 //#define NDEBUG
 #include <debug.h>
 #include "apic.h"
+#include "pic.h"
 
 #if defined(ALLOC_PRAGMA) && !defined(_MINIHAL_)
   #pragma alloc_text(INIT, HalInitializeProcessor)
@@ -78,9 +79,25 @@ HalInitializeProcessor(
             __halt();
         }
 
+        /* Register routines for KDCOM */
 
+        /* Register PCI Device Functions */
+        KdSetupPciDeviceForDebugging = HalpSetupPciDeviceForDebugging;
+        KdReleasePciDeviceforDebugging = HalpReleasePciDeviceForDebugging;
+
+        /* Register ACPI stub */
+        KdGetAcpiTablePhase0 = HalAcpiGetTable;
+        KdCheckPowerButton = HalpCheckPowerButton;
+
+        /* Register memory functions */
+        KdMapPhysicalMemory64 = HalpMapPhysicalMemory64;
+        KdUnmapVirtualAddress = HalpUnmapVirtualAddress;
+
+        //HalpGlobal8259Mask = 0xFFFF; // FIXME
+
+        WRITE_PORT_UCHAR(PIC1_DATA_PORT, 0xFF);
+        WRITE_PORT_UCHAR(PIC2_DATA_PORT, 0xFF);
     }
-
 
 }
 
