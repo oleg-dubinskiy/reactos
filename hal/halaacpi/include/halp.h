@@ -5,6 +5,8 @@
 #define HalAddressToPde(x) (PHARDWARE_PTE)MiAddressToPde(x)
 #define HalAddressToPte(x) (PHARDWARE_PTE)MiAddressToPte(x)
 
+#define HAL_PIC_VECTORS  16
+
 /* halinit.c */
 INIT_FUNCTION
 VOID

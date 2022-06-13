@@ -12,6 +12,7 @@ spec2def(halaacpi.dll halaacpi.spec ADD_IMPORTLIB)
 list(APPEND HAL_SOURCE
     acpi/halacpi.c
     apic/apic.c
+    apic/apicacpi.c
     generic/display.c
     generic/halinit.c
     generic/memory.c

@@ -17,6 +17,8 @@ PACPI_BIOS_MULTI_NODE HalpAcpiMultiNode;
 LIST_ENTRY HalpAcpiTableCacheList;
 ULONG HalpInvalidAcpiTable;
 FAST_MUTEX HalpAcpiTableCacheLock;
+ULONG HalpPicVectorRedirect[HAL_PIC_VECTORS];
+ULONG HalpPicVectorFlags[HAL_PIC_VECTORS];
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
