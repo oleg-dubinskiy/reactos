@@ -11,6 +11,7 @@
 
 #ifdef ALLOC_PRAGMA
   #pragma alloc_text(INIT, DetectAcpiMP)
+  #pragma alloc_text(INIT, HalInitApicInterruptHandlers)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -102,6 +103,28 @@ KIRQL HalpVectorToIRQL[16] =
 
 
 /* FUNCTIONS *****************************************************************/
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalInitApicInterruptHandlers(VOID)
+{
+    KDESCRIPTOR IdtDescriptor;
+    PKIDTENTRY Idt;
+
+    __sidt(&IdtDescriptor.Limit);
+    Idt = (PKIDTENTRY)IdtDescriptor.Base;
+
+    Idt[0x37].Offset = PtrToUlong(PicSpuriousService37);
+    Idt[0x37].Selector = KGDT_R0_CODE;
+    Idt[0x37].Access = 0x8E00;
+    Idt[0x37].ExtendedOffset = (PtrToUlong(PicSpuriousService37) >> 16);
+
+    Idt[0x1F].Offset = PtrToUlong(ApicSpuriousService);
+    Idt[0x1F].Selector = KGDT_R0_CODE;
+    Idt[0x1F].Access = 0x8E00;
+    Idt[0x1F].ExtendedOffset = (PtrToUlong(ApicSpuriousService) >> 16);
+}
 
 INIT_FUNCTION
 BOOLEAN

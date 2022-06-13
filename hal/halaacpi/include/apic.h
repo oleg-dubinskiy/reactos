@@ -98,6 +98,13 @@ DetectAcpiMP(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalInitApicInterruptHandlers(
+    VOID
+);
+
 /* apicacpi.c */
 INIT_FUNCTION
 VOID
@@ -107,5 +114,9 @@ HalpInitMpInfo(
     _In_ ULONG Phase,
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock
 );
+
+/* apictrap.S */
+VOID __cdecl PicSpuriousService37(VOID);
+VOID __cdecl ApicSpuriousService(VOID);
 
 /* EOF */

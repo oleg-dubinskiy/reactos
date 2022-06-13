@@ -99,6 +99,8 @@ HalInitializeProcessor(
         WRITE_PORT_UCHAR(PIC2_DATA_PORT, 0xFF);
     }
 
+    HalInitApicInterruptHandlers();
+
 }
 
 INIT_FUNCTION

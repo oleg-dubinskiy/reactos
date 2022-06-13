@@ -21,8 +21,13 @@ list(APPEND HAL_SOURCE
     generic/misc.c
 )
 
+list(APPEND HAL_ASM_SOURCE
+    apic/apictrap.S
+)
+	
 add_library(halaacpi MODULE
     ${HAL_SOURCE}
+    ${HAL_ASM_SOURCE}
     version/halaacpi.rc
     ${CMAKE_CURRENT_BINARY_DIR}/halaacpi.def)
 
