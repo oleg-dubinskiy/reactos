@@ -156,6 +156,17 @@ HalpAcpiCopyBiosTable(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
     return CopiedTable;
 }
 
+VOID
+NTAPI
+HalpAcpiCacheTable(IN PDESCRIPTION_HEADER TableHeader)
+{
+    PACPI_CACHED_TABLE CachedTable;
+
+    /* Get the cached table and link it */
+    CachedTable = CONTAINING_RECORD(TableHeader, ACPI_CACHED_TABLE, Header);
+    InsertTailList(&HalpAcpiTableCacheList, &CachedTable->Links);
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 
