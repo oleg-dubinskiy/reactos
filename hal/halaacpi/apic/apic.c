@@ -127,6 +127,33 @@ HalpMapNtToHwProcessorId(
     return 0;
 }
 
+UCHAR
+NTAPI
+HalpNodeNumber(
+    _In_ PKPCR Pcr)
+{
+    UCHAR NodeNumber = 0;
+    UCHAR DestMap;
+
+    if (HalpForceApicPhysicalDestinationMode)
+    {
+        NodeNumber = Pcr->Prcb->Number;
+        return (NodeNumber + 1);
+    }
+
+    if (!HalpMaxProcsPerCluster)
+        return (NodeNumber + 1);
+
+    DestMap = HalpIntDestMap[Pcr->Prcb->Number];
+
+    if (DestMap)
+    {
+        NodeNumber = (DestMap >> 4);
+        return (NodeNumber + 1);
+    }
+
+    return 0;
+}
 
 /* SOFTWARE INTERRUPT TRAPS ***************************************************/
 
