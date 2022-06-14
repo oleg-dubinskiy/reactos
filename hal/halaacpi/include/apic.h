@@ -89,6 +89,20 @@ typedef union _APIC_INTI_INFO
 
 } APIC_INTI_INFO, *PAPIC_INTI_INFO;
 
+FORCEINLINE
+ULONG
+ApicRead(ULONG Offset)
+{
+    return *(volatile ULONG *)(APIC_BASE + Offset);
+}
+
+FORCEINLINE
+VOID
+ApicWrite(ULONG Offset, ULONG Value)
+{
+    *(volatile ULONG *)(APIC_BASE + Offset) = Value;
+}
+
 /* apic.c */
 INIT_FUNCTION
 BOOLEAN
