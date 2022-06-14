@@ -195,6 +195,28 @@ HalpInitializeApicAddressing(VOID)
         HalpHybridApicPhysicalTargets |= (1 << PrcNumber);
 }
 
+VOID
+NTAPI
+HalpBuildIpiDestinationMap(
+    _In_ ULONG ProcessorNumber)
+{
+    if (HalpInitLevel == 0xFF)
+        return;
+
+    if (HalpForceApicPhysicalDestinationMode)
+    {
+        DPRINT1("HalpBuildIpiDestinationMap: [%X] FIXME\n", HalpInitLevel);
+    }
+    else if (HalpMaxProcsPerCluster)
+    {
+        DPRINT1("HalpBuildIpiDestinationMap: [%X] FIXME\n", HalpInitLevel);
+    }
+    else
+    {
+        DPRINT1("HalpBuildIpiDestinationMap: [%X] FIXME\n", HalpInitLevel);
+    }
+}
+
 /* SOFTWARE INTERRUPT TRAPS ***************************************************/
 
 DECLSPEC_NORETURN
