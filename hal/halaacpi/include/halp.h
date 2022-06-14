@@ -24,6 +24,13 @@ HalInitSystem(
     IN PLOADER_PARAMETER_BLOCK LoaderBlock
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpGetParameters(
+    _In_ PCHAR CommandLine
+);
+
 /* memory.c */
 INIT_FUNCTION
 ULONG_PTR

@@ -10,6 +10,7 @@
 #if defined(ALLOC_PRAGMA) && !defined(_MINIHAL_)
   #pragma alloc_text(INIT, HalInitializeProcessor)
   #pragma alloc_text(INIT, HalInitSystem)
+  #pragma alloc_text(INIT, HalpGetParameters)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -17,10 +18,72 @@
 PKPCR HalpProcessorPCR[32];
 KAFFINITY HalpActiveProcessors;
 KAFFINITY HalpDefaultInterruptAffinity;
+ULONG HalpBusType;
+ULONG HalpDefaultApicDestinationModeMask = 0x800;
+BOOLEAN HalpUsePmTimer = FALSE;
+BOOLEAN HalpPciLockSettings;
 UCHAR HalpInitLevel = 0xFF;
+
+extern BOOLEAN HalpForceApicPhysicalDestinationMode;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpGetParameters(
+    _In_ PCHAR CommandLine)
+{
+    /* Check if PCI is locked */
+    if (strstr(CommandLine, "PCILOCK"))
+        HalpPciLockSettings = TRUE;
+
+    /* Check for initial breakpoint */
+    if (strstr(CommandLine, "BREAK"))
+    {
+        DPRINT1("HalpGetParameters: FIXME parameters [BREAK]. DbgBreakPoint()\n");
+        DbgBreakPoint();
+    }
+
+    if (strstr(CommandLine, "ONECPU"))
+    {
+        DPRINT1("HalpGetParameters: FIXME parameters [ONECPU]. DbgBreakPoint()\n");
+        DbgBreakPoint();
+        //HalpDontStartProcessors++;
+    }
+
+  #ifdef CONFIG_SMP // halmacpi only
+    if (strstr(CommandLine, "USEPMTIMER"))
+    {
+        HalpUsePmTimer = TRUE;
+    }
+  #endif
+
+    if (strstr(CommandLine, "INTAFFINITY"))
+    {
+        DPRINT1("HalpGetParameters: FIXME parameters [INTAFFINITY]. DbgBreakPoint()\n");
+        DbgBreakPoint();
+        //HalpStaticIntAffinity = TRUE;
+    }
+
+    if (strstr(CommandLine, "USEPHYSICALAPIC"))
+    {
+        HalpDefaultApicDestinationModeMask = 0;
+        HalpForceApicPhysicalDestinationMode = TRUE;
+    }
+
+    if (strstr(CommandLine, "MAXPROCSPERCLUSTER"))
+    {
+        DPRINT1("HalpGetParameters: FIXME parameters [MAXPROCSPERCLUSTER]. DbgBreakPoint()\n");
+        DbgBreakPoint();
+    }
+
+    if (strstr(CommandLine, "MAXAPICCLUSTER"))
+    {
+        DPRINT1("HalpGetParameters: FIXME parameters [MAXAPICCLUSTER]. DbgBreakPoint()\n");
+        DbgBreakPoint();
+    }
+}
 
 /* FUNCTIONS *****************************************************************/
 
