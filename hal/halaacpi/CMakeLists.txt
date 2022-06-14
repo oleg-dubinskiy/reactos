@@ -19,6 +19,7 @@ list(APPEND HAL_SOURCE
     generic/halinit.c
     generic/memory.c
     generic/misc.c
+    pic/pic.c
 )
 
 list(APPEND HAL_ASM_SOURCE

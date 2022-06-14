@@ -13,6 +13,7 @@
   #pragma alloc_text(INIT, DetectAcpiMP)
   #pragma alloc_text(INIT, HalInitApicInterruptHandlers)
   #pragma alloc_text(INIT, HalpInitializeLocalUnit)
+  #pragma alloc_text(INIT, HalpInitializePICs)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -216,6 +217,32 @@ HalpBuildIpiDestinationMap(
     {
         DPRINT1("HalpBuildIpiDestinationMap: [%X] FIXME\n", HalpInitLevel);
     }
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializePICs(
+    _In_ BOOLEAN EnableInterrupts)
+{
+    ULONG_PTR EFlags;
+
+    DPRINT("HalpInitializePICs: EnableInterrupts %X\n", EnableInterrupts);
+
+    /* Save EFlags and disable interrupts */
+    EFlags = __readeflags();
+    _disable();
+
+    /* Initialize and mask the PIC */
+    HalpInitializeLegacyPICs(FALSE); // EdgeTriggered
+
+    DPRINT("HalpInitializePICs: FIXME HalpGlobal8259Mask\n");
+
+    /* Restore interrupt state */
+    if (EnableInterrupts)
+        EFlags |= EFLAGS_INTERRUPT_MASK;
+
+    __writeeflags(EFlags);
 }
 
 /* SOFTWARE INTERRUPT TRAPS ***************************************************/

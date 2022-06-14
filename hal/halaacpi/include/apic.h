@@ -236,6 +236,13 @@ HalpInitializeLocalUnit(
     VOID
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializePICs(
+    _In_ BOOLEAN EnableInterrupts
+);
+
 /* apicacpi.c */
 INIT_FUNCTION
 VOID
