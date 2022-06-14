@@ -37,6 +37,19 @@ typedef struct _ACPI_SUBTABLE_HEADER
 
 } ACPI_SUBTABLE_HEADER, *PACPI_SUBTABLE_HEADER;
 
+#define FADT_FORCE_APIC_CLUSTER_MODEL              0x00040000
+#define FADT_FORCE_APIC_PHYSICAL_DESTINATION_MODE  0x00080000
+
+#define FADT_TMR_VAL_EXT_32BIT  0x80000000
+#define FADT_TMR_VAL_EXT_24BIT  0x00800000
+
+/* WAET - Windows ACPI Emulated Devices Table */
+typedef struct _ACPI_TABLE_WAET
+{
+    ACPI_TABLE_HEADER Header;
+    ULONG Flags;
+} ACPI_TABLE_WAET, *PACPI_TABLE_WAET;
+
 /* Values for MADT subtable type in ACPI_SUBTABLE_HEADER */
 enum AcpiMadtType
 {
@@ -152,6 +165,22 @@ typedef struct _ACPI_CACHED_TABLE
     // ...
 } ACPI_CACHED_TABLE, *PACPI_CACHED_TABLE;
 
+#define ACPI_USE_PLATFORM_CLOCK  0x8000
+
+#include <pshpack4.h>
+typedef struct _HALP_TIMER_INFO
+{
+    PULONG TimerPort;
+    LARGE_INTEGER AcpiTimeValue;
+    ULONG TimerCarry;
+    ULONG ValueExt;
+    LARGE_INTEGER PerformanceCounter;
+    ULONGLONG Reserved1;
+    ULONG Reserved2;
+
+} HALP_TIMER_INFO, *PHALP_TIMER_INFO;
+#include <poppack.h>
+
 PVOID
 NTAPI
 HalpAcpiGetTable(
@@ -172,6 +201,21 @@ VOID
 NTAPI
 HalpCheckPowerButton(
     VOID
+);
+
+INIT_FUNCTION
+NTSTATUS
+NTAPI
+HalpSetupAcpiPhase0(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock
+);
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpAcpiDetectMachineSpecificActions(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock,
+    _In_ PFADT DescriptionTable
 );
 
 /* EOF */

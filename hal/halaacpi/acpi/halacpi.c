@@ -4,9 +4,13 @@
 #include <hal.h>
 //#define NDEBUG
 #include <debug.h>
+#include "apic.h"
+#include "apicacpi.h"
 
 #if defined(ALLOC_PRAGMA) && !defined(_MINIHAL_)
   #pragma alloc_text(INIT, HalAcpiGetTable)
+  #pragma alloc_text(INIT, HalpSetupAcpiPhase0)
+  #pragma alloc_text(INIT, HalpAcpiDetectMachineSpecificActions)
 #endif
 
 /* GLOBALS ********************************************************************/
@@ -15,10 +19,30 @@ PWCHAR HalName = L"ACPI 1.0 - APIC platform UP";
 
 PACPI_BIOS_MULTI_NODE HalpAcpiMultiNode;
 LIST_ENTRY HalpAcpiTableCacheList;
+LIST_ENTRY HalpAcpiTableMatchList;
 ULONG HalpInvalidAcpiTable;
 FAST_MUTEX HalpAcpiTableCacheLock;
 ULONG HalpPicVectorRedirect[HAL_PIC_VECTORS];
 ULONG HalpPicVectorFlags[HAL_PIC_VECTORS];
+PHYSICAL_ADDRESS HalpMaxHotPlugMemoryAddress;
+PHYSICAL_ADDRESS HalpLowStubPhysicalAddress;
+FADT HalpFixedAcpiDescTable;
+HALP_TIMER_INFO TimerInfo;
+PDEBUG_PORT_TABLE HalpDebugPortTable;
+PBOOT_TABLE HalpSimpleBootFlagTable;
+PACPI_SRAT HalpAcpiSrat;
+PHARDWARE_PTE HalpPteForFlush;
+PVOID HalpVirtAddrForFlush;
+PVOID HalpLowStub;
+ULONG HalpWAETDeviceFlags;
+BOOLEAN HalpProcessedACPIPhase0;
+BOOLEAN HalpPhysicalMemoryMayAppearAbove4GB;
+BOOLEAN HalpForceClusteredApicMode = FALSE;
+BOOLEAN HalpBrokenAcpiTimer = FALSE;
+BOOLEAN LessThan16Mb = TRUE;
+
+extern BOOLEAN HalpForceApicPhysicalDestinationMode;
+extern ULONG HalpDefaultApicDestinationModeMask;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -656,6 +680,334 @@ HalpCheckPowerButton(VOID)
 {
     UNIMPLEMENTED;
     ASSERT(FALSE); // HalpDbgBreakPointEx();
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpAcpiDetectMachineSpecificActions(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock,
+    _In_ PFADT DescriptionTable)
+{
+    DPRINT("HalpAcpiDetectMachineSpecificActions: DescriptionTable %p\n", DescriptionTable);
+
+    /* Does this HAL specify something? */
+    if (HalpAcpiTableMatchList.Flink)
+    {
+        /* Great, but we don't support it */
+        DPRINT1("WARNING: Your HAL has specific ACPI hacks to apply!\n");
+    }
+}
+
+VOID
+NTAPI
+HalpNumaInitializeStaticConfiguration(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    PACPI_SRAT SratTable;
+
+    /* Get the SRAT, bail out if it doesn't exist */
+    SratTable = HalAcpiGetTable(LoaderBlock, SRAT_SIGNATURE);
+
+    HalpAcpiSrat = SratTable;
+
+    if (!SratTable)
+        return;
+
+    DPRINT1("HalpNumaInitializeStaticConfiguration: SratTable %p\n", SratTable);
+}
+
+VOID
+NTAPI
+HalpGetHotPlugMemoryInfo(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    PACPI_SRAT SratTable;
+
+    /* Get the SRAT, bail out if it doesn't exist */
+    SratTable = HalAcpiGetTable(LoaderBlock, SRAT_SIGNATURE);
+
+    HalpAcpiSrat = SratTable;
+
+    if (!SratTable)
+        return;
+
+    DPRINT1("HalpGetHotPlugMemoryInfo: SratTable %p\n", SratTable);
+}
+
+VOID
+NTAPI
+HalpDynamicSystemResourceConfiguration(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    /* For this HAL, it means to get hot plug memory information */
+    HalpGetHotPlugMemoryInfo(LoaderBlock);
+}
+
+VOID
+NTAPI
+HalpEndOfBoot(VOID)
+{
+    DPRINT1("HalpEndOfBoot: not implemented, FIXME!\n");
+    //ASSERT(0);// HalpDbgBreakPointEx();
+}
+
+VOID
+NTAPI
+HalpInitBootTable(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    PBOOT_TABLE BootTable;
+
+    DPRINT("HalpInitBootTable()\n");
+
+    /* Get the boot table */
+    BootTable = HalAcpiGetTable(LoaderBlock, BOOT_SIGNATURE);
+    HalpSimpleBootFlagTable = BootTable;
+
+    /* Validate it */
+    if ((BootTable) &&
+        (BootTable->Header.Length >= sizeof(BOOT_TABLE)) &&
+        (BootTable->CMOSIndex >= 9))
+    {
+        DPRINT1("HalpInitBootTable: ACPI Boot table found, but not supported!\n");
+    }
+    else
+    {
+        /* Invalid or doesn't exist, ignore it */
+        HalpSimpleBootFlagTable = 0;
+    }
+
+    /* Install the end of boot handler */
+    HalEndOfBoot = HalpEndOfBoot;
+}
+
+VOID
+NTAPI
+HalaAcpiTimerInit(
+    _In_ PULONG TimerPort,
+    _In_ BOOLEAN IsTimerValExt32bit)
+{
+    DPRINT("HalaAcpiTimerInit: Port %p, IsValExt %X\n", TimerPort, IsTimerValExt32bit);
+
+    RtlZeroMemory(&TimerInfo, sizeof(TimerInfo));
+
+    TimerInfo.TimerPort = TimerPort;
+
+    if (IsTimerValExt32bit)
+        TimerInfo.ValueExt = FADT_TMR_VAL_EXT_32BIT;
+    else
+        TimerInfo.ValueExt = FADT_TMR_VAL_EXT_24BIT;
+
+    if (!HalpBrokenAcpiTimer)
+        return;
+
+    DPRINT1("HalaAcpiTimerInit: HalpBrokenAcpiTimer. DbgBreakPoint()\n");
+    DbgBreakPoint();
+}
+
+VOID
+NTAPI
+HaliAcpiTimerInit(
+    _In_ PULONG TimerPort,
+    _In_ BOOLEAN IsTimerValExt32bit)
+{
+    PAGED_CODE();
+    DPRINT("HaliAcpiTimerInit: Port %p, ValExt %X, flags %X\n",
+           TimerPort, IsTimerValExt32bit, HalpFixedAcpiDescTable.flags);
+
+    /* Is this in the init phase? */
+    if (!TimerPort)
+    {
+        /* Get the data from the FADT */
+
+        /* System port address of the Power Management (PM) Timer Control Register Block */
+        TimerPort = (PULONG)HalpFixedAcpiDescTable.pm_tmr_blk_io_port;
+
+        /* A zero flags bit indicates TMR_VAL is implemented as a 24-bit value.
+           A one indicates TMR_VAL is implemented as a 32-bit value. 
+        */
+        IsTimerValExt32bit = ((HalpFixedAcpiDescTable.flags & ACPI_TMR_VAL_EXT) != 0);
+        DPRINT("TimerPort %p, IsTimerValExt32bit %X\n", TimerPort, IsTimerValExt32bit);
+    }
+
+    if (HalpFixedAcpiDescTable.flags & ACPI_USE_PLATFORM_CLOCK)
+    {
+        DPRINT1("HaliAcpiTimerInit: ACPI_USE_PLATFORM_CLOCK. DbgBreakPoint()\n");
+        DbgBreakPoint();
+        //HalpSetPmTimerFunction();
+        //HalpUsePmTimer = 1;
+    }
+
+    /* Now proceed to the timer initialization */
+    HalaAcpiTimerInit(TimerPort, IsTimerValExt32bit);
+}
+
+VOID
+NTAPI
+HalpAcpiApplyFadtSettings(
+    _In_ PFADT Fadt)
+{
+    /* FADT Fixed Feature Flags */
+    DPRINT("HalpAcpiApplyFadtSettings: flags %08X\n", Fadt, Fadt->flags);
+
+    if (Fadt->flags & FADT_FORCE_APIC_CLUSTER_MODEL)
+    {
+        DPRINT1("HalpAcpiApplyFadtSettings: ACPI_APIC_CLUSTER_MODEL\n");
+        HalpForceClusteredApicMode = TRUE;
+    }
+
+    if (Fadt->flags & FADT_FORCE_APIC_PHYSICAL_DESTINATION_MODE)
+    {
+        DPRINT1("HalpAcpiApplyFadtSettings: ACPI_PHYSICAL_DEST_MODE\n");
+        HalpForceApicPhysicalDestinationMode = TRUE;
+        HalpDefaultApicDestinationModeMask = 0;
+    }
+}
+
+INIT_FUNCTION
+NTSTATUS
+NTAPI
+HalpSetupAcpiPhase0(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    PACPI_TABLE_WAET EmulatedDevicesTable = NULL;
+    PHYSICAL_ADDRESS PhysicalAddress;
+    PFADT Fadt;
+    ULONG TableLength;
+    NTSTATUS Status;
+
+    /* Only do this once */
+    if (HalpProcessedACPIPhase0)
+    {
+        DPRINT("HalpProcessedACPIPhase0 is TRUE\n");
+        return STATUS_SUCCESS;
+    }
+
+    /* Setup the ACPI table cache */
+    Status = HalpAcpiTableCacheInit(LoaderBlock);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpSetupAcpiPhase0: Status %X\n", Status);
+        return Status;
+    }
+
+    /* Grab the FADT */
+    Fadt = HalAcpiGetTable(LoaderBlock, FADT_SIGNATURE);
+    if (!Fadt)
+    {
+        /* Fail */
+        DPRINT1("HAL: Didn't find the FACP\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    /* Assume typical size, otherwise whatever the descriptor table says */
+    if (Fadt->Header.Length < sizeof(FADT))
+        TableLength = Fadt->Header.Length;
+    else
+        TableLength = sizeof(FADT);
+
+    /* Copy it in the HAL static buffer */
+    RtlCopyMemory(&HalpFixedAcpiDescTable, Fadt, TableLength);
+
+    HalpAcpiApplyFadtSettings(&HalpFixedAcpiDescTable);
+
+    /* Anything special this HAL needs to do? */
+    HalpAcpiDetectMachineSpecificActions(LoaderBlock, &HalpFixedAcpiDescTable);
+
+    /* Get the debug table for KD */
+    HalpDebugPortTable = HalAcpiGetTable(LoaderBlock, DBGP_SIGNATURE);
+    if (HalpDebugPortTable)
+    {
+        DPRINT1("HalpDebugPortTable %X\n", HalpDebugPortTable);
+    }
+
+    /* Initialize NUMA through the SRAT */
+    HalpNumaInitializeStaticConfiguration(LoaderBlock);
+
+    /* Initialize hotplug through the SRAT */
+    HalpDynamicSystemResourceConfiguration(LoaderBlock);
+    if (HalpAcpiSrat)
+    {
+        DPRINT1("HalpSetupAcpiPhase0: SRAT, but NUMA/HotPlug are not supported!\n");
+    }
+
+    EmulatedDevicesTable = HalAcpiGetTable(LoaderBlock, 'TEAW');
+    if (EmulatedDevicesTable)
+    {
+        HalpWAETDeviceFlags = EmulatedDevicesTable->Flags;
+        DPRINT1("HalpWAETDeviceFlags %X\n", HalpWAETDeviceFlags);
+    }
+
+    /* Can there be memory higher than 4GB? */
+    if (HalpMaxHotPlugMemoryAddress.HighPart >= 1)
+    {
+        /* We'll need this for DMA later */
+        HalpPhysicalMemoryMayAppearAbove4GB = TRUE;
+        DPRINT1("HalpPhysicalMemoryMayAppearAbove4GB is TRUE\n");
+    }
+
+    /* Setup the ACPI timer */
+    HaliAcpiTimerInit(NULL, FALSE);
+
+    /* Do we have a low stub address yet? */
+    if (!HalpLowStubPhysicalAddress.QuadPart)
+    {
+        /* Allocate it */
+        HalpLowStubPhysicalAddress.QuadPart = HalpAllocPhysicalMemory(LoaderBlock,
+                                                                      0x100000,
+                                                                      1,
+                                                                      FALSE);
+        if (HalpLowStubPhysicalAddress.QuadPart)
+            /* Map it */
+            HalpLowStub = HalpMapPhysicalMemory64(HalpLowStubPhysicalAddress, 1);
+    }
+
+    /* Grab a page for flushes */
+    PhysicalAddress.QuadPart = 0x100000;
+    HalpVirtAddrForFlush = HalpMapPhysicalMemory64(PhysicalAddress, 1);
+    HalpPteForFlush = HalAddressToPte(HalpVirtAddrForFlush);
+
+    /* Don't do this again */
+    HalpProcessedACPIPhase0 = TRUE;
+
+    /* Setup the boot table */
+    HalpInitBootTable(LoaderBlock);
+
+    /* Debugging code */
+    {
+        PLIST_ENTRY ListHead, NextEntry;
+        PACPI_CACHED_TABLE CachedTable;
+
+        /* Loop cached tables */
+        ListHead = &HalpAcpiTableCacheList;
+        NextEntry = ListHead->Flink;
+        while (NextEntry != ListHead)
+        {
+            /* Get the table */
+            CachedTable = CONTAINING_RECORD(NextEntry, ACPI_CACHED_TABLE, Links);
+
+            /* Compare signatures */
+            if ((CachedTable->Header.Signature == RSDT_SIGNATURE) ||
+                (CachedTable->Header.Signature == XSDT_SIGNATURE))
+            {
+                DPRINT1("ACPI %d.0 Detected. Tables: ", (CachedTable->Header.Revision + 1));
+            }
+
+            DbgPrint("[%c%c%c%c] ",
+                    (CachedTable->Header.Signature & 0xFF),
+                    (CachedTable->Header.Signature & 0xFF00) >> 8,
+                    (CachedTable->Header.Signature & 0xFF0000) >> 16,
+                    (CachedTable->Header.Signature & 0xFF000000) >> 24);
+
+            /* Keep going */
+            NextEntry = NextEntry->Flink;
+        }
+        DbgPrint("\n");
+    }
+
+    /* Return success */
+    return STATUS_SUCCESS;
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
