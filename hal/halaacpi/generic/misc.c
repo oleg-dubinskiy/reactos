@@ -54,6 +54,14 @@ HalpFlushTLB(VOID)
     __writeeflags(Flags);
 }
 
+VOID
+NTAPI
+KeFlushWriteBuffer(VOID)
+{
+    // Not implemented on x86
+    return;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 
