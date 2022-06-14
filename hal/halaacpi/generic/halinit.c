@@ -17,6 +17,7 @@
 PKPCR HalpProcessorPCR[32];
 KAFFINITY HalpActiveProcessors;
 KAFFINITY HalpDefaultInterruptAffinity;
+UCHAR HalpInitLevel = 0xFF;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 

@@ -16,9 +16,15 @@
 
 /* GLOBALS *******************************************************************/
 
+KAFFINITY HalpNodeProcessorAffinity[MAX_CPUS] = {0};
 HALP_MP_INFO_TABLE HalpMpInfoTable;
 APIC_INTI_INFO HalpIntiInfo[MAX_INTI];
 USHORT HalpMaxApicInti[MAX_IOAPICS];
+UCHAR HalpIntDestMap[MAX_CPUS] = {0};
+UCHAR HalpMaxNode = 0;
+UCHAR HalpMaxProcsPerCluster = 0;
+BOOLEAN HalpForceApicPhysicalDestinationMode = FALSE;
+ULONG HalpHybridApicPhysicalTargets = 0;
 
 UCHAR
 HalpIRQLtoTPR[32] =
@@ -99,7 +105,27 @@ KIRQL HalpVectorToIRQL[16] =
     0x1F, /* FF HIGH_LEVEL */
 };
 
+extern UCHAR HalpInitLevel;
+
 /* PRIVATE FUNCTIONS *********************************************************/
+
+UCHAR
+NTAPI
+HalpMapNtToHwProcessorId(
+    _In_ UCHAR Number)
+{
+    ASSERT(HalpForceApicPhysicalDestinationMode == FALSE);
+
+    if (!HalpMaxProcsPerCluster)
+    {
+        ASSERT(Number < 8);
+        return (1 << Number);
+    }
+
+    // FIXME
+    DbgBreakPoint();
+    return 0;
+}
 
 
 /* SOFTWARE INTERRUPT TRAPS ***************************************************/
