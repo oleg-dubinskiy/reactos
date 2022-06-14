@@ -155,6 +155,46 @@ HalpNodeNumber(
     return 0;
 }
 
+VOID
+NTAPI
+HalpInitializeApicAddressing(VOID)
+{
+    PKPCR Pcr = KeGetPcr();
+    PKPRCB Prcb = (PKPRCB)Pcr->Prcb;
+    UCHAR PrcNumber = Prcb->Number;
+    UCHAR NodeNumber;
+    UCHAR DestMap;
+
+    if (HalpForceApicPhysicalDestinationMode)
+    {
+        ApicWrite(APIC_DFR, 0x0FFFFFFF);
+        ApicWrite(APIC_LDR, 0);
+    }
+    else
+    {
+        if (HalpMaxProcsPerCluster)
+            ApicWrite(APIC_DFR, 0x0FFFFFFF);
+        else
+            ApicWrite(APIC_DFR, 0xFFFFFFFF);
+
+        DestMap = HalpMapNtToHwProcessorId(PrcNumber);
+        HalpIntDestMap[PrcNumber] = DestMap;
+        ApicWrite(APIC_LDR, ((ULONG)DestMap << 24));
+    }
+
+    NodeNumber = HalpNodeNumber(Pcr);
+
+    if (HalpMaxNode < NodeNumber)
+        HalpMaxNode = NodeNumber;
+
+    ASSERT(HalpMaxNode);
+
+    if (NodeNumber)
+        HalpNodeProcessorAffinity[NodeNumber - 1] |= (1 << PrcNumber);
+    else
+        HalpHybridApicPhysicalTargets |= (1 << PrcNumber);
+}
+
 /* SOFTWARE INTERRUPT TRAPS ***************************************************/
 
 DECLSPEC_NORETURN
