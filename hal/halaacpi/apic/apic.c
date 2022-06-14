@@ -286,6 +286,20 @@ KeGetCurrentIrql(VOID)
     return KeGetPcr()->Irql;
 }
 
+KIRQL
+FASTCALL
+KfRaiseIrql(
+    _In_ KIRQL NewIrql)
+{
+    PKPCR Pcr = KeGetPcr();
+    KIRQL OldIrql;
+
+    OldIrql = Pcr->Irql;
+    Pcr->Irql = NewIrql;
+
+    return OldIrql;
+}
+
 /* FUNCTIONS *****************************************************************/
 
 INIT_FUNCTION
