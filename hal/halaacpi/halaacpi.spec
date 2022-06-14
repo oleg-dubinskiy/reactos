@@ -1,6 +1,7 @@
 @ stdcall HalDisplayString(str)
 @ stdcall HalInitSystem(long ptr)
 @ stdcall HalInitializeProcessor(long ptr)
+@ stdcall KeGetCurrentIrql()
 @ stdcall READ_PORT_BUFFER_UCHAR(ptr ptr long)
 @ stdcall READ_PORT_BUFFER_ULONG(ptr ptr long)
 @ stdcall READ_PORT_BUFFER_USHORT(ptr ptr long)

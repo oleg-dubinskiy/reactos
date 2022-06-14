@@ -249,6 +249,16 @@ HalpLocalApicErrorServiceHandler(
 /* SYSTEM INTERRUPTS **********************************************************/
 
 
+/* IRQL MANAGEMENT ************************************************************/
+
+KIRQL
+NTAPI
+KeGetCurrentIrql(VOID)
+{
+    /* Return the IRQL */
+    return KeGetPcr()->Irql;
+}
+
 /* FUNCTIONS *****************************************************************/
 
 INIT_FUNCTION
