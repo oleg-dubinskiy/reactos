@@ -31,6 +31,13 @@ HalpGetParameters(
     _In_ PCHAR CommandLine
 );
 
+/* halpnpdd.c */
+NTSTATUS
+NTAPI
+HaliInitPnpDriver(
+    VOID
+);
+
 /* memory.c */
 INIT_FUNCTION
 ULONG_PTR
