@@ -7,6 +7,8 @@
 
 .code
 
+TRAP_ENTRY HalpLocalApicErrorService, KI_PUSH_FAKE_ERROR_CODE
+
 PUBLIC _PicSpuriousService37
 _PicSpuriousService37:
     iret

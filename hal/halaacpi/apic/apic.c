@@ -102,6 +102,37 @@ KIRQL HalpVectorToIRQL[16] =
 /* PRIVATE FUNCTIONS *********************************************************/
 
 
+/* SOFTWARE INTERRUPT TRAPS ***************************************************/
+
+DECLSPEC_NORETURN
+VOID
+FASTCALL
+HalpLocalApicErrorServiceHandler(
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    /* Enter trap */
+    KiEnterInterruptTrap(TrapFrame);
+
+    // FIXME HalpApicErrorLog and HalpLocalApicErrorCount
+
+    ApicWrite(APIC_EOI, 0);
+
+    if (KeGetCurrentPrcb()->CpuType >= 6)
+        ApicWrite(APIC_ESR, 0);
+
+  #ifdef __REACTOS__
+    KiEoiHelper(TrapFrame);
+  #else
+    #error FIXME Kei386EoiHelper()
+  #endif
+}
+
+/* SOFTWARE INTERRUPTS ********************************************************/
+
+
+/* SYSTEM INTERRUPTS **********************************************************/
+
+
 /* FUNCTIONS *****************************************************************/
 
 INIT_FUNCTION

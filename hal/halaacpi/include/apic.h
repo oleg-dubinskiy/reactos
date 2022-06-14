@@ -132,5 +132,6 @@ HalpInitMpInfo(
 /* apictrap.S */
 VOID __cdecl PicSpuriousService37(VOID);
 VOID __cdecl ApicSpuriousService(VOID);
+VOID __cdecl HalpLocalApicErrorService(VOID);
 
 /* EOF */
