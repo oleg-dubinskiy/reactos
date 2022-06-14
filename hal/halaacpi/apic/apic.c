@@ -12,6 +12,7 @@
 #ifdef ALLOC_PRAGMA
   #pragma alloc_text(INIT, DetectAcpiMP)
   #pragma alloc_text(INIT, HalInitApicInterruptHandlers)
+  #pragma alloc_text(INIT, HalpInitializeLocalUnit)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -249,6 +250,108 @@ HalpLocalApicErrorServiceHandler(
 
 
 /* FUNCTIONS *****************************************************************/
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializeLocalUnit(VOID)
+{
+    APIC_SPURIOUS_INERRUPT_REGISTER SpIntRegister;
+    APIC_COMMAND_REGISTER CommandRegister;
+    LVT_REGISTER LvtEntry;
+    ULONG EFlags = __readeflags();
+    PKPRCB Prcb;
+    UCHAR Id;
+
+    _disable();
+
+    Prcb = KeGetPcr()->Prcb;
+
+    if (Prcb->Number == 0)
+    {
+        /* MultiProcessor Specification, Table 4-1.
+           MP Floating Pointer Structure Fields (MP FEATURE INFORMATION BYTE 2) Bit 7:IMCRP
+           If TRUE - PIC Mode, if FALSE - Virtual Wire Mode
+        */
+        if (HalpMpInfoTable.ImcrPresent)
+        {
+            /* Enable PIC mode to Processor via APIC */
+            WRITE_PORT_UCHAR(IMCR_ADDRESS_PORT, IMCR_SELECT);
+            WRITE_PORT_UCHAR(IMCR_DATA_PORT, IMCR_PIC_VIA_APIC);
+        }
+
+        if (HalpMaxProcsPerCluster > APIC_MAX_CPU_PER_CLUSTER ||
+            (HalpMaxProcsPerCluster == 0 && HalpMpInfoTable.ProcessorCount > 8))
+        {
+            HalpMaxProcsPerCluster = APIC_MAX_CPU_PER_CLUSTER;
+        }
+
+        if (HalpMpInfoTable.LocalApicversion == 0)
+        {
+            ASSERT(HalpMpInfoTable.ProcessorCount <= 8);
+            HalpMaxProcsPerCluster = 0;
+        }
+    }
+
+    ApicWrite(APIC_TPR, 0xFF);
+
+    HalpInitializeApicAddressing();
+    Id = (UCHAR)((ApicRead(APIC_ID)) >> 24);
+    HalpMarkProcessorStarted(Id, Prcb->Number);
+
+    KeRegisterInterruptHandler(APIC_SPURIOUS_VECTOR, ApicSpuriousService);
+
+    SpIntRegister.Long = 0;
+    SpIntRegister.Vector = APIC_SPURIOUS_VECTOR;
+    SpIntRegister.SoftwareEnable = 1;
+    ApicWrite(APIC_SIVR, SpIntRegister.Long);
+
+    if (HalpMpInfoTable.LocalApicversion)
+    {
+        KeRegisterInterruptHandler(APIC_ERROR_VECTOR, HalpLocalApicErrorService);
+        ApicWrite(APIC_ERRLVTR, APIC_ERROR_VECTOR);
+    }
+
+    LvtEntry.Long = 0;
+    LvtEntry.Vector = APIC_PROFILE_VECTOR;
+    LvtEntry.Mask = 1;
+    LvtEntry.TimerMode = 1;
+    ApicWrite(APIC_TMRLVTR, LvtEntry.Long);
+
+    LvtEntry.Long = 0;
+    LvtEntry.Vector = APIC_PERF_VECTOR;
+    LvtEntry.Mask = 1;
+    LvtEntry.TimerMode = 0;
+    ApicWrite(APIC_PCLVTR, LvtEntry.Long);
+
+    LvtEntry.Long = 0;
+    LvtEntry.Vector = APIC_SPURIOUS_VECTOR;
+    LvtEntry.Mask = 1;
+    LvtEntry.TimerMode = 0;
+    ApicWrite(APIC_LINT0, LvtEntry.Long);
+
+    LvtEntry.Long = 0;
+    LvtEntry.Vector = APIC_NMI_VECTOR;
+    LvtEntry.Mask = 1;
+    LvtEntry.TimerMode = 0;
+    LvtEntry.MessageType = APIC_MT_NMI;
+    LvtEntry.TriggerMode = APIC_TGM_Level;
+    ApicWrite(APIC_LINT1, LvtEntry.Long);
+
+    CommandRegister.Long0 = 0;
+    CommandRegister.Vector = ZERO_VECTOR;
+    CommandRegister.MessageType = APIC_MT_INIT;
+    CommandRegister.TriggerMode = APIC_TGM_Level;
+    CommandRegister.DestinationShortHand = APIC_DSH_AllIncludingSelf;
+    ApicWrite(APIC_ICR0, CommandRegister.Long0);
+
+    HalpBuildIpiDestinationMap(Prcb->Number);
+
+    ApicWrite(APIC_TPR, 0x00);
+
+    if (EFlags & EFLAGS_INTERRUPT_MASK)
+        _enable();
+}
 
 INIT_FUNCTION
 VOID

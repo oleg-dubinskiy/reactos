@@ -8,11 +8,40 @@
 #define MAX_INT_VECTORS  256
 #define MAX_INTI         (32 * MAX_IOAPICS)
 
+#define APIC_MAX_CPU_PER_CLUSTER  4
+
 #ifdef _M_AMD64
   #define LOCAL_APIC_BASE  0xFFFFFFFFFFFE0000ULL // checkme!
 #else
   #define LOCAL_APIC_BASE  0xFFFE0000
+
+  #define ZERO_VECTOR          0x00 // IRQL 00
+  #define APIC_SPURIOUS_VECTOR 0x1f
+  #define APC_VECTOR           0x3D // IRQL 01
+  #define DISPATCH_VECTOR      0x41 // IRQL 02
+  #define APIC_GENERIC_VECTOR  0xC1 // IRQL 27
+  #define APIC_CLOCK_VECTOR    0xD1 // IRQL 28
+  #define APIC_SYNCH_VECTOR    0xD1 // IRQL 28
+  #define APIC_IPI_VECTOR      0xE1 // IRQL 29
+  #define APIC_ERROR_VECTOR    0xE3
+  #define POWERFAIL_VECTOR     0xEF // IRQL 30
+  #define APIC_PROFILE_VECTOR  0xFD // IRQL 31
+  #define APIC_PERF_VECTOR     0xFE
+  #define APIC_NMI_VECTOR      0xFF
 #endif
+
+/* The IMCR is supported by two read/writable or write-only I/O ports,
+   22h and 23h, which receive address and data respectively.
+   To access the IMCR, write a value of 70h to I/O port 22h, which selects the IMCR.
+   Then write the data to I/O port 23h. The power-on default value is zero,
+   which connects the NMI and 8259 INTR lines directly to the BSP.
+   Writing a value of 01h forces the NMI and 8259 INTR signals to pass through the APIC.
+*/
+#define IMCR_ADDRESS_PORT  (PUCHAR)0x0022
+#define IMCR_DATA_PORT     (PUCHAR)0x0023
+#define IMCR_SELECT        0x70
+#define IMCR_PIC_DIRECT    0x00
+#define IMCR_PIC_VIA_APIC  0x01
 
 /* APIC Register Address Map */
 #define APIC_ID       0x0020 /* Local APIC ID Register (R/W) */
@@ -47,6 +76,87 @@
 #define APIC_EXT1LVTR 0x0510 /* Extended Interrupt 1 Local Vector Table */
 #define APIC_EXT2LVTR 0x0520 /* Extended Interrupt 2 Local Vector Table */
 #define APIC_EXT3LVTR 0x0530 /* Extended Interrupt 3 Local Vector Table */
+
+enum
+{
+    APIC_MT_Fixed = 0,
+    APIC_MT_LowestPriority = 1,
+    APIC_MT_SMI = 2,
+    APIC_MT_RemoteRead = 3,
+    APIC_MT_NMI = 4,
+    APIC_MT_INIT = 5,
+    APIC_MT_Startup = 6,
+    APIC_MT_ExtInt = 7,
+};
+
+enum
+{
+    APIC_TGM_Edge,
+    APIC_TGM_Level
+};
+
+
+enum
+{
+    APIC_DSH_Destination,
+    APIC_DSH_Self,
+    APIC_DSH_AllIncludingSelf,
+    APIC_DSH_AllExclusingSelf
+};
+
+typedef union _APIC_SPURIOUS_INERRUPT_REGISTER
+{
+    ULONG Long;
+    struct
+    {
+        ULONG Vector:8;
+        ULONG SoftwareEnable:1;
+        ULONG FocusCPUCoreChecking:1;
+        ULONG ReservedMBZ:22;
+    };
+} APIC_SPURIOUS_INERRUPT_REGISTER;
+
+typedef union _APIC_COMMAND_REGISTER
+{
+    ULONGLONG LongLong;
+    struct
+    {
+        ULONG Long0;
+        ULONG Long1;
+    };
+    struct
+    {
+        ULONGLONG Vector:8;
+        ULONGLONG MessageType:3;
+        ULONGLONG DestinationMode:1;
+        ULONGLONG DeliveryStatus:1;
+        ULONGLONG ReservedMBZ:1;
+        ULONGLONG Level:1;
+        ULONGLONG TriggerMode:1;
+        ULONGLONG RemoteReadStatus:2;
+        ULONGLONG DestinationShortHand:2;
+        ULONGLONG Reserved2MBZ:36;
+        ULONGLONG Destination:8;
+    };
+} APIC_COMMAND_REGISTER;
+
+typedef union
+{
+    ULONG Long;
+    struct
+    {
+        ULONG Vector:8;
+        ULONG MessageType:3;
+        ULONG ReservedMBZ:1;
+        ULONG DeliveryStatus:1;
+        ULONG Reserved1MBZ:1;
+        ULONG RemoteIRR:1;
+        ULONG TriggerMode:1;
+        ULONG Mask:1;
+        ULONG TimerMode:1;
+        ULONG Reserved2MBZ:13;
+    };
+} LVT_REGISTER;
 
 typedef struct _HALP_MP_INFO_TABLE
 {
@@ -116,6 +226,13 @@ INIT_FUNCTION
 VOID
 NTAPI
 HalInitApicInterruptHandlers(
+    VOID
+);
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializeLocalUnit(
     VOID
 );
 

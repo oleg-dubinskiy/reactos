@@ -101,7 +101,7 @@ HalInitializeProcessor(
     }
 
     HalInitApicInterruptHandlers();
-
+    HalpInitializeLocalUnit();
 }
 
 INIT_FUNCTION
