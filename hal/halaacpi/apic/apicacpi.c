@@ -12,6 +12,7 @@
 #ifdef ALLOC_PRAGMA
   #pragma alloc_text(INIT, HalpInitMpInfo)
   #pragma alloc_text(INIT, HalpVerifyIOUnit)
+  #pragma alloc_text(INIT, HalpMarkProcessorStarted)
 #endif
 
 /* DATA ***********************************************************************/
@@ -35,6 +36,30 @@ extern ULONG HalpPicVectorRedirect[HAL_PIC_VECTORS];
 extern ULONG HalpPicVectorFlags[HAL_PIC_VECTORS];
 
 /* FUNCTIONS ******************************************************************/
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpMarkProcessorStarted(
+    _In_ UCHAR Id,
+    _In_ ULONG PrcNumber)
+{
+    ULONG ix;
+
+    for (ix = 0; ix < HalpMpInfoTable.ProcessorCount; ix++)
+    {
+        if (HalpProcLocalApicTable[ix].Id == Id)
+        {
+            HalpProcLocalApicTable[ix].ProcessorStarted = TRUE;
+            HalpProcLocalApicTable[ix].ProcessorNumber = PrcNumber;
+
+            if (PrcNumber == 0)
+                HalpProcLocalApicTable[ix].FirstProcessor = TRUE;
+
+            break;
+        }
+    }
+}
 
 INIT_FUNCTION
 BOOLEAN

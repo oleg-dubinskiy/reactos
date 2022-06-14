@@ -35,4 +35,12 @@ HalpVerifyIOUnit(
     _In_ PIO_APIC_REGISTERS IOUnitRegs
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpMarkProcessorStarted(
+    _In_ UCHAR Id,
+    _In_ ULONG PrcNumber
+);
+
 #endif /* !_APICACPI_H_ */
