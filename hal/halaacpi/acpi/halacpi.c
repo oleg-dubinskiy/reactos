@@ -11,6 +11,7 @@
   #pragma alloc_text(INIT, HalAcpiGetTable)
   #pragma alloc_text(INIT, HalpSetupAcpiPhase0)
   #pragma alloc_text(INIT, HalpAcpiDetectMachineSpecificActions)
+  #pragma alloc_text(INIT, HalpInitializeCmos)
 #endif
 
 /* GLOBALS ********************************************************************/
@@ -40,11 +41,28 @@ BOOLEAN HalpPhysicalMemoryMayAppearAbove4GB;
 BOOLEAN HalpForceClusteredApicMode = FALSE;
 BOOLEAN HalpBrokenAcpiTimer = FALSE;
 BOOLEAN LessThan16Mb = TRUE;
+UCHAR HalpCmosCenturyOffset = 0;
 
 extern BOOLEAN HalpForceApicPhysicalDestinationMode;
 extern ULONG HalpDefaultApicDestinationModeMask;
 
 /* PRIVATE FUNCTIONS **********************************************************/
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializeCmos(VOID)
+{
+    /* Set default century offset byte */
+    if (HalpFixedAcpiDescTable.century_alarm_index)
+    {
+        HalpCmosCenturyOffset = HalpFixedAcpiDescTable.century_alarm_index;
+    }
+    else
+    {
+        HalpCmosCenturyOffset = 50;
+    }
+}
 
 NTSTATUS
 NTAPI

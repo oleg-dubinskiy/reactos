@@ -218,4 +218,11 @@ HalpAcpiDetectMachineSpecificActions(
     _In_ PFADT DescriptionTable
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializeCmos(
+    VOID
+);
+
 /* EOF */
