@@ -101,4 +101,22 @@ HalpReleasePciDeviceForDebugging(
     _Inout_ PDEBUG_DEVICE_DESCRIPTOR PciDevice
 );
 
+/* sysinfo.c */
+NTSTATUS
+NTAPI
+HaliQuerySystemInformation(
+    _In_ HAL_QUERY_INFORMATION_CLASS InformationClass,
+    _In_ ULONG BufferSize,
+    _Inout_ PVOID Buffer,
+    _Out_ PULONG ReturnedLength
+);
+
+NTSTATUS
+NTAPI
+HaliSetSystemInformation(
+    _In_ HAL_SET_INFORMATION_CLASS InformationClass,
+    _In_ ULONG BufferSize,
+    _Inout_ PVOID Buffer
+);
+
 /* EOF */

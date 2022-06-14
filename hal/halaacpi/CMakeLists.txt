@@ -20,6 +20,7 @@ list(APPEND HAL_SOURCE
     generic/memory.c
     generic/misc.c
     generic/spinlock.c
+    generic/sysinfo.c
     pic/pic.c
 )
 
