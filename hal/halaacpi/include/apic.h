@@ -349,8 +349,10 @@ HalpInitMpInfo(
 );
 
 /* apictrap.S */
+VOID __cdecl HalpClockInterruptStub(VOID);
+VOID __cdecl HalpLocalApicErrorService(VOID);
+
 VOID __cdecl PicSpuriousService37(VOID);
 VOID __cdecl ApicSpuriousService(VOID);
-VOID __cdecl HalpLocalApicErrorService(VOID);
 
 /* EOF */
