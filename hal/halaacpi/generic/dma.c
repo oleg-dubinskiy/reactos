@@ -26,6 +26,19 @@ HaliGetDmaAdapter(
     return &HalGetAdapter(DeviceDescriptor, NumberOfMapRegisters)->DmaHeader;
 }
 
+NTSTATUS
+NTAPI
+HalpAllocateMapRegisters(
+    _In_ PADAPTER_OBJECT AdapterObject,
+    _In_ ULONG Unknown,
+    _In_ ULONG Unknown2,
+    _In_ PMAP_REGISTER_ENTRY Registers)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 HaliLocateHiberRanges(
