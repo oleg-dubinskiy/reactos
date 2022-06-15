@@ -8,6 +8,7 @@
 
 #include "apic.h"
 #include "apicacpi.h"
+#include "ioapic.h"
 
 #ifdef ALLOC_PRAGMA
   #pragma alloc_text(INIT, DetectAcpiMP)
@@ -15,6 +16,7 @@
   #pragma alloc_text(INIT, HalpInitializeLocalUnit)
   #pragma alloc_text(INIT, HalpInitializePICs)
   #pragma alloc_text(INIT, HalpInitIntiInfo)
+  #pragma alloc_text(INIT, HalpInitializeIOUnits)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -28,6 +30,7 @@ UCHAR HalpIntDestMap[MAX_CPUS] = {0};
 UCHAR HalpMaxNode = 0;
 UCHAR HalpMaxProcsPerCluster = 0;
 BOOLEAN HalpForceApicPhysicalDestinationMode = FALSE;
+BOOLEAN HalpHiberInProgress = FALSE;
 ULONG HalpHybridApicPhysicalTargets = 0;
 
 UCHAR
@@ -113,6 +116,8 @@ extern FADT HalpFixedAcpiDescTable;
 extern UCHAR HalpInitLevel;
 extern ULONG HalpPicVectorRedirect[HAL_PIC_VECTORS];
 extern ULONG HalpPicVectorFlags[HAL_PIC_VECTORS];
+extern PADDRESS_USAGE HalpAddressUsageList;
+extern UCHAR HalpIoApicId[MAX_IOAPICS];
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -380,6 +385,67 @@ HalpInitIntiInfo(VOID)
     }
 
     ASSERT(Inti < MAX_INTI);
+}
+
+INIT_FUNCTION
+VOID
+NTAPI 
+HalpInitializeIOUnits(VOID)
+{
+    PIO_APIC_REGISTERS IoApicRegs;
+    ULONG ApicNo;
+    ULONG IoApicId;
+    ULONG MaxRedirectRegs;
+    ULONG Idx;
+
+    DPRINT("HalpInitializeIOUnits: IoApicCount %X\n", HalpMpInfoTable.IoApicCount);
+
+    for (ApicNo = 0; ApicNo < HalpMpInfoTable.IoApicCount; ApicNo++)
+    {
+        IoApicRegs = (PIO_APIC_REGISTERS)HalpMpInfoTable.IoApicVA[ApicNo];
+        IoApicId = HalpIoApicId[ApicNo];
+
+        IoApicRegs->IoRegisterSelect = IOAPIC_ID;
+        IoApicRegs->IoWindow = ((IoApicRegs->IoWindow & 0x00FFFFFF) | SET_IOAPIC_ID(IoApicId));
+
+        IoApicRegs->IoRegisterSelect = IOAPIC_VER;
+        MaxRedirectRegs = GET_IOAPIC_MRE(IoApicRegs->IoWindow);
+
+        for (Idx = 0; Idx <= (MaxRedirectRegs * 2); Idx += 2)
+        {
+            IoApicRegs->IoRegisterSelect = IOAPIC_REDTBL + Idx;
+
+            if ((IoApicRegs->IoWindow & IOAPIC_TBL_DELMOD) != IOAPIC_DM_SMI)
+            {
+                IoApicRegs->IoRegisterSelect = IOAPIC_REDTBL + Idx;
+                IoApicRegs->IoWindow |= (IOAPIC_TBL_IM | IOAPIC_TBL_VECTOR);
+            }
+        }
+    }
+
+    if (HalpHiberInProgress)
+        return;
+
+    HalpApicUsage.Next = NULL;
+    HalpApicUsage.Type = CmResourceTypeMemory;
+    HalpApicUsage.Flags = IDT_DEVICE;
+
+    HalpApicUsage.Element[0].Start = HalpMpInfoTable.LocalApicPA;
+    HalpApicUsage.Element[0].Length = IOAPIC_SIZE;
+
+    ASSERT(HalpMpInfoTable.IoApicCount <= MAX_IOAPICS);
+
+    for (ApicNo = 0; ApicNo < HalpMpInfoTable.IoApicCount; ApicNo++)
+    {
+        HalpApicUsage.Element[ApicNo + 1].Start = HalpMpInfoTable.IoApicPA[ApicNo];
+        HalpApicUsage.Element[ApicNo + 1].Length = IOAPIC_SIZE;
+    }
+
+    HalpApicUsage.Element[ApicNo + 1].Start = 0;
+    HalpApicUsage.Element[ApicNo + 1].Length = 0;
+
+    HalpApicUsage.Next = HalpAddressUsageList;
+    HalpAddressUsageList = (PADDRESS_USAGE)&HalpApicUsage;
 }
 
 /* SOFTWARE INTERRUPT TRAPS ***************************************************/

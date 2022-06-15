@@ -160,6 +160,20 @@ typedef union
     };
 } LVT_REGISTER;
 
+enum
+{
+    IOAPIC_IOREGSEL = 0x00,
+    IOAPIC_IOWIN    = 0x10
+};
+
+enum
+{
+    IOAPIC_ID  = 0x00,
+    IOAPIC_VER = 0x01,
+    IOAPIC_ARB = 0x02,
+    IOAPIC_REDTBL = 0x10
+};
+
 typedef struct _HALP_MP_INFO_TABLE
 {
     ULONG LocalApicversion;
@@ -314,6 +328,13 @@ INIT_FUNCTION
 VOID
 NTAPI 
 HalpInitIntiInfo(
+    VOID
+);
+
+INIT_FUNCTION
+VOID
+NTAPI 
+HalpInitializeIOUnits(
     VOID
 );
 
