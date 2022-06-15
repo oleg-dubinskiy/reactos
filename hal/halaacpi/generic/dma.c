@@ -26,6 +26,15 @@ HaliGetDmaAdapter(
     return &HalGetAdapter(DeviceDescriptor, NumberOfMapRegisters)->DmaHeader;
 }
 
+VOID
+NTAPI
+HaliLocateHiberRanges(
+    _In_ PVOID MemoryMap)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /* HalGetAdapter

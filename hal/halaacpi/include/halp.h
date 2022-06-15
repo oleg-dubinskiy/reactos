@@ -16,6 +16,12 @@ HaliGetDmaAdapter(
     _Out_ PULONG NumberOfMapRegisters
 );
 
+VOID
+NTAPI
+HaliLocateHiberRanges(
+    _In_ PVOID MemoryMap
+);
+
 /* halinit.c */
 INIT_FUNCTION
 VOID
