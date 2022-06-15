@@ -11,6 +11,7 @@ spec2def(halaacpi.dll halaacpi.spec ADD_IMPORTLIB)
 # The components generic
 list(APPEND HAL_SOURCE
     acpi/busemul.c
+    acpi/dispatch.c
     acpi/halacpi.c
     acpi/halpnpdd.c
     apic/apic.c

@@ -237,4 +237,11 @@ HalacpiGetInterruptTranslator(
     _Out_ PULONG BridgeBusNumber
 );
 
+NTSTATUS
+NTAPI
+HaliInitPowerManagement(
+    _In_ PPM_DISPATCH_TABLE PmDriverDispatchTable,
+    _Out_ PPM_DISPATCH_TABLE* PmHalDispatchTable
+);
+
 /* EOF */
