@@ -243,6 +243,12 @@ HalpInitializePICs(
     _In_ BOOLEAN EnableInterrupts
 );
 
+VOID
+NTAPI
+HalpInitializeApicAddressing(
+    VOID
+);
+
 /* apicacpi.c */
 INIT_FUNCTION
 VOID

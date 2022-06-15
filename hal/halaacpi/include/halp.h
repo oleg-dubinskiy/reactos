@@ -7,6 +7,15 @@
 
 #define HAL_PIC_VECTORS  16
 
+/* dma.c */
+PDMA_ADAPTER
+NTAPI
+HaliGetDmaAdapter(
+    _In_ PVOID Context,
+    _In_ PDEVICE_DESCRIPTION DeviceDescriptor,
+    _Out_ PULONG NumberOfMapRegisters
+);
+
 /* halinit.c */
 INIT_FUNCTION
 VOID

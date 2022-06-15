@@ -1,4 +1,5 @@
 @ stdcall HalDisplayString(str)
+@ stdcall HalGetAdapter(ptr ptr)
 @ stdcall HalInitSystem(long ptr)
 @ stdcall HalInitializeProcessor(long ptr)
 @ stdcall KeFlushWriteBuffer()
