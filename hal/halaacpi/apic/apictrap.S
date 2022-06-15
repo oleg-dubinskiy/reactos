@@ -8,6 +8,7 @@
 .code
 
 TRAP_ENTRY HalpLocalApicErrorService, KI_PUSH_FAKE_ERROR_CODE
+TRAP_ENTRY HalpTrap0D, 0
 
 PUBLIC _PicSpuriousService37
 _PicSpuriousService37:

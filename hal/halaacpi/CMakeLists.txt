@@ -17,6 +17,7 @@ list(APPEND HAL_SOURCE
     apic/apic.c
     apic/apicacpi.c
     bus/pcibus.c
+    generic/i386/bios.c
     generic/i386/portio.c
     generic/display.c
     generic/dma.c
@@ -30,6 +31,7 @@ list(APPEND HAL_SOURCE
 
 list(APPEND HAL_ASM_SOURCE
     apic/apictrap.S
+    generic/v86.S
 )
 	
 add_library(halaacpi MODULE
