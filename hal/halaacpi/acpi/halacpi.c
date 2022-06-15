@@ -1028,6 +1028,19 @@ HalpSetupAcpiPhase0(
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+HaliHaltSystem(VOID)
+{
+    DPRINT1("HaliHaltSystem()\n");
+
+    while (TRUE)
+    {
+        HalpCheckPowerButton();
+        YieldProcessor();
+    }
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 
