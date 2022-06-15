@@ -250,4 +250,23 @@ HaliHaltSystem(
     VOID
 );
 
+VOID
+NTAPI
+HaliPmTimerQueryPerfCount(
+    _Out_ LARGE_INTEGER* OutPerfCount,
+    _Out_ LARGE_INTEGER* OutPerfFrequency
+);
+
+typedef
+ULONGLONG
+(__cdecl * PHALP_QUERY_TIMER)(
+    VOID
+);
+
+ULONGLONG
+__cdecl
+HalpQueryPerformanceCounter(
+    VOID
+);
+
 /* EOF */
