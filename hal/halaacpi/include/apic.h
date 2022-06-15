@@ -10,6 +10,8 @@
 
 #define APIC_MAX_CPU_PER_CLUSTER  4
 
+#define APIC_CLOCK_INDEX 8
+
 #ifdef _M_AMD64
   #define LOCAL_APIC_BASE  0xFFFFFFFFFFFE0000ULL // checkme!
 #else
@@ -184,6 +186,24 @@ typedef struct _IO_APIC_REGISTERS
 
 } IO_APIC_REGISTERS, *PIO_APIC_REGISTERS;
 
+/* Type of APIC input signals */
+#define INTI_INFO_TYPE_INT     0 // vectored interrupt; vector is supplied by APIC redirection table
+#define INTI_INFO_TYPE_NMI     1 // nonmaskable interrupt
+#define INTI_INFO_TYPE_SMI     2 // system management interrupt
+#define INTI_INFO_TYPE_ExtINT  3 // vectored interrupt; vector is supplied by external PIC
+
+/* Polarity of APIC input signals */
+#define INTI_INFO_POLARITY_CONFORMS     0
+#define INTI_INFO_POLARITY_ACTIVE_HIGH  1
+#define INTI_INFO_POLARITY_RESERVED     2
+#define INTI_INFO_POLARITY_ACTIVE_LOW   3
+
+/* Trigger mode of APIC input signals */
+#define INTI_INFO_TRIGGER_EDGE   0
+#define INTI_INFO_TRIGGER_LEVEL  1
+//? #define INTI_INFO_TRIGGER_       2
+//? #define INTI_INFO_TRIGGER_       3
+
 typedef union _APIC_INTI_INFO
 {
     struct
@@ -198,6 +218,47 @@ typedef union _APIC_INTI_INFO
     ULONG AsULONG;
 
 } APIC_INTI_INFO, *PAPIC_INTI_INFO;
+
+#include <pshpack1.h>
+typedef struct _APIC_ADDRESS_USAGE
+{
+    struct _HalAddressUsage * Next;
+    CM_RESOURCE_TYPE Type;
+    UCHAR Flags;
+    struct
+    {
+        ULONG Start;
+        ULONG Length;
+    } Element[MAX_IOAPICS + 2]; // Local APIC + null-end element
+
+} APIC_ADDRESS_USAGE, *PAPIC_ADDRESS_USAGE;
+#define APIC_ADDRESS_USAGE_SIZE sizeof(APIC_ADDRESS_USAGE)
+#include <poppack.h>
+
+#define PIC_FLAGS_POLARITY_CONFORMS     0
+#define PIC_FLAGS_POLARITY_ACTIVE_HIGH  1
+#define PIC_FLAGS_POLARITY_RESERVED     2
+#define PIC_FLAGS_POLARITY_ACTIVE_LOW   3
+#define PIC_FLAGS_POLARITY_MASK         (3)
+
+#define PIC_FLAGS_TRIGGER_CONFORMS      0
+#define PIC_FLAGS_TRIGGER_EDGE          1
+#define PIC_FLAGS_TRIGGER_RESERVED      2
+#define PIC_FLAGS_TRIGGER_LEVEL         3
+#define PIC_FLAGS_TRIGGER_MASK          (3)
+
+/* MPS INTI Flags for Interrupt Source Overrides */
+typedef union _HAL_PIC_VECTOR_FLAGS
+{
+    struct
+    {
+        ULONG Polarity    :2;
+        ULONG TriggerMode :2;
+        ULONG Reserved    :28;
+    };
+    ULONG AsULONG;
+
+} HAL_PIC_VECTOR_FLAGS, *PHAL_PIC_VECTOR_FLAGS;
 
 FORCEINLINE
 ULONG
@@ -246,6 +307,13 @@ HalpInitializePICs(
 VOID
 NTAPI
 HalpInitializeApicAddressing(
+    VOID
+);
+
+INIT_FUNCTION
+VOID
+NTAPI 
+HalpInitIntiInfo(
     VOID
 );
 
