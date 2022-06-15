@@ -20,6 +20,7 @@ list(APPEND HAL_SOURCE
     bus/pcibus.c
     generic/i386/bios.c
     generic/i386/portio.c
+    generic/cmos.c
     generic/display.c
     generic/dma.c
     generic/halinit.c
