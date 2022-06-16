@@ -9,8 +9,8 @@
 #define MAX_INTI         (32 * MAX_IOAPICS)
 
 #define APIC_MAX_CPU_PER_CLUSTER  4
-
-#define APIC_CLOCK_INDEX 8
+#define APIC_CLOCK_INDEX          8
+#define MSR_RDTSC                 0x00000010
 
 #ifdef _M_AMD64
   #define LOCAL_APIC_BASE  0xFFFFFFFFFFFE0000ULL // checkme!
@@ -106,6 +106,18 @@ enum
     APIC_DSH_AllExclusingSelf
 };
 
+enum
+{
+    TIMER_DV_DivideBy2 = 0,
+    TIMER_DV_DivideBy4 = 1,
+    TIMER_DV_DivideBy8 = 2,
+    TIMER_DV_DivideBy16 = 3,
+    TIMER_DV_DivideBy32 = 8,
+    TIMER_DV_DivideBy64 = 9,
+    TIMER_DV_DivideBy128 = 10,
+    TIMER_DV_DivideBy1 = 11,
+};
+
 typedef union _APIC_SPURIOUS_INERRUPT_REGISTER
 {
     ULONG Long;
@@ -173,6 +185,22 @@ enum
     IOAPIC_ARB = 0x02,
     IOAPIC_REDTBL = 0x10
 };
+
+typedef struct _HALP_PCR_HAL_RESERVED
+{
+    UCHAR ProcessorNumber;
+    UCHAR Reserved1;
+    BOOLEAN ApcRequested;
+    BOOLEAN DpcRequested;
+    ULONG ApicHz;
+    ULONG Reserved2;
+    ULONG ProfileCount;
+    ULONGLONG TscHz;
+    ULONG Reserved3;
+    ULONG Reserved4;
+    ULONG Reserved[8];
+
+} HALP_PCR_HAL_RESERVED, *PHALP_PCR_HAL_RESERVED;
 
 typedef struct _HALP_MP_INFO_TABLE
 {
@@ -335,6 +363,13 @@ INIT_FUNCTION
 VOID
 NTAPI 
 HalpInitializeIOUnits(
+    VOID
+);
+
+INIT_FUNCTION
+BOOLEAN
+NTAPI
+HalpPmTimerScaleTimers(
     VOID
 );
 

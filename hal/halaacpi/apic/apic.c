@@ -17,6 +17,7 @@
   #pragma alloc_text(INIT, HalpInitializePICs)
   #pragma alloc_text(INIT, HalpInitIntiInfo)
   #pragma alloc_text(INIT, HalpInitializeIOUnits)
+  #pragma alloc_text(INIT, HalpPmTimerScaleTimers)
   #pragma alloc_text(INIT, HalpPmTimerSpecialStall)
 #endif
 
@@ -32,6 +33,7 @@ UCHAR HalpMaxNode = 0;
 UCHAR HalpMaxProcsPerCluster = 0;
 BOOLEAN HalpForceApicPhysicalDestinationMode = FALSE;
 BOOLEAN HalpHiberInProgress = FALSE;
+BOOLEAN IsPmTimerCorrect = TRUE;
 ULONG HalpHybridApicPhysicalTargets = 0;
 
 UCHAR
@@ -482,6 +484,97 @@ HalpPmTimerSpecialStall(
     }
 
     return TRUE;
+}
+
+#define HALP_SPECIAL_STALL_VALUE  0x6D3D3
+
+INIT_FUNCTION
+BOOLEAN
+NTAPI
+HalpPmTimerScaleTimers(VOID)
+{
+    PHALP_PCR_HAL_RESERVED HalReserved;
+    LVT_REGISTER LvtEntry;
+    ULONG EFlags = __readeflags();
+    ULONG ApicCount;
+    ULONGLONG TscHz;
+    LARGE_INTEGER TscCount;
+    ULONG ApicHz;
+    INT CpuInfo[4];
+
+    if (!IsPmTimerCorrect)
+    {
+        DPRINT1("HalpPmTimerScaleTimers: IsPmTimerCorrect - FALSE \n");
+        return FALSE;
+    }
+
+    _disable();
+
+    HalReserved = (PHALP_PCR_HAL_RESERVED)KeGetPcr()->HalReserved;
+
+    HalReserved->Reserved3 = 0;
+    HalReserved->Reserved4 = 0;
+
+    /* Set to periodic */
+    LvtEntry.Long = 0;
+    LvtEntry.Vector = APIC_PROFILE_VECTOR;
+    LvtEntry.Mask = 1;
+    LvtEntry.TimerMode = 1;
+    ApicWrite(APIC_TMRLVTR, LvtEntry.Long);
+
+    /* Set clock multiplier to 1 */
+    ApicWrite(APIC_TDCR, TIMER_DV_DivideBy1);
+
+    if (ApicRead(APIC_TDCR) != TIMER_DV_DivideBy1)
+    {
+        DPRINT1("HalpPmTimerScaleTimers: wrong Timer Divide %X\n", ApicRead(APIC_TDCR));
+    }
+
+    /* Serializing instruction execution */
+    __cpuid(CpuInfo, 0);
+
+    /* Reset the count interval */
+    ApicWrite(APIC_TICR, 0xFFFFFFFF);
+
+    /* Reset TSC value */
+    WRMSR(MSR_RDTSC, 0ull);
+
+    IsPmTimerCorrect = HalpPmTimerSpecialStall(HALP_SPECIAL_STALL_VALUE);
+    if (!IsPmTimerCorrect)
+    {
+        DPRINT1("HalpPmTimerScaleTimers: IsPmTimerCorrect is FALSE \n");
+        goto Exit;
+    }
+
+    /* Get the initial time-stamp counter value */
+    TscCount.QuadPart = __rdtsc();
+
+    /* Get the APIC current timer counter value */
+    ApicCount =  ApicRead(APIC_TCCR);
+
+    /* Calculating */
+    TscHz = (TscCount.QuadPart * APIC_CLOCK_INDEX);
+    TscHz = ((TscHz + 10000/2) / 10000) * 10000; // Round
+
+    HalReserved->TscHz = TscHz;
+    KeGetPcr()->StallScaleFactor = (TscHz + (1000000/2)) / 1000000;
+
+    ApicHz = ((0xFFFFFFFF - ApicCount) * APIC_CLOCK_INDEX);
+    ApicHz = ((ApicHz + 10000/2) / 10000) * 10000; // Round
+
+    HalReserved->ApicHz = ApicHz;
+    HalReserved->ProfileCount = ApicHz;
+
+    /* Set the count interval */
+    ApicWrite(APIC_TICR, ApicHz);
+
+Exit:
+
+    if (EFlags & EFLAGS_INTERRUPT_MASK)
+        _enable();
+
+    DPRINT("HalpPmTimerScaleTimers: IsPmTimerCorrect %X\n", IsPmTimerCorrect);
+    return IsPmTimerCorrect;
 }
 
 /* SOFTWARE INTERRUPT TRAPS ***************************************************/
