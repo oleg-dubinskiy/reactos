@@ -17,6 +17,7 @@
   #pragma alloc_text(INIT, HalpInitializePICs)
   #pragma alloc_text(INIT, HalpInitIntiInfo)
   #pragma alloc_text(INIT, HalpInitializeIOUnits)
+  #pragma alloc_text(INIT, HalpPmTimerSpecialStall)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -446,6 +447,41 @@ HalpInitializeIOUnits(VOID)
 
     HalpApicUsage.Next = HalpAddressUsageList;
     HalpAddressUsageList = (PADDRESS_USAGE)&HalpApicUsage;
+}
+
+INIT_FUNCTION
+BOOLEAN
+FASTCALL
+HalpPmTimerSpecialStall(
+    _In_ ULONG StallValue)
+{
+    LARGE_INTEGER OldValue;
+    LARGE_INTEGER NewValue;
+    LARGE_INTEGER EndValue;
+    ULONG ix = 0;
+
+    HaliPmTimerQueryPerfCount(&OldValue, NULL);
+    EndValue.QuadPart = (OldValue.QuadPart + StallValue);
+
+    while (OldValue.QuadPart < EndValue.QuadPart)
+    {
+        HaliPmTimerQueryPerfCount(&NewValue, NULL);
+
+        ASSERT(NewValue.QuadPart >= OldValue.QuadPart);
+
+        if (NewValue.QuadPart == OldValue.QuadPart)
+            ix++;
+
+        if (ix > 1000)
+        {
+            DPRINT1("HalpPmTimerSpecialStall: return FALSE\n");
+            return FALSE;
+        }
+
+        OldValue = NewValue;
+    }
+
+    return TRUE;
 }
 
 /* SOFTWARE INTERRUPT TRAPS ***************************************************/

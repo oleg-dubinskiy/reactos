@@ -338,6 +338,13 @@ HalpInitializeIOUnits(
     VOID
 );
 
+INIT_FUNCTION
+BOOLEAN
+FASTCALL
+HalpPmTimerSpecialStall(
+    _In_ ULONG StallValue
+);
+
 /* apicacpi.c */
 INIT_FUNCTION
 VOID
