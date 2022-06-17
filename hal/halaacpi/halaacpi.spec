@@ -2,6 +2,7 @@
 @ stdcall HalAllocateAdapterChannel(ptr ptr long ptr)
 @ stdcall HalBeginSystemInterrupt(long long ptr)
 @ fastcall HalClearSoftwareInterrupt(long)
+@ stdcall HalDisableSystemInterrupt(long long)
 @ stdcall HalDisplayString(str)
 @ stdcall HalGetAdapter(ptr ptr)
 @ stdcall HalInitSystem(long ptr)

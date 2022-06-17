@@ -894,6 +894,16 @@ HalEnableSystemInterrupt(
     return TRUE;
 }
 
+VOID
+NTAPI
+HalDisableSystemInterrupt(
+    _In_ ULONG Vector,
+    _In_ KIRQL Irql)
+{
+    DPRINT1("HalDisableSystemInterrupt: Vector %X, Irql %X\n", Vector, Irql);
+    ASSERT(FALSE); // DbgBreakPoint();
+}
+
 FORCEINLINE
 VOID
 KeSetCurrentIrql(
