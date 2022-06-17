@@ -424,6 +424,17 @@ HalpReleaseHighLevelLock(
     _In_ ULONG EFlags
 );
 
+ULONG
+NTAPI
+HalpGetSystemInterruptVector(
+    _In_ PBUS_HANDLER BusHandler,
+    _In_ PBUS_HANDLER RootHandler,
+    _In_ ULONG BusInterruptLevel,
+    _In_ ULONG BusInterruptVector,
+    _Out_ PKIRQL OutIrql,
+    _Out_ PKAFFINITY OutAffinity
+);
+
 /* apicacpi.c */
 INIT_FUNCTION
 VOID
