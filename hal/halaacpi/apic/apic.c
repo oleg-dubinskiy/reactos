@@ -871,6 +871,15 @@ HalEnableSystemInterrupt(
     return TRUE;
 }
 
+FORCEINLINE
+VOID
+KeSetCurrentIrql(
+    _In_ KIRQL NewIrql)
+{
+    /* Set new current IRQL */
+    KeGetPcr()->Irql = NewIrql;
+}
+
 
 /* IRQL MANAGEMENT ************************************************************/
 
