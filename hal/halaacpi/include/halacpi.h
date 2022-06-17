@@ -269,4 +269,14 @@ HalpQueryPerformanceCounter(
     VOID
 );
 
+BOOLEAN
+NTAPI
+HalpFindBusAddressTranslation(
+    _In_ PHYSICAL_ADDRESS BusAddress,
+    _In_ OUT PULONG AddressSpace,
+    _Out_ PPHYSICAL_ADDRESS TranslatedAddress,
+    _In_ OUT PULONG_PTR Context,
+    _In_ BOOLEAN NextBus
+);
+
 /* EOF */
