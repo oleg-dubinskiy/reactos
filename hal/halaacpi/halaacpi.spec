@@ -13,6 +13,7 @@
 @ stdcall HalRequestIpi(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall KeFlushWriteBuffer()
+@ stdcall KeLowerIrql(long)
 @ stdcall KeGetCurrentIrql()
 @ fastcall KfRaiseIrql(long)
 @ stdcall READ_PORT_BUFFER_UCHAR(ptr ptr long)

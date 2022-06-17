@@ -1101,6 +1101,23 @@ KeGetCurrentIrql(VOID)
     return KeGetPcr()->Irql;
 }
 
+VOID
+FASTCALL
+KfLowerIrql(_In_ KIRQL NewIrql)
+{
+    HalpLowerIrqlHardwareInterrupts(NewIrql);
+    HalpCheckForSoftwareInterrupt(NewIrql, 0);
+}
+
+#undef KeLowerIrql
+VOID
+NTAPI
+KeLowerIrql(KIRQL NewIrql)
+{
+    /* Call the fastcall function */
+    KfLowerIrql(NewIrql);
+}
+
 KIRQL
 FASTCALL
 KfRaiseIrql(
