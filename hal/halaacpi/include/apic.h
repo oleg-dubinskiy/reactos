@@ -186,6 +186,29 @@ enum
     IOAPIC_REDTBL = 0x10
 };
 
+typedef union _IOAPIC_REDIRECTION_REGISTER
+{
+    ULONGLONG LongLong;
+    struct
+    {
+        ULONG Long0;
+        ULONG Long1;
+    };
+    struct
+    {
+        ULONGLONG Vector:8;
+        ULONGLONG DeliveryMode:3;
+        ULONGLONG DestinationMode:1;
+        ULONGLONG DeliveryStatus:1;
+        ULONGLONG Polarity:1;
+        ULONGLONG RemoteIRR:1;
+        ULONGLONG TriggerMode:1;
+        ULONGLONG Mask:1;
+        ULONGLONG Reserved:39;
+        ULONGLONG Destination:8;
+    };
+} IOAPIC_REDIRECTION_REGISTER, *PIOAPIC_REDIRECTION_REGISTER;
+
 typedef struct _HALP_PCR_HAL_RESERVED
 {
     UCHAR ProcessorNumber;

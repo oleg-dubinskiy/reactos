@@ -694,6 +694,32 @@ HalpAddInterruptDest(_In_ ULONG InDestination,
     return Destination;
 }
 
+VOID
+NTAPI
+HalpSetRedirEntry(_In_ USHORT IntI,
+                  _In_ PIOAPIC_REDIRECTION_REGISTER IoApicReg,
+                  _In_ ULONG Destination)
+{
+    PIO_APIC_REGISTERS IoApicRegs;
+    UCHAR IoUnit;
+
+    for (IoUnit = 0; IoUnit < MAX_IOAPICS; IoUnit++)
+    {
+        if (IntI + 1 <= HalpMaxApicInti[IoUnit])
+            break;
+
+        ASSERT(IntI >= HalpMaxApicInti[IoUnit]);
+        IntI -= HalpMaxApicInti[IoUnit];
+    }
+
+    ASSERT(IoUnit < MAX_IOAPICS);
+
+    IoApicRegs = (PIO_APIC_REGISTERS)HalpMpInfoTable.IoApicVA[IoUnit];
+
+    IoApicWrite(IoApicRegs, ((IOAPIC_REDTBL + 1) + IntI * 2), Destination); // RedirReg + 1
+    IoApicWrite(IoApicRegs, (IOAPIC_REDTBL + IntI * 2), IoApicReg->Long0);  // RedirReg
+}
+
 
 /* IRQL MANAGEMENT ************************************************************/
 
