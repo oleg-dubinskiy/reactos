@@ -398,7 +398,13 @@ HalStopProfileInterrupt(
 );
 
 /* apictrap.S */
+//VOID __cdecl HalpClockInterrupt(VOID);
 VOID __cdecl HalpClockInterruptStub(VOID);
+VOID __cdecl HalpProfileInterrupt(VOID);
+VOID __cdecl HalpApicRebootService(VOID);
+VOID __cdecl HalpBroadcastCallService(VOID);
+VOID __cdecl HalpPerfInterrupt(VOID);
+VOID __cdecl HalpIpiHandler(VOID);
 VOID __cdecl HalpLocalApicErrorService(VOID);
 
 VOID __cdecl PicSpuriousService37(VOID);

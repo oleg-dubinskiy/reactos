@@ -602,6 +602,56 @@ HalpLocalApicErrorServiceHandler(
   #endif
 }
 
+//DECLSPEC_NORETURN
+VOID
+FASTCALL
+HalpProfileInterruptHandler(
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    DPRINT1("HalpProfileInterruptHandler: TrapFrame %X\n", TrapFrame);
+    ASSERT(FALSE); // DbgBreakPointEx();
+}
+
+//DECLSPEC_NORETURN
+VOID
+FASTCALL
+HalpApicRebootServiceHandler(
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    DPRINT1("HalpApicRebootServiceHandler: TrapFrame %X\n", TrapFrame);
+    ASSERT(FALSE); // DbgBreakPointEx();
+}
+
+//DECLSPEC_NORETURN
+VOID
+FASTCALL
+HalpBroadcastCallServiceHandler(
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    DPRINT1("HalpBroadcastCallServiceHandler: TrapFrame %X\n", TrapFrame);
+    ASSERT(FALSE); // DbgBreakPointEx();
+}
+
+//DECLSPEC_NORETURN
+VOID
+FASTCALL
+HalpPerfInterruptHandler(
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    DPRINT1("HalpPerfInterruptHandler: TrapFrame %X\n", TrapFrame);
+    ASSERT(FALSE); // DbgBreakPointEx();
+}
+
+//DECLSPEC_NORETURN
+VOID
+FASTCALL
+HalpIpiHandlerHandler(
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    DPRINT1("HalpIpiHandlerHandler: TrapFrame %X\n", TrapFrame);
+    ASSERT(FALSE); // DbgBreakPointEx();
+}
+
 /* SOFTWARE INTERRUPTS ********************************************************/
 
 
