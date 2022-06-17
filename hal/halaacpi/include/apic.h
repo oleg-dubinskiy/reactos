@@ -403,6 +403,14 @@ HalpPmTimerSpecialStall(
     _In_ ULONG StallValue
 );
 
+BOOLEAN
+NTAPI
+HalEnableSystemInterrupt(
+    _In_ ULONG SystemVector,
+    _In_ KIRQL Irql,
+    _In_ KINTERRUPT_MODE InterruptMode
+);
+
 ULONG
 FASTCALL
 HalpAcquireHighLevelLock(

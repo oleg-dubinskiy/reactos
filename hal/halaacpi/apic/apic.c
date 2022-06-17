@@ -21,6 +21,17 @@
   #pragma alloc_text(INIT, HalpPmTimerSpecialStall)
 #endif
 
+#define SUPPORTED_NODES      0x20
+
+#define HALP_DEV_INT_EDGE    0
+#define HALP_DEV_INT_LEVEL   1
+
+#define DL_EDGE_SENSITIVE    0
+#define DL_LEVEL_SENSITIVE   1
+
+#define DP_LOW_ACTIVE        0
+#define DP_HIGH_ACTIVE       1
+
 /* GLOBALS *******************************************************************/
 
 KAFFINITY HalpNodeProcessorAffinity[MAX_CPUS] = {0};
@@ -28,6 +39,7 @@ HALP_MP_INFO_TABLE HalpMpInfoTable;
 APIC_ADDRESS_USAGE HalpApicUsage;
 APIC_INTI_INFO HalpIntiInfo[MAX_INTI];
 USHORT HalpMaxApicInti[MAX_IOAPICS];
+USHORT HalpVectorToINTI[MAX_CPUS * MAX_INT_VECTORS] = {0xFFFF};
 UCHAR HalpIntDestMap[MAX_CPUS] = {0};
 UCHAR HalpMaxNode = 0;
 UCHAR HalpMaxProcsPerCluster = 0;
@@ -35,6 +47,7 @@ BOOLEAN HalpForceApicPhysicalDestinationMode = FALSE;
 BOOLEAN HalpHiberInProgress = FALSE;
 BOOLEAN IsPmTimerCorrect = TRUE;
 ULONG HalpHybridApicPhysicalTargets = 0;
+KSPIN_LOCK HalpAccountingLock;
 
 UCHAR
 HalpIRQLtoTPR[32] =
@@ -115,12 +128,31 @@ KIRQL HalpVectorToIRQL[16] =
     0x1F, /* FF HIGH_LEVEL */
 };
 
+/* UCHAR HalpDevLevel[InterruptMode][TriggerMode] */
+UCHAR HalpDevLevel[2][2] =
+{
+    /* Edge */           /* Level */
+    {DL_EDGE_SENSITIVE,  DL_EDGE_SENSITIVE},  // Latched
+    {DL_LEVEL_SENSITIVE, DL_LEVEL_SENSITIVE}  // LevelSensitive
+}; 
+
+/* UCHAR HalpDevPolarity[Polarity][TriggerMode] */
+UCHAR HalpDevPolarity[4][2] =
+{
+    /* Edge */       /* Level */
+    {DP_HIGH_ACTIVE, DP_LOW_ACTIVE},  // POLARITY_CONFORMS 
+    {DP_HIGH_ACTIVE, DP_HIGH_ACTIVE}, // POLARITY_ACTIVE_HIGH
+    {DP_HIGH_ACTIVE, DP_LOW_ACTIVE},  // POLARITY_RESERVED
+    {DP_LOW_ACTIVE,  DP_LOW_ACTIVE}   // POLARITY_ACTIVE_LOW
+}; 
+
 extern FADT HalpFixedAcpiDescTable;
 extern UCHAR HalpInitLevel;
 extern ULONG HalpPicVectorRedirect[HAL_PIC_VECTORS];
 extern ULONG HalpPicVectorFlags[HAL_PIC_VECTORS];
 extern PADDRESS_USAGE HalpAddressUsageList;
 extern UCHAR HalpIoApicId[MAX_IOAPICS];
+extern ULONG HalpDefaultApicDestinationModeMask;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -737,6 +769,106 @@ HalpEnableRedirEntry(
     HalpSetRedirEntry(IntI, IoApicReg, ((ULONG)Destination << 24));
 
     HalpIntiInfo[IntI].Enabled = 1;
+}
+
+BOOLEAN
+NTAPI
+HalEnableSystemInterrupt(
+    _In_ ULONG SystemVector,
+    _In_ KIRQL Irql,
+    _In_ KINTERRUPT_MODE InterruptMode)
+{
+    IOAPIC_REDIRECTION_REGISTER IoApicReg;
+    APIC_INTI_INFO IntiInfo;
+    ULONG TriggerMode;
+    ULONG Lock;
+    USHORT IntI;
+    UCHAR DevLevel;
+    UCHAR CpuNumber;
+
+    DPRINT1("HalEnableSystemInterrupt: Vector %X, Irql %X, Mode %X\n", SystemVector, Irql, InterruptMode);
+
+    ASSERT(SystemVector < ((1 + SUPPORTED_NODES) * MAX_INT_VECTORS - 1));
+    ASSERT(Irql <= HIGH_LEVEL);
+
+    IntI = HalpVectorToINTI[SystemVector];
+    if (IntI == 0xFFFF)
+    {
+        DPRINT1("HalEnableSystemInterrupt: return FALSE\n");
+        return FALSE;
+    }
+
+    if (IntI >= MAX_INTI)
+    {
+        DPRINT1("EnableSystemInt: IntI %X, MAX_INTI %X\n", IntI, MAX_INTI);
+        ASSERT(IntI < MAX_INTI);
+    }
+
+    IntiInfo = HalpIntiInfo[IntI];
+    TriggerMode = IntiInfo.TriggerMode;
+
+    if (InterruptMode == LevelSensitive)
+        DevLevel = HalpDevLevel[HALP_DEV_INT_LEVEL][TriggerMode];
+    else
+        DevLevel = HalpDevLevel[HALP_DEV_INT_EDGE][TriggerMode];
+
+    Lock = HalpAcquireHighLevelLock(&HalpAccountingLock);
+    CpuNumber = KeGetPcr()->Prcb->Number;
+
+    if (IntiInfo.Type == INTI_INFO_TYPE_ExtINT)
+    {
+        DPRINT1("HalEnableSystemInterrupt: FIXME ExtINT. DbgBreakPoint()\n");
+        ASSERT(FALSE); // DbgBreakPoint();
+
+        HalpReleaseHighLevelLock(&HalpAccountingLock, Lock);
+        return TRUE;
+    }
+
+    if (IntiInfo.Type != INTI_INFO_TYPE_INT)
+    {
+        DPRINT1("HalEnableSystemInterrupt: Unsupported IntiInfo.Type %X. DbgBreakPoint()\n", IntiInfo.Type);
+        ASSERT(FALSE); // DbgBreakPoint();
+
+        HalpReleaseHighLevelLock(&HalpAccountingLock, Lock);
+        return TRUE;
+    }
+
+    /* IntiInfo.Type == INTI_INFO_TYPE_INT (INTR Interrupt Source) */
+
+    IoApicReg.LongLong = 0;
+
+    if (SystemVector == APIC_CLOCK_VECTOR)
+    {
+        ASSERT(CpuNumber == 0);
+        IoApicReg.Vector = APIC_CLOCK_VECTOR;
+        IoApicReg.Long0 |= HalpDefaultApicDestinationModeMask;
+    }
+    else
+    {
+        if (SystemVector == 0xFF)
+            return FALSE;
+
+        IoApicReg.Vector = HalVectorToIDTEntry(SystemVector);
+
+        if (!HalpForceApicPhysicalDestinationMode)
+        {
+            IoApicReg.DeliveryMode = 1;    // Lowest Priority
+            IoApicReg.DestinationMode = 1; // Logical Mode
+        }
+    }
+
+    if (DevLevel & DL_LEVEL_SENSITIVE)
+        IoApicReg.TriggerMode = 1; // Level sensitive
+
+    if (HalpDevPolarity[IntiInfo.Polarity][(DevLevel & DL_LEVEL_SENSITIVE)] == DP_LOW_ACTIVE)
+        IoApicReg.Polarity = 1; // Low active
+
+    HalpEnableRedirEntry(IntI, &IoApicReg, CpuNumber);
+
+    DPRINT("HalEnableSystemInterrupt: HalpIntiInfo[IntI] %X\n", HalpIntiInfo[IntI].AsULONG);
+    HalpReleaseHighLevelLock(&HalpAccountingLock, Lock);
+
+    return TRUE;
 }
 
 
