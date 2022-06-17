@@ -403,6 +403,19 @@ HalpPmTimerSpecialStall(
     _In_ ULONG StallValue
 );
 
+ULONG
+FASTCALL
+HalpAcquireHighLevelLock(
+    _In_ volatile PKSPIN_LOCK SpinLock
+);
+
+VOID
+FASTCALL
+HalpReleaseHighLevelLock(
+    _In_ volatile PKSPIN_LOCK SpinLock,
+    _In_ ULONG EFlags
+);
+
 /* apicacpi.c */
 INIT_FUNCTION
 VOID
