@@ -7,6 +7,13 @@
 
 #define HAL_PIC_VECTORS  16
 
+/* Usage flags */
+#define IDT_REGISTERED          0x01
+#define IDT_LATCHED             0x02
+#define IDT_READ_ONLY           0x04
+#define IDT_INTERNAL            0x11
+#define IDT_DEVICE              0x21
+
 /* CMOS Registers and Ports */
 #define CMOS_CONTROL_PORT       (PUCHAR)0x0070
 #define CMOS_DATA_PORT          (PUCHAR)0x0071
@@ -16,6 +23,32 @@
 #define RTC_REG_B_PI            0x40
 #define RTC_REGISTER_C          0x0C
 #define RTC_REG_C_IRQ           0x80
+
+typedef struct _IDTUsageFlags
+{
+    UCHAR Flags;
+} IDTUsageFlags;
+
+typedef struct
+{
+    KIRQL Irql;
+    UCHAR BusReleativeVector;
+} IDTUsage;
+
+#pragma pack(push, 1)
+typedef struct _HalAddressUsage
+{
+    struct _HalAddressUsage *Next;
+    CM_RESOURCE_TYPE Type;
+    UCHAR Flags;
+    struct
+    {
+        ULONG Start;
+        ULONG Length;
+    } Element[];
+
+} ADDRESS_USAGE, *PADDRESS_USAGE;
+#pragma pack(pop)
 
 /* bios.c */
 BOOLEAN
@@ -197,6 +230,17 @@ HaliSetSystemInformation(
     _In_ HAL_SET_INFORMATION_CLASS InformationClass,
     _In_ ULONG BufferSize,
     _Inout_ PVOID Buffer
+);
+
+/* usage.c */
+INIT_FUNCTION
+VOID
+NTAPI
+HalpRegisterVector(
+    _In_ UCHAR Flags,
+    _In_ ULONG BusVector,
+    _In_ ULONG SystemVector,
+    _In_ KIRQL Irql
 );
 
 /* EOF */
