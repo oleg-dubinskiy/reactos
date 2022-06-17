@@ -8,6 +8,7 @@
 @ stdcall HalGetAdapter(ptr ptr)
 @ stdcall HalGetEnvironmentVariable(str long str)
 @ stdcall HalGetInterruptVector(long long long long ptr ptr)
+@ stdcall HalHandleNMI(ptr)
 @ stdcall HalInitSystem(long ptr)
 @ stdcall HalInitializeProcessor(long ptr)
 @ stdcall HalProcessorIdle()

@@ -64,5 +64,16 @@ KeFlushWriteBuffer(VOID)
 
 /* PUBLIC FUNCTIONS **********************************************************/
 
+VOID
+NTAPI
+HalHandleNMI(
+    _In_ PVOID NmiInfo)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+
+    /* Freeze the system */
+    while (TRUE);
+}
 
 /* EOF */
