@@ -15,14 +15,18 @@
 #define IDT_DEVICE              0x21
 
 /* CMOS Registers and Ports */
-#define CMOS_CONTROL_PORT       (PUCHAR)0x0070
-#define CMOS_DATA_PORT          (PUCHAR)0x0071
+#define CMOS_CONTROL_PORT       (PUCHAR)0x70
+#define CMOS_DATA_PORT          (PUCHAR)0x71
 #define RTC_REGISTER_A          0x0A
-#define RTC_REG_A_UIP           0x80
+#define   RTC_REG_A_UIP         0x80
 #define RTC_REGISTER_B          0x0B
-#define RTC_REG_B_PI            0x40
+#define   RTC_REG_B_DS          0x01
+#define   RTC_REG_B_HM          0x02
+#define   RTC_REG_B_PI          0x40
 #define RTC_REGISTER_C          0x0C
-#define RTC_REG_C_IRQ           0x80
+#define   RTC_REG_C_IRQ         0x80
+#define RTC_REGISTER_D          0x0D
+#define RTC_REGISTER_CENTURY    0x32
 
 typedef struct _IDTUsageFlags
 {

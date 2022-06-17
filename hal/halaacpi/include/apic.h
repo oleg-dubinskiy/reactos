@@ -410,4 +410,11 @@ VOID __cdecl HalpLocalApicErrorService(VOID);
 VOID __cdecl PicSpuriousService37(VOID);
 VOID __cdecl ApicSpuriousService(VOID);
 
+/* rtctimer.c */
+VOID
+NTAPI
+HalpInitializeClock(
+    VOID
+);
+
 /* EOF */
