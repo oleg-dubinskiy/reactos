@@ -84,4 +84,15 @@ typedef struct _ADAPTER_OBJECT
    LIST_ENTRY AdapterList;
 } ADAPTER_OBJECT;
 
+typedef struct _HALP_DMA_MASTER_ADAPTER
+{
+    PADAPTER_OBJECT MasterAdapter;
+    ULONG MapBufferMaxPages;
+    ULONG MapBufferSize;
+    ULONG Unknown1;
+    PHYSICAL_ADDRESS MapBufferPhysicalAddress;
+    ULONG Unknown2;
+    ULONG Unknown3;
+} HALP_DMA_MASTER_ADAPTER, *PHALP_DMA_MASTER_ADAPTER;
+
 /* EOF */

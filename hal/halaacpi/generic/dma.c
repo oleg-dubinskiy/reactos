@@ -7,6 +7,10 @@
 
 /* GLOBALS *******************************************************************/
 
+HALP_DMA_MASTER_ADAPTER MasterAdapter24;
+HALP_DMA_MASTER_ADAPTER MasterAdapter32;
+LIST_ENTRY HalpDmaAdapterList;
+KSPIN_LOCK HalpDmaAdapterListLock;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -49,6 +53,40 @@ HaliLocateHiberRanges(
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
+
+/* HalAllocateAdapterChannel
+       Setup map registers for an adapter object.
+
+   AdapterObject
+      Pointer to an ADAPTER_OBJECT to set up.
+
+   WaitContextBlock
+      Context block to be used with ExecutionRoutine.
+
+   NumberOfMapRegisters
+      Number of map registers requested.
+
+   ExecutionRoutine
+      Callback to call when map registers are allocated.
+
+   return:
+      If not enough map registers can be allocated then STATUS_INSUFFICIENT_RESOURCES is returned.
+      If the function succeeds or the callback is queued for later delivering then STATUS_SUCCESS is returned.
+ 
+   see IoFreeAdapterChannel
+*/
+NTSTATUS
+NTAPI
+HalAllocateAdapterChannel(
+    _In_ PADAPTER_OBJECT AdapterObject,
+    _In_ PWAIT_CONTEXT_BLOCK WaitContextBlock,
+    _In_ ULONG NumberOfMapRegisters,
+    _In_ PDRIVER_CONTROL ExecutionRoutine)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
 
 /* HalGetAdapter
       Allocate an adapter object for DMA device.
