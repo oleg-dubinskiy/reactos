@@ -978,6 +978,41 @@ HalpLowerIrqlHardwareInterrupts(
         _enable();
 }
 
+VOID
+NTAPI
+HalpDispatchSoftwareInterrupt(
+    _In_ KIRQL Irql,
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    PHALP_PCR_HAL_RESERVED HalReserved;
+    ULONG EFlags;
+
+    EFlags = __readeflags();
+    KeGetPcr()->Irql = Irql;
+
+    if (!(EFlags & EFLAGS_INTERRUPT_MASK))
+        _enable();
+
+    HalReserved = (PHALP_PCR_HAL_RESERVED)KeGetPcr()->HalReserved;
+    if (Irql == APC_LEVEL)
+    {
+        HalReserved->ApcRequested = FALSE;
+        KiDeliverApc(0, 0, (PKTRAP_FRAME)TrapFrame);
+    }
+    else if (Irql == DISPATCH_LEVEL)
+    {
+        HalReserved->DpcRequested = FALSE;
+        KiDispatchInterrupt();
+    }
+    else
+    {
+        DbgBreakPoint();
+    }
+
+    if (!(EFlags & EFLAGS_INTERRUPT_MASK))
+        _disable();
+}
+
 BOOLEAN
 NTAPI
 HalBeginSystemInterrupt(
