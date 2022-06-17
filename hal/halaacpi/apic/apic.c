@@ -146,6 +146,9 @@ UCHAR HalpDevPolarity[4][2] =
     {DP_LOW_ACTIVE,  DP_LOW_ACTIVE}   // POLARITY_ACTIVE_LOW
 }; 
 
+typedef VOID (*PINTERRUPT_ENTRY)(VOID);
+extern PINTERRUPT_ENTRY HwInterruptTable[MAX_INT_VECTORS];
+
 extern FADT HalpFixedAcpiDescTable;
 extern UCHAR HalpInitLevel;
 extern ULONG HalpPicVectorRedirect[HAL_PIC_VECTORS];
@@ -911,6 +914,15 @@ KeSetCurrentIrql(
 {
     /* Set new current IRQL */
     KeGetPcr()->Irql = NewIrql;
+}
+
+VOID
+FASTCALL
+HalpGenerateInterrupt(
+    _In_ UCHAR Vector)
+{
+    //DPRINT1("HalpGenerateInterrupt: Vector %X\n", Vector);
+    ((PINTERRUPT_ENTRY)&HwInterruptTable[Vector])();
 }
 
 BOOLEAN
