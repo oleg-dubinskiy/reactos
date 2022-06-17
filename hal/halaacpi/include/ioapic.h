@@ -19,4 +19,32 @@
 
 #define IOAPIC_SIZE          0x400
 
+FORCEINLINE
+ULONG
+IoApicRead(
+    _In_ PIO_APIC_REGISTERS IoApicRegs,
+    _In_ UCHAR RegisterIdx)
+{
+    ULONG Result;
+
+    WRITE_REGISTER_UCHAR(((PUCHAR)IoApicRegs + IOAPIC_IOREGSEL), RegisterIdx);
+    Result = READ_REGISTER_ULONG((PULONG)((ULONG_PTR)IoApicRegs + IOAPIC_IOWIN));
+
+    //DbgPrint("IoApicRead: RegisterIdx %X, Result %X\n", RegisterIdx, Result);
+    return Result;
+}
+
+FORCEINLINE
+VOID
+IoApicWrite(
+    _In_ PIO_APIC_REGISTERS IoApicRegs,
+    _In_ UCHAR RegisterIdx,
+    _In_ ULONG Value)
+{
+    //DbgPrint("IoApicWrite: RegisterIdx %X, Value %X\n", RegisterIdx, Value);
+
+    WRITE_REGISTER_UCHAR(((PUCHAR)IoApicRegs + IOAPIC_IOREGSEL), RegisterIdx);
+    WRITE_REGISTER_ULONG((PULONG)((ULONG_PTR)IoApicRegs + IOAPIC_IOWIN), Value);
+}
+
 /* EOF */
