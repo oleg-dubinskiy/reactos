@@ -925,6 +925,59 @@ HalpGenerateInterrupt(
     ((PINTERRUPT_ENTRY)&HwInterruptTable[Vector])();
 }
 
+VOID
+FASTCALL
+HalpLowerIrqlHardwareInterrupts(
+    _In_ KIRQL NewIrql)
+{
+    PUCHAR pPrcbVector;
+    ULONG EFlags;
+    UCHAR Vector;
+    UCHAR Irql;
+    UCHAR Idx;
+
+    if (KeGetCurrentIrql() <= DISPATCH_LEVEL)
+    {
+        KeSetCurrentIrql(NewIrql);
+        return;
+    }
+
+    pPrcbVector = (PUCHAR)KeGetCurrentPrcb()->HalReserved;
+    if (pPrcbVector[0] == 0)
+    {
+        KeSetCurrentIrql(NewIrql);
+
+        if (pPrcbVector[0] == 0)
+            return;
+
+        KeSetCurrentIrql(HIGH_LEVEL);
+    }
+
+    EFlags = __readeflags();
+    _disable();
+
+    while (pPrcbVector[0])
+    {
+        Idx = pPrcbVector[0];
+        Vector = pPrcbVector[Idx];
+        Irql = HalpVectorToIRQL[(UCHAR)Vector >> 4];
+
+        if (Irql <= NewIrql)
+            break;
+
+        pPrcbVector[0] = Idx - 1;
+        KeSetCurrentIrql(Irql - 1);
+
+        HalpGenerateInterrupt(Vector);
+        //HalpTotalReplayed++;
+    }
+
+    KeSetCurrentIrql(NewIrql);
+
+    if (EFlags & EFLAGS_INTERRUPT_MASK)
+        _enable();
+}
+
 BOOLEAN
 NTAPI
 HalBeginSystemInterrupt(
