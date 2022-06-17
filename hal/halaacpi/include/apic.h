@@ -390,6 +390,13 @@ HalpInitMpInfo(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock
 );
 
+/* apictimer.c */
+VOID
+NTAPI
+HalStopProfileInterrupt(
+    _In_ KPROFILE_SOURCE ProfileSource
+);
+
 /* apictrap.S */
 VOID __cdecl HalpClockInterruptStub(VOID);
 VOID __cdecl HalpLocalApicErrorService(VOID);
