@@ -35,5 +35,30 @@ HalpWriteCmos(IN UCHAR Reg,
 
 /* PUBLIC FUNCTIONS **********************************************************/
 
+ARC_STATUS
+NTAPI
+HalGetEnvironmentVariable(
+    _In_ PCH Name,
+    _In_ USHORT ValueLength,
+    _Out_writes_z_(ValueLength) PCH Value)
+{
+    UCHAR Val;
+
+    /* Only variable supported on x86 */
+    if (_stricmp(Name, "LastKnownGood"))
+        return ENOENT;
+
+    HalpAcquireCmosSpinLock();
+    Val = HalpReadCmos(RTC_REGISTER_B); // Query the current value
+    HalpReleaseCmosSpinLock();
+
+    /* Check the flag */
+    if (Val & 0x01)
+        strncpy(Value, "FALSE", ValueLength); // out "FALSE"
+    else
+        strncpy(Value, "TRUE", ValueLength); // out "TRUE"
+
+    return ESUCCESS;
+}
 
 /* EOF */
