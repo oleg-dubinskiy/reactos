@@ -657,6 +657,43 @@ HalpIpiHandlerHandler(
 
 /* SYSTEM INTERRUPTS **********************************************************/
 
+UCHAR
+NTAPI
+HalpAddInterruptDest(_In_ ULONG InDestination,
+                     _In_ UCHAR ProcessorNumber)
+{
+    UCHAR Destination;
+
+    DPRINT("HalpAddInterruptDest: InDestination %X, Processor %X\n", InDestination, ProcessorNumber);
+
+    if (HalpForceApicPhysicalDestinationMode)
+    {
+        DPRINT1("HalpAddInterruptDest: FIXME! DbgBreakPoint()\n");Destination = 0;
+        ASSERT(FALSE); // DbgBreakPoint();
+        return Destination;
+    }
+
+    Destination = HalpIntDestMap[ProcessorNumber];
+    if (!Destination)
+    {
+        DPRINT("HalpAddInterruptDest: return %X\n", InDestination);
+        return InDestination;
+    }
+
+    if (!HalpMaxProcsPerCluster)
+    {
+        Destination |= InDestination;
+        DPRINT("HalpAddInterruptDest: return Destination %X\n", Destination);
+        return Destination;
+    }
+
+    DPRINT1("HalpAddInterruptDest: FIXME! DbgBreakPoint()\n");
+    ASSERT(FALSE); // DbgBreakPoint();
+
+    DPRINT("HalpAddInterruptDest: return Destination %X\n", Destination);
+    return Destination;
+}
+
 
 /* IRQL MANAGEMENT ************************************************************/
 
