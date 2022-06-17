@@ -389,6 +389,13 @@ HalpInitializeIOUnits(
     VOID
 );
 
+BOOLEAN
+NTAPI 
+HalpGetApicInterruptDesc(
+    _In_ ULONG DeviceIrq,
+    _Out_ USHORT* OutIntI
+);
+
 INIT_FUNCTION
 BOOLEAN
 NTAPI

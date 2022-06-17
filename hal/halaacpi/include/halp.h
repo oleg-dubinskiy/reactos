@@ -54,6 +54,14 @@ typedef struct _HalAddressUsage
 } ADDRESS_USAGE, *PADDRESS_USAGE;
 #pragma pack(pop)
 
+FORCEINLINE
+VOID
+WRMSR(_In_ ULONG Register,
+      _In_ ULONGLONG Value)
+{
+    __writemsr(Register, Value);
+}
+
 /* bios.c */
 BOOLEAN
 NTAPI
@@ -216,6 +224,47 @@ NTSTATUS
 NTAPI
 HalpReleasePciDeviceForDebugging(
     _Inout_ PDEBUG_DEVICE_DESCRIPTOR PciDevice
+);
+
+ULONG
+NTAPI
+HaliPciInterfaceReadConfig(
+    _In_ PBUS_HANDLER RootBusHandler,
+    _In_ ULONG BusNumber,
+    _In_ PCI_SLOT_NUMBER SlotNumber,
+    _In_ PVOID Buffer,
+    _In_ ULONG Offset,
+    _In_ ULONG Length
+);
+
+ULONG
+NTAPI
+HaliPciInterfaceWriteConfig(
+    _In_ PBUS_HANDLER RootBusHandler,
+    _In_ ULONG BusNumber,
+    _In_ PCI_SLOT_NUMBER SlotNumber,
+    _In_ PVOID Buffer,
+    _In_ ULONG Offset,
+    _In_ ULONG Length
+);
+
+VOID
+NTAPI
+HalpInitializePciStubs(
+    VOID
+);
+
+/* spinlock.c */
+VOID
+NTAPI
+HalpAcquireCmosSpinLock(
+    VOID
+);
+
+VOID
+NTAPI
+HalpReleaseCmosSpinLock(
+    VOID
 );
 
 /* sysinfo.c */
