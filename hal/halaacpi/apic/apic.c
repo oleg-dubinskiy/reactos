@@ -1013,6 +1013,52 @@ HalpDispatchSoftwareInterrupt(
         _disable();
 }
 
+VOID
+FASTCALL
+HalpCheckForSoftwareInterrupt(
+    _In_ KIRQL NewIrql,
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    PHALP_PCR_HAL_RESERVED HalReserved;
+    BOOLEAN ApcRequested;
+    BOOLEAN DpcRequested;
+
+    HalReserved = (PHALP_PCR_HAL_RESERVED)KeGetPcr()->HalReserved;
+
+    ApcRequested = HalReserved->ApcRequested;
+    DpcRequested = HalReserved->DpcRequested;
+
+    if (NewIrql)
+    {
+        if (NewIrql == APC_LEVEL && HalReserved->DpcRequested)
+        {
+            do
+            {
+                HalpDispatchSoftwareInterrupt(DISPATCH_LEVEL, TrapFrame);
+                KeSetCurrentIrql(APC_LEVEL);
+                HalReserved = (PHALP_PCR_HAL_RESERVED)KeGetPcr()->HalReserved;
+            }
+            while (HalReserved->DpcRequested);
+        }
+
+        return;
+    }
+
+    while (ApcRequested | DpcRequested)
+    {
+        if (DpcRequested)
+            HalpDispatchSoftwareInterrupt(DISPATCH_LEVEL, TrapFrame);
+        else
+            HalpDispatchSoftwareInterrupt(APC_LEVEL, TrapFrame);
+
+        KeSetCurrentIrql(PASSIVE_LEVEL);
+
+        HalReserved = (PHALP_PCR_HAL_RESERVED)KeGetPcr()->HalReserved;
+        ApcRequested = HalReserved->ApcRequested;
+        DpcRequested = HalReserved->DpcRequested;
+    }
+}
+
 BOOLEAN
 NTAPI
 HalBeginSystemInterrupt(
