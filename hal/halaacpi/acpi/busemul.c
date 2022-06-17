@@ -4,9 +4,12 @@
 #include <hal.h>
 //#define NDEBUG
 #include <debug.h>
+#include "apic.h"
 
 /* GLOBALS ********************************************************************/
 
+extern ULONG HalpPicVectorRedirect[HAL_PIC_VECTORS];
+extern BUS_HANDLER HalpFakePciBusHandler;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -53,5 +56,51 @@ HalpFindBusAddressTranslation(
 
 /* PUBLIC FUNCTIONS **********************************************************/
 
+ULONG
+NTAPI
+HalGetInterruptVector(
+    _In_ INTERFACE_TYPE InterfaceType,
+    _In_ ULONG BusNumber,
+    _In_ ULONG BusInterruptLevel,
+    _In_ ULONG BusInterruptVector,
+    _Out_ PKIRQL OutIrql,
+    _Out_ PKAFFINITY OutAffinity)
+{
+    BUS_HANDLER BusHandler;
+    ULONG SystemVector;
+    ULONG Vector;
+    ULONG Level;
+
+    if (InterfaceType == Isa)
+    {
+        if (BusInterruptVector >= HAL_PIC_VECTORS)
+        {
+            DPRINT1("HalGetInterruptVector: BusInterruptVector %X\n", BusInterruptVector);
+            ASSERT(BusInterruptVector < HAL_PIC_VECTORS); // DbgBreakPoint();
+        }
+
+        Vector = HalpPicVectorRedirect[BusInterruptVector];
+        Level = HalpPicVectorRedirect[BusInterruptLevel];
+    }
+    else
+    {
+        Vector = BusInterruptVector;
+        Level = BusInterruptLevel;
+    }
+
+    RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BusHandler));
+
+    BusHandler.BusNumber = BusNumber;
+    BusHandler.InterfaceType = InterfaceType;
+    BusHandler.ParentHandler = &BusHandler;
+
+    SystemVector = HalpGetSystemInterruptVector(&BusHandler,
+                                                &BusHandler,
+                                                Level,
+                                                Vector,
+                                                OutIrql,
+                                                OutAffinity);
+    return SystemVector;
+}
 
 /* EOF */
