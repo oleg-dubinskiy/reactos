@@ -30,6 +30,7 @@ list(APPEND HAL_SOURCE
     generic/spinlock.c
     generic/sysinfo.c
     pic/pic.c
+    up/processor.c
 )
 
 list(APPEND HAL_ASM_SOURCE
