@@ -880,6 +880,37 @@ KeSetCurrentIrql(
     KeGetPcr()->Irql = NewIrql;
 }
 
+BOOLEAN
+NTAPI
+HalBeginSystemInterrupt(
+    _In_ KIRQL NewIrql,
+    _In_ ULONG SystemVector,
+    _Out_ PKIRQL OutOldIrql)
+{
+    PUCHAR pPrcbVector;
+    UCHAR Idx;
+    KIRQL OldIrql;
+
+    OldIrql = KeGetCurrentIrql();
+
+    if (OldIrql < HalpVectorToIRQL[(UCHAR)SystemVector >> 4])
+    {
+        *OutOldIrql = OldIrql;
+        KeSetCurrentIrql(NewIrql);
+
+        _enable();
+        return TRUE;
+    }
+
+    pPrcbVector = (PUCHAR)KeGetCurrentPrcb()->HalReserved;
+
+    Idx = pPrcbVector[0];
+    pPrcbVector[Idx + 1] = (UCHAR)SystemVector;
+    pPrcbVector[0] = (Idx + 1);
+
+    _enable();
+    return FALSE;
+}
 
 /* IRQL MANAGEMENT ************************************************************/
 
