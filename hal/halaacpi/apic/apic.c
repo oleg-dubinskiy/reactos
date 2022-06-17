@@ -720,6 +720,25 @@ HalpSetRedirEntry(_In_ USHORT IntI,
     IoApicWrite(IoApicRegs, (IOAPIC_REDTBL + IntI * 2), IoApicReg->Long0);  // RedirReg
 }
 
+VOID
+NTAPI
+HalpEnableRedirEntry(
+    _In_ USHORT IntI,
+    _In_ PIOAPIC_REDIRECTION_REGISTER IoApicReg,
+    _In_ UCHAR ProcessorNumber)
+{
+    UCHAR Destination;
+
+    HalpIntiInfo[IntI].Entry = IoApicReg->Long0;
+
+    Destination = HalpAddInterruptDest(HalpIntiInfo[IntI].Destinations, ProcessorNumber);
+    HalpIntiInfo[IntI].Destinations = Destination;
+
+    HalpSetRedirEntry(IntI, IoApicReg, ((ULONG)Destination << 24));
+
+    HalpIntiInfo[IntI].Enabled = 1;
+}
+
 
 /* IRQL MANAGEMENT ************************************************************/
 
