@@ -16,6 +16,7 @@
 @ stdcall HalRequestIpi(long)
 @ fastcall HalRequestSoftwareInterrupt(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
+@ stdcall HalTranslateBusAddress(long long long long ptr ptr)
 @ stdcall KeFlushWriteBuffer()
 @ stdcall KeLowerIrql(long)
 @ stdcall KeGetCurrentIrql()
