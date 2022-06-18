@@ -279,4 +279,11 @@ HalpFindBusAddressTranslation(
     _In_ BOOLEAN NextBus
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpGetNMICrashFlag(
+    VOID
+);
+
 /* EOF */

@@ -12,6 +12,7 @@
   #pragma alloc_text(INIT, HalpSetupAcpiPhase0)
   #pragma alloc_text(INIT, HalpAcpiDetectMachineSpecificActions)
   #pragma alloc_text(INIT, HalpInitializeCmos)
+  #pragma alloc_text(INIT, HalpGetNMICrashFlag)
 #endif
 
 /* GLOBALS ********************************************************************/
@@ -41,6 +42,7 @@ BOOLEAN HalpPhysicalMemoryMayAppearAbove4GB;
 BOOLEAN HalpForceClusteredApicMode = FALSE;
 BOOLEAN HalpBrokenAcpiTimer = FALSE;
 BOOLEAN LessThan16Mb = TRUE;
+BOOLEAN HalpNMIDumpFlag;
 UCHAR HalpCmosCenturyOffset = 0;
 
 extern BOOLEAN HalpForceApicPhysicalDestinationMode;
@@ -1038,6 +1040,56 @@ HaliHaltSystem(VOID)
     {
         HalpCheckPowerButton();
         YieldProcessor();
+    }
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpGetNMICrashFlag(VOID)
+{
+    UNICODE_STRING ValueName;
+    UNICODE_STRING KeyName = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\CrashControl");
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    ULONG ResultLength;
+    HANDLE Handle;
+    NTSTATUS Status;
+    KEY_VALUE_PARTIAL_INFORMATION KeyValueInformation;
+
+    /* Set default */
+    HalpNMIDumpFlag = 0;
+
+    /* Initialize attributes */
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &KeyName,
+                               OBJ_CASE_INSENSITIVE,
+                               NULL,
+                               NULL);
+
+    /* Open crash key */
+    Status = ZwOpenKey(&Handle, KEY_READ, &ObjectAttributes);
+    if (NT_SUCCESS(Status))
+    {
+        /* Query key value */
+        RtlInitUnicodeString(&ValueName, L"NMICrashDump");
+        Status = ZwQueryValueKey(Handle,
+                                 &ValueName,
+                                 KeyValuePartialInformation,
+                                 &KeyValueInformation,
+                                 sizeof(KeyValueInformation),
+                                 &ResultLength);
+        if (NT_SUCCESS(Status))
+        {
+            /* Check for valid data */
+            if (ResultLength == sizeof(KEY_VALUE_PARTIAL_INFORMATION))
+            {
+                /* Read the flag */
+                HalpNMIDumpFlag = KeyValueInformation.Data[0];
+            }
+        }
+
+        /* We're done */
+        ZwClose(Handle);
     }
 }
 
