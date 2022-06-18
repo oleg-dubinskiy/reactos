@@ -691,6 +691,36 @@ HalpIpiHandlerHandler(
 
 VOID
 FASTCALL
+HalRequestSoftwareInterrupt(
+    _In_ KIRQL Irql)
+{
+    PHALP_PCR_HAL_RESERVED HalReserved;
+    KIRQL CurrentIrql;
+
+    HalReserved = (PHALP_PCR_HAL_RESERVED)KeGetPcr()->HalReserved;
+
+    if (Irql == DISPATCH_LEVEL)
+    {
+        HalReserved->DpcRequested = TRUE;
+    }
+    else if (Irql == APC_LEVEL)
+    {
+        HalReserved->ApcRequested = TRUE;
+    }
+    else
+    {
+        DPRINT1("HalRequestSoftwareInterrupt: Irql %X\n", Irql);
+        ASSERT(FALSE); // DbgBreakPoint();
+    }
+
+    CurrentIrql = KeGetPcr()->Irql;
+
+    if (CurrentIrql < Irql)
+        KfLowerIrql(CurrentIrql);
+}
+
+VOID
+FASTCALL
 HalClearSoftwareInterrupt(
     _In_ KIRQL Irql)
 {
