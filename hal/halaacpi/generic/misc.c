@@ -10,6 +10,35 @@
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
+NTSTATUS
+NTAPI
+HalpOpenRegistryKey(
+    _In_ PHANDLE KeyHandle,
+    _In_ HANDLE RootKey,
+    _In_ PUNICODE_STRING KeyName,
+    _In_ ACCESS_MASK DesiredAccess,
+    _In_ BOOLEAN Create)
+{
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    ULONG Disposition;
+    NTSTATUS Status;
+
+    /* Setup the attributes we received */
+    InitializeObjectAttributes(&ObjectAttributes, KeyName, OBJ_CASE_INSENSITIVE, RootKey, NULL);
+
+    /* What to do? */
+    if (!Create)
+    {
+        /* Open the key */
+        Status = ZwOpenKey(KeyHandle, DesiredAccess, &ObjectAttributes);
+        return Status;
+    }
+
+    /* Create the key */
+    Status = ZwCreateKey(KeyHandle, DesiredAccess, &ObjectAttributes, 0, NULL, REG_OPTION_VOLATILE, &Disposition);
+    return Status;
+}
+
 VOID
 NTAPI
 HalpFlushTLB(VOID)
