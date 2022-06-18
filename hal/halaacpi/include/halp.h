@@ -308,4 +308,12 @@ HalpRegisterVector(
     _In_ KIRQL Irql
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpReportResourceUsage(
+    _In_ PUNICODE_STRING HalName,
+    _In_ INTERFACE_TYPE InterfaceType
+);
+
 /* EOF */

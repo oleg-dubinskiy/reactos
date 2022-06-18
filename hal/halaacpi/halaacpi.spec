@@ -13,10 +13,12 @@
 @ stdcall HalInitializeProcessor(long ptr)
 @ stdcall HalProcessorIdle()
 @ stdcall HalQueryRealTimeClock(ptr)
+@ stdcall HalReportResourceUsage()
 @ stdcall HalRequestIpi(long)
 @ fastcall HalRequestSoftwareInterrupt(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
+@ extern KdComPortInUse
 @ stdcall KeFlushWriteBuffer()
 @ stdcall KeLowerIrql(long)
 @ stdcall KeGetCurrentIrql()

@@ -305,4 +305,11 @@ HalpIs16BitPortDecodeSupported(
     VOID
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalReportResourceUsage(
+    VOID
+);
+
 /* EOF */

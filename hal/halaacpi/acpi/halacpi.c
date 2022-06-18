@@ -14,6 +14,7 @@
   #pragma alloc_text(INIT, HalpInitializeCmos)
   #pragma alloc_text(INIT, HalpGetNMICrashFlag)
   #pragma alloc_text(INIT, HalpInitializePciBus)
+  #pragma alloc_text(INIT, HalReportResourceUsage)
 #endif
 
 /* GLOBALS ********************************************************************/
@@ -48,6 +49,7 @@ UCHAR HalpCmosCenturyOffset = 0;
 
 extern BOOLEAN HalpForceApicPhysicalDestinationMode;
 extern ULONG HalpDefaultApicDestinationModeMask;
+extern ULONG HalpBusType;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -1129,5 +1131,51 @@ HalpIs16BitPortDecodeSupported(VOID)
 
 /* PUBLIC FUNCTIONS **********************************************************/
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalReportResourceUsage(VOID)
+{
+    INTERFACE_TYPE InterfaceType;
+    UNICODE_STRING HalString;
+
+    /* FIXME: Initialize DMA 64-bit support */
+
+    /* FIXME: Initialize MCA bus */
+
+    /* Initialize PCI bus. */
+    HalpInitializePciBus();
+
+    /* What kind of bus is this? */
+    switch (HalpBusType)
+    {
+        /* ISA Machine */
+        case MACHINE_TYPE_ISA:
+            InterfaceType = Isa;
+            break;
+
+        /* EISA Machine */
+        case MACHINE_TYPE_EISA:
+            InterfaceType = Eisa;
+            break;
+
+        /* MCA Machine */
+        case MACHINE_TYPE_MCA:
+            InterfaceType = MicroChannel;
+            break;
+
+        /* Unknown */
+        default:
+            InterfaceType = Internal;
+            break;
+    }
+
+    /* Build HAL usage */
+    RtlInitUnicodeString(&HalString, HalName);
+    HalpReportResourceUsage(&HalString, InterfaceType);
+
+    /* Setup PCI debugging and Hibernation */
+    HalpRegisterPciDebuggingDeviceInfo();
+}
 
 /* EOF */
