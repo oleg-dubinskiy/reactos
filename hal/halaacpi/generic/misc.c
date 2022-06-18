@@ -7,6 +7,8 @@
 
 /* GLOBALS  *******************************************************************/
 
+UCHAR HalpSerialLen;
+CHAR HalpSerialNumber[31];
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -37,6 +39,37 @@ HalpOpenRegistryKey(
     /* Create the key */
     Status = ZwCreateKey(KeyHandle, DesiredAccess, &ObjectAttributes, 0, NULL, REG_OPTION_VOLATILE, &Disposition);
     return Status;
+}
+
+VOID
+NTAPI
+HalpReportSerialNumber(VOID)
+{
+    UNICODE_STRING KeyString;
+    HANDLE Handle;
+    NTSTATUS Status;
+
+    /* Make sure there is a serial number */
+    if (!HalpSerialLen)
+        return;
+
+    /* Open the system key */
+    RtlInitUnicodeString(&KeyString, L"\\Registry\\Machine\\Hardware\\Description\\System");
+
+    Status = HalpOpenRegistryKey(&Handle, 0, &KeyString, KEY_ALL_ACCESS, FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpReportSerialNumber: Status %X\n", Status);
+        return;
+    }
+
+    /* Add the serial number */
+    RtlInitUnicodeString(&KeyString, L"Serial Number");
+
+    ZwSetValueKey(Handle, &KeyString, 0, REG_BINARY, HalpSerialNumber, HalpSerialLen);
+
+    /* Close the handle */
+    ZwClose(Handle);
 }
 
 VOID
