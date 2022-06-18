@@ -10,6 +10,9 @@
 UCHAR HalpSerialLen;
 CHAR HalpSerialNumber[31];
 
+/* This determines the HAL type */
+BOOLEAN HalDisableFirmwareMapper = TRUE;
+
 /* PRIVATE FUNCTIONS **********************************************************/
 
 NTSTATUS
@@ -70,6 +73,57 @@ HalpReportSerialNumber(VOID)
 
     /* Close the handle */
     ZwClose(Handle);
+}
+
+NTSTATUS
+NTAPI
+HalpMarkAcpiHal(VOID)
+{
+    ULONG Value = (HalDisableFirmwareMapper ? 1 : 0);
+    UNICODE_STRING KeyString;
+    HANDLE KeyHandle;
+    HANDLE Handle;
+    NTSTATUS Status;
+
+    /* Open the control set key */
+    RtlInitUnicodeString(&KeyString, L"\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET");
+
+    Status = HalpOpenRegistryKey(&Handle, 0, &KeyString, KEY_ALL_ACCESS, FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpMarkAcpiHal: Status %X\n", Status);
+        return Status;
+    }
+
+    /* Open the PNP key */
+    RtlInitUnicodeString(&KeyString, L"Control\\Pnp");
+
+    Status = HalpOpenRegistryKey(&KeyHandle, Handle, &KeyString, KEY_ALL_ACCESS, TRUE);
+
+    /* Close root key */
+    ZwClose(Handle);
+
+    /* Check if PNP BIOS key exists */
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpMarkAcpiHal: Status %X\n", Status);
+        return Status;
+    }
+
+    /* Set the disable value to false -- we need the mapper */
+    RtlInitUnicodeString(&KeyString, L"DisableFirmwareMapper");
+
+    Status = ZwSetValueKey(KeyHandle, &KeyString, 0, REG_DWORD, &Value, sizeof(Value));
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpMarkAcpiHal: Status %X\n", Status);
+    }
+
+    /* Close subkey */
+    ZwClose(KeyHandle);
+
+    /* Return status */
+    return Status;
 }
 
 VOID

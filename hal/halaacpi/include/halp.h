@@ -203,6 +203,18 @@ HalpFlushTLB(
     VOID
 );
 
+VOID
+NTAPI
+HalpReportSerialNumber(
+    VOID
+);
+
+NTSTATUS
+NTAPI
+HalpMarkAcpiHal(
+    VOID
+);
+
 /* pic.c */
 VOID
 NTAPI
