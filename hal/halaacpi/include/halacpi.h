@@ -299,4 +299,10 @@ HalpGetDebugPortTable(
     VOID
 );
 
+ULONG
+NTAPI
+HalpIs16BitPortDecodeSupported(
+    VOID
+);
+
 /* EOF */

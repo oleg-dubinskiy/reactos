@@ -1119,6 +1119,14 @@ HalpGetDebugPortTable(VOID)
     return (HalpDebugPortTable->BaseAddress.AddressSpaceID == 1);
 }
 
+ULONG
+NTAPI
+HalpIs16BitPortDecodeSupported(VOID)
+{
+    /* All ACPI systems are at least "EISA" so they support this */
+    return CM_RESOURCE_PORT_16_BIT_DECODE;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 
