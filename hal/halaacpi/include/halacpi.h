@@ -286,4 +286,11 @@ HalpGetNMICrashFlag(
     VOID
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializePciBus(
+    VOID
+);
+
 /* EOF */

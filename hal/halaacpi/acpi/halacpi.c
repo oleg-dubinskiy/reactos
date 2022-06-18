@@ -13,6 +13,7 @@
   #pragma alloc_text(INIT, HalpAcpiDetectMachineSpecificActions)
   #pragma alloc_text(INIT, HalpInitializeCmos)
   #pragma alloc_text(INIT, HalpGetNMICrashFlag)
+  #pragma alloc_text(INIT, HalpInitializePciBus)
 #endif
 
 /* GLOBALS ********************************************************************/
@@ -1091,6 +1092,20 @@ HalpGetNMICrashFlag(VOID)
         /* We're done */
         ZwClose(Handle);
     }
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitializePciBus(VOID)
+{
+    DPRINT("HalpInitializePciBus()\n");
+
+    /* Setup the PCI stub support */
+    HalpInitializePciStubs();
+
+    /* Set the NMI crash flag */
+    HalpGetNMICrashFlag();
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
