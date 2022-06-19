@@ -22,6 +22,7 @@ list(APPEND HAL_SOURCE
     bus/pcibus.c
     generic/i386/bios.c
     generic/i386/portio.c
+    generic/beep.c
     generic/cmos.c
     generic/display.c
     generic/dma.c
