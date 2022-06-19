@@ -32,6 +32,42 @@ HalacpiGetInterruptTranslator(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+NTAPI
+HalpAssignSlotResources(
+    _In_ PUNICODE_STRING RegistryPath,
+    _In_ PUNICODE_STRING DriverClassName,
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ INTERFACE_TYPE BusType,
+    _In_ ULONG BusNumber,
+    _In_ ULONG SlotNumber,
+    _Inout_ PCM_RESOURCE_LIST* AllocatedResources)
+{
+    BUS_HANDLER BusHandler;
+
+    DPRINT("HalpAssignSlotResources: BusType %X, BusNumber %X, SlotNumber %X\n", BusType, BusNumber, SlotNumber);
+    PAGED_CODE();
+
+    /* Only PCI is supported */
+    if (BusType != PCIBus)
+        return STATUS_NOT_IMPLEMENTED;
+
+    /* Setup fake PCI Bus handler */
+    RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BUS_HANDLER));
+    BusHandler.BusNumber = BusNumber;
+
+    /* Call the PCI function */
+    return HalpAssignPCISlotResources(&BusHandler,
+                                      &BusHandler,
+                                      RegistryPath,
+                                      DriverClassName,
+                                      DriverObject,
+                                      DeviceObject,
+                                      SlotNumber,
+                                      AllocatedResources);
+}
+
 BOOLEAN
 NTAPI
 HalpFindBusAddressTranslation(
@@ -250,6 +286,49 @@ HalAdjustResourceList(
 {
     /* Deprecated, return success */
     return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+HalAssignSlotResources(
+    _In_ PUNICODE_STRING RegistryPath,
+    _In_ PUNICODE_STRING DriverClassName,
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ INTERFACE_TYPE BusType,
+    _In_ ULONG BusNumber,
+    _In_ ULONG SlotNumber,
+    _Inout_ PCM_RESOURCE_LIST* AllocatedResources)
+{
+    /* Check the bus type */
+    if (BusType != PCIBus)
+    {
+        /* Call our internal handler */
+        DPRINT("HalAssignSlotResources: BusType %X, BusNumber %X, SlotNumber %X\n", BusType, BusNumber, SlotNumber);
+
+        return HalpAssignSlotResources(RegistryPath,
+                                       DriverClassName,
+                                       DriverObject,
+                                       DeviceObject,
+                                       BusType,
+                                       BusNumber,
+                                       SlotNumber,
+                                       AllocatedResources);
+    }
+    else
+    {
+        /* Call the PCI registered function */
+        DPRINT("HalAssignSlotResources: BusType %X, BusNumber %X, SlotNumber %X\n", BusType, BusNumber, SlotNumber);
+
+        return HalPciAssignSlotResources(RegistryPath,
+                                         DriverClassName,
+                                         DriverObject,
+                                         DeviceObject,
+                                         PCIBus,
+                                         BusNumber,
+                                         SlotNumber,
+                                         AllocatedResources);
+    }
 }
 
 /* EOF */
