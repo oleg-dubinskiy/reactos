@@ -16,6 +16,7 @@
 @ stdcall HalReportResourceUsage()
 @ stdcall HalRequestIpi(long)
 @ fastcall HalRequestSoftwareInterrupt(long)
+@ stdcall HalReturnToFirmware(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
 @ extern KdComPortInUse
