@@ -24,6 +24,8 @@
 @ stdcall HalRequestIpi(long)
 @ fastcall HalRequestSoftwareInterrupt(long)
 @ stdcall HalReturnToFirmware(long)
+@ stdcall HalSetBusData(long long long ptr long)
+@ stdcall HalSetBusDataByOffset(long long long ptr long long)
 @ stdcall HalSetEnvironmentVariable(str str)
 @ stdcall HalSetProfileInterval(long)
 @ stdcall HalSetRealTimeClock(ptr)

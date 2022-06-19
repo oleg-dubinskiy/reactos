@@ -136,12 +136,12 @@ HalTranslateBusAddress(
 ULONG
 NTAPI
 HalGetBusDataByOffset(
-    _In_  BUS_DATA_TYPE BusDataType,
-    _In_  ULONG BusNumber,
-    _In_  ULONG SlotNumber,
-    _In_  PVOID Buffer,
-    _In_  ULONG Offset,
-    _In_  ULONG Length)
+    _In_ BUS_DATA_TYPE BusDataType,
+    _In_ ULONG BusNumber,
+    _In_ ULONG SlotNumber,
+    _In_ PVOID Buffer,
+    _In_ ULONG Offset,
+    _In_ ULONG Length)
 {
     BUS_HANDLER BusHandler;
 
@@ -180,14 +180,62 @@ HalGetBusDataByOffset(
 ULONG
 NTAPI
 HalGetBusData(
-    _In_  BUS_DATA_TYPE BusDataType,
-    _In_  ULONG BusNumber,
-    _In_  ULONG SlotNumber,
-    _In_  PVOID Buffer,
-    _In_  ULONG Length)
+    _In_ BUS_DATA_TYPE BusDataType,
+    _In_ ULONG BusNumber,
+    _In_ ULONG SlotNumber,
+    _In_ PVOID Buffer,
+    _In_ ULONG Length)
 {
     /* Call the extended function */
     return HalGetBusDataByOffset(BusDataType,
+                                 BusNumber,
+                                 SlotNumber,
+                                 Buffer,
+                                 0,
+                                 Length);
+}
+
+ULONG
+NTAPI
+HalSetBusDataByOffset(
+    _In_ BUS_DATA_TYPE BusDataType,
+    _In_ ULONG BusNumber,
+    _In_ ULONG SlotNumber,
+    _In_ PVOID Buffer,
+    _In_ ULONG Offset,
+    _In_ ULONG Length)
+{
+    BUS_HANDLER BusHandler;
+
+    /* Look as the bus type */
+    if (BusDataType == Cmos)
+        return HalpSetCmosData(0, SlotNumber, Buffer, Length);
+
+    if (BusDataType != PCIConfiguration)
+        return 0;
+
+    if (!HalpPCIConfigInitialized)
+        return 0;
+
+    /* Setup fake PCI Bus handler */
+    RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BUS_HANDLER));
+    BusHandler.BusNumber = BusNumber;
+
+    /* Call PCI function */
+    return HalpSetPCIData(&BusHandler, &BusHandler, SlotNumber, Buffer, Offset, Length);
+}
+
+ULONG
+NTAPI
+HalSetBusData(
+    _In_ BUS_DATA_TYPE BusDataType,
+    _In_ ULONG BusNumber,
+    _In_ ULONG SlotNumber,
+    _In_ PVOID Buffer,
+    _In_ ULONG Length)
+{
+    /* Call the extended function */
+    return HalSetBusDataByOffset(BusDataType,
                                  BusNumber,
                                  SlotNumber,
                                  Buffer,
