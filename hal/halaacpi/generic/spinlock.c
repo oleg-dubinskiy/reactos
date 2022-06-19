@@ -200,4 +200,50 @@ KeReleaseSpinLock(
     KfReleaseSpinLock(SpinLock, NewIrql);
 }
 
+LOGICAL
+FASTCALL
+KeTryToAcquireQueuedSpinLock(
+    _In_ KSPIN_LOCK_QUEUE_NUMBER LockNumber,
+    _Out_ PKIRQL OldIrql)
+{
+  #ifdef CONFIG_SMP
+    ERROR_DBGBREAK("FIXME: Unused\n"); // FIXME: Unused
+    return FALSE;
+  #endif
+
+    /* Simply raise to dispatch */
+    KeRaiseIrql(DISPATCH_LEVEL, OldIrql);
+
+    /* Add an explicit memory barrier to prevent the compiler from reordering
+       memory accesses across the borders of spinlocks
+    */
+    KeMemoryBarrierWithoutFence();
+
+    /* Always return true on UP Machines */
+    return TRUE;
+}
+
+BOOLEAN
+FASTCALL
+KeTryToAcquireQueuedSpinLockRaiseToSynch(
+    _In_ KSPIN_LOCK_QUEUE_NUMBER LockNumber,
+    _Out_ PKIRQL OldIrql)
+{
+  #ifdef CONFIG_SMP
+    ERROR_DBGBREAK("FIXME: Unused\n"); // FIXME: Unused
+    return FALSE;
+  #endif
+
+    /* Simply raise to synch */
+    KeRaiseIrql(SYNCH_LEVEL, OldIrql);
+
+    /* Add an explicit memory barrier to prevent the compiler from reordering
+       memory accesses across the borders of spinlocks
+    */
+    KeMemoryBarrierWithoutFence();
+
+    /* Always return true on UP Machines */
+    return TRUE;
+}
+
 /* EOF */
