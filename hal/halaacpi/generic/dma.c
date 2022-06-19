@@ -41,6 +41,7 @@ static DMA_OPERATIONS HalpDmaOperations =
 };
 
 extern ULONG HalpBusType;
+extern BOOLEAN HalpPhysicalMemoryMayAppearAbove4GB;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -114,6 +115,180 @@ HalpInitDma(VOID)
 
     /* Intialize all the global variables and allocate master adapter with first map buffers. */
     KeInitializeEvent(&HalpDmaLock, NotificationEvent, TRUE);
+}
+
+PADAPTER_OBJECT
+NTAPI
+HalpAllocateAdapterEx(
+    _In_ ULONG MapRegisters,
+    _In_ PVOID AdapterBaseVa,
+    _In_ BOOLEAN IsDma32Bit)
+{
+    PHALP_DMA_MASTER_ADAPTER pMasterAdapter;
+    PROS_MAP_REGISTER_ENTRY MapRegisterBase;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    PADAPTER_OBJECT MasterAdapter;
+    PADAPTER_OBJECT AdapterObject;
+    HANDLE Handle;
+    PVOID Object;
+    ULONG MapRegisterBaseSize;
+    ULONG MapBufferMaxPages;
+    ULONG SizeOfBitMap;
+    ULONG AdapterSize;
+    BOOLEAN IsMasterAdapter;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT1("HalpAllocateAdapterEx: %X, %X, %X\n", MapRegisters, AdapterBaseVa, IsDma32Bit);
+
+    if (HalpPhysicalMemoryMayAppearAbove4GB && IsDma32Bit)
+        pMasterAdapter = &MasterAdapter32;
+    else
+        pMasterAdapter = &MasterAdapter24;
+
+    if (AdapterBaseVa == LongToPtr(-1))
+    {
+        IsMasterAdapter = TRUE;
+    }
+    else
+    {
+        IsMasterAdapter = FALSE;
+
+        if (MapRegisters && pMasterAdapter->MasterAdapter == NULL)
+        {
+            MasterAdapter = HalpAllocateAdapterEx(MapRegisters, LongToPtr(-1), IsDma32Bit);
+            if (!MasterAdapter)
+            {
+                DPRINT1("Alloc DMA AdapterObject failed!\n");
+                return NULL;
+            }
+
+            MasterAdapter->Dma32BitAddresses = IsDma32Bit;
+            MasterAdapter->MasterDevice = IsDma32Bit;
+
+            pMasterAdapter->MasterAdapter = MasterAdapter;
+        }
+    }
+
+    InitializeObjectAttributes(&ObjectAttributes,
+                               NULL,
+                               (OBJ_KERNEL_HANDLE | OBJ_PERMANENT),
+                               NULL,
+                               NULL);
+    if (IsMasterAdapter)
+    {
+        MapBufferMaxPages = pMasterAdapter->MapBufferMaxPages;
+        SizeOfBitMap = MapBufferMaxPages;
+        AdapterSize = sizeof(ADAPTER_OBJECT) + ((((MapBufferMaxPages + 7) >> 3) + 11) & ~3);
+    }
+    else
+    {
+        AdapterSize = sizeof(ADAPTER_OBJECT);
+    }
+
+    Status = ObCreateObject(KernelMode,
+                            IoAdapterObjectType,
+                            &ObjectAttributes,
+                            KernelMode,
+                            NULL,
+                            AdapterSize,
+                            0,
+                            0,
+                            &Object);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpAllocateAdapterEx: Status %X\n", Status);
+        return NULL;
+    }
+
+    AdapterObject = Object;
+
+    Status = ObReferenceObjectByPointer(AdapterObject,
+                                        (FILE_READ_DATA | FILE_WRITE_DATA),
+                                        IoAdapterObjectType,
+                                        KernelMode);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpAllocateAdapterEx: Status %X\n", Status);
+        return NULL;
+    }
+
+    RtlZeroMemory(AdapterObject, sizeof(ADAPTER_OBJECT));
+
+    Status = ObInsertObject(AdapterObject,
+                            NULL,
+                            (FILE_READ_DATA | FILE_WRITE_DATA),
+                            0,
+                            NULL,
+                            &Handle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpAllocateAdapterEx: Status - %X\n", Status);
+        return NULL;
+    }
+
+    ZwClose(Handle);
+
+    AdapterObject->DmaHeader.Version = 1;
+    AdapterObject->DmaHeader.Size = AdapterSize;
+    AdapterObject->DmaHeader.DmaOperations = &HalpDmaOperations;
+
+    AdapterObject->MapRegistersPerChannel = 1;
+    AdapterObject->AdapterBaseVa = AdapterBaseVa;
+    AdapterObject->ChannelNumber = 0xFF;
+    AdapterObject->Dma32BitAddresses = IsDma32Bit;
+
+    if (MapRegisters)
+        AdapterObject->MasterAdapter = pMasterAdapter->MasterAdapter;
+    else
+        AdapterObject->MasterAdapter = NULL;
+
+    DPRINT1("HalpAllocateAdapterEx: MasterAdapter %p\n", AdapterObject->MasterAdapter);
+
+    KeInitializeDeviceQueue(&AdapterObject->ChannelWaitQueue);
+
+    if (!IsMasterAdapter)
+    {
+        DPRINT1("HalpAllocateAdapterEx: return %p\n", AdapterObject);
+        return AdapterObject;
+    }
+
+    KeInitializeSpinLock(&AdapterObject->SpinLock);
+    InitializeListHead(&AdapterObject->AdapterQueue);
+
+    AdapterObject->MapRegisters = (PVOID)(MasterAdapter + 1);
+
+    RtlInitializeBitMap(AdapterObject->MapRegisters,
+                        (PULONG)(AdapterObject->MapRegisters + 1),
+                        SizeOfBitMap);
+
+    RtlSetAllBits(AdapterObject->MapRegisters);
+
+    AdapterObject->NumberOfMapRegisters = 0;
+    AdapterObject->CommittedMapRegisters = 0;
+
+    MapRegisterBaseSize = (SizeOfBitMap * sizeof(ROS_MAP_REGISTER_ENTRY));
+    MapRegisterBase = ExAllocatePoolWithTag(NonPagedPool, MapRegisterBaseSize, ' laH');
+
+    AdapterObject->MapRegisterBase = MapRegisterBase;
+    if (!MapRegisterBase)
+    {
+        DPRINT1("HalpAllocateAdapterEx: failed for AdapterObject %p\n", AdapterObject);
+        ObDereferenceObject(AdapterObject);
+        return NULL;
+    }
+
+    RtlZeroMemory(MapRegisterBase, MapRegisterBaseSize);
+
+    if (!HalpGrowMapBuffers(AdapterObject, 0x10000))
+    {
+        DPRINT1("HalpAllocateAdapterEx: failed for AdapterObject %p\n", AdapterObject);
+        ObDereferenceObject(AdapterObject);
+        return NULL;
+    }
+
+    DPRINT1("HalpAllocateAdapterEx: Allocated %p\n", AdapterObject);
+    return AdapterObject;
 }
 
 VOID
