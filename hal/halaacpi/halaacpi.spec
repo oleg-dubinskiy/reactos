@@ -40,6 +40,10 @@
 @ stdcall HalStopProfileInterrupt(long)
 @ fastcall HalSystemVectorDispatchEntry(long long long)
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
+@ stdcall IoAssignDriveLetters(ptr str ptr ptr) HalpAssignDriveLetters
+@ stdcall IoReadPartitionTable(ptr long long ptr) HalpReadPartitionTable
+@ stdcall IoSetPartitionInformation(ptr long long long) HalpSetPartitionInformation
+@ stdcall IoWritePartitionTable(ptr long long long ptr) HalpWritePartitionTable
 @ extern KdComPortInUse
 @ fastcall KeAcquireInStackQueuedSpinLock(ptr ptr)
 @ fastcall KeAcquireInStackQueuedSpinLockRaiseToSynch(ptr ptr)
