@@ -22,6 +22,7 @@
 @ stdcall KeFlushWriteBuffer()
 @ stdcall KeLowerIrql(long)
 @ stdcall KeGetCurrentIrql()
+@ stdcall KeStallExecutionProcessor(long)
 @ fastcall KfRaiseIrql(long)
 @ stdcall READ_PORT_BUFFER_UCHAR(ptr ptr long)
 @ stdcall READ_PORT_BUFFER_ULONG(ptr ptr long)

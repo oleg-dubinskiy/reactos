@@ -269,6 +269,18 @@ HalpQueryPerformanceCounter(
     VOID
 );
 
+typedef
+VOID
+(NTAPI * PHALP_STALL_EXEC_PROC)(
+    _In_ ULONG MicroSeconds
+);
+
+VOID
+NTAPI
+HalpPmTimerStallExecProc(
+    _In_ ULONG MicroSeconds
+);
+
 BOOLEAN
 NTAPI
 HalpFindBusAddressTranslation(
