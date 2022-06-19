@@ -246,4 +246,39 @@ HalpDmaGetDmaAlignment(
     IN PDMA_ADAPTER DmaAdapter
 );
 
+NTSTATUS
+NTAPI
+HalCalculateScatterGatherListSize(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ PMDL Mdl OPTIONAL,
+    _In_ PVOID CurrentVa,
+    _In_ ULONG Length,
+    _Out_ PULONG ScatterGatherListSize,
+    _Out_ PULONG pNumberOfMapRegisters
+);
+
+NTSTATUS
+NTAPI
+HalBuildScatterGatherList(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PMDL Mdl,
+    _In_ PVOID CurrentVa,
+    _In_ ULONG Length,
+    _In_ PDRIVER_LIST_CONTROL ExecutionRoutine,
+    _In_ PVOID Context,
+    _In_ BOOLEAN WriteToDevice,
+    _In_ PVOID ScatterGatherBuffer,
+    _In_ ULONG ScatterGatherBufferLength
+);
+
+NTSTATUS
+NTAPI
+HalBuildMdlFromScatterGatherList(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ PSCATTER_GATHER_LIST ScatterGather,
+    _In_ PMDL OriginalMdl,
+    _Out_ PMDL* TargetMdl
+);
+
 /* EOF */

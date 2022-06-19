@@ -19,6 +19,27 @@ KSPIN_LOCK HalpDmaAdapterListLock;
 static BOOLEAN HalpEisaDma = FALSE;
 static KEVENT HalpDmaLock; // NT use HalpNewAdapter?
 
+static DMA_OPERATIONS HalpDmaOperations =
+{
+    sizeof(DMA_OPERATIONS),
+    HalPutDmaAdapter,
+    HalAllocateCommonBuffer,
+    HalFreeCommonBuffer,
+    IoAllocateAdapterChannel,
+    IoFlushAdapterBuffers,
+    IoFreeAdapterChannel,
+    IoFreeMapRegisters,
+    IoMapTransfer,
+    HalpDmaGetDmaAlignment,
+    HalReadDmaCounter,
+    /* FIXME: Implement the S/G funtions. */
+    HalGetScatterGatherList,
+    HalPutScatterGatherList,
+    HalCalculateScatterGatherListSize,
+    HalBuildScatterGatherList,
+    HalBuildMdlFromScatterGatherList
+};
+
 extern ULONG HalpBusType;
 
 /* FUNCTIONS *****************************************************************/
@@ -95,6 +116,201 @@ HalpInitDma(VOID)
     KeInitializeEvent(&HalpDmaLock, NotificationEvent, TRUE);
 }
 
+VOID
+NTAPI
+HalPutDmaAdapter(
+    _In_ PDMA_ADAPTER DmaAdapter)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+}
+
+PVOID
+NTAPI
+HalAllocateCommonBuffer(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ ULONG Length,
+    _In_ PPHYSICAL_ADDRESS LogicalAddress,
+    _In_ BOOLEAN CacheEnabled)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return NULL;
+}
+
+VOID
+NTAPI
+HalFreeCommonBuffer(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ ULONG Length,
+    _In_ PHYSICAL_ADDRESS LogicalAddress,
+    _In_ PVOID VirtualAddress,
+    _In_ BOOLEAN CacheEnabled)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+}
+
+BOOLEAN
+NTAPI
+IoFlushAdapterBuffers(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ PMDL Mdl,
+    _In_ PVOID MapRegisterBase,
+    _In_ PVOID CurrentVa,
+    _In_ ULONG Length,
+    _In_ BOOLEAN WriteToDevice)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return FALSE;
+}
+
+VOID
+NTAPI
+IoFreeAdapterChannel(
+    _In_ PDMA_ADAPTER DmaAdapter)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+}
+
+VOID
+NTAPI
+IoFreeMapRegisters(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ PVOID MapRegisterBase,
+    _In_ ULONG NumberOfMapRegisters)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+}
+
+PHYSICAL_ADDRESS
+NTAPI
+IoMapTransfer(
+_In_ PDMA_ADAPTER DmaAdapter,
+_In_ PMDL Mdl,
+_In_ PVOID MapRegisterBase,
+_In_ PVOID CurrentVa,
+_Inout_ PULONG Length,
+_In_ BOOLEAN WriteToDevice)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    PHYSICAL_ADDRESS HighestAddress;
+    UNIMPLEMENTED;HighestAddress.QuadPart = 0;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return HighestAddress;
+}
+
+ULONG
+NTAPI
+HalpDmaGetDmaAlignment(
+    _In_ PDMA_ADAPTER DmaAdapter)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return 0;
+}
+
+ULONG
+NTAPI
+HalReadDmaCounter(
+    _In_ PDMA_ADAPTER DmaAdapter)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return 0;
+}
+
+NTSTATUS
+NTAPI
+HalGetScatterGatherList(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PMDL Mdl,
+    _In_ PVOID CurrentVa,
+    _In_ ULONG Length,
+    _In_ PDRIVER_LIST_CONTROL ExecutionRoutine,
+    _In_ PVOID Context,
+    _In_ BOOLEAN WriteToDevice)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+HalPutScatterGatherList(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ PSCATTER_GATHER_LIST ScatterGather,
+    _In_ BOOLEAN WriteToDevice)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+}
+
+NTSTATUS
+NTAPI
+HalCalculateScatterGatherListSize(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ PMDL Mdl OPTIONAL,
+    _In_ PVOID CurrentVa,
+    _In_ ULONG Length,
+    _Out_ PULONG ScatterGatherListSize,
+    _Out_ PULONG pNumberOfMapRegisters)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+HalBuildScatterGatherList(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PMDL Mdl,
+    _In_ PVOID CurrentVa,
+    _In_ ULONG Length,
+    _In_ PDRIVER_LIST_CONTROL ExecutionRoutine,
+    _In_ PVOID Context,
+    _In_ BOOLEAN WriteToDevice,
+    _In_ PVOID ScatterGatherBuffer,
+    _In_ ULONG ScatterGatherBufferLength)
+{
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+HalBuildMdlFromScatterGatherList(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ PSCATTER_GATHER_LIST ScatterGather,
+    _In_ PMDL OriginalMdl,
+    _Out_ PMDL* TargetMdl)
+{
+    //PDMA_ADAPTER DmaAdapter = (PADAPTER_OBJECT)DmaAdapter;
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /* HalAllocateAdapterChannel
@@ -121,11 +337,12 @@ HalpInitDma(VOID)
 NTSTATUS
 NTAPI
 HalAllocateAdapterChannel(
-    _In_ PADAPTER_OBJECT AdapterObject,
+    _In_ PDMA_ADAPTER DmaAdapter,
     _In_ PWAIT_CONTEXT_BLOCK WaitContextBlock,
     _In_ ULONG NumberOfMapRegisters,
     _In_ PDRIVER_CONTROL ExecutionRoutine)
 {
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     UNIMPLEMENTED;
     ASSERT(FALSE); // HalpDbgBreakPointEx();
     return STATUS_NOT_IMPLEMENTED;
