@@ -5,6 +5,8 @@
 @ stdcall HalDisableSystemInterrupt(long long)
 @ stdcall HalDisplayString(str)
 @ stdcall HalEnableSystemInterrupt(long long long)
+@ stdcall HalEndSystemInterrupt(long long) #NT use nonstandard parameters calling
+@ stdcall RosHalEndSystemInterrupt(long long ptr) #ReactOS-specific HalEndSystemInterrupt()
 @ stdcall HalGetAdapter(ptr ptr)
 @ stdcall HalGetEnvironmentVariable(str long str)
 @ stdcall HalGetInterruptVector(long long long long ptr ptr)
@@ -47,6 +49,7 @@
 @ fastcall KeTryToAcquireQueuedSpinLock(long ptr)
 @ fastcall KeTryToAcquireQueuedSpinLockRaiseToSynch(long ptr)
 @ fastcall KfAcquireSpinLock(ptr)
+@ fastcall KfLowerIrql(long)
 @ fastcall KfRaiseIrql(long)
 @ fastcall KfReleaseSpinLock(ptr long)
 @ stdcall READ_PORT_BUFFER_UCHAR(ptr ptr long)

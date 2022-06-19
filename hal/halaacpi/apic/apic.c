@@ -1121,6 +1121,88 @@ HalBeginSystemInterrupt(
     return FALSE;
 }
 
+static
+VOID
+NTAPI
+HalpEndSystemInterrupt(
+    _In_ KIRQL OldIrql,
+    _In_ UCHAR Vector,
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    PHALP_PCR_HAL_RESERVED HalReserved;
+    KIRQL Irql;
+
+    Irql = HalpVectorToIRQL[Vector >> 4];
+
+    if (Irql < KeGetCurrentIrql())
+        HalpLowerIrqlHardwareInterrupts(Irql);
+
+  #if DBG
+    if ((ApicRead(APIC_PPR) & 0xF0) != (Vector & 0xF0))
+    {
+        DPRINT1("HalpEndSystemInterrupt: SystemVector %X, APIC_PPR %X\n", Vector, ApicRead(APIC_PPR));
+        DbgBreakPoint();
+    }
+  #endif
+
+    ApicWrite(APIC_EOI, 0);
+
+    KeSetCurrentIrql(OldIrql);
+
+    if (OldIrql >= DISPATCH_LEVEL)
+        goto Exit;
+
+    HalReserved = (PHALP_PCR_HAL_RESERVED)KeGetPcr()->HalReserved;
+
+    if (OldIrql != PASSIVE_LEVEL)
+        goto Exit;
+
+    if (!HalReserved->ApcRequested)
+        goto Exit;
+
+    if ((UCHAR)(KeGetCurrentPrcb()->HalReserved[0]) == 0)
+        HalpCheckForSoftwareInterrupt(OldIrql, TrapFrame);
+
+Exit:
+    ;
+    //FIXME KiCheckForSListAddress(TrapFrame);
+}
+
+//#ifdef __REACTOS__
+VOID
+NTAPI
+RosHalEndSystemInterrupt(
+    _In_ KIRQL OldIrql,
+    _In_ UCHAR Vector,
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    //DPRINT1("RosHalEndSystemInterrupt: OldIrql %X, Vector %X\n", OldIrql,  Vector);
+    HalpEndSystemInterrupt(OldIrql, Vector, TrapFrame);
+}
+//#else
+/* NT use non-standard parameters calling */
+// ? __declspec(naked) ?
+VOID
+NTAPI
+HalEndSystemInterrupt(
+    _In_ KIRQL OldIrql,
+    _In_ UCHAR Vector)
+    //_In_ PKTRAP_FRAME TrapFrame)
+{
+    PKTRAP_FRAME TrapFrame;
+
+    DPRINT1("HalEndSystemInterrupt: FIXME !!! OldIrql %X, Vector %X\n", OldIrql, Vector);
+    DbgBreakPoint();
+
+    /* NT really use stack for pointer TrapFrame (us third parameter),
+       but ... HalEndSystemInterrupt() defined with two parameters.
+    */
+    TrapFrame = NULL; // FIXME: get from stack.
+
+    HalpEndSystemInterrupt(OldIrql, Vector, TrapFrame);
+}
+//#endif
+
 /* IRQL MANAGEMENT ************************************************************/
 
 KIRQL
