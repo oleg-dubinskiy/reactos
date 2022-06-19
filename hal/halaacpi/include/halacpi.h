@@ -324,4 +324,10 @@ HalReportResourceUsage(
     VOID
 );
 
+VOID
+NTAPI
+HalpWriteResetCommand(
+    VOID
+);
+
 /* EOF */

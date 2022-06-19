@@ -1129,6 +1129,26 @@ HalpIs16BitPortDecodeSupported(VOID)
     return CM_RESOURCE_PORT_16_BIT_DECODE;
 }
 
+VOID
+NTAPI
+HalpWriteResetCommand(VOID)
+{
+    if (HalpFixedAcpiDescTable.Header.Revision > 1 &&
+        (HalpFixedAcpiDescTable.flags & 4) &&
+        !(HalpFixedAcpiDescTable.boot_arch & 2))
+    {
+        DPRINT1("HalpWriteResetCommand: Revision %X, flags %X, boot_arch %X\n",
+                HalpFixedAcpiDescTable.Header.Revision,
+                HalpFixedAcpiDescTable.flags,
+                HalpFixedAcpiDescTable.boot_arch);
+
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+    }
+
+    /* Generate RESET signal via keyboard controller */
+    WRITE_PORT_UCHAR((PUCHAR)0x64, 0xFE);
+};
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 INIT_FUNCTION
