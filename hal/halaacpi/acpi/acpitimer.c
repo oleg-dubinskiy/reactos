@@ -8,6 +8,7 @@
 /* GLOBALS ********************************************************************/
 
 PHALP_STALL_EXEC_PROC TimerStallExecProc = HalpPmTimerStallExecProc;
+PHALP_SET_TIME_INCREMENT TimerSetTimeIncrement = HalpPmTimerSetTimeIncrement;
 
 PHALP_QUERY_TIMER QueryTimer = HalpQueryPerformanceCounter;
 ULONG PMTimerFreq = 3579545;
@@ -153,4 +154,21 @@ Exit:
         StallLoopValue -= HAL_STALL_LOOP;
 }
 
+ULONG
+NTAPI 
+HalSetTimeIncrement(
+    _In_ ULONG Increment)
+{
+    return TimerSetTimeIncrement(Increment);
+}
+ULONG
+NTAPI
+HalpPmTimerSetTimeIncrement(
+    _In_ ULONG Increment)
+{
+    ULONG Result;
+    UNIMPLEMENTED;
+    ASSERT(FALSE);Result = 0;
+    return Result;
+}
 /* EOF */

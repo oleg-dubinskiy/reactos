@@ -20,6 +20,7 @@
 @ stdcall HalSetEnvironmentVariable(str str)
 @ stdcall HalSetProfileInterval(long)
 @ stdcall HalSetRealTimeClock(ptr)
+@ stdcall HalSetTimeIncrement(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
 @ extern KdComPortInUse

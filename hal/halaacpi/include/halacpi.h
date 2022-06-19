@@ -281,6 +281,18 @@ HalpPmTimerStallExecProc(
     _In_ ULONG MicroSeconds
 );
 
+typedef
+ULONG
+(NTAPI * PHALP_SET_TIME_INCREMENT)(
+    _In_ ULONG Increment
+);
+
+ULONG
+NTAPI
+HalpPmTimerSetTimeIncrement(
+    _In_ ULONG Increment
+);
+
 BOOLEAN
 NTAPI
 HalpFindBusAddressTranslation(
