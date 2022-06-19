@@ -29,6 +29,8 @@
 @ extern KdComPortInUse
 @ fastcall KeAcquireInStackQueuedSpinLock(ptr ptr)
 @ fastcall KeAcquireInStackQueuedSpinLockRaiseToSynch(ptr ptr)
+@ fastcall KeAcquireQueuedSpinLock(ptr)
+@ fastcall KeAcquireQueuedSpinLockRaiseToSynch(ptr)
 @ stdcall KeFlushWriteBuffer()
 @ stdcall KeLowerIrql(long)
 @ stdcall KeGetCurrentIrql()
