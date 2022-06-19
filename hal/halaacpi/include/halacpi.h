@@ -282,6 +282,20 @@ HalpPmTimerStallExecProc(
 );
 
 typedef
+VOID
+(NTAPI * PHALP_CALIBRATE_PERF_COUNT)(
+    _In_ volatile PLONG Count,
+    _In_ ULONGLONG NewCount
+);
+
+VOID
+NTAPI
+HalpPmTimerCalibratePerfCount(
+    _In_ volatile PLONG Count,
+    _In_ ULONGLONG NewCount
+);
+
+typedef
 LARGE_INTEGER
 (NTAPI * PHALP_QUERY_PERF_COUNT)(
     _Out_opt_ LARGE_INTEGER* OutPerformanceFrequency
