@@ -22,6 +22,8 @@
 @ stdcall HalSetRealTimeClock(ptr)
 @ stdcall HalSetTimeIncrement(long)
 @ stdcall HalStartNextProcessor(ptr ptr)
+@ stdcall HalStartProfileInterrupt(long)
+@ stdcall HalStopProfileInterrupt(long)
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
 @ extern KdComPortInUse
 @ stdcall KeFlushWriteBuffer()

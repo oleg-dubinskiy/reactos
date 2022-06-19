@@ -22,24 +22,51 @@ ULONGLONG HalMaxProfileInterval = 10000000;
 
 VOID
 NTAPI
+HalStartProfileInterrupt(
+    _In_ KPROFILE_SOURCE ProfileSource)
+{
+    LVT_REGISTER LvtEntry;
+
+    /* Only handle ProfileTime */
+    if (ProfileSource != ProfileTime)
+        return;
+
+    /* OK, we are profiling now */
+    HalIsProfiling = TRUE;
+
+    /* Set interrupt interval */
+    ApicWrite(APIC_TICR, KeGetPcr()->HalReserved[HAL_PROFILING_INTERVAL]);
+
+    /* Unmask it */
+    LvtEntry.Long = 0;
+    LvtEntry.TimerMode = 1;
+    LvtEntry.Vector = APIC_PROFILE_VECTOR;
+    LvtEntry.Mask = 0;
+
+    ApicWrite(APIC_TMRLVTR, LvtEntry.Long);
+}
+
+VOID
+NTAPI
 HalStopProfileInterrupt(
     _In_ KPROFILE_SOURCE ProfileSource)
 {
     LVT_REGISTER LvtEntry;
 
     /* Only handle ProfileTime */
-    if (ProfileSource == ProfileTime)
-    {
-        /* We are not profiling */
-        HalIsProfiling = FALSE;
+    if (ProfileSource != ProfileTime)
+        return;
 
-        /* Mask interrupt */
-        LvtEntry.Long = 0;
-        LvtEntry.TimerMode = 1;
-        LvtEntry.Vector = APIC_PROFILE_VECTOR;
-        LvtEntry.Mask = 1;
-        ApicWrite(APIC_TMRLVTR, LvtEntry.Long);
-    }
+    /* We are not profiling */
+    HalIsProfiling = FALSE;
+
+    /* Mask interrupt */
+    LvtEntry.Long = 0;
+    LvtEntry.TimerMode = 1;
+    LvtEntry.Vector = APIC_PROFILE_VECTOR;
+    LvtEntry.Mask = 1;
+
+    ApicWrite(APIC_TMRLVTR, LvtEntry.Long);
 }
 
 ULONG_PTR
