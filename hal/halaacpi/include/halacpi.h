@@ -282,6 +282,18 @@ HalpPmTimerStallExecProc(
 );
 
 typedef
+LARGE_INTEGER
+(NTAPI * PHALP_QUERY_PERF_COUNT)(
+    _Out_opt_ LARGE_INTEGER* OutPerformanceFrequency
+);
+
+LARGE_INTEGER
+NTAPI
+HalpPmTimerQueryPerfCount(
+    _Out_opt_ LARGE_INTEGER* OutPerformanceFrequency
+);
+
+typedef
 ULONG
 (NTAPI * PHALP_SET_TIME_INCREMENT)(
     _In_ ULONG Increment

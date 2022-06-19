@@ -8,6 +8,7 @@
 /* GLOBALS ********************************************************************/
 
 PHALP_STALL_EXEC_PROC TimerStallExecProc = HalpPmTimerStallExecProc;
+PHALP_QUERY_PERF_COUNT TimerQueryPerfCount = HalpPmTimerQueryPerfCount;
 PHALP_SET_TIME_INCREMENT TimerSetTimeIncrement = HalpPmTimerSetTimeIncrement;
 
 PHALP_QUERY_TIMER QueryTimer = HalpQueryPerformanceCounter;
@@ -152,6 +153,23 @@ Exit:
     if (!StallExecCounter && (StallLoopValue > HAL_STALL_LOOP))
         /* Every 256 calls this function, we decrease the value */
         StallLoopValue -= HAL_STALL_LOOP;
+}
+
+LARGE_INTEGER
+NTAPI 
+KeQueryPerformanceCounter(
+    _Out_opt_ LARGE_INTEGER* OutPerfFrequency)
+{
+    return TimerQueryPerfCount(OutPerfFrequency);
+}
+LARGE_INTEGER
+NTAPI
+HalpPmTimerQueryPerfCount(
+    _Out_opt_ LARGE_INTEGER* OutPerfFrequency)
+{
+    LARGE_INTEGER PerfCount;
+    HaliPmTimerQueryPerfCount(&PerfCount, OutPerfFrequency);
+    return PerfCount;
 }
 
 ULONG

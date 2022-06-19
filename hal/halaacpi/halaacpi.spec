@@ -36,6 +36,7 @@
 @ stdcall KeFlushWriteBuffer()
 @ stdcall KeGetCurrentIrql()
 @ stdcall KeLowerIrql(long)
+@ stdcall KeQueryPerformanceCounter(ptr)
 @ fastcall KeReleaseInStackQueuedSpinLock(ptr)
 @ fastcall KeReleaseQueuedSpinLock(ptr long)
 @ stdcall KeReleaseSpinLock(ptr long)
