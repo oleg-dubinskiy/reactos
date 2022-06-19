@@ -4,6 +4,7 @@
 @ stdcall HalAdjustResourceList(ptr)
 @ stdcall HalAllProcessorsStarted()
 @ stdcall HalAllocateAdapterChannel(ptr ptr long ptr)
+@ stdcall HalAllocateCrashDumpRegisters(ptr ptr)
 @ stdcall HalBeginSystemInterrupt(long long ptr)
 @ fastcall HalClearSoftwareInterrupt(long)
 @ stdcall HalDisableSystemInterrupt(long long)

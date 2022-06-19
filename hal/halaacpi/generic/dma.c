@@ -112,4 +112,15 @@ HalGetAdapter(
     return NULL;
 }
 
+PVOID
+NTAPI
+HalAllocateCrashDumpRegisters(
+    _In_ PADAPTER_OBJECT AdapterObject,
+    _Inout_ PULONG NumberOfMapRegisters)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return NULL;
+}
+
 /* EOF */
