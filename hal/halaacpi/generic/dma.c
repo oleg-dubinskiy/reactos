@@ -23,6 +23,17 @@ extern ULONG HalpBusType;
 
 /* FUNCTIONS *****************************************************************/
 
+BOOLEAN
+NTAPI
+HalpGrowMapBuffers(
+    _In_ PADAPTER_OBJECT AdapterObject,
+    _In_ ULONG SizeOfMapBuffers)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return FALSE;
+}
+
 /* HaliGetDmaAdapter
      Internal routine to allocate PnP DMA adapter object.
      It's exported through HalDispatchTable and used by IoGetDmaAdapter.
