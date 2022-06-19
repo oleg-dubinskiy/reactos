@@ -24,6 +24,7 @@
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall HalStartProfileInterrupt(long)
 @ stdcall HalStopProfileInterrupt(long)
+@ fastcall HalSystemVectorDispatchEntry(long long long)
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
 @ extern KdComPortInUse
 @ stdcall KeFlushWriteBuffer()

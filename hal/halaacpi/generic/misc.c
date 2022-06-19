@@ -192,4 +192,14 @@ HalHandleNMI(
     while (TRUE);
 }
 
+UCHAR
+FASTCALL
+HalSystemVectorDispatchEntry(
+    _In_ ULONG Vector,
+    _Out_ PKINTERRUPT_ROUTINE** FlatDispatch,
+    _Out_ PKINTERRUPT_ROUTINE* NoConnection)
+{
+    return 0;
+}
+
 /* EOF */
