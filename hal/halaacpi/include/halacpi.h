@@ -378,4 +378,17 @@ HalpTranslateBusAddress(
     _Out_ PPHYSICAL_ADDRESS TranslatedAddress
 );
 
+NTSTATUS
+NTAPI
+HalpAssignSlotResources(
+    _In_ PUNICODE_STRING RegistryPath,
+    _In_ PUNICODE_STRING DriverClassName,
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ INTERFACE_TYPE BusType,
+    _In_ ULONG BusNumber,
+    _In_ ULONG SlotNumber,
+    _Inout_ PCM_RESOURCE_LIST* AllocatedResources
+);
+
 /* EOF */

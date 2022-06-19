@@ -229,6 +229,18 @@ HalInitializeProcessor(
     HalpInitializeLocalUnit();
 }
 
+VOID
+NTAPI
+HalpInitNonBusHandler(VOID)
+{
+    DPRINT("HalpInitNonBusHandler()\n");
+
+    /* These (HalPrivateDispatchTable) should be written by the PCI driver later, but we give defaults */
+    HalPciTranslateBusAddress = HalpTranslateBusAddress;
+    HalPciAssignSlotResources = HalpAssignSlotResources;
+    HalFindBusAddressTranslation = HalpFindBusAddressTranslation;
+}
+
 INIT_FUNCTION
 BOOLEAN
 NTAPI
@@ -469,6 +481,14 @@ HalInitSystem(IN ULONG BootPhase,
             DPRINT1("HalInitSystem: Prcb->Number %X\n", Prcb->Number);
             return TRUE;
         }
+
+        /* Initialize DMA. NT does this in Phase 0 */
+        HalpInitDma();
+
+        DPRINT1("HalpInitPhase1: FIXME HalpInitReservedPages()\n");
+
+        /* Initialize bus handlers */
+        HalpInitNonBusHandler();
 
         DPRINT1("HalInitSystem: FIXME! BootPhase == 1\n");
         ASSERT(FALSE);// HalpDbgBreakPointEx();
