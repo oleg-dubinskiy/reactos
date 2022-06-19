@@ -17,6 +17,7 @@
 @ stdcall HalRequestIpi(long)
 @ fastcall HalRequestSoftwareInterrupt(long)
 @ stdcall HalReturnToFirmware(long)
+@ stdcall HalSetEnvironmentVariable(str str)
 @ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
 @ extern KdComPortInUse

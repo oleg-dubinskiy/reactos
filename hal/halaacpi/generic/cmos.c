@@ -65,6 +65,49 @@ HalGetEnvironmentVariable(
     return ESUCCESS;
 }
 
+ARC_STATUS
+NTAPI
+HalSetEnvironmentVariable(
+    _In_ PCH Name,
+    _In_ PCH Value)
+{
+    UCHAR Val;
+
+    /* Only variable supported on x86 */
+    if (_stricmp(Name, "LastKnownGood"))
+        return ENOMEM;
+
+    /* Check if this is true or false */
+    if (!_stricmp(Value, "TRUE"))
+    {
+        /* It's true, acquire CMOS lock */
+        HalpAcquireCmosSpinLock();
+
+        /* Read the current value and add the flag */
+        Val = HalpReadCmos(RTC_REGISTER_B) | 1;
+    }
+    else if (!_stricmp(Value, "FALSE"))
+    {
+        /* It's false, acquire CMOS lock */
+        HalpAcquireCmosSpinLock();
+
+        /* Read the current value and mask out  the flag */
+        Val = HalpReadCmos(RTC_REGISTER_B) & ~1;
+    }
+    else
+    {
+        DPRINT1("HalSetEnvironmentVariable: Fail\n");
+        return ENOMEM;
+    }
+
+    /* Write new value */
+    HalpWriteCmos(RTC_REGISTER_B, Val);
+
+    /* Release the lock and return success */
+    HalpReleaseCmosSpinLock();
+    return ESUCCESS;
+}
+
 BOOLEAN
 NTAPI
 HalQueryRealTimeClock(
