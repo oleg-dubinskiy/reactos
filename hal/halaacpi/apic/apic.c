@@ -1133,7 +1133,8 @@ KeGetCurrentIrql(VOID)
 
 VOID
 FASTCALL
-KfLowerIrql(_In_ KIRQL NewIrql)
+KfLowerIrql(
+    _In_ KIRQL NewIrql)
 {
     HalpLowerIrqlHardwareInterrupts(NewIrql);
     HalpCheckForSoftwareInterrupt(NewIrql, 0);
@@ -1142,7 +1143,8 @@ KfLowerIrql(_In_ KIRQL NewIrql)
 #undef KeLowerIrql
 VOID
 NTAPI
-KeLowerIrql(KIRQL NewIrql)
+KeLowerIrql(
+    _In_ KIRQL NewIrql)
 {
     /* Call the fastcall function */
     KfLowerIrql(NewIrql);
@@ -1160,6 +1162,17 @@ KfRaiseIrql(
     Pcr->Irql = NewIrql;
 
     return OldIrql;
+}
+
+#undef KeRaiseIrql
+VOID
+NTAPI
+KeRaiseIrql(
+    _In_ KIRQL NewIrql,
+    _Out_ PKIRQL OldIrql)
+{
+    /* Call the fastcall function */
+    *OldIrql = KfRaiseIrql(NewIrql);
 }
 
 VOID NTAPI Kii386SpinOnSpinLock(_In_ PKSPIN_LOCK SpinLock, _In_ ULONG Flags);

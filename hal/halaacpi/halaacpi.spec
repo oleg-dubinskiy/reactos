@@ -37,6 +37,7 @@
 @ stdcall KeGetCurrentIrql()
 @ stdcall KeLowerIrql(long)
 @ stdcall KeQueryPerformanceCounter(ptr)
+@ stdcall KeRaiseIrql(long ptr)
 @ fastcall KeReleaseInStackQueuedSpinLock(ptr)
 @ fastcall KeReleaseQueuedSpinLock(ptr long)
 @ stdcall KeReleaseSpinLock(ptr long)
