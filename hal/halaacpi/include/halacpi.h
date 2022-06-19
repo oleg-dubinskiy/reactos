@@ -368,4 +368,14 @@ HalpWriteResetCommand(
     VOID
 );
 
+BOOLEAN
+NTAPI
+HalpTranslateBusAddress(
+    _In_ INTERFACE_TYPE InterfaceType,
+    _In_ ULONG BusNumber,
+    _In_ PHYSICAL_ADDRESS BusAddress,
+    _In_ OUT PULONG AddressSpace,
+    _Out_ PPHYSICAL_ADDRESS TranslatedAddress
+);
+
 /* EOF */
