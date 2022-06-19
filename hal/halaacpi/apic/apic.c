@@ -1175,6 +1175,20 @@ KeRaiseIrql(
     *OldIrql = KfRaiseIrql(NewIrql);
 }
 
+KIRQL
+NTAPI
+KeRaiseIrqlToDpcLevel(VOID)
+{
+    return KfRaiseIrql(DISPATCH_LEVEL);
+}
+
+KIRQL
+NTAPI
+KeRaiseIrqlToSynchLevel(VOID)
+{
+    return KfRaiseIrql(SYNCH_LEVEL);
+}
+
 VOID NTAPI Kii386SpinOnSpinLock(_In_ PKSPIN_LOCK SpinLock, _In_ ULONG Flags);
 
 ULONG

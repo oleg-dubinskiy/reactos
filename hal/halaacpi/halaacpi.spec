@@ -38,6 +38,8 @@
 @ stdcall KeLowerIrql(long)
 @ stdcall KeQueryPerformanceCounter(ptr)
 @ stdcall KeRaiseIrql(long ptr)
+@ stdcall KeRaiseIrqlToDpcLevel()
+@ stdcall KeRaiseIrqlToSynchLevel()
 @ fastcall KeReleaseInStackQueuedSpinLock(ptr)
 @ fastcall KeReleaseQueuedSpinLock(ptr long)
 @ stdcall KeReleaseSpinLock(ptr long)
