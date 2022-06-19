@@ -343,19 +343,19 @@ HalpRegisterPciDebuggingDeviceInfo(
 ULONG
 NTAPI
 HalpGetCmosData(
-    IN ULONG BusNumber,
-    IN ULONG SlotNumber,
-    IN PVOID Buffer,
-    IN ULONG Length
+    _In_ ULONG BusNumber,
+    _In_ ULONG SlotNumber,
+    _In_ PVOID Buffer,
+    _In_ ULONG Length
 );
 
 ULONG
 NTAPI
 HalpSetCmosData(
-    IN ULONG BusNumber,
-    IN ULONG SlotNumber,
-    IN PVOID Buffer,
-    IN ULONG Length
+    _In_ ULONG BusNumber,
+    _In_ ULONG SlotNumber,
+    _In_ PVOID Buffer,
+    _In_ ULONG Length
 );
 
 /* EOF */
