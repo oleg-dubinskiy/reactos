@@ -138,4 +138,33 @@ HalQueryRealTimeClock(
     return TRUE;
 }
 
+BOOLEAN
+NTAPI
+HalSetRealTimeClock(
+    _In_ PTIME_FIELDS Time)
+{
+    /* Acquire CMOS Lock */
+    HalpAcquireCmosSpinLock();
+
+    /* Loop while update is in progress */
+    while ((HalpReadCmos(RTC_REGISTER_A)) & RTC_REG_A_UIP)
+        ;
+
+    /* Write time fields to CMOS RTC */
+    HalpWriteCmos(0, INT_BCD(Time->Second));
+    HalpWriteCmos(2, INT_BCD(Time->Minute));
+    HalpWriteCmos(4, INT_BCD(Time->Hour));
+    HalpWriteCmos(6, INT_BCD(Time->Weekday));
+    HalpWriteCmos(7, INT_BCD(Time->Day));
+    HalpWriteCmos(8, INT_BCD(Time->Month));
+    HalpWriteCmos(9, INT_BCD(Time->Year % 100));
+
+    /* FIXME: Set the century byte */
+
+    /* Release CMOS lock */
+    HalpReleaseCmosSpinLock();
+
+    /* Always return TRUE */
+    return TRUE;
+}
 /* EOF */
