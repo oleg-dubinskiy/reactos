@@ -6,6 +6,10 @@
 #include <debug.h>
 #include "apic.h"
 
+/* HAL profiling offsets in KeGetPcr()->HalReserved[] */
+#define HAL_PROFILING_INTERVAL      0
+#define HAL_PROFILING_MULTIPLIER    1
+
 extern LARGE_INTEGER HalpCpuClockFrequency;
 
 /* HAL profiling variables */
@@ -38,4 +42,38 @@ HalStopProfileInterrupt(
     }
 }
 
+ULONG_PTR
+NTAPI
+HalSetProfileInterval(
+    _In_ ULONG_PTR Interval)
+{
+    ULONGLONG TimerInterval;
+    ULONGLONG FixedInterval;
+
+    FixedInterval = (ULONGLONG)Interval;
+
+    /* Check bounds */
+    if (FixedInterval < HalMinProfileInterval)
+    {
+        FixedInterval = HalMinProfileInterval;
+    }
+    else if (FixedInterval > HalMaxProfileInterval)
+    {
+        FixedInterval = HalMaxProfileInterval;
+    }
+
+    /* Remember interval */
+    HalCurProfileInterval = FixedInterval;
+
+    /* Recalculate interval for APIC */
+    TimerInterval = (FixedInterval * KeGetPcr()->HalReserved[HAL_PROFILING_MULTIPLIER] / HalMaxProfileInterval);
+
+    /* Remember recalculated interval in PCR */
+    KeGetPcr()->HalReserved[HAL_PROFILING_INTERVAL] = (ULONG)TimerInterval;
+
+    /* And set it */
+    ApicWrite(APIC_TICR, (ULONG)TimerInterval);
+
+    return Interval;
+}
 /* EOF */
