@@ -141,4 +141,19 @@ KeAcquireSpinLock(
     *OldIrql = KfAcquireSpinLock(SpinLock);
 }
 
+KIRQL
+FASTCALL
+KeAcquireSpinLockRaiseToSynch(
+    _In_ PKSPIN_LOCK SpinLock)
+{
+    KIRQL OldIrql;
+
+    /* Raise to sync */
+    KeRaiseIrql(SYNCH_LEVEL, &OldIrql);
+
+    /* Acquire the lock and return */
+    KxAcquireSpinLock(SpinLock);
+    return OldIrql;
+}
+
 /* EOF */
