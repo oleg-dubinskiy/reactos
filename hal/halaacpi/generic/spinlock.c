@@ -65,6 +65,17 @@ KfAcquireSpinLock(
     return OldIrql;
 }
 
+VOID
+FASTCALL
+KfReleaseSpinLock(
+    _In_ PKSPIN_LOCK SpinLock,
+    _In_ KIRQL OldIrql)
+{
+    /* Release the lock and lower IRQL back */
+    KxReleaseSpinLock(SpinLock);
+    KeLowerIrql(OldIrql);
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 VOID
@@ -154,6 +165,39 @@ KeAcquireSpinLockRaiseToSynch(
     /* Acquire the lock and return */
     KxAcquireSpinLock(SpinLock);
     return OldIrql;
+}
+
+VOID
+FASTCALL
+KeReleaseInStackQueuedSpinLock(
+    _In_ PKLOCK_QUEUE_HANDLE LockHandle)
+{
+    /* Simply lower IRQL back */
+    KxReleaseSpinLock(LockHandle->LockQueue.Lock); // HACK
+    KeLowerIrql(LockHandle->OldIrql);
+}
+
+VOID
+FASTCALL
+KeReleaseQueuedSpinLock(
+    _In_ KSPIN_LOCK_QUEUE_NUMBER LockNumber,
+    _In_ KIRQL OldIrql)
+{
+    /* Release the lock */
+    KxReleaseSpinLock(KeGetCurrentPrcb()->LockQueue[LockNumber].Lock); // HACK
+
+    /* Lower IRQL back */
+    KeLowerIrql(OldIrql);
+}
+
+VOID
+NTAPI
+KeReleaseSpinLock(
+    _In_ PKSPIN_LOCK SpinLock,
+    _In_ KIRQL NewIrql)
+{
+    /* Call the fastcall function */
+    KfReleaseSpinLock(SpinLock, NewIrql);
 }
 
 /* EOF */
