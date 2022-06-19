@@ -27,7 +27,7 @@ ULONG IoDeviceHandlerObjectSize;
  */
 NTSTATUS
 NTAPI
-IoAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
+IoAllocateAdapterChannel(IN PDMA_ADAPTER DmaAdapter,
                          IN PDEVICE_OBJECT DeviceObject,
                          IN ULONG NumberOfMapRegisters,
                          IN PDRIVER_CONTROL ExecutionRoutine,
@@ -41,7 +41,7 @@ IoAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
     Wcb->CurrentIrp = DeviceObject->CurrentIrp;
 
     /* Call HAL */
-    return HalAllocateAdapterChannel(AdapterObject,
+    return HalAllocateAdapterChannel(DmaAdapter,
                                      Wcb,
                                      NumberOfMapRegisters,
                                      ExecutionRoutine);

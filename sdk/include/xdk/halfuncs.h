@@ -83,14 +83,14 @@ NTHALAPI
 VOID
 NTAPI
 IoFreeAdapterChannel(
-  _In_ PADAPTER_OBJECT AdapterObject);
+  _In_ PDMA_ADAPTER DmaAdapter);
 
 //DECLSPEC_DEPRECATED_DDK
 NTHALAPI
 BOOLEAN
 NTAPI
 IoFlushAdapterBuffers(
-  _In_ PADAPTER_OBJECT AdapterObject,
+  _In_ PDMA_ADAPTER DmaAdapter,
   _In_ PMDL Mdl,
   _In_ PVOID MapRegisterBase,
   _In_ PVOID CurrentVa,
@@ -102,7 +102,7 @@ NTHALAPI
 VOID
 NTAPI
 IoFreeMapRegisters(
-  _In_ PADAPTER_OBJECT AdapterObject,
+  _In_ PDMA_ADAPTER DmaAdapter,
   _In_ PVOID MapRegisterBase,
   _In_ ULONG NumberOfMapRegisters);
 
@@ -111,7 +111,7 @@ NTHALAPI
 PVOID
 NTAPI
 HalAllocateCommonBuffer(
-  _In_ PADAPTER_OBJECT AdapterObject,
+  _In_ PDMA_ADAPTER DmaAdapter,
   _In_ ULONG Length,
   _Out_ PPHYSICAL_ADDRESS LogicalAddress,
   _In_ BOOLEAN CacheEnabled);
@@ -121,7 +121,7 @@ NTHALAPI
 VOID
 NTAPI
 HalFreeCommonBuffer(
-  _In_ PADAPTER_OBJECT AdapterObject,
+  _In_ PDMA_ADAPTER DmaAdapter,
   _In_ ULONG Length,
   _In_ PHYSICAL_ADDRESS LogicalAddress,
   _In_ PVOID VirtualAddress,
@@ -132,13 +132,13 @@ NTHALAPI
 ULONG
 NTAPI
 HalReadDmaCounter(
-  _In_ PADAPTER_OBJECT AdapterObject);
+  _In_ PDMA_ADAPTER DmaAdapter);
 
 NTHALAPI
 NTSTATUS
 NTAPI
 HalAllocateAdapterChannel(
-  _In_ PADAPTER_OBJECT AdapterObject,
+  _In_ PDMA_ADAPTER DmaAdapter,
   _In_ PWAIT_CONTEXT_BLOCK Wcb,
   _In_ ULONG NumberOfMapRegisters,
   _In_ PDRIVER_CONTROL ExecutionRoutine);
@@ -211,7 +211,7 @@ HalGetAdapter(
 VOID
 NTAPI
 HalPutDmaAdapter(
-  _In_ PADAPTER_OBJECT DmaAdapter);
+  _In_ PDMA_ADAPTER DmaAdapter);
 
 NTHALAPI
 VOID
@@ -261,7 +261,7 @@ HalAllocateCrashDumpRegisters(
 NTSTATUS
 NTAPI
 HalGetScatterGatherList(
-  _In_ PADAPTER_OBJECT DmaAdapter,
+  _In_ PDMA_ADAPTER DmaAdapter,
   _In_ PDEVICE_OBJECT DeviceObject,
   _In_ PMDL Mdl,
   _In_ PVOID CurrentVa,
@@ -273,7 +273,7 @@ HalGetScatterGatherList(
 VOID
 NTAPI
 HalPutScatterGatherList(
-  _In_ PADAPTER_OBJECT DmaAdapter,
+  _In_ PDMA_ADAPTER DmaAdapter,
   _In_ PSCATTER_GATHER_LIST ScatterGather,
   _In_ BOOLEAN WriteToDevice);
 

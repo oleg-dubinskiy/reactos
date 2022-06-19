@@ -352,7 +352,7 @@ typedef struct _HALP_DMA_MASTER_ADAPTER
 ULONG
 NTAPI
 HalpDmaGetDmaAlignment(
-    IN PADAPTER_OBJECT AdapterObject
+    IN PDMA_ADAPTER DmaAdapter
 );
 
 /* EOF */

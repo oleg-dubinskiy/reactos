@@ -13,19 +13,19 @@ static PADAPTER_OBJECT HalpEisaAdapter[8];
 
 static DMA_OPERATIONS HalpDmaOperations = {
     sizeof(DMA_OPERATIONS),
-    (PPUT_DMA_ADAPTER)HalPutDmaAdapter,
-    (PALLOCATE_COMMON_BUFFER)HalAllocateCommonBuffer,
-    (PFREE_COMMON_BUFFER)HalFreeCommonBuffer,
-    (PALLOCATE_ADAPTER_CHANNEL)IoAllocateAdapterChannel, /* Initialized in HalpInitDma() */
-    (PFLUSH_ADAPTER_BUFFERS)IoFlushAdapterBuffers, /* Initialized in HalpInitDma() */
-    (PFREE_ADAPTER_CHANNEL)IoFreeAdapterChannel, /* Initialized in HalpInitDma() */
-    (PFREE_MAP_REGISTERS)IoFreeMapRegisters, /* Initialized in HalpInitDma() */
-    (PMAP_TRANSFER)IoMapTransfer, /* Initialized in HalpInitDma() */
-    (PGET_DMA_ALIGNMENT)HalpDmaGetDmaAlignment,
-    (PREAD_DMA_COUNTER)HalReadDmaCounter,
+    HalPutDmaAdapter,
+    HalAllocateCommonBuffer,
+    HalFreeCommonBuffer,
+    IoAllocateAdapterChannel,
+    IoFlushAdapterBuffers,
+    IoFreeAdapterChannel,
+    IoFreeMapRegisters,
+    IoMapTransfer,
+    HalpDmaGetDmaAlignment,
+    HalReadDmaCounter,
     /* FIXME: Implement the S/G funtions. */
-    (PGET_SCATTER_GATHER_LIST)HalGetScatterGatherList,
-    (PPUT_SCATTER_GATHER_LIST)HalPutScatterGatherList,
+    HalGetScatterGatherList,
+    HalPutScatterGatherList,
     NULL /*(PCALCULATE_SCATTER_GATHER_LIST_SIZE)HalCalculateScatterGatherListSize*/,
     NULL /*(PBUILD_SCATTER_GATHER_LIST)HalBuildScatterGatherList*/,
     NULL /*(PBUILD_MDL_FROM_SCATTER_GATHER_LIST)HalBuildMdlFromScatterGatherList*/
@@ -283,7 +283,7 @@ HalpGrowMapBufferWorker(IN PVOID DeferredContext)
            Note that we use the magic (PVOID)2 map register base to bypass the parameter checking.
         */
         OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
-        IoFreeMapRegisters(WorkItem->AdapterObject, UlongToPtr(2), 0);
+        IoFreeMapRegisters((PDMA_ADAPTER)WorkItem->AdapterObject, UlongToPtr(2), 0);
         KfLowerIrql(OldIrql);
     }
 
@@ -315,11 +315,12 @@ HalpGrowMapBufferWorker(IN PVOID DeferredContext)
 */
 NTSTATUS
 NTAPI
-HalAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
+HalAllocateAdapterChannel(IN PDMA_ADAPTER DmaAdapter,
                           IN PWAIT_CONTEXT_BLOCK WaitContextBlock,
                           IN ULONG NumberOfMapRegisters,
                           IN PDRIVER_CONTROL ExecutionRoutine)
 {
+    PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     PADAPTER_OBJECT MasterAdapter;
     PGROW_WORK_ITEM WorkItem;
     ULONG Index = MAXULONG;
@@ -346,7 +347,7 @@ HalAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
         if (NumberOfMapRegisters > AdapterObject->MapRegistersPerChannel)
         {
             AdapterObject->NumberOfMapRegisters = 0;
-            IoFreeAdapterChannel(AdapterObject);
+            IoFreeAdapterChannel(DmaAdapter);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -430,12 +431,12 @@ HalAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
     */
     if (Result == DeallocateObject)
     {
-        IoFreeAdapterChannel(AdapterObject);
+        IoFreeAdapterChannel(DmaAdapter);
     }
     else if (Result == DeallocateObjectKeepRegisters)
     {
         AdapterObject->NumberOfMapRegisters = 0;
-        IoFreeAdapterChannel(AdapterObject);
+        IoFreeAdapterChannel(DmaAdapter);
     }
 
     return STATUS_SUCCESS;
@@ -974,8 +975,9 @@ Exit:
 */
 VOID
 NTAPI
-HalPutDmaAdapter(IN PADAPTER_OBJECT AdapterObject)
+HalPutDmaAdapter(IN PDMA_ADAPTER DmaAdapter)
 {
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     UNIMPLEMENTED;
     ASSERT(0);//HalpDbgBreakPointEx();
 }
@@ -1004,11 +1006,12 @@ HalPutDmaAdapter(IN PADAPTER_OBJECT AdapterObject)
 */
 PVOID
 NTAPI
-HalAllocateCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
+HalAllocateCommonBuffer(IN PDMA_ADAPTER DmaAdapter,
                         IN ULONG Length,
                         IN PPHYSICAL_ADDRESS LogicalAddress,
                         IN BOOLEAN CacheEnabled)
 {
+    PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     PHYSICAL_ADDRESS LowestAcceptableAddress;
     PHYSICAL_ADDRESS HighestAcceptableAddress;
     PHYSICAL_ADDRESS BoundryAddressMultiple;
@@ -1054,7 +1057,7 @@ HalAllocateCrashDumpRegisters(IN PADAPTER_OBJECT AdapterObject,
 
 BOOLEAN
 NTAPI
-HalFlushCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
+HalFlushCommonBuffer(IN PDMA_ADAPTER DmaAdapter,
                      IN ULONG Length,
                      IN PHYSICAL_ADDRESS LogicalAddress,
                      IN PVOID VirtualAddress)
@@ -1070,7 +1073,7 @@ HalFlushCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
 */
 VOID
 NTAPI
-HalFreeCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
+HalFreeCommonBuffer(IN PDMA_ADAPTER DmaAdapter,
                     IN ULONG Length,
                     IN PHYSICAL_ADDRESS LogicalAddress,
                     IN PVOID VirtualAddress,
@@ -1114,7 +1117,7 @@ HalpScatterGatherAdapterControl(IN PDEVICE_OBJECT DeviceObject,
     {
         TempElements[ElementCount].Length = RemainingLength;
         TempElements[ElementCount].Reserved = 0;
-        TempElements[ElementCount].Address = IoMapTransfer(AdapterObject,
+        TempElements[ElementCount].Address = IoMapTransfer((PDMA_ADAPTER)AdapterObject,
                                                            AdapterControlContext->Mdl,
                                                            MapRegisterBase,
                                                            (CurrentVa + (AdapterControlContext->Length - RemainingLength)),
@@ -1186,7 +1189,7 @@ HalpScatterGatherAdapterControl(IN PDEVICE_OBJECT DeviceObject,
 */
 NTSTATUS
 NTAPI
-HalGetScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
+HalGetScatterGatherList(IN PDMA_ADAPTER DmaAdapter,
                         IN PDEVICE_OBJECT DeviceObject,
                         IN PMDL Mdl,
                         IN PVOID CurrentVa,
@@ -1195,6 +1198,7 @@ HalGetScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
                         IN PVOID Context,
                         IN BOOLEAN WriteToDevice)
 {
+    PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     PSCATTER_GATHER_CONTEXT AdapterControlContext;
 
     AdapterControlContext = ExAllocatePoolWithTag(NonPagedPool, sizeof(SCATTER_GATHER_CONTEXT), TAG_DMA);
@@ -1217,7 +1221,7 @@ HalGetScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
     AdapterControlContext->Wcb.DeviceContext = AdapterControlContext;
     AdapterControlContext->Wcb.CurrentIrp = DeviceObject->CurrentIrp;
 
-    return HalAllocateAdapterChannel(AdapterObject,
+    return HalAllocateAdapterChannel(DmaAdapter,
                                      &AdapterControlContext->Wcb,
                                      AdapterControlContext->MapRegisterCount,
                                      HalpScatterGatherAdapterControl);
@@ -1239,7 +1243,7 @@ HalGetScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
 */
  VOID
  NTAPI
- HalPutScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
+ HalPutScatterGatherList(IN PDMA_ADAPTER DmaAdapter,
                          IN PSCATTER_GATHER_LIST ScatterGather,
                          IN BOOLEAN WriteToDevice)
 {
@@ -1250,7 +1254,7 @@ HalGetScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
 
     for (ix = 0; ix < ScatterGather->NumberOfElements; ix++)
     {
-         IoFlushAdapterBuffers(AdapterObject,
+         IoFlushAdapterBuffers(DmaAdapter,
                                AdapterControlContext->Mdl,
                                AdapterControlContext->MapRegisterBase,
                                AdapterControlContext->CurrentVa,
@@ -1260,7 +1264,7 @@ HalGetScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
          AdapterControlContext->CurrentVa += ScatterGather->Elements[ix].Length;
     }
 
-    IoFreeMapRegisters(AdapterObject,
+    IoFreeMapRegisters(DmaAdapter,
                        AdapterControlContext->MapRegisterBase,
                        AdapterControlContext->MapRegisterCount);
 
@@ -1278,8 +1282,9 @@ HalGetScatterGatherList(IN PADAPTER_OBJECT AdapterObject,
 */
 ULONG
 NTAPI
-HalpDmaGetDmaAlignment(IN PADAPTER_OBJECT AdapterObject)
+HalpDmaGetDmaAlignment(IN PDMA_ADAPTER DmaAdapter)
 {
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     UNIMPLEMENTED;
     ASSERT(0);//HalpDbgBreakPointEx();
     return 0;
@@ -1290,8 +1295,9 @@ HalpDmaGetDmaAlignment(IN PADAPTER_OBJECT AdapterObject)
 */
 ULONG
 NTAPI
-HalReadDmaCounter(IN PADAPTER_OBJECT AdapterObject)
+HalReadDmaCounter(IN PDMA_ADAPTER DmaAdapter)
 {
+    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     UNIMPLEMENTED;
     ASSERT(0);//HalpDbgBreakPointEx();
     return 0;
@@ -1383,13 +1389,14 @@ HalpCopyBufferMap(IN PMDL Mdl,
 */
 BOOLEAN
 NTAPI
-IoFlushAdapterBuffers(IN PADAPTER_OBJECT AdapterObject,
+IoFlushAdapterBuffers(IN PDMA_ADAPTER DmaAdapter,
                       IN PMDL Mdl,
                       IN PVOID MapRegisterBase,
                       IN PVOID CurrentVa,
                       IN ULONG Length,
                       IN BOOLEAN WriteToDevice)
 {
+    PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     BOOLEAN SlaveDma = FALSE;
     PROS_MAP_REGISTER_ENTRY RealMapRegisterBase;
     PHYSICAL_ADDRESS HighestAcceptableAddress;
@@ -1432,7 +1439,7 @@ IoFlushAdapterBuffers(IN PADAPTER_OBJECT AdapterObject,
         {
             if (SlaveDma && !AdapterObject->IgnoreCount)
             {
-                Length -= HalReadDmaCounter(AdapterObject);
+                Length -= HalReadDmaCounter(DmaAdapter);
             }
         }
 
@@ -1473,8 +1480,9 @@ Exit:
 */
 VOID
 NTAPI
-IoFreeAdapterChannel(IN PADAPTER_OBJECT AdapterObject)
+IoFreeAdapterChannel(IN PDMA_ADAPTER DmaAdapter)
 {
+    PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     PADAPTER_OBJECT MasterAdapter;
     PKDEVICE_QUEUE_ENTRY DeviceQueueEntry;
     PWAIT_CONTEXT_BLOCK WaitContextBlock;
@@ -1491,7 +1499,7 @@ IoFreeAdapterChannel(IN PADAPTER_OBJECT AdapterObject)
         */
         if (AdapterObject->NumberOfMapRegisters)
         {
-            IoFreeMapRegisters(AdapterObject,
+            IoFreeMapRegisters(DmaAdapter,
                                AdapterObject->MapRegisterBase,
                                AdapterObject->NumberOfMapRegisters);
         }
@@ -1573,10 +1581,11 @@ IoFreeAdapterChannel(IN PADAPTER_OBJECT AdapterObject)
 */
 VOID
 NTAPI
-IoFreeMapRegisters(IN PADAPTER_OBJECT AdapterObject,
+IoFreeMapRegisters(IN PDMA_ADAPTER DmaAdapter,
                    IN PVOID MapRegisterBase,
                    IN ULONG NumberOfMapRegisters)
 {
+    PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     PADAPTER_OBJECT MasterAdapter = AdapterObject->MasterAdapter;
     PLIST_ENTRY ListEntry;
     KIRQL OldIrql;
@@ -1652,7 +1661,7 @@ IoFreeMapRegisters(IN PADAPTER_OBJECT AdapterObject,
                     KeReleaseSpinLock(&MasterAdapter->SpinLock, OldIrql);
                 }
 
-                IoFreeAdapterChannel(AdapterObject);
+                IoFreeAdapterChannel(DmaAdapter);
                 break;
 
             default:
@@ -1695,13 +1704,14 @@ IoFreeMapRegisters(IN PADAPTER_OBJECT AdapterObject,
 */
 PHYSICAL_ADDRESS
 NTAPI
-IoMapTransfer(IN PADAPTER_OBJECT AdapterObject,
+IoMapTransfer(IN PDMA_ADAPTER DmaAdapter,
               IN PMDL Mdl,
               IN PVOID MapRegisterBase,
               IN PVOID CurrentVa,
               IN OUT PULONG Length,
               IN BOOLEAN WriteToDevice)
 {
+    PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     PDMA1_CONTROL DmaControl1;
     PDMA2_CONTROL DmaControl2;
     PPFN_NUMBER MdlPagesPtr;

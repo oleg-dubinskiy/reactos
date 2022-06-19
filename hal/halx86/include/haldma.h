@@ -377,4 +377,4 @@ HalpGetDmaAdapter(
 
 ULONG NTAPI
 HalpDmaGetDmaAlignment(
-   PADAPTER_OBJECT AdapterObject);
+   PDMA_ADAPTER DmaAdapter);

@@ -240,4 +240,10 @@ typedef struct _HALP_DMA_MASTER_ADAPTER
     ULONG Unknown3;
 } HALP_DMA_MASTER_ADAPTER, *PHALP_DMA_MASTER_ADAPTER;
 
+ULONG
+NTAPI
+HalpDmaGetDmaAlignment(
+    IN PDMA_ADAPTER DmaAdapter
+);
+
 /* EOF */
