@@ -125,6 +125,13 @@ HalpAllocateMapRegisters(
     _In_ PMAP_REGISTER_ENTRY Registers
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitDma(
+    VOID
+);
+
 /* halinit.c */
 INIT_FUNCTION
 VOID

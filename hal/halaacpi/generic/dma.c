@@ -5,12 +5,21 @@
 //#define NDEBUG
 #include <debug.h>
 
+#if defined(ALLOC_PRAGMA) && !defined(_MINIHAL_)
+  #pragma alloc_text(INIT, HalpInitDma)
+#endif
+
 /* GLOBALS *******************************************************************/
 
 HALP_DMA_MASTER_ADAPTER MasterAdapter24;
 HALP_DMA_MASTER_ADAPTER MasterAdapter32;
 LIST_ENTRY HalpDmaAdapterList;
 KSPIN_LOCK HalpDmaAdapterListLock;
+
+static BOOLEAN HalpEisaDma = FALSE;
+static KEVENT HalpDmaLock; // NT use HalpNewAdapter?
+
+extern ULONG HalpBusType;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -50,6 +59,29 @@ HaliLocateHiberRanges(
 {
     UNIMPLEMENTED;
     ASSERT(FALSE); // HalpDbgBreakPointEx();
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+HalpInitDma(VOID)
+{
+    DPRINT("HalpInitDma()\n");
+
+    if (HalpBusType == MACHINE_TYPE_EISA)
+    {
+        /* Check if Extended DMA is available. We're just going to do a random read and write. */
+        WRITE_PORT_UCHAR(UlongToPtr(FIELD_OFFSET(EISA_CONTROL, DmaController2Pages.Channel2)), 0x2A);
+
+        if (READ_PORT_UCHAR(UlongToPtr(FIELD_OFFSET(EISA_CONTROL, DmaController2Pages.Channel2))) == 0x2A)
+        {
+            DPRINT1("Machine supports EISA DMA. Bus type: %lu\n", HalpBusType);
+            HalpEisaDma = TRUE;
+        }
+    }
+
+    /* Intialize all the global variables and allocate master adapter with first map buffers. */
+    KeInitializeEvent(&HalpDmaLock, NotificationEvent, TRUE);
 }
 
 /* PUBLIC FUNCTIONS **********************************************************/
