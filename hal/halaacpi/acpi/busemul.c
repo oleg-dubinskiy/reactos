@@ -243,4 +243,13 @@ HalSetBusData(
                                  Length);
 }
 
+NTSTATUS
+NTAPI
+HalAdjustResourceList(
+    _Inout_ PIO_RESOURCE_REQUIREMENTS_LIST* pRequirementsList)
+{
+    /* Deprecated, return success */
+    return STATUS_SUCCESS;
+}
+
 /* EOF */
