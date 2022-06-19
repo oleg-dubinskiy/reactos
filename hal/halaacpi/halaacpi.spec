@@ -1,3 +1,6 @@
+@ fastcall ExAcquireFastMutex(ptr) ntoskrnl.ExiAcquireFastMutex
+@ fastcall ExReleaseFastMutex(ptr) ntoskrnl.ExiReleaseFastMutex
+@ fastcall ExTryToAcquireFastMutex(ptr) ntoskrnl.ExiTryToAcquireFastMutex
 @ stdcall HalAllProcessorsStarted()
 @ stdcall HalAllocateAdapterChannel(ptr ptr long ptr)
 @ stdcall HalBeginSystemInterrupt(long long ptr)
