@@ -11,6 +11,8 @@
 @ stdcall HalEndSystemInterrupt(long long) #NT use nonstandard parameters calling
 @ stdcall RosHalEndSystemInterrupt(long long ptr) #ReactOS-specific HalEndSystemInterrupt()
 @ stdcall HalGetAdapter(ptr ptr)
+@ stdcall HalGetBusData(long long long ptr long)
+@ stdcall HalGetBusDataByOffset(long long long ptr long long)
 @ stdcall HalGetEnvironmentVariable(str long str)
 @ stdcall HalGetInterruptVector(long long long long ptr ptr)
 @ stdcall HalHandleNMI(ptr)

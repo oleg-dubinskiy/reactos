@@ -10,6 +10,9 @@
 
 extern ULONG HalpPicVectorRedirect[HAL_PIC_VECTORS];
 extern BUS_HANDLER HalpFakePciBusHandler;
+extern BOOLEAN HalpPCIConfigInitialized;
+extern ULONG HalpMinPciBus;
+extern ULONG HalpMaxPciBus;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -128,6 +131,68 @@ HalTranslateBusAddress(
         TranslatedAddress->QuadPart = BusAddress.QuadPart;
         return TRUE;
     }
+}
+
+ULONG
+NTAPI
+HalGetBusDataByOffset(
+    _In_  BUS_DATA_TYPE BusDataType,
+    _In_  ULONG BusNumber,
+    _In_  ULONG SlotNumber,
+    _In_  PVOID Buffer,
+    _In_  ULONG Offset,
+    _In_  ULONG Length)
+{
+    BUS_HANDLER BusHandler;
+
+    /* Look as the bus type */
+    if (BusDataType == Cmos)
+        return HalpGetCmosData(0, SlotNumber, Buffer, Length);
+
+    if (BusDataType == EisaConfiguration)
+    {
+        /* FIXME: TODO */
+        ASSERT(FALSE);
+        return 0;
+    }
+
+    if (BusDataType != PCIConfiguration)
+        /* Invalid bus */
+        return 0;
+
+    if (!HalpPCIConfigInitialized)
+        /* Invalid bus */
+        return 0;
+
+    if ((BusNumber < HalpMinPciBus) || (BusNumber > HalpMaxPciBus))
+        /* Invalid bus */
+        return 0;
+
+
+    /* Setup fake PCI Bus handler */
+    RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BUS_HANDLER));
+    BusHandler.BusNumber = BusNumber;
+
+    /* Call PCI function */
+    return HalpGetPCIData(&BusHandler, &BusHandler, SlotNumber, Buffer, Offset, Length);
+}
+
+ULONG
+NTAPI
+HalGetBusData(
+    _In_  BUS_DATA_TYPE BusDataType,
+    _In_  ULONG BusNumber,
+    _In_  ULONG SlotNumber,
+    _In_  PVOID Buffer,
+    _In_  ULONG Length)
+{
+    /* Call the extended function */
+    return HalGetBusDataByOffset(BusDataType,
+                                 BusNumber,
+                                 SlotNumber,
+                                 Buffer,
+                                 0,
+                                 Length);
 }
 
 /* EOF */
