@@ -186,6 +186,26 @@ Exit:
 
 NTSTATUS
 NTAPI
+HalpPassIrpFromFdoToPdo(
+    _In_ PDEVICE_OBJECT FdoDeviceObject,
+    _In_ PIRP Irp)
+{
+    PFDO_EXTENSION FdoDeviceExtension;
+    NTSTATUS Status;
+
+    DPRINT("HalpPassIrpFromFdoToPdo: %p, %p\n", FdoDeviceObject, Irp);
+
+    FdoDeviceExtension = FdoDeviceObject->DeviceExtension;
+    IoSkipCurrentIrpStackLocation(Irp);
+
+    Status = IoCallDriver(FdoDeviceExtension->AttachedDeviceObject, Irp);
+    DPRINT("HalpPassIrpFromFdoToPdo: AttachedDevice %p, Status %X\n", FdoDeviceExtension->AttachedDeviceObject, Status);
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 HalpDispatchPnp(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
