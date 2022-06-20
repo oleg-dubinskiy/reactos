@@ -4,6 +4,7 @@
 #include <hal.h>
 //#define NDEBUG
 #include <debug.h>
+#include "apic.h"
 
 /* INCLUDES *******************************************************************/
 
@@ -325,6 +326,14 @@ HalpQueryDeviceRelations(
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+HalTranslatorDereference(
+    _In_ PVOID Context)
+{
+    ;
+}
+
 NTSTATUS
 NTAPI
 HalpQueryInterface(
@@ -336,9 +345,49 @@ HalpQueryInterface(
     _In_ PINTERFACE Interface,
     _Out_ PULONG_PTR OutInformation)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return STATUS_NOT_SUPPORTED;
+    PTRANSLATOR_INTERFACE TranslatorInterface = (PTRANSLATOR_INTERFACE)Interface;
+    UNICODE_STRING  GuidString;
+    NTSTATUS Status;
+
+    DPRINT("HalpQueryInterface: [%p] Size %X, Data %X\n", DeviceObject, InterfaceBufferSize, InterfaceSpecificData);
+
+    Status = RtlStringFromGUID(InterfaceType, &GuidString);
+    ASSERT(NT_SUCCESS(Status));
+
+    DPRINT("HalpQueryInterface: Guid '%wZ', Version %X, Interface %p\n", &GuidString, Version, Interface);
+
+    if (RtlCompareMemory(&GUID_TRANSLATOR_INTERFACE_STANDARD, InterfaceType, sizeof(GUID)) != sizeof(GUID))
+    {
+        DPRINT("HalpQueryInterface: STATUS_NOT_SUPPORTED\n");
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (InterfaceBufferSize < sizeof(TRANSLATOR_INTERFACE))
+    {
+        DPRINT("Return STATUS_BUFFER_TOO_SMALL\n");
+        *OutInformation = sizeof(TRANSLATOR_INTERFACE);
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    if (InterfaceSpecificData != ULongToPtr(2))
+    {
+        DPRINT("InterfaceSpecificData != ULongToPtr(2)\n");
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    TranslatorInterface->Version = 0;
+    TranslatorInterface->Size = sizeof(TRANSLATOR_INTERFACE);
+    TranslatorInterface->Context = DeviceObject;
+
+    TranslatorInterface->InterfaceReference = HalTranslatorDereference;
+    TranslatorInterface->InterfaceDereference = HalTranslatorDereference;
+
+    TranslatorInterface->TranslateResources = HalIrqTranslateResourcesRoot;
+    TranslatorInterface->TranslateResourceRequirements = HalIrqTranslateResourceRequirementsRoot;
+
+    *OutInformation = sizeof(TRANSLATOR_INTERFACE);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS

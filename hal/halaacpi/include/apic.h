@@ -442,6 +442,28 @@ HalpGetSystemInterruptVector(
     _Out_ PKAFFINITY OutAffinity
 );
 
+NTSTATUS
+NTAPI
+HalIrqTranslateResourcesRoot(
+   _Inout_opt_ PVOID Context,
+   _In_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Source,
+   _In_ RESOURCE_TRANSLATION_DIRECTION Direction,
+   _In_opt_ ULONG AlternativesCount,
+   _In_opt_ IO_RESOURCE_DESCRIPTOR Alternatives[],
+   _In_ PDEVICE_OBJECT PhysicalDeviceObject,
+   _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Target
+);
+
+NTSTATUS
+NTAPI 
+HalIrqTranslateResourceRequirementsRoot(
+    _Inout_opt_ PVOID Context,
+    _In_ PIO_RESOURCE_DESCRIPTOR InIoDesc,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Out_ PULONG OutIoDescCount,
+    _Out_ PIO_RESOURCE_DESCRIPTOR* OutIoDesc
+);
+
 /* apicacpi.c */
 INIT_FUNCTION
 VOID
