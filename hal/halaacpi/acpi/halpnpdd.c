@@ -436,9 +436,97 @@ HalpQueryIdPdo(
     _In_ BUS_QUERY_ID_TYPE IdType,
     _Out_ PUSHORT* BusQueryId)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return STATUS_NOT_SUPPORTED;
+    PPDO_EXTENSION PdoExtension;
+    PDO_TYPE PdoType;
+    PWCHAR CurrentId;
+    WCHAR Id[100];
+    NTSTATUS Status;
+    SIZE_T Length = 0;
+    PWCHAR Buffer;
+
+    DPRINT("HalpQueryIdPdo: IdType %X\n", IdType);
+    PAGED_CODE();
+
+    /* Get the PDO type */
+    PdoExtension = DeviceObject->DeviceExtension;
+    PdoType = PdoExtension->PdoType;
+
+    /* What kind of ID is being requested? */
+    DPRINT("ID: %d\n", IdType);
+    switch (IdType)
+    {
+        case BusQueryDeviceID:
+        case BusQueryHardwareIDs:
+
+            /* What kind of PDO is this? */
+            if (PdoType == AcpiPdo)
+            {
+                /* ACPI ID */
+                CurrentId = L"ACPI_HAL\\PNP0C08";
+                RtlCopyMemory(Id, CurrentId, (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+                Length += (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL);
+
+                CurrentId = L"*PNP0C08";
+                RtlCopyMemory(&Id[wcslen(Id) + 1], CurrentId, (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+                Length += (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL);
+            }
+            else if (PdoType == WdPdo)
+            {
+                /* WatchDog ID */
+                CurrentId = L"ACPI_HAL\\PNP0C18";
+                RtlCopyMemory(Id, CurrentId, (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+                Length += (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL);
+
+                CurrentId = L"*PNP0C18";
+                RtlCopyMemory(&Id[wcslen(Id) + 1], CurrentId, (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+                Length += (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL);
+            }
+            else
+            {
+                /* Unknown */
+                return STATUS_NOT_SUPPORTED;
+            }
+            break;
+
+        case BusQueryInstanceID:
+
+            /* Instance ID */
+            CurrentId = L"0";
+            RtlCopyMemory(Id, CurrentId, (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL));
+            Length += (wcslen(CurrentId) * sizeof(WCHAR)) + sizeof(UNICODE_NULL);
+            break;
+
+        case BusQueryCompatibleIDs:
+        default:
+
+            /* We don't support anything else */
+            return STATUS_NOT_SUPPORTED;
+    }
+
+
+    /* Allocate the buffer */
+    Buffer = ExAllocatePoolWithTag(PagedPool,
+                                   Length + sizeof(UNICODE_NULL),
+                                   TAG_HAL);
+    if (Buffer)
+    {
+        /* Copy the string and null-terminate it */
+        RtlCopyMemory(Buffer, Id, Length);
+        Buffer[Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+        /* Return string */
+        *BusQueryId = Buffer;
+        Status = STATUS_SUCCESS;
+        DPRINT("Returning: %S\n", *BusQueryId);
+    }
+    else
+    {
+        /* Fail */
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Return status */
+    return Status;
 }
 
 NTSTATUS
