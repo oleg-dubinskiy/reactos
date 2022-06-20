@@ -22,6 +22,8 @@
 #endif
 
 #define SUPPORTED_NODES      0x20
+#define PRIORITY_LEVEL_BASE  5
+#define PRIORITY_LEVEL_COUNT 7
 
 #define HALP_DEV_INT_EDGE    0
 #define HALP_DEV_INT_LEVEL   1
@@ -32,12 +34,17 @@
 #define DP_LOW_ACTIVE        0
 #define DP_HIGH_ACTIVE       1
 
+#define HALP_DEVICE_INT_PRIORITY_LEVEL_BASE  5
+#define HALP_DEVICE_INT_PRIORITY_LEVEL_COUNT 7
+#define HALP_MAX_PRIORITY_LEVEL              15
+
 /* GLOBALS *******************************************************************/
 
 KAFFINITY HalpNodeProcessorAffinity[MAX_CPUS] = {0};
 HALP_MP_INFO_TABLE HalpMpInfoTable;
 APIC_ADDRESS_USAGE HalpApicUsage;
 APIC_INTI_INFO HalpIntiInfo[MAX_INTI];
+ULONG HalpINTItoVector[MAX_INTI] = {0};
 USHORT HalpMaxApicInti[MAX_IOAPICS];
 USHORT HalpVectorToINTI[MAX_CPUS * MAX_INT_VECTORS] = {0xFFFF};
 UCHAR HalpIntDestMap[MAX_CPUS] = {0};
@@ -146,6 +153,9 @@ UCHAR HalpDevPolarity[4][2] =
     {DP_LOW_ACTIVE,  DP_LOW_ACTIVE}   // POLARITY_ACTIVE_LOW
 }; 
 
+UCHAR HalpNodeInterruptCount[SUPPORTED_NODES] = {0};
+UCHAR HalpNodePriorityLevelUsage[SUPPORTED_NODES][PRIORITY_LEVEL_COUNT] = {{0}};
+
 typedef VOID (*PINTERRUPT_ENTRY)(VOID);
 extern PINTERRUPT_ENTRY HwInterruptTable[MAX_INT_VECTORS];
 
@@ -156,6 +166,7 @@ extern ULONG HalpPicVectorFlags[HAL_PIC_VECTORS];
 extern PADDRESS_USAGE HalpAddressUsageList;
 extern UCHAR HalpIoApicId[MAX_IOAPICS];
 extern ULONG HalpDefaultApicDestinationModeMask;
+extern KAFFINITY HalpDefaultInterruptAffinity;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -1325,6 +1336,88 @@ HalpReleaseHighLevelLock(
 }
 
 /* FUNCTIONS *****************************************************************/
+
+ULONG
+NTAPI 
+HalpAllocateSystemInterruptVector(
+    _In_ USHORT IntI)
+{
+    KAFFINITY Affinity;
+    ULONG InterruptCount;
+    ULONG MaxPriorityLevel;
+    ULONG PriorityLevel;
+    ULONG SystemVector;
+    ULONG Vector;
+    ULONG IrqlIdx;
+    ULONG Node;   // (from 1 .. to 32)
+    ULONG ix;
+
+    DPRINT("HalpAllocateSystemInterruptVector: IntI %X\n", IntI);
+
+    if (!HalpMaxNode)
+    {
+        DPRINT1("HalpGetSystemInterruptVector: KeBugCheckEx(HAL_INITIALIZATION_FAILED)\n");
+        KeBugCheckEx(HAL_INITIALIZATION_FAILED, 0x100, HalpDefaultInterruptAffinity, 0, 0);
+    }
+
+    InterruptCount = 0xFFFFFFFF;
+    Node = 0;
+
+    for (ix = HalpMaxNode; ix; ix--)
+    {
+       Affinity = HalpNodeProcessorAffinity[ix - 1];
+
+       if ((HalpDefaultInterruptAffinity & Affinity) &&
+           HalpNodeInterruptCount[ix - 1] < InterruptCount)
+        {
+            Node = ix;
+            InterruptCount = HalpNodeInterruptCount[ix - 1];
+        }
+    }
+
+    if (!Node)
+    {
+        DPRINT1("HalpGetSystemInterruptVector: KeBugCheckEx(HAL_INITIALIZATION_FAILED)\n");
+        KeBugCheckEx(HAL_INITIALIZATION_FAILED, 0x100, HalpDefaultInterruptAffinity, 0, 0);
+    }
+
+    /* 0x5n, 0x6n, 0x7n, 0x8n, 0x9n, 0xAn, 0xBn - bank of free vectors for HW devices.
+       Vectors with n=0 not used.
+    */
+    MaxPriorityLevel = HalpNodePriorityLevelUsage[Node][HALP_DEVICE_INT_PRIORITY_LEVEL_COUNT - 1];
+    IrqlIdx = (HALP_DEVICE_INT_PRIORITY_LEVEL_COUNT - 1); // maximal index [(0xB - 0x5) - 1]
+
+    for (ix = IrqlIdx; ix; ix--)
+    {
+        PriorityLevel = HalpNodePriorityLevelUsage[Node][ix - 1];
+        if (PriorityLevel < MaxPriorityLevel)
+        {
+            IrqlIdx = ix - 1;
+            MaxPriorityLevel = HalpNodePriorityLevelUsage[Node][ix - 1];
+        }
+    }
+
+    if (PriorityLevel >= HALP_MAX_PRIORITY_LEVEL)
+    {
+        DPRINT1("HalpGetSystemInterruptVector: KeBugCheckEx(HAL_INITIALIZATION_FAILED)\n");
+        KeBugCheckEx(HAL_INITIALIZATION_FAILED, 0x101, HalpDefaultInterruptAffinity, 0, 0);
+    }
+
+    HalpNodeInterruptCount[Node - 1]++;
+    HalpNodePriorityLevelUsage[Node][IrqlIdx] = (UCHAR)(PriorityLevel + 1); // (0x1-0xF)
+
+    Vector = (UCHAR)(((HALP_DEVICE_INT_PRIORITY_LEVEL_BASE + IrqlIdx) << 4) + (UCHAR)(PriorityLevel + 1)); // (0x51-0x5F ... 0xB1-0xBF)
+    SystemVector = (Node << 8) | Vector; // (0x0151-0x015F ... 0x20B1-0x20BF)
+    ASSERT(SystemVector < (MAX_CPUS * MAX_INT_VECTORS));
+
+    HalpVectorToIRQL[Vector >> 4] = (4 + IrqlIdx); // 0-6 (Irql: 4-10)
+    HalpVectorToINTI[SystemVector] = IntI;
+    HalpINTItoVector[IntI] = SystemVector;
+
+    DPRINT("HalpAllocateSystemInterruptVector: SystemVector %X\n", SystemVector);
+
+    return SystemVector;
+}
 
 ULONG
 NTAPI
