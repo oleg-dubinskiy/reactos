@@ -35,8 +35,9 @@ VOID
 NTAPI
 HalProcessorIdle(VOID)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    /* Enable interrupts and halt the processor */
+    _enable();
+    __halt();
 }
 
 VOID
