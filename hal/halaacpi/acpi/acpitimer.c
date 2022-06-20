@@ -88,7 +88,7 @@ HalpPmTimerStallExecProc(
     ULONG TotalStall;
     ULONG StallCounter;
 
-    DPRINT1("HalpPmTimerStallExecProc: MicroSeconds %X\n", MicroSeconds);
+    //DPRINT1("HalpPmTimerStallExecProc: MicroSeconds %X\n", MicroSeconds);
 
     if (!MicroSeconds)
         goto Exit;

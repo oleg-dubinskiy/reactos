@@ -490,8 +490,12 @@ HalInitSystem(IN ULONG BootPhase,
         /* Initialize bus handlers */
         HalpInitNonBusHandler();
 
-        DPRINT1("HalInitSystem: FIXME! BootPhase == 1\n");
-        ASSERT(FALSE);// HalpDbgBreakPointEx();
+        KeRegisterInterruptHandler(APIC_CLOCK_VECTOR, HalpClockInterrupt);
+
+        //HalpGetFeatureBits()
+
+        //DPRINT1("HalInitSystem: FIXME! BootPhase == 1\n");
+        //ASSERT(FALSE);// HalpDbgBreakPointEx();
     }
     else
     {

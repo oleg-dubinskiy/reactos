@@ -460,7 +460,7 @@ HalStopProfileInterrupt(
 );
 
 /* apictrap.S */
-//VOID __cdecl HalpClockInterrupt(VOID);
+VOID __cdecl HalpClockInterrupt(VOID);
 VOID __cdecl HalpClockInterruptStub(VOID);
 VOID __cdecl HalpProfileInterrupt(VOID);
 VOID __cdecl HalpApicRebootService(VOID);
@@ -478,5 +478,22 @@ NTAPI
 HalpInitializeClock(
     VOID
 );
+
+//#ifdef __REACTOS__
+VOID
+FASTCALL
+RosKeUpdateSystemTime(
+    _In_ PKTRAP_FRAME TrapFrame,
+    _In_ ULONG Increment,
+    _In_ UCHAR Vector,
+    _In_ KIRQL Irql
+);
+//#else
+VOID
+NTAPI
+KeUpdateSystemTime(
+    VOID
+);
+//#endif
 
 /* EOF */

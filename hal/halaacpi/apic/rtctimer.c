@@ -77,6 +77,8 @@ BOOLEAN HalpTimerWatchdogEnabled = FALSE;
 UCHAR ClockIntCalls = 0;
 UCHAR HalpUse8254 = 0;
 
+extern ULONG HalpWAETDeviceFlags;
+
 /* FUNCTIONS ******************************************************************/
 
 VOID
@@ -190,6 +192,66 @@ HalpClockInterruptStubHandler(
   #else
     #error FIXME call Kei386EoiHelper()
   #endif
+}
+
+VOID
+FASTCALL
+HalpClockInterruptHandler(
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    ULONG LastIncrement;
+    KIRQL OldIrql = 0;
+
+    /* Enter trap */
+    KiEnterInterruptTrap(TrapFrame);
+
+    /* Start the interrupt */
+    if (!HalBeginSystemInterrupt(CLOCK_LEVEL, HalpClockVector, &OldIrql))
+    {
+        /* Spurious, just end the interrupt */
+      #ifdef __REACTOS__
+        KiEoiHelper(TrapFrame);
+      #else
+        #error FIXME call Kei386EoiHelper()
+      #endif
+    }
+
+    /* Emulated Device Flags Field (ULONG)
+
+        0: RTC good
+            Indicates whether the RTC has been enhanced not to require acknowledgment after it asserts an interrupt. With this bit set, an interrupt handler can bypass reading the RTC register C to unlatch the pending interrupt.	
+        1: ACPI PM timer good
+            Indicates whether the ACPI PM timer has been enhanced not to require multiple reads. With this bit set, only one read of the ACPI PM timer is necessary to obtain a reliable value.	
+        2-31: Reserved; must return 0 when read.
+    */
+    if (!(HalpWAETDeviceFlags & 1))
+    {
+        HalpAcquireCmosSpinLock();
+        HalpReadCmos(RTC_REGISTER_C);
+        HalpReadCmos(RTC_REGISTER_C);
+        HalpReleaseCmosSpinLock();
+    }
+
+    HalpRateAdjustment += (UCHAR)HalpCurrentClockRateAdjustment;
+
+    if (HalpRateAdjustment < (UCHAR)HalpCurrentClockRateAdjustment)
+    {
+        LastIncrement = (HalpCurrentClockRateIn100ns - 1);
+    }
+    else
+    {
+        LastIncrement = HalpCurrentClockRateIn100ns;
+    }
+
+
+  #ifdef __REACTOS__
+    RosKeUpdateSystemTime(TrapFrame, LastIncrement, HalpClockVector, OldIrql);
+  #else
+    #error FIXME call KeUpdateSystemTime()
+  #endif
+
+    DPRINT1("HalpClockInterruptHandler: DbgBreakPoint()\n");
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
 }
 
 /* EOF */
