@@ -1167,6 +1167,49 @@ HalpAcpiDetectResourceListSize(
     }
 }
 
+NTSTATUS
+NTAPI
+HalpBuildAcpiResourceList(
+    _In_ PIO_RESOURCE_REQUIREMENTS_LIST ResourceList)
+{
+    ULONG Interrupt;
+
+    DPRINT("HalpBuildAcpiResourceList: ResourceList %p\n", ResourceList);
+    PAGED_CODE();
+
+    ASSERT(ResourceList != NULL);
+
+    /* Initialize the list */
+    ResourceList->BusNumber = -1;
+    ResourceList->AlternativeLists = 1;
+    ResourceList->InterfaceType = PNPBus;
+    ResourceList->List[0].Version = 1;
+    ResourceList->List[0].Revision = 1;
+    //ResourceList->List[0].Count = 0;
+
+    /* Is there a SCI? */
+    if (!HalpFixedAcpiDescTable.sci_int_vector)
+        return STATUS_SUCCESS;
+
+    DPRINT("HalpFADT.sci_int_vector %X\n", HalpFixedAcpiDescTable.sci_int_vector);
+
+    /* Fill out the entry for it */
+    ResourceList->List[0].Descriptors[0].Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
+    ResourceList->List[0].Descriptors[0].Type = CmResourceTypeInterrupt;
+    ResourceList->List[0].Descriptors[0].ShareDisposition = CmResourceShareShared;
+
+    /* Get the interrupt number */
+    Interrupt = HalpPicVectorRedirect[HalpFixedAcpiDescTable.sci_int_vector];
+    ResourceList->List[0].Descriptors[0].u.Interrupt.MinimumVector = Interrupt;
+    ResourceList->List[0].Descriptors[0].u.Interrupt.MaximumVector = Interrupt;
+
+    /* One more */
+    ++ResourceList->List[0].Count;
+
+    /* All good */
+    return STATUS_SUCCESS;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 INIT_FUNCTION
