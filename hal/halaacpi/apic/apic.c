@@ -1581,6 +1581,86 @@ HalIrqTranslateResourceRequirementsRoot(
     return STATUS_TRANSLATION_COMPLETE;
 }
 
+ULONG
+NTAPI
+HalpInti2BusInterruptLevel(
+    _In_ USHORT IntI)
+{
+    return IntI;
+}
+
+NTSTATUS
+NTAPI
+HalIrqTranslateResourcesRoot(
+   _Inout_opt_ PVOID Context,
+   _In_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Source,
+   _In_ RESOURCE_TRANSLATION_DIRECTION Direction,
+   _In_opt_ ULONG AlternativesCount,
+   _In_opt_ IO_RESOURCE_DESCRIPTOR Alternatives[],
+   _In_ PDEVICE_OBJECT PhysicalDeviceObject,
+   _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Target)
+{
+    BUS_HANDLER BusHandler;
+    ULONG SystemVector;
+    ULONG Level;
+    KIRQL Irql;
+    KAFFINITY Affinity;
+
+    DPRINT("HalIrqTranslateResourcesRoot: %X, %X\n", Source->u.Interrupt.Vector, Source->u.Interrupt.Level);
+
+    PAGED_CODE();
+    ASSERT(Source->Type == CmResourceTypeInterrupt);
+
+    if (Direction == TranslateChildToParent)
+    {
+        RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BusHandler));
+        RtlCopyMemory(Target, Source, sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+
+        BusHandler.ParentHandler = &BusHandler;
+        BusHandler.InterfaceType = Isa;
+
+        SystemVector = HalpGetSystemInterruptVector(&BusHandler,
+                                                    &BusHandler,
+                                                    Source->u.Interrupt.Level,
+                                                    Source->u.Interrupt.Vector,
+                                                    &Irql,
+                                                    &Affinity);
+        if (!SystemVector)
+        {
+            DPRINT1("HalIrqTranslateResourcesRoot: SystemVector is 0\n");
+            ASSERT(FALSE); // HalpDbgBreakPointEx();
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        Target->u.Interrupt.Affinity = Affinity;
+        Target->u.Interrupt.Vector = SystemVector;
+        Target->u.Interrupt.Level = Irql;
+
+        DPRINT("HalIrqTranslateResourcesRoot: %X, %X\n", SystemVector, Irql);
+
+        return STATUS_TRANSLATION_COMPLETE;
+    }
+
+    if (Direction != TranslateParentToChild)
+    {
+        DPRINT1("HalIrqTranslateResourcesRoot: Direction %X\n", Direction);
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    RtlCopyMemory(Target, Source, sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+
+    Level = HalpInti2BusInterruptLevel(HalpVectorToINTI[Source->u.Interrupt.Vector]);
+
+    Target->u.Interrupt.Affinity = 0xFFFFFFFF;
+    Target->u.Interrupt.Vector = Level;
+    Target->u.Interrupt.Level = Level;
+
+    DPRINT("HalIrqTranslateResourcesRoot: Vector %X, Level %X\n", Level, Level);
+
+    return STATUS_SUCCESS;
+}
+
 INIT_FUNCTION
 VOID
 NTAPI
