@@ -402,9 +402,48 @@ HalpQueryCapabilities(
     _In_ PDEVICE_OBJECT DeviceObject,
     _Out_ PDEVICE_CAPABILITIES Capabilities)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return STATUS_NOT_SUPPORTED;
+    DPRINT("HalpQueryCapabilities: Device %X\n", DeviceObject);
+    PAGED_CODE();
+
+    /* Get the extension and check for valid version */
+    if (Capabilities->Version != 1)
+    {
+        DPRINT1("HalpQueryCapabilities: Capabilities->Version %X\n", Capabilities->Version);
+        ASSERT(Capabilities->Version == 1);
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    /* Can't lock or eject us */
+    Capabilities->LockSupported = FALSE;
+    Capabilities->EjectSupported = FALSE;
+
+    /* Can't remove or dock us */
+    Capabilities->Removable = FALSE;
+    Capabilities->DockDevice = FALSE;
+
+    /* Can't access us raw */
+    Capabilities->RawDeviceOK = FALSE;
+
+    /* We have a unique ID, and don't bother the user */
+    Capabilities->UniqueID = TRUE;
+    Capabilities->SilentInstall = TRUE;
+
+    /* Fill out the adress */
+    Capabilities->Address = InterfaceTypeUndefined;
+    Capabilities->UINumber = InterfaceTypeUndefined;
+
+    /* Fill out latencies */
+    Capabilities->D1Latency = 0;
+    Capabilities->D2Latency = 0;
+    Capabilities->D3Latency = 0;
+
+    /* Fill out supported device states */
+    Capabilities->DeviceState[PowerSystemWorking] = PowerDeviceD0;
+    Capabilities->DeviceState[PowerSystemHibernate] = PowerDeviceD3;
+    Capabilities->DeviceState[PowerSystemShutdown] = PowerDeviceD3;
+    //Capabilities->DeviceState[PowerSystemSleeping3] = PowerDeviceD3;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
