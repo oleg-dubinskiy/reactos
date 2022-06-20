@@ -17,9 +17,7 @@ BOOLEAN
 NTAPI
 HalAllProcessorsStarted(VOID)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return FALSE;
+    return TRUE;
 }
 
 BOOLEAN
