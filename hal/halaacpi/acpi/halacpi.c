@@ -1149,6 +1149,24 @@ HalpWriteResetCommand(VOID)
     WRITE_PORT_UCHAR((PUCHAR)0x64, 0xFE);
 };
 
+VOID
+NTAPI
+HalpAcpiDetectResourceListSize(
+    _Out_ PULONG ListSize)
+{
+    PAGED_CODE();
+
+    /* One element if there is a SCI */
+    *ListSize = (HalpFixedAcpiDescTable.sci_int_vector ? 1: 0);
+
+    DPRINT("HalpAcpiDetectResourceListSize: *ListSize %X\n", *ListSize);
+
+    if (HalpFixedAcpiDescTable.sci_int_vector == 0)
+    {
+        DPRINT("HalpAcpiDetectResourceListSize: sci_int_vector %X\n", HalpFixedAcpiDescTable.sci_int_vector);
+    }
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 INIT_FUNCTION
