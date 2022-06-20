@@ -211,9 +211,117 @@ HalpQueryDeviceRelations(
     _In_ DEVICE_RELATION_TYPE RelationType,
     _Out_ PDEVICE_RELATIONS* DeviceRelations)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PPDO_EXTENSION PdoExtension;
+    PFDO_EXTENSION FdoExtension;
+    PDEVICE_RELATIONS PdoRelations;
+    PDEVICE_RELATIONS FdoRelations;
+    PDEVICE_OBJECT* ObjectEntry;
+    EXTENSION_TYPE ExtensionType;
+    ULONG PdoCount = 0;
+    ULONG Size;
+    ULONG ix = 0;
+
+    DPRINT("HalpQueryDeviceRelations: RelationType %X\n", RelationType);
+
+    /* Get FDO device extension and PDO count */
+    FdoExtension = DeviceObject->DeviceExtension;
+    ExtensionType = FdoExtension->ExtensionType;
+
+    /* What do they want? */
+    if (RelationType != BusRelations)
+    {
+        /* The only other thing we support is a target relation for the PDO */
+        if ((RelationType != TargetDeviceRelation) || (ExtensionType != PdoExtensionType))
+            return STATUS_NOT_SUPPORTED;
+
+        /* Only one entry */
+        PdoRelations = ExAllocatePoolWithTag(PagedPool, sizeof(DEVICE_RELATIONS), TAG_HAL);
+        if (!PdoRelations)
+        {
+            DPRINT1("STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        /* Fill it out and reference us */
+        PdoRelations->Count = 1;
+        PdoRelations->Objects[0] = DeviceObject;
+        ObReferenceObject(DeviceObject);
+
+        /* Return it */
+        *DeviceRelations = PdoRelations;
+        return STATUS_SUCCESS;
+    }
+
+    /* This better be an FDO */
+    if (ExtensionType != FdoExtensionType)
+        return STATUS_NOT_SUPPORTED;
+
+    /* Count how many PDOs we have */
+    PdoExtension = FdoExtension->ChildPdoList;
+    while (PdoExtension)
+    {
+        /* Next one */
+        PdoExtension = PdoExtension->Next;
+        PdoCount++;
+    }
+
+    /* Add the PDOs that already exist in the device relations */
+    if (*DeviceRelations)
+        PdoCount += (*DeviceRelations)->Count;
+
+    /* Allocate our structure */
+    Size = FIELD_OFFSET(DEVICE_RELATIONS, Objects) + PdoCount * sizeof(PDEVICE_OBJECT);
+
+    FdoRelations = ExAllocatePoolWithTag(PagedPool, Size, TAG_HAL);
+    if (!FdoRelations)
+    {
+        DPRINT1("STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Save our count */
+    FdoRelations->Count = PdoCount;
+
+    /* Query existing relations */
+    ObjectEntry = FdoRelations->Objects;
+    if (*DeviceRelations)
+    {
+        /* Check if there were any */
+        if ((*DeviceRelations)->Count)
+        {
+            /* Loop them all */
+            do
+            {
+                /* Copy into our structure */
+                *ObjectEntry++ = (*DeviceRelations)->Objects[ix];
+            }
+            while (++ix < (*DeviceRelations)->Count);
+        }
+
+        /* Free existing structure */
+        ExFreePool(*DeviceRelations);
+    }
+
+    /* Now check if we have a PDO list */
+    PdoExtension = FdoExtension->ChildPdoList;
+    if (PdoExtension)
+    {
+        /* Loop the PDOs */
+        do
+        {
+            /* Save our own PDO and reference it */
+            *ObjectEntry++ = PdoExtension->PhysicalDeviceObject;
+            ObReferenceObject(PdoExtension->PhysicalDeviceObject);
+
+            /* Go to our next PDO */
+            PdoExtension = PdoExtension->Next;
+        }
+        while (PdoExtension);
+    }
+
+    /* Return the new structure */
+    *DeviceRelations = FdoRelations;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
