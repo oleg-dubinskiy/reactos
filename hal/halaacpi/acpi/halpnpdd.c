@@ -463,7 +463,25 @@ HalpQueryResourceRequirements(
     _In_ PDEVICE_OBJECT DeviceObject,
     _Out_ PIO_RESOURCE_REQUIREMENTS_LIST* Requirements)
 {
-    UNIMPLEMENTED;
+    PPDO_EXTENSION DeviceExtension = DeviceObject->DeviceExtension;
+
+    DPRINT("HalpQueryResourceRequirements: Device %X\n", DeviceObject);
+    PAGED_CODE();
+
+    /* Only the ACPI PDO has requirements */
+    if (DeviceExtension->PdoType == AcpiPdo)
+        return HalpQueryAcpiResourceRequirements(Requirements);
+
+    if (DeviceExtension->PdoType == WdPdo)
+    {
+        /* Watchdog doesn't */
+        DPRINT1("HalpQueryResourceRequirements: Watchdog ... FIXME\n");
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    /* This shouldn't happen */
+    DPRINT1("HalpQueryResourceRequirements: unknown PdoType %X\n", DeviceExtension->PdoType);
     ASSERT(FALSE); // HalpDbgBreakPointEx();
     return STATUS_NOT_SUPPORTED;
 }
