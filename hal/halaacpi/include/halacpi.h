@@ -391,4 +391,10 @@ HalpAssignSlotResources(
     _Inout_ PCM_RESOURCE_LIST* AllocatedResources
 );
 
+NTSTATUS
+NTAPI
+HalpQueryAcpiResourceRequirements(
+    _Out_ PIO_RESOURCE_REQUIREMENTS_LIST* Requirements
+);
+
 /* EOF */

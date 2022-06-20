@@ -1210,6 +1210,65 @@ HalpBuildAcpiResourceList(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+HalpQueryAcpiResourceRequirements(
+    _Out_ PIO_RESOURCE_REQUIREMENTS_LIST* Requirements)
+{
+    PIO_RESOURCE_REQUIREMENTS_LIST RequirementsList;
+    ULONG Count = 0;
+    ULONG ListSize;
+    NTSTATUS Status;
+
+    if (Requirements)
+    {
+        DPRINT("HalpQueryAcpiResourceRequirements: *IoResource %X\n", *Requirements);
+    }
+    else
+    {
+        DPRINT1("HalpQueryAcpiResourceRequirements: Requirements is NULL\n");
+    }
+
+    PAGED_CODE();
+
+    /* Get ACPI resources */
+    HalpAcpiDetectResourceListSize(&Count);
+    DPRINT("HalpQueryAcpiResourceRequirements: Resource count %X\n", Count);
+
+    /* Compute size of the list and allocate it */
+    ListSize = (FIELD_OFFSET(IO_RESOURCE_REQUIREMENTS_LIST, List[0].Descriptors) + (Count * sizeof(IO_RESOURCE_DESCRIPTOR)));
+
+    DPRINT("HalpQueryAcpiResourceRequirements: Resource list size %X\n", ListSize);
+
+    RequirementsList = ExAllocatePoolWithTag(PagedPool, ListSize, TAG_HAL);
+    if (!RequirementsList)
+    {
+        DPRINT1("HalpQueryAcpiResourceRequirements: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Initialize it */
+    RtlZeroMemory(RequirementsList, ListSize);
+    RequirementsList->ListSize = ListSize;
+
+    /* Build it */
+    Status = HalpBuildAcpiResourceList(RequirementsList);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalpQueryAcpiResourceRequirements: Status %X\n", Status);
+        ExFreePoolWithTag(RequirementsList, TAG_HAL);
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    /* It worked, return it */
+    *Requirements = RequirementsList;
+
+    /* Validate the list */
+    ASSERT(RequirementsList->List[0].Count == Count);
+
+    return Status;
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 INIT_FUNCTION
