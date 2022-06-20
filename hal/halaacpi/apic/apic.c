@@ -167,6 +167,7 @@ extern PADDRESS_USAGE HalpAddressUsageList;
 extern UCHAR HalpIoApicId[MAX_IOAPICS];
 extern ULONG HalpDefaultApicDestinationModeMask;
 extern KAFFINITY HalpDefaultInterruptAffinity;
+extern BUS_HANDLER HalpFakePciBusHandler;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -1503,6 +1504,81 @@ HalpGetSystemInterruptVector(
 
     DPRINT("HalpGetSystemInterruptVector: SystemVector %X\n", SystemVector);
     return SystemVector;
+}
+
+NTSTATUS
+NTAPI 
+HalIrqTranslateResourceRequirementsRoot(
+    _Inout_opt_ PVOID Context,
+    _In_ PIO_RESOURCE_DESCRIPTOR InIoDesc,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Out_ PULONG OutIoDescCount,
+    _Out_ PIO_RESOURCE_DESCRIPTOR* OutIoDesc)
+{
+    PIO_RESOURCE_DESCRIPTOR IoDesc;
+    BUS_HANDLER BusHandler;
+    ULONG Vector;
+    KAFFINITY Affinity;
+    KIRQL Irql;
+    BOOLEAN Result = TRUE;
+
+    DPRINT("HalIrqTranslateResourceRequirementsRoot: [In] Min %X, Max %X\n",
+           InIoDesc->u.Interrupt.MinimumVector, InIoDesc->u.Interrupt.MaximumVector);
+
+    PAGED_CODE();
+    ASSERT(InIoDesc->Type == CmResourceTypeInterrupt);
+
+
+    RtlCopyMemory(&BusHandler, &HalpFakePciBusHandler, sizeof(BusHandler));
+    BusHandler.InterfaceType = Isa;
+    BusHandler.ParentHandler = &BusHandler;
+
+    IoDesc = ExAllocatePoolWithTag(PagedPool, sizeof(IO_RESOURCE_DESCRIPTOR), TAG_HAL);
+    *OutIoDesc = IoDesc;
+    if (!IoDesc)
+    {
+        DPRINT1("HalIrqTranslateResourceRequirementsRoot: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    *OutIoDescCount = 1;
+    RtlCopyMemory(*OutIoDesc, InIoDesc, sizeof(IO_RESOURCE_DESCRIPTOR));
+
+    Vector = HalpGetSystemInterruptVector(&BusHandler,
+                                          &BusHandler,
+                                          InIoDesc->u.Interrupt.MinimumVector,
+                                          InIoDesc->u.Interrupt.MinimumVector,
+                                          &Irql,
+                                          &Affinity);
+    if (!Vector)
+        Result = FALSE;
+
+    (*OutIoDesc)->u.Interrupt.MinimumVector = Vector;
+
+    Vector = HalpGetSystemInterruptVector(&BusHandler,
+                                          &BusHandler,
+                                          InIoDesc->u.Interrupt.MaximumVector,
+                                          InIoDesc->u.Interrupt.MaximumVector,
+                                          &Irql,
+                                          &Affinity);
+    if (!Vector)
+        Result = FALSE;
+
+    (*OutIoDesc)->u.Interrupt.MaximumVector = Vector;
+
+    DPRINT("HalIrqTranslateResourceRequirementsRoot: [Out] Min %X, Max %X\n",
+           (*OutIoDesc)->u.Interrupt.MinimumVector, (*OutIoDesc)->u.Interrupt.MaximumVector);
+
+    if (Result)
+        return STATUS_TRANSLATION_COMPLETE;
+
+    DPRINT1("HalIrqTranslateResourceRequirementsRoot: Result is FALSE\n");
+    ASSERT(FALSE);
+
+    ExFreePoolWithTag(*OutIoDesc, TAG_HAL);
+    *OutIoDescCount = 0;
+
+    return STATUS_TRANSLATION_COMPLETE;
 }
 
 INIT_FUNCTION
