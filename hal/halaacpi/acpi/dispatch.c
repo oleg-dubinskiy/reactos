@@ -3,6 +3,7 @@
 
 #include <hal.h>
 #include "dispatch.h"
+#include "../../../drivers/usb/usbohci/hardware.h"
 
 //#define NDEBUG
 #include <debug.h>
@@ -86,6 +87,67 @@ HalpGetChipHacks(
     KeFlushWriteBuffer();
 
     return Status;
+}
+
+VOID
+NTAPI
+HalpStopOhciInterrupt(
+    _In_ ULONG BusNumber,
+    _In_ ULONG SlotNumber)
+{
+    POHCI_OPERATIONAL_REGISTERS OperationalRegs;
+    PHYSICAL_ADDRESS PhysicalAddresses;
+    PCI_COMMON_CONFIG PciHeader;
+    ULONG ix;
+
+    DPRINT("HalpStopOhciInterrupt: Bus %X, Slot %X\n", BusNumber, SlotNumber);
+
+    HalGetBusData(PCIConfiguration, BusNumber, SlotNumber, &PciHeader, sizeof(PciHeader));
+
+    if (!(PciHeader.Command & PCI_ENABLE_MEMORY_SPACE))
+        goto Exit;
+
+    PhysicalAddresses.QuadPart = (PciHeader.u.type0.BaseAddresses[0] & PCI_ADDRESS_MEMORY_ADDRESS_MASK);
+    if (!PhysicalAddresses.QuadPart)
+        goto Exit;
+
+    OperationalRegs = HalpMapPhysicalMemory64(PhysicalAddresses, 1);
+    if (!OperationalRegs)
+    {
+        DPRINT1("HalpStopOhciInterrupt: failed HalpMapPhysicalMemory64()\n");
+        goto Exit;
+    }
+
+    if (!OperationalRegs->HcControl.InterruptRouting)
+        goto Exit1;
+
+    if (OperationalRegs->HcControl.InterruptRouting &&
+        !OperationalRegs->HcInterruptEnable.AsULONG)
+    {
+        OperationalRegs->HcControl.AsULONG = 0;
+        goto Exit1;
+    }
+
+    OperationalRegs->HcInterruptDisable.RootHubStatusChange = 1;
+    OperationalRegs->HcInterruptEnable.OwnershipChange = 1;
+    OperationalRegs->HcInterruptEnable.MasterInterruptEnable = 1;
+
+    OperationalRegs->HcCommandStatus.OwnershipChangeRequest = 1;
+
+    for (ix = 0; ix < 500; ix++)
+    {
+        KeStallExecutionProcessor(1000);
+
+        if (!OperationalRegs->HcControl.InterruptRouting)
+            break;
+    }
+
+Exit1:
+    OperationalRegs->HcInterruptDisable.MasterInterruptEnable = 1;
+    HalpUnmapVirtualAddress(OperationalRegs, 1);
+
+Exit:
+    KeFlushWriteBuffer();
 }
 
 NTSTATUS
