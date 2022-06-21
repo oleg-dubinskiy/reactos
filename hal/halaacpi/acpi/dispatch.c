@@ -754,9 +754,16 @@ NTAPI
 HaliIsVectorValid(
     _In_ ULONG Vector)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);// HalpDbgBreakPointEx();
-    return FALSE;
+    USHORT IntI;
+    BOOLEAN Result;
+
+    DPRINT("HaliIsVectorValid: Vector %X\n", Vector);
+    PAGED_CODE();
+
+    Result = HalpGetApicInterruptDesc(Vector, &IntI);
+    DPRINT("HaliIsVectorValid: return Result %X\n", Result);
+
+    return Result;
 }
 
 /* EOF */
