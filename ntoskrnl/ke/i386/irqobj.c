@@ -197,7 +197,7 @@ KiInterruptDispatch(IN PKTRAP_FRAME TrapFrame,
     if (HalCtrlPIC)
         Vector = 0xFF;
     else
-        Vector = (UCHAR)TrapFrame->ErrCode;
+        Vector = (UCHAR)Interrupt->Vector;
 
     /* Begin the interrupt, making sure it's not spurious */
     if (HalBeginSystemInterrupt(Interrupt->SynchronizeIrql, Interrupt->Vector, &OldIrql))
@@ -236,7 +236,7 @@ KiChainedDispatch(IN PKTRAP_FRAME TrapFrame,
     if (HalCtrlPIC)
         Vector = 0xFF;
     else
-        Vector = (UCHAR)TrapFrame->ErrCode;
+        Vector = (UCHAR)Interrupt->Vector;
 
     /* Begin the interrupt, making sure it's not spurious */
     Result = HalBeginSystemInterrupt(Interrupt->Irql, Interrupt->Vector, &OldIrql);
