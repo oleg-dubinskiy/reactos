@@ -404,4 +404,10 @@ HaliAcpiTimerInit(
     _In_ BOOLEAN TimerValExt
 );
 
+VOID
+NTAPI
+HalTranslatorDereference(
+    IN PVOID Context
+);
+
 /* EOF */

@@ -17,6 +17,36 @@ extern ULONG HalpMaxPciBus;
 /* PRIVATE FUNCTIONS **********************************************************/
 
 NTSTATUS
+NTAPI 
+HalacpiIrqTranslateResourcesIsa(
+     _Inout_opt_ PVOID Context,
+     _In_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Source,
+     _In_ RESOURCE_TRANSLATION_DIRECTION Direction,
+     _In_opt_ ULONG AlternativesCount,
+     _In_opt_ IO_RESOURCE_DESCRIPTOR Alternatives[],
+     _In_ PDEVICE_OBJECT PhysicalDeviceObject,
+     _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Target)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI 
+HalacpiIrqTranslateResourceRequirementsIsa(
+    _Inout_opt_ PVOID Context,
+    _In_ PIO_RESOURCE_DESCRIPTOR Source,
+    _In_ PDEVICE_OBJECT PhysicalDeviceObject,
+    _Out_ PULONG TargetCount,
+    _Out_ PIO_RESOURCE_DESCRIPTOR* Target)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
 NTAPI
 HalacpiGetInterruptTranslator(
     _In_ INTERFACE_TYPE ParentInterfaceType,
@@ -27,9 +57,31 @@ HalacpiGetInterruptTranslator(
     _Out_ PTRANSLATOR_INTERFACE Translator,
     _Out_ PULONG BridgeBusNumber)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PAGED_CODE();
+
+    ASSERT(Version == 0);
+    ASSERT(Size >= sizeof(TRANSLATOR_INTERFACE));
+
+    if (BridgeInterfaceType != -1 &&
+        BridgeInterfaceType != 1 &&
+        BridgeInterfaceType != 2)
+    {
+        DPRINT1("HalacpiGetInterruptTranslator: STATUS_NOT_IMPLEMENTED. BridgeInterfaceType %X\n", BridgeInterfaceType);
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    RtlZeroMemory(Translator, sizeof(TRANSLATOR_INTERFACE));
+
+    Translator->Size = sizeof(TRANSLATOR_INTERFACE);
+    Translator->Version = 0;
+
+    Translator->InterfaceReference = HalTranslatorDereference;
+    Translator->InterfaceDereference = HalTranslatorDereference;
+
+    Translator->TranslateResources = HalacpiIrqTranslateResourcesIsa;
+    Translator->TranslateResourceRequirements = HalacpiIrqTranslateResourceRequirementsIsa;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
