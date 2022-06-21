@@ -28,9 +28,93 @@ HalacpiIrqTranslateResourcesIsa(
      _In_ PDEVICE_OBJECT PhysicalDeviceObject,
      _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Target)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG Level;
+    ULONG Vector;
+    ULONG ix;
+    BOOLEAN IsFound = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("HalacpiIrqTranslateResourcesIsa: Direction %X, AltCount %X\n", Direction, AlternativesCount);
+    PAGED_CODE();
+
+    ASSERT(Source->Type == CmResourceTypeInterrupt);
+
+    RtlCopyMemory(Target, Source, sizeof(*Target));
+
+    if (Direction == TranslateChildToParent)
+    {
+        Target->u.Interrupt.Level = HalpPicVectorRedirect[Source->u.Interrupt.Level];
+        Target->u.Interrupt.Vector = HalpPicVectorRedirect[Source->u.Interrupt.Vector];
+
+        DPRINT("HalacpiIrqTranslateResourcesIsa: Lvl %X, Vec %X\n",
+               Target->u.Interrupt.Level, Target->u.Interrupt.Vector);
+
+        return STATUS_SUCCESS;
+    }
+
+    if (Direction != 1)
+    {
+        ASSERT(FALSE);
+        return STATUS_SUCCESS;
+    }
+
+    Status = TranslateGlobalVectorToIsaVector(Source->u.Interrupt.Level, &Level);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalacpiIrqTranslateResourcesIsa: Status %X\n", Status);
+        ASSERT(FALSE);
+        return Status;
+    }
+
+    Target->u.Interrupt.Level = Level;
+
+    Status = TranslateGlobalVectorToIsaVector(Source->u.Interrupt.Vector, &Vector);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HalacpiIrqTranslateResourcesIsa: Status %X\n", Status);
+        ASSERT(FALSE);
+        return Status;
+    }
+
+    Target->u.Interrupt.Vector = Vector;
+
+    if (!Target->u.Interrupt.Level == 9 || AlternativesCount <= 0)
+    {
+        DPRINT("HalacpiIrqTranslateResourcesIsa: Level %X, Vector %X\n",
+               Target->u.Interrupt.Level, Target->u.Interrupt.Vector);
+        ASSERT(FALSE);
+        return STATUS_SUCCESS;
+    }
+
+    for (ix = 0; ix < AlternativesCount; ix++)
+    {
+        if (Alternatives[ix].u.Interrupt.MinimumVector >= 9 &&
+            Alternatives[ix].u.Interrupt.MaximumVector <= 9)
+        {
+            IsFound = FALSE;
+            break;
+        }
+
+        if (Alternatives[ix].u.Interrupt.MinimumVector >= 2 &&
+            Alternatives[ix].u.Interrupt.MaximumVector <= 2)
+        {
+            IsFound = TRUE;
+        }
+    }
+
+    if (IsFound)
+    {
+        DPRINT("HalacpiIrqTranslateResourcesIsa: Level 2, Vector 2\n");
+
+        Target->u.Interrupt.Level = 2;
+        Target->u.Interrupt.Vector = 2;
+        return STATUS_SUCCESS;
+    }
+
+    DPRINT("HalacpiIrqTranslateResourcesIsa: Level %X, Vector %X\n",
+           Target->u.Interrupt.Level, Target->u.Interrupt.Vector);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
