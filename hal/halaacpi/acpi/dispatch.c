@@ -409,6 +409,27 @@ HaliSetWakeEnable(
     HalpWakeupState[1] = FALSE;
 }
 
+VOID
+NTAPI
+HaliSetWakeAlarm(
+    _In_ ULONGLONG AlartTime,
+    _In_ PTIME_FIELDS WakeTimeFields)
+{
+    DPRINT("HaliSetWakeAlarm: AlartTime %I64X\n", AlartTime);
+
+    if (!AlartTime)
+    {
+        DPRINT1("HaliSetWakeAlarm: AlartTime is 0\n");
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+        return;
+    }
+
+    ASSERT(WakeTimeFields);
+
+    DPRINT1("HaliSetWakeAlarm: ... \n");
+    ASSERT(FALSE); // HalpDbgBreakPointEx();
+}
+
 NTSTATUS
 NTAPI
 HaliInitPowerManagement(
