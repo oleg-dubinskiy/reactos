@@ -67,13 +67,7 @@ typedef ULONG
 
 typedef VOID
 (NTAPI * PHAL_SET_VECTOR_STATE)(
-    _In_ ULONG Par1,
-    _In_ ULONG Par2
-);
-
-typedef VOID
-(NTAPI * PHAL_SET_VECTOR_STATE)(
-    _In_ ULONG Par1,
+    _In_ ULONG Vector,
     _In_ ULONG Par2
 );
 
@@ -139,7 +133,7 @@ HalpRestoreInterruptControllerState(
 VOID
 NTAPI
 HaliSetVectorState(
-    _In_ ULONG Par1,
+    _In_ ULONG Vector,
     _In_ ULONG Par2
 );
 

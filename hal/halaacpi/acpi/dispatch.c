@@ -5,6 +5,7 @@
 #include "dispatch.h"
 #include "../../../drivers/usb/usbohci/hardware.h"
 #include "../../../drivers/usb/usbuhci/hardware.h"
+#include "apic.h"
 
 //#define NDEBUG
 #include <debug.h>
@@ -30,8 +31,11 @@ ACPI_PM_DISPATCH_TABLE HalAcpiDispatchTable =
     HaliIsVectorValid 
 };
 
+ULONG HalpShutdownContext = 0;
 PVOID HalpWakeVector = NULL;
 BOOLEAN HalpWakeupState[2];
+BOOLEAN HalpDisableHibernate;
+BOOLEAN HalpDisableS5Hibernation;
 
 extern FADT HalpFixedAcpiDescTable;
 extern HALP_TIMER_INFO TimerInfo;
@@ -721,11 +725,10 @@ HalpRestoreInterruptControllerState(VOID)
 VOID
 NTAPI
 HaliSetVectorState(
-    _In_ ULONG Par1,
+    _In_ ULONG Vector,
     _In_ ULONG Par2)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);// HalpDbgBreakPointEx();
+    HalpSetVectorState(Vector, Par2);
 }
 
 ULONG
