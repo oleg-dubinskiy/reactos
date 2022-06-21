@@ -314,6 +314,32 @@ HalPutDmaAdapter(
     ASSERT(FALSE); // HalpDbgBreakPointEx();
 }
 
+/* HalpGetAdapterMaximumPhysicalAddress
+      Get the maximum physical address acceptable by the device represented by the passed DMA adapter.
+*/
+PHYSICAL_ADDRESS
+NTAPI
+HalpGetAdapterMaximumPhysicalAddress(
+    _In_ PADAPTER_OBJECT AdapterObject)
+{
+    PHYSICAL_ADDRESS HighestAddress;
+
+    if (!AdapterObject->MasterDevice)
+    {
+        HighestAddress.QuadPart = 0xFFFFFF;
+    }
+    else if (AdapterObject->Dma64BitAddresses)
+    {
+        HighestAddress.QuadPart = 0xFFFFFFFFFFFFFFFFULL;
+    }
+    else if (AdapterObject->Dma32BitAddresses)
+    {
+        HighestAddress.QuadPart = 0xFFFFFFFF;
+    }
+
+    return HighestAddress;
+}
+
 PVOID
 NTAPI
 HalAllocateCommonBuffer(
