@@ -37,6 +37,7 @@ extern FADT HalpFixedAcpiDescTable;
 extern HALP_TIMER_INFO TimerInfo;
 extern ULONG HalpWAETDeviceFlags;
 extern BOOLEAN HalpBrokenAcpiTimer;
+extern ULONG HalpMaxPciBus;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
@@ -565,8 +566,130 @@ HaliAcpiMachineStateInit(
     _In_ PHALP_STATE_DATA StateData,
     _Out_ ULONG* OutInterruptModel)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);// HalpDbgBreakPointEx();
+    POWER_STATE_HANDLER handler;
+    HALP_STATE_CONTEXT Context;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("HaliAcpiMachineStateInit: StateData %p\n", StateData);
+
+    HalpWakeupState[0] = 1;
+    HalpWakeupState[1] = 0;
+
+    //*OutInterruptModel = 0; // PIC HAL
+    *OutInterruptModel = 1; // APIC HAL
+
+    if (StateData[0].Data0)
+    {
+        handler.Type = 0;
+        handler.RtcWake = TRUE;
+        handler.Handler = HaliAcpiSleep;
+
+        Context.AsULONG = 0;
+        Context.Data1 = StateData[0].Data1;
+        Context.Data2 = StateData[0].Data2;
+        Context.Flags = 0x4;
+
+        handler.Context = UlongToPtr(Context.AsULONG);
+
+        Status = ZwPowerInformation(SystemPowerStateHandler, &handler, sizeof(handler), NULL, 0);
+        ASSERT(NT_SUCCESS(Status));
+    }
+
+    if (StateData[1].Data0 && HalpWakeVector)
+    {
+        handler.Type = PowerStateSleeping2;
+        handler.RtcWake = TRUE;
+        handler.Handler = HaliAcpiSleep;
+
+        Context.AsULONG = 0;
+        Context.Data1 = StateData[1].Data1;
+        Context.Data2 = StateData[1].Data2;
+        Context.Flags = 0x17;
+
+        handler.Context = UlongToPtr(Context.AsULONG);
+
+        Status = ZwPowerInformation(SystemPowerStateHandler, &handler, sizeof(handler), NULL, 0);
+        ASSERT(NT_SUCCESS(Status));
+    }
+
+    if (StateData[2].Data0 && HalpWakeVector)
+    {
+        handler.Type = PowerStateSleeping3;
+        handler.RtcWake = TRUE;
+        handler.Handler = HaliAcpiSleep;
+
+        Context.AsULONG = 0;
+        Context.Data1 = StateData[2].Data1;
+        Context.Data2 = StateData[2].Data2;
+        Context.Flags = 0x17;
+
+        handler.Context = UlongToPtr(Context.AsULONG);
+
+        Status = ZwPowerInformation(SystemPowerStateHandler, &handler, sizeof(handler), NULL, 0);
+        ASSERT(NT_SUCCESS(Status));
+    }
+
+    if (!HalpDisableHibernate)
+    {
+        if (StateData[3].Data0)
+        {
+            handler.Type = PowerStateSleeping4;
+            handler.RtcWake = ((HalpFixedAcpiDescTable.flags & 0x80) == 0x80);
+            handler.Handler = HaliAcpiSleep;
+
+            Context.AsULONG = 0;
+            Context.Data1 = StateData[3].Data1;
+            Context.Data2 = StateData[3].Data2;
+            Context.Flags = 0x14;
+
+            handler.Context = UlongToPtr(Context.AsULONG);
+
+            Status = ZwPowerInformation(SystemPowerStateHandler, &handler, sizeof(handler), NULL, 0);
+            ASSERT(NT_SUCCESS(Status));
+        }
+        else if (!StateData[4].Data0)
+        {
+            KeFlushWriteBuffer();
+            return;
+        }
+        else if (!HalpDisableS5Hibernation)
+        {
+            handler.Type = PowerStateSleeping4;
+            handler.RtcWake = ((HalpFixedAcpiDescTable.flags & 0x80) == 0x80);
+            handler.Handler = HaliAcpiSleep;
+
+            Context.AsULONG = 0;
+            Context.Data1 = StateData[4].Data1;
+            Context.Data2 = StateData[4].Data2;
+            Context.Flags = 0x14;
+
+            handler.Context = UlongToPtr(Context.AsULONG);
+
+            Status = ZwPowerInformation(SystemPowerStateHandler, &handler, sizeof(handler), NULL, 0);
+            ASSERT(NT_SUCCESS(Status));
+        }
+    }
+
+    if (StateData[4].Data0)
+    {
+        handler.Type = PowerStateShutdownOff;
+        handler.RtcWake = FALSE;
+        handler.Handler = HaliAcpiSleep;
+
+        Context.AsULONG = 0;
+        Context.Data1 = StateData[4].Data1;
+        Context.Data2 = StateData[4].Data2;
+        Context.Flags = 0x8;
+
+        HalpShutdownContext = Context.AsULONG;
+        handler.Context = UlongToPtr(Context.AsULONG);
+
+        Status = ZwPowerInformation(SystemPowerStateHandler, &handler, sizeof(handler), NULL, 0);
+        ASSERT(NT_SUCCESS(Status));
+    }
+
+    KeFlushWriteBuffer();
 }
 
 ULONG
