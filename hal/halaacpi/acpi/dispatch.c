@@ -11,6 +11,7 @@
 
 /* GLOBALS *******************************************************************/
 
+extern HALP_TIMER_INFO TimerInfo;
 extern ULONG HalpWAETDeviceFlags;
 extern BOOLEAN HalpBrokenAcpiTimer;
 
@@ -368,6 +369,31 @@ Exit:
         ZwClose(KeyHandle);
 
     KeFlushWriteBuffer();
+}
+
+VOID
+NTAPI
+HalAcpiBrokenPiix4TimerCarry(VOID)
+{
+    /* Nothing */
+    ;
+}
+
+VOID
+NTAPI
+HalAcpiTimerCarry(VOID)
+{
+    LARGE_INTEGER Value;
+    ULONG Time;
+
+    Time = READ_PORT_ULONG(TimerInfo.TimerPort);
+    DPRINT("HalAcpiTimerCarry: Time %X\n", Time);
+
+    Value.QuadPart = (TimerInfo.AcpiTimeValue.QuadPart + TimerInfo.ValueExt);
+    Value.QuadPart += ((Value.LowPart ^ Time) & TimerInfo.ValueExt);
+
+    TimerInfo.TimerCarry = Value.HighPart;
+    TimerInfo.AcpiTimeValue.QuadPart = Value.QuadPart;
 }
 
 NTSTATUS
