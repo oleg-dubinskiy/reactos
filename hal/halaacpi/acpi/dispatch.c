@@ -11,6 +11,8 @@
 
 /* GLOBALS *******************************************************************/
 
+BOOLEAN HalpWakeupState[2];
+
 extern HALP_TIMER_INFO TimerInfo;
 extern ULONG HalpWAETDeviceFlags;
 extern BOOLEAN HalpBrokenAcpiTimer;
@@ -394,6 +396,17 @@ HalAcpiTimerCarry(VOID)
 
     TimerInfo.TimerCarry = Value.HighPart;
     TimerInfo.AcpiTimeValue.QuadPart = Value.QuadPart;
+}
+
+VOID
+NTAPI
+HaliSetWakeEnable(
+    _In_ BOOLEAN Enable)
+{
+    DPRINT("HaliSetWakeEnable: Enable %X\n", Enable);
+
+    HalpWakeupState[0] = Enable;
+    HalpWakeupState[1] = FALSE;
 }
 
 NTSTATUS
