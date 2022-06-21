@@ -72,6 +72,74 @@ typedef union _DMA_MODE
    UCHAR Byte;
 } DMA_MODE, *PDMA_MODE;
 
+/* DMA Extended Mode Register Structure
+  
+   MSB                             LSB
+      x   x   x   x     x   x   x   x
+      -   -   -----     -----   -----
+      |   |     |         |       |     00 - Channel 0 select
+      |   |     |         |       \---- 01 - Channel 1 select
+      |   |     |         |             10 - Channel 2 select
+      |   |     |         |             11 - Channel 3 select
+      |   |     |         |
+      |   |     |         |             00 - 8-bit I/O, by bytes
+      |   |     |         \------------ 01 - 16-bit I/O, by words, address shifted
+      |   |     |                       10 - 32-bit I/O, by bytes
+      |   |     |                       11 - 16-bit I/O, by bytes
+      |   |     |
+      |   |     \---------------------- 00 - Compatible
+      |   |                             01 - Type A
+      |   |                             10 - Type B
+      |   |                             11 - Burst
+      |   |
+      |   \---------------------------- 0 - Terminal Count is Output
+      |
+      \---------------------------------0 - Disable Stop Register
+                                        1 - Enable Stop Register
+*/
+typedef union _DMA_EXTENDED_MODE
+{
+   struct
+   {
+      UCHAR ChannelNumber: 2;
+      UCHAR TransferSize: 2;
+      UCHAR TimingMode: 2;
+      UCHAR TerminalCountIsOutput: 1;
+      UCHAR EnableStopRegister: 1;
+   };
+   UCHAR Byte;
+} DMA_EXTENDED_MODE, *PDMA_EXTENDED_MODE;
+
+/* DMA Extended Mode Register Transfer Sizes */
+#define B_8BITS 0
+#define W_16BITS 1
+#define B_32BITS 2
+#define B_16BITS 3
+
+/* DMA Extended Mode Register Timing */
+#define COMPATIBLE_TIMING 0
+#define TYPE_A_TIMING 1
+#define TYPE_B_TIMING 2
+#define BURST_TIMING 3
+
+/* Transfer Types */
+#define VERIFY_TRANSFER 0x00
+#define READ_TRANSFER 0x01
+#define WRITE_TRANSFER 0x02
+
+/* Request Modes */
+#define DEMAND_REQUEST_MODE 0x00
+#define SINGLE_REQUEST_MODE 0x01
+#define BLOCK_REQUEST_MODE 0x02
+#define CASCADE_REQUEST_MODE 0x03
+
+#define DMA_SETMASK 4
+#define DMA_CLEARMASK 0
+#define DMA_READ 4
+#define DMA_WRITE 8
+#define DMA_SINGLE_TRANSFER 0x40
+#define DMA_AUTO_INIT 0x10
+
 /* Channel Stop Registers for each Channel */
 typedef struct _DMA_CHANNEL_STOP
 {
@@ -87,6 +155,14 @@ typedef struct _DMA1_ADDRESS_COUNT
    UCHAR DmaBaseCount;
 } DMA1_ADDRESS_COUNT, *PDMA1_ADDRESS_COUNT;
 
+typedef struct _DMA2_ADDRESS_COUNT
+{
+   UCHAR DmaBaseAddress;
+   UCHAR Reserved1;
+   UCHAR DmaBaseCount;
+   UCHAR Reserved2;
+} DMA2_ADDRESS_COUNT, *PDMA2_ADDRESS_COUNT;
+
 typedef struct _DMA1_CONTROL
 {
    DMA1_ADDRESS_COUNT DmaAddressCount[4];
@@ -99,6 +175,27 @@ typedef struct _DMA1_CONTROL
    UCHAR ClearMask;
    UCHAR AllMask;
 } DMA1_CONTROL, *PDMA1_CONTROL;
+
+typedef struct _DMA2_CONTROL
+{
+   DMA2_ADDRESS_COUNT DmaAddressCount[4];
+   UCHAR DmaStatus;
+   UCHAR Reserved1;
+   UCHAR DmaRequest;
+   UCHAR Reserved2;
+   UCHAR SingleMask;
+   UCHAR Reserved3;
+   UCHAR Mode;
+   UCHAR Reserved4;
+   UCHAR ClearBytePointer;
+   UCHAR Reserved5;
+   UCHAR MasterClear;
+   UCHAR Reserved6;
+   UCHAR ClearMask;
+   UCHAR Reserved7;
+   UCHAR AllMask;
+   UCHAR Reserved8;
+} DMA2_CONTROL, *PDMA2_CONTROL;
 
 /* This structure defines the I/O Map of the 82537 controller. */
 typedef struct _EISA_CONTROL
