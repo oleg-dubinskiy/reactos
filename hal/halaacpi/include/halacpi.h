@@ -397,4 +397,11 @@ HalpQueryAcpiResourceRequirements(
     _Out_ PIO_RESOURCE_REQUIREMENTS_LIST* Requirements
 );
 
+VOID
+NTAPI
+HaliAcpiTimerInit(
+    _In_ PULONG TimerPort,
+    _In_ BOOLEAN TimerValExt
+);
+
 /* EOF */

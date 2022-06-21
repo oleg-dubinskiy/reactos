@@ -11,8 +11,29 @@
 
 /* GLOBALS *******************************************************************/
 
+PPM_DISPATCH_TABLE PmAcpiDispatchTable;
+ACPI_PM_DISPATCH_TABLE HalAcpiDispatchTable =
+{
+    0x48414C20, // 'HAL '
+    2,
+    HaliAcpiTimerInit,
+    NULL,
+    HaliAcpiMachineStateInit,
+    HaliAcpiQueryFlags,
+    HalpAcpiPicStateIntact,
+    HalpRestoreInterruptControllerState,
+    HaliPciInterfaceReadConfig,
+    HaliPciInterfaceWriteConfig,
+    HaliSetVectorState,
+    HalpGetApicVersion,
+    HaliSetMaxLegacyPciBusNumber,
+    HaliIsVectorValid 
+};
+
+PVOID HalpWakeVector = NULL;
 BOOLEAN HalpWakeupState[2];
 
+extern FADT HalpFixedAcpiDescTable;
 extern HALP_TIMER_INFO TimerInfo;
 extern ULONG HalpWAETDeviceFlags;
 extern BOOLEAN HalpBrokenAcpiTimer;
@@ -470,12 +491,133 @@ HaliInitPowerManagement(
     _In_ PPM_DISPATCH_TABLE PmDriverDispatchTable,
     _Out_ PPM_DISPATCH_TABLE* PmHalDispatchTable)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    UNICODE_STRING CallbackName = RTL_CONSTANT_STRING(L"\\Callback\\PowerState");
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    PCALLBACK_OBJECT CallbackObject;
+    PHYSICAL_ADDRESS PhysicalAddress;
+    PFACS Facs;
+
+    PAGED_CODE();
+    HalpPiix4Detect(TRUE);
+
+    DPRINT("HaliInitPowerManagement: FIXME HalpPutAcpiHacksInRegistry() \n");
+
+    PmAcpiDispatchTable = PmDriverDispatchTable; // interface with acpi.sys
+
+    if (HalpBrokenAcpiTimer)
+    {
+        DPRINT1("HaliInitPowerManagement: HalpBrokenAcpiTimer is TRUE\n");
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+        HalAcpiDispatchTable.HalAcpiTimerInterrupt = HalAcpiBrokenPiix4TimerCarry;
+    }
+    else
+    {
+        HalAcpiDispatchTable.HalAcpiTimerInterrupt = HalAcpiTimerCarry;
+    }
+
+    *PmHalDispatchTable = (PPM_DISPATCH_TABLE)&HalAcpiDispatchTable; // HAL export interface
+
+    HalSetWakeEnable = HaliSetWakeEnable;
+    HalSetWakeAlarm = HaliSetWakeAlarm;
+
+    /* Create a power callback */    
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &CallbackName,
+                               (OBJ_CASE_INSENSITIVE | OBJ_PERMANENT),
+                               NULL,
+                               NULL);
+
+    ExCreateCallback(&CallbackObject, &ObjectAttributes, FALSE, TRUE);
+    ExRegisterCallback(CallbackObject, HalpPowerStateCallback, NULL);
+
+    if (!HalpFixedAcpiDescTable.facs)
+        return STATUS_SUCCESS;
+
+    PhysicalAddress.QuadPart = HalpFixedAcpiDescTable.facs;
+    Facs = MmMapIoSpace(PhysicalAddress, sizeof(*Facs), MmNonCached);
+
+    if (Facs && (Facs->Signature == 'SCAF'))
+        HalpWakeVector = &Facs->pFirmwareWakingVector;
+
+    return STATUS_SUCCESS;
 }
 
 /* PM DISPATCH FUNCTIONS *****************************************************/
 
+VOID
+NTAPI
+HaliAcpiMachineStateInit(
+    _In_ ULONG Par1,
+    _In_ PHALP_STATE_DATA StateData,
+    _Out_ ULONG* OutInterruptModel)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);// HalpDbgBreakPointEx();
+}
+
+ULONG
+NTAPI
+HaliAcpiQueryFlags(VOID)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);// HalpDbgBreakPointEx();
+    return 0;
+}
+
+UCHAR
+NTAPI
+HalpAcpiPicStateIntact(VOID)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);// HalpDbgBreakPointEx();
+    return 0;
+}
+
+VOID
+NTAPI
+HalpRestoreInterruptControllerState(VOID)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);// HalpDbgBreakPointEx();
+}
+
+VOID
+NTAPI
+HaliSetVectorState(
+    _In_ ULONG Par1,
+    _In_ ULONG Par2)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);// HalpDbgBreakPointEx();
+}
+
+ULONG
+NTAPI
+HalpGetApicVersion(
+    _In_ ULONG Par1)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);// HalpDbgBreakPointEx();
+    return 0;
+}
+
+VOID
+NTAPI
+HaliSetMaxLegacyPciBusNumber(
+    _In_ ULONG MaxLegacyPciBusNumber)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);// HalpDbgBreakPointEx();
+}
+
+BOOLEAN
+NTAPI
+HaliIsVectorValid(
+    _In_ ULONG Vector)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);// HalpDbgBreakPointEx();
+    return FALSE;
+}
 
 /* EOF */
