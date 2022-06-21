@@ -1336,6 +1336,66 @@ HalpReleaseHighLevelLock(
     __writeeflags(EFlags);
 }
 
+VOID
+NTAPI
+HalpSetVectorState(
+    _In_ ULONG Vector,
+    _In_ ULONG Par2)
+{
+    ULONG Flags;
+    USHORT IntI;
+    UCHAR ix;
+    UCHAR Idx;
+
+    DPRINT1("HalpSetVectorState: Vector %X, Par2 %X\n", Vector, Par2);
+    PAGED_CODE();
+
+    if (!HalpGetApicInterruptDesc(Vector, &IntI))
+    {
+        DPRINT1("HalpSetVectorState: KeBugCheckEx(0xA5)\n");
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+        KeBugCheckEx(0xA5, 0x10007, Vector, 0, 0);
+    }
+
+    ASSERT(HalpIntiInfo[IntI].Type == 0);
+
+    for (ix = 0; ix < 0x10; ix++)
+    {
+        if (HalpPicVectorRedirect[ix] == Vector)
+        {
+            Idx = ix;
+            break;
+        }
+    }
+
+    Flags = HalpPicVectorFlags[Idx];
+
+    if (ix != 0x10 && Flags != 0)
+    {
+        if ((Flags & 0xC) == 0xC)
+            HalpIntiInfo[IntI].TriggerMode = 1;
+        else
+            HalpIntiInfo[IntI].TriggerMode = 0;
+
+        HalpIntiInfo[IntI].Polarity = (UCHAR)(Flags & 3);
+
+        DPRINT1("HalpSetVectorState: HalpIntiInfo[%X] %X\n", IntI, HalpIntiInfo[IntI].AsULONG);
+        return;
+    }
+
+    if (Par2 & 1)
+        HalpIntiInfo[IntI].TriggerMode = 1;
+    else
+        HalpIntiInfo[IntI].TriggerMode = 0;
+    
+    if (Par2 & 2)
+        HalpIntiInfo[IntI].Polarity = 3;
+    else
+        HalpIntiInfo[IntI].Polarity = 1;
+
+    DPRINT1("HalpSetVectorState: HalpIntiInfo[%X] %X\n", IntI, HalpIntiInfo[IntI].AsULONG);
+}
+
 /* FUNCTIONS *****************************************************************/
 
 ULONG

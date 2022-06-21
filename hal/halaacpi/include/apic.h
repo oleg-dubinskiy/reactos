@@ -464,6 +464,13 @@ HalIrqTranslateResourceRequirementsRoot(
     _Out_ PIO_RESOURCE_DESCRIPTOR* OutIoDesc
 );
 
+VOID
+NTAPI
+HalpSetVectorState(
+    _In_ ULONG Vector,
+    _In_ ULONG Par2
+);
+
 /* apicacpi.c */
 INIT_FUNCTION
 VOID
