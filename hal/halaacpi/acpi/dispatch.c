@@ -544,6 +544,20 @@ HaliInitPowerManagement(
 
 /* PM DISPATCH FUNCTIONS *****************************************************/
 
+NTSTATUS
+NTAPI
+HaliAcpiSleep(
+    _In_opt_ PVOID Context,
+    _In_opt_ PENTER_STATE_SYSTEM_HANDLER SystemHandler,
+    _In_opt_ PVOID SystemContext,
+    _In_ LONG NumberProcessors,
+    _In_opt_ LONG volatile * Number)
+{
+    UNIMPLEMENTED;
+    ASSERT(FALSE);//HalpDbgBreakPointEx();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 HaliAcpiMachineStateInit(
