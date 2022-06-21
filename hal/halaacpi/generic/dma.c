@@ -348,10 +348,37 @@ HalAllocateCommonBuffer(
     _In_ PPHYSICAL_ADDRESS LogicalAddress,
     _In_ BOOLEAN CacheEnabled)
 {
-    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return NULL;
+    PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    PHYSICAL_ADDRESS LowestAcceptableAddress;
+    PHYSICAL_ADDRESS HighestAcceptableAddress;
+    PHYSICAL_ADDRESS BoundryAddressMultiple;
+    PVOID VirtualAddress;
+
+    LowestAcceptableAddress.QuadPart = 0;
+    BoundryAddressMultiple.QuadPart = 0;
+
+    HighestAcceptableAddress = HalpGetAdapterMaximumPhysicalAddress(AdapterObject);
+
+    /* For bus-master DMA devices the buffer mustn't cross 4Gb boundary.
+       For slave DMA devices the 64Kb boundary mustn't be crossed since the controller wouldn't be able to handle it.
+    */
+    if (AdapterObject->MasterDevice)
+        BoundryAddressMultiple.HighPart = 1;
+    else
+        BoundryAddressMultiple.LowPart = 0x10000;
+
+    VirtualAddress =
+    MmAllocateContiguousMemorySpecifyCache(Length,
+                                           LowestAcceptableAddress,
+                                           HighestAcceptableAddress,
+                                           BoundryAddressMultiple,
+                                           (CacheEnabled ? MmCached : MmNonCached));
+    if (!VirtualAddress)
+        return NULL;
+
+    *LogicalAddress = MmGetPhysicalAddress(VirtualAddress);
+
+    return VirtualAddress;
 }
 
 VOID
