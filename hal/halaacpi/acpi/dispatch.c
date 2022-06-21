@@ -606,8 +606,7 @@ NTAPI
 HaliSetMaxLegacyPciBusNumber(
     _In_ ULONG MaxLegacyPciBusNumber)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE);// HalpDbgBreakPointEx();
+    HalpMaxPciBus = max(HalpMaxPciBus, MaxLegacyPciBusNumber);
 }
 
 BOOLEAN
