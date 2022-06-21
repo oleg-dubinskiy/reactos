@@ -13,6 +13,7 @@ extern BUS_HANDLER HalpFakePciBusHandler;
 extern BOOLEAN HalpPCIConfigInitialized;
 extern ULONG HalpMinPciBus;
 extern ULONG HalpMaxPciBus;
+extern FADT HalpFixedAcpiDescTable;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -41,9 +42,166 @@ HalacpiIrqTranslateResourceRequirementsIsa(
     _Out_ PULONG TargetCount,
     _Out_ PIO_RESOURCE_DESCRIPTOR* Target)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_RESOURCE_DESCRIPTOR TempIoDesc;
+    PIO_RESOURCE_DESCRIPTOR NewIoDesc;
+    ULONG IoDescCount;
+    ULONG VectorMin;
+    ULONG VectorMax;
+    ULONG VectorCount;
+    ULONG MinimumVector;
+    ULONG CurrentVector;
+    ULONG Size;
+    ULONG jx;
+    ULONG ix;
+    USHORT SciVector;
+
+    VectorMin = Source->u.Interrupt.MinimumVector;
+    VectorMax = Source->u.Interrupt.MaximumVector;
+    VectorCount = (VectorMax - VectorMin);
+
+    DPRINT("HalacpiIrqTranslateResourceRequirementsIsa: Min %X, Max %X\n", VectorMin, VectorMax);
+
+    PAGED_CODE();
+    ASSERT(Source->Type == CmResourceTypeInterrupt);
+
+    Size = ((VectorCount + 3) * sizeof(IO_RESOURCE_DESCRIPTOR));
+
+    TempIoDesc = ExAllocatePoolWithTag(PagedPool, Size, ' laH');
+    if (!TempIoDesc)
+    {
+        DPRINT1("HalacpiIrqTranslateResourceRequirementsIsa: TempIoDesc is NULL\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(TempIoDesc, Size);
+
+    ix = 0;
+
+    if (VectorMin > 2 || VectorMax < 2)
+    {
+        RtlCopyMemory(&TempIoDesc[ix], Source, sizeof(IO_RESOURCE_DESCRIPTOR));
+        ix++;
+    }
+    else
+    {
+        if (VectorMin < 2)
+        {
+            RtlCopyMemory(&TempIoDesc[ix], Source, sizeof(IO_RESOURCE_DESCRIPTOR));
+            TempIoDesc->u.Interrupt.MinimumVector = VectorMin;
+            TempIoDesc->u.Interrupt.MaximumVector = 1;
+            ix++;
+        }
+        if (VectorMax > 2)
+        {
+            RtlCopyMemory(&TempIoDesc[ix], Source, sizeof(IO_RESOURCE_DESCRIPTOR));
+            TempIoDesc[ix].u.Interrupt.MinimumVector = 3;
+            TempIoDesc[ix].u.Interrupt.MaximumVector = VectorMax;
+            ix++;
+        }
+        if (VectorMin > 9 || VectorMax < 9)
+        {
+            RtlCopyMemory(&TempIoDesc[ix++], Source, sizeof(IO_RESOURCE_DESCRIPTOR));
+            TempIoDesc[ix].u.Interrupt.MinimumVector = 9;
+            TempIoDesc[ix].u.Interrupt.MaximumVector = 9;
+            ix++;
+        }
+    }
+
+    IoDescCount = 0;
+    SciVector = HalpFixedAcpiDescTable.sci_int_vector;
+
+    for (jx = 0; jx < ix; jx++)
+    {
+        VectorMin = TempIoDesc[jx].u.Interrupt.MinimumVector;
+        VectorMax = TempIoDesc[jx].u.Interrupt.MaximumVector;
+
+        if (VectorMax >= 0x10) // PIC max
+        {
+            DPRINT1("HalacpiIrqTranslateResourceRequirementsIsa: STATUS_UNSUCCESSFUL\n");
+            ExFreePoolWithTag(TempIoDesc, ' laH');
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        if (VectorMin >= 0x10)
+        {
+            DPRINT1("HalacpiIrqTranslateResourceRequirementsIsa: STATUS_UNSUCCESSFUL\n");
+            ExFreePoolWithTag(TempIoDesc, ' laH');
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        if (VectorMin > SciVector || VectorMax < SciVector)
+            continue;
+
+        if (VectorMin < SciVector)
+        {
+            TempIoDesc[ix].u.Interrupt.MinimumVector = VectorMin;
+            TempIoDesc[ix].u.Interrupt.MaximumVector = (SciVector - 1);
+            ix++;
+        }
+
+        if (VectorMax > SciVector)
+        {
+            TempIoDesc[ix].u.Interrupt.MinimumVector = (SciVector + 1);
+            TempIoDesc[ix].u.Interrupt.MaximumVector = VectorMax;
+            ix++;
+        }
+
+        RtlMoveMemory(&TempIoDesc[jx], &TempIoDesc[jx+1], ((ix - jx) * sizeof(IO_RESOURCE_DESCRIPTOR)));
+
+        ix--;
+    }
+
+    NewIoDesc = ExAllocatePoolWithTag(PagedPool, Size, ' laH');
+    if (!NewIoDesc)
+    {
+        DPRINT1("HalacpiIrqTranslateResourceRequirementsIsa: STATUS_INSUFFICIENT_RESOURCES\n");
+        ExFreePoolWithTag(TempIoDesc, ' laH');
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(NewIoDesc, Size);
+
+    for (jx = 0; jx < ix; jx++)
+    {
+        CurrentVector = TempIoDesc[jx].u.Interrupt.MinimumVector;
+        VectorMax = TempIoDesc[jx].u.Interrupt.MaximumVector;
+
+        do
+        {
+            MinimumVector = CurrentVector;
+            while (CurrentVector < VectorMax)
+            {
+                if ((HalpPicVectorRedirect[CurrentVector] + 1) !=
+                     HalpPicVectorRedirect[CurrentVector + 1])
+                {
+                    break;
+                }
+
+                CurrentVector++;
+            }
+
+            RtlCopyMemory(&NewIoDesc[IoDescCount], Source, sizeof(IO_RESOURCE_DESCRIPTOR));
+
+            NewIoDesc[IoDescCount].u.Interrupt.MinimumVector = HalpPicVectorRedirect[MinimumVector];
+            NewIoDesc[IoDescCount].u.Interrupt.MaximumVector = HalpPicVectorRedirect[CurrentVector];
+
+            ASSERT(NewIoDesc[IoDescCount].u.Interrupt.MinimumVector <=
+                   NewIoDesc[IoDescCount].u.Interrupt.MaximumVector);
+
+            IoDescCount++;
+        }
+        while (CurrentVector != VectorMax);
+    }
+
+    *TargetCount = IoDescCount;
+
+    if (IoDescCount)
+        *Target = NewIoDesc;
+    else
+        ExFreePoolWithTag(NewIoDesc, ' laH');
+
+    ExFreePoolWithTag(TempIoDesc, ' laH');
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
