@@ -680,9 +680,217 @@ HalGetAdapter(
     _In_ PDEVICE_DESCRIPTION DeviceDescriptor,
     _Out_ PULONG NumberOfMapRegisters)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return NULL;
+    PADAPTER_OBJECT AdapterObject = NULL;
+    PVOID AdapterBaseVa = NULL;
+    ULONG MapRegisters;
+    ULONG MaximumLength;
+    ULONG BufferSize;
+    BOOLEAN IsFlag0;
+    BOOLEAN IsDma32Bit;
+    KIRQL OldIrql;
+
+    DPRINT("HalGetAdapter: DeviceDescriptor %p\n", DeviceDescriptor);
+
+    /* Validate parameters in device description */
+    if (DeviceDescriptor->Version > DEVICE_DESCRIPTION_VERSION2)
+    {
+        DPRINT1("HalGetAdapter: Wrong Version %X\n", DeviceDescriptor->Version);
+        return NULL;
+    }
+
+    if (DeviceDescriptor->Version == DEVICE_DESCRIPTION_VERSION1)
+        ASSERT(DeviceDescriptor->Reserved1 == FALSE);
+
+    if ((DeviceDescriptor->InterfaceType != Isa && DeviceDescriptor->Master != 0) ||
+        (DeviceDescriptor->InterfaceType == Isa && DeviceDescriptor->DmaChannel > 7))
+    {
+        IsFlag0 = FALSE;
+    }
+    else
+    {
+        IsFlag0 = TRUE;
+    }
+
+    /* Disallow creating adapter for ISA/EISA DMA channel 4 since it's used
+       for cascading the controllers and it's not available for software use.
+    */
+    if (IsFlag0 && (DeviceDescriptor->DmaChannel == 4))
+        return NULL;
+
+    if (HalpBusType == MACHINE_TYPE_EISA)
+    {
+        DPRINT1("HalGetAdapter: FIXME MACHINE_TYPE_EISA\n");
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+    }
+
+    if (DeviceDescriptor->InterfaceType == PCIBus &&
+        DeviceDescriptor->Master &&
+        DeviceDescriptor->ScatterGather)
+    {
+        DPRINT("HalGetAdapter: Dma32BitAddresses is TRUE\n");
+        DeviceDescriptor->Dma32BitAddresses = TRUE;
+    }
+
+    /* Calculate the number of map registers.
+     
+       - For EISA and PCI scatter/gather no map registers are needed.
+       - For ISA slave scatter/gather one map register is needed.
+       - For all other cases the number of map registers depends on DeviceDescriptor->MaximumLength.
+    */
+    MaximumLength = DeviceDescriptor->MaximumLength & (MAXULONG / 2); // 2 Gb max. length
+
+    IsDma32Bit = DeviceDescriptor->Dma32BitAddresses;
+
+    if (DeviceDescriptor->ScatterGather &&
+        (HalpPhysicalMemoryMayAppearAbove4GB == FALSE || DeviceDescriptor->Dma64BitAddresses) &&
+        (LessThan16Mb || DeviceDescriptor->InterfaceType == Eisa || DeviceDescriptor->InterfaceType == PCIBus))
+    {
+        MapRegisters = 0;
+    }
+    else
+    {
+        MapRegisters = BYTES_TO_PAGES(MaximumLength) + 1;
+
+        if (MapRegisters > 16)
+            MapRegisters = 16;
+
+        if (!HalpEisaDma)
+        {
+            if (HalpPhysicalMemoryMayAppearAbove4GB && IsDma32Bit)
+                BufferSize = MasterAdapter32.MapBufferSize;
+            else
+                BufferSize = MasterAdapter24.MapBufferSize;
+
+            if (MapRegisters > ((BufferSize >> PAGE_SHIFT) / 2))
+                MapRegisters = ((BufferSize >> PAGE_SHIFT) / 2);
+        }
+
+        if (DeviceDescriptor->ScatterGather && DeviceDescriptor->Master == FALSE)
+            MapRegisters = 1;
+    }
+
+    if (IsFlag0)
+    {
+        DPRINT1("HalGetAdapter: IsFlag0 FIXME\n");
+        ASSERT(FALSE); // HalpDbgBreakPointEx();
+    }
+
+    /* Now we must get ahold of the adapter object.
+       For first eight ISA/EISA channels there are static adapter objects 
+       that are reused and updated on succesive HalGetAdapter calls.
+       In other cases a new adapter object is always created
+       and it's to the DMA adapter list (HalpDmaAdapterList).
+    */
+    if (IsFlag0)
+    {
+        AdapterObject = HalpEisaAdapter[DeviceDescriptor->DmaChannel];
+
+        if (AdapterObject &&
+            AdapterObject->NeedsMapRegisters &&
+            MapRegisters > AdapterObject->MapRegistersPerChannel)
+        {
+            AdapterObject->MapRegistersPerChannel = MapRegisters;
+        }
+    }
+
+    if (!AdapterObject)
+    {
+        KeWaitForSingleObject(&HalpDmaLock, WrExecutive, KernelMode, FALSE, NULL);
+
+        if (IsFlag0)
+        {
+            AdapterObject = HalpEisaAdapter[DeviceDescriptor->DmaChannel];
+
+            if (AdapterObject &&
+                AdapterObject->NeedsMapRegisters &&
+                MapRegisters > AdapterObject->MapRegistersPerChannel)
+            {
+                AdapterObject->MapRegistersPerChannel = MapRegisters;
+            }
+        }
+        else
+        {
+            AdapterObject = HalpAllocateAdapterEx(MapRegisters, AdapterBaseVa, IsDma32Bit);
+            if (!AdapterObject)
+            {
+                DPRINT1("HalGetAdapter: HalpAllocateAdapterEx() failed\n");
+                ASSERT(FALSE); // HalpDbgBreakPointEx();
+                KeSetEvent(&HalpDmaLock, IO_NO_INCREMENT, FALSE);
+                return NULL;
+            }
+
+            if (IsFlag0)
+                HalpEisaAdapter[DeviceDescriptor->DmaChannel] = AdapterObject;
+
+            if (MapRegisters)
+            {
+                PHALP_DMA_MASTER_ADAPTER pMasterAdapter;
+                PADAPTER_OBJECT MasterAdapter;
+
+                if (!HalpPhysicalMemoryMayAppearAbove4GB || !IsDma32Bit)
+                    pMasterAdapter = &MasterAdapter24;
+                else
+                    pMasterAdapter = &MasterAdapter32;
+
+                MasterAdapter = pMasterAdapter->MasterAdapter;
+                AdapterObject->MapRegistersPerChannel = MapRegisters;
+
+                if (DeviceDescriptor->Master)
+                    MasterAdapter->CommittedMapRegisters += (2 * MapRegisters);
+                else
+                    MasterAdapter->CommittedMapRegisters += MapRegisters;
+
+                if (MasterAdapter->CommittedMapRegisters > MasterAdapter->NumberOfMapRegisters)
+                    HalpGrowMapBuffers(MasterAdapter, 0x10000);
+
+                AdapterObject->NeedsMapRegisters = TRUE;
+            }
+            else
+            {
+                AdapterObject->NeedsMapRegisters = FALSE;
+
+                if (DeviceDescriptor->Master)
+                    AdapterObject->MapRegistersPerChannel = (BYTES_TO_PAGES(MaximumLength) + 1);
+                else
+                    AdapterObject->MapRegistersPerChannel = 1;
+            }
+        }
+
+        KeSetEvent(&HalpDmaLock, IO_NO_INCREMENT, FALSE);
+    }
+
+    /* Setup the values in the adapter object that are common for all types of buses */
+    if (DeviceDescriptor->Version >= DEVICE_DESCRIPTION_VERSION1)
+        AdapterObject->IgnoreCount = DeviceDescriptor->IgnoreCount;
+    else
+        AdapterObject->IgnoreCount = 0;
+
+    AdapterObject->Dma32BitAddresses = DeviceDescriptor->Dma32BitAddresses;
+    AdapterObject->Dma64BitAddresses = DeviceDescriptor->Dma64BitAddresses;
+    AdapterObject->ScatterGather = DeviceDescriptor->ScatterGather;
+    AdapterObject->MasterDevice = DeviceDescriptor->Master;
+
+    *NumberOfMapRegisters = AdapterObject->MapRegistersPerChannel;
+
+    /* For non-(E)ISA adapters we have already done all the work.
+       On the other hand for (E)ISA adapters we must still setup the DMA modes and prepare the controller.
+    */
+    if (!IsFlag0)
+        goto Exit;
+
+    if (!HalpDmaInitializeEisaAdapter(AdapterObject, DeviceDescriptor))
+    {
+        ObDereferenceObject(AdapterObject);
+        return NULL;
+    }
+
+Exit:
+
+    KeAcquireSpinLock(&HalpDmaAdapterListLock, &OldIrql);
+    InsertTailList(&HalpDmaAdapterList, &AdapterObject->AdapterList);
+    KeReleaseSpinLock(&HalpDmaAdapterListLock, OldIrql);
+
+    return AdapterObject;
 }
 
 PVOID
