@@ -43,7 +43,7 @@ typedef struct _PDO_EXTENSION
 /* GLOBALS ********************************************************************/
 
 PDRIVER_OBJECT HalpDriverObject;
-PWCHAR HalHardwareIdString = L"acpipic_up";
+PWCHAR HalHardwareIdString = L"acpiapic_up";
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
