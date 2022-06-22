@@ -4,6 +4,7 @@
 @ stdcall HalAdjustResourceList(ptr)
 @ stdcall HalAllProcessorsStarted()
 @ stdcall HalAllocateAdapterChannel(ptr ptr long ptr)
+@ stdcall HalAllocateCommonBuffer(ptr long ptr long)
 @ stdcall HalAllocateCrashDumpRegisters(ptr ptr)
 @ stdcall HalAssignSlotResources(ptr ptr ptr ptr long long long ptr)
 @ stdcall HalBeginSystemInterrupt(long long ptr)
@@ -14,6 +15,8 @@
 @ stdcall HalEnableSystemInterrupt(long long long)
 @ stdcall HalEndSystemInterrupt(long long) #NT use nonstandard parameters calling
 @ stdcall RosHalEndSystemInterrupt(long long ptr) #ReactOS-specific HalEndSystemInterrupt()
+@ stdcall HalFlushCommonBuffer(long long long long long)
+@ stdcall HalFreeCommonBuffer(ptr long long long ptr long)
 @ stdcall HalGetAdapter(ptr ptr)
 @ stdcall HalGetBusData(long long long ptr long)
 @ stdcall HalGetBusDataByOffset(long long long ptr long long)
@@ -25,6 +28,7 @@
 @ stdcall HalMakeBeep(long)
 @ stdcall HalProcessorIdle()
 @ stdcall HalQueryRealTimeClock(ptr)
+@ stdcall HalReadDmaCounter(ptr)
 @ stdcall HalReportResourceUsage()
 @ stdcall HalRequestIpi(long)
 @ fastcall HalRequestSoftwareInterrupt(long)
@@ -41,6 +45,10 @@
 @ fastcall HalSystemVectorDispatchEntry(long long long)
 @ stdcall HalTranslateBusAddress(long long long long ptr ptr)
 @ stdcall IoAssignDriveLetters(ptr str ptr ptr) HalpAssignDriveLetters
+@ stdcall IoFlushAdapterBuffers(ptr ptr ptr ptr long long)
+@ stdcall IoFreeAdapterChannel(ptr)
+@ stdcall IoFreeMapRegisters(ptr ptr long)
+@ stdcall IoMapTransfer(ptr ptr ptr ptr ptr long)
 @ stdcall IoReadPartitionTable(ptr long long ptr) HalpReadPartitionTable
 @ stdcall IoSetPartitionInformation(ptr long long long) HalpSetPartitionInformation
 @ stdcall IoWritePartitionTable(ptr long long long ptr) HalpWritePartitionTable

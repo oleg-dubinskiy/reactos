@@ -496,6 +496,18 @@ HalAllocateCommonBuffer(
     return VirtualAddress;
 }
 
+BOOLEAN
+NTAPI
+HalFlushCommonBuffer(
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ ULONG Length,
+    _In_ PHYSICAL_ADDRESS LogicalAddress,
+    _In_ PVOID VirtualAddress)
+{
+    /* Function always returns true */
+    return TRUE;
+}
+
 VOID
 NTAPI
 HalFreeCommonBuffer(
