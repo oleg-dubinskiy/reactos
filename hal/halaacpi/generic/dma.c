@@ -678,14 +678,108 @@ Exit:
     return TRUE;
 }
 
+/* IoFreeAdapterChannel
+      Free DMA resources allocated by IoAllocateAdapterChannel.
+
+   AdapterObject
+      Adapter object with resources to free.
+
+   This function releases map registers registers assigned to the DMA adapter.
+   After releasing the adapter, it checks the adapter's queue
+   and runs each queued device object in series until the queue is empty.
+   This is the only way the device queue is emptied.
+  
+   see IoAllocateAdapterChannel
+*/
 VOID
 NTAPI
 IoFreeAdapterChannel(
     _In_ PDMA_ADAPTER DmaAdapter)
 {
-    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    PADAPTER_OBJECT MasterAdapter;
+    PKDEVICE_QUEUE_ENTRY DeviceQueueEntry;
+    PWAIT_CONTEXT_BLOCK WaitContextBlock;
+    ULONG Index = MAXULONG;
+    ULONG Result;
+    KIRQL OldIrql;
+
+    MasterAdapter = AdapterObject->MasterAdapter;
+
+    for (;;)
+    {
+        /* To keep map registers, call here with AdapterObject->NumberOfMapRegisters set to zero.
+           This trick is used in HalAllocateAdapterChannel for example.
+        */
+        if (AdapterObject->NumberOfMapRegisters)
+        {
+            IoFreeMapRegisters(DmaAdapter,
+                               AdapterObject->MapRegisterBase,
+                               AdapterObject->NumberOfMapRegisters);
+        }
+
+        DeviceQueueEntry = KeRemoveDeviceQueue(&AdapterObject->ChannelWaitQueue);
+        if (!DeviceQueueEntry)
+            break;
+
+        WaitContextBlock = CONTAINING_RECORD(DeviceQueueEntry, WAIT_CONTEXT_BLOCK, WaitQueueEntry);
+
+        AdapterObject->CurrentWcb = WaitContextBlock;
+        AdapterObject->NumberOfMapRegisters = WaitContextBlock->NumberOfMapRegisters;
+
+        if ((WaitContextBlock->NumberOfMapRegisters) && (AdapterObject->MasterAdapter))
+        {
+            KeAcquireSpinLock(&MasterAdapter->SpinLock, &OldIrql);
+
+            if (IsListEmpty(&MasterAdapter->AdapterQueue))
+            {
+                Index = RtlFindClearBitsAndSet(MasterAdapter->MapRegisters, WaitContextBlock->NumberOfMapRegisters, 0);
+                if (Index != MAXULONG)
+                {
+                    AdapterObject->MapRegisterBase = MasterAdapter->MapRegisterBase + Index;
+                    if (!AdapterObject->ScatterGather)
+                    {
+                        AdapterObject->MapRegisterBase =
+                        (PROS_MAP_REGISTER_ENTRY)((ULONG_PTR)AdapterObject->MapRegisterBase | MAP_BASE_SW_SG);
+                    }
+                }
+            }
+
+            if (Index == MAXULONG)
+            {
+                InsertTailList(&MasterAdapter->AdapterQueue, &AdapterObject->AdapterQueue);
+                KeReleaseSpinLock(&MasterAdapter->SpinLock, OldIrql);
+                break;
+            }
+
+            KeReleaseSpinLock(&MasterAdapter->SpinLock, OldIrql);
+        }
+        else
+        {
+            AdapterObject->MapRegisterBase = NULL;
+            AdapterObject->NumberOfMapRegisters = 0;
+        }
+
+        /* Call the adapter control routine. */
+        Result = ((PDRIVER_CONTROL)WaitContextBlock->DeviceRoutine)(WaitContextBlock->DeviceObject,
+                                                                    WaitContextBlock->CurrentIrp,
+                                                                    AdapterObject->MapRegisterBase,
+                                                                    WaitContextBlock->DeviceContext);
+        switch (Result)
+        {
+            case KeepObject:
+                /* We're done until the caller manually calls IoFreeAdapterChannel or IoFreeMapRegisters. */
+                return;
+
+            case DeallocateObjectKeepRegisters:
+                /* Hide the map registers so they aren't deallocated next time around. */
+                AdapterObject->NumberOfMapRegisters = 0;
+                break;
+
+            default:
+                break;
+        }
+    }
 }
 
 VOID
