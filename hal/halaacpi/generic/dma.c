@@ -1342,6 +1342,20 @@ HalGetScatterGatherList(
                                      HalpScatterGatherAdapterControl);
 }
 
+/* HalPutScatterGatherList
+      Frees a scatter-gather list allocated from HalGetScatterGatherList
+
+   AdapterObject
+      Adapter object representing the bus master or system dma controller.
+   ScatterGather
+      The scatter/gather list to be freed.
+   WriteToDevice
+      Indicates direction of DMA operation.
+
+   return None
+
+   see HalGetScatterGatherList
+*/
 VOID
 NTAPI
 HalPutScatterGatherList(
@@ -1349,9 +1363,31 @@ HalPutScatterGatherList(
     _In_ PSCATTER_GATHER_LIST ScatterGather,
     _In_ BOOLEAN WriteToDevice)
 {
-    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    PSCATTER_GATHER_CONTEXT AdapterControlContext;
+    ULONG ix;
+
+    AdapterControlContext = (PSCATTER_GATHER_CONTEXT)ScatterGather->Reserved;
+
+    for (ix = 0; ix < ScatterGather->NumberOfElements; ix++)
+    {
+         IoFlushAdapterBuffers(DmaAdapter,
+                               AdapterControlContext->Mdl,
+                               AdapterControlContext->MapRegisterBase,
+                               AdapterControlContext->CurrentVa,
+                               ScatterGather->Elements[ix].Length,
+                               AdapterControlContext->WriteToDevice);
+
+         AdapterControlContext->CurrentVa += ScatterGather->Elements[ix].Length;
+    }
+
+    IoFreeMapRegisters(DmaAdapter,
+                       AdapterControlContext->MapRegisterBase,
+                       AdapterControlContext->MapRegisterCount);
+
+    DPRINT("S/G DMA has finished!\n");
+
+    ExFreePoolWithTag(AdapterControlContext, TAG_DMA);
+    ExFreePoolWithTag(ScatterGather, TAG_DMA);
 }
 
 NTSTATUS
