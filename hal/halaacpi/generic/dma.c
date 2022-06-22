@@ -58,15 +58,156 @@ extern BOOLEAN LessThan16Mb;
 
 /* FUNCTIONS *****************************************************************/
 
+/* HalpGetAdapterMaximumPhysicalAddress
+      Get the maximum physical address acceptable by the device represented by the passed DMA adapter.
+*/
+PHYSICAL_ADDRESS
+NTAPI
+HalpGetAdapterMaximumPhysicalAddress(
+    _In_ PADAPTER_OBJECT AdapterObject)
+{
+    PHYSICAL_ADDRESS HighestAddress;
+
+    if (!AdapterObject->MasterDevice)
+    {
+        HighestAddress.QuadPart = 0xFFFFFF;
+    }
+    else if (AdapterObject->Dma64BitAddresses)
+    {
+        HighestAddress.QuadPart = 0xFFFFFFFFFFFFFFFFULL;
+    }
+    else if (AdapterObject->Dma32BitAddresses)
+    {
+        HighestAddress.QuadPart = 0xFFFFFFFF;
+    }
+
+    return HighestAddress;
+}
+
+/* HalpGrowMapBuffers
+      Allocate initial, or additional, map buffers for DMA master adapter.
+
+   MasterAdapter
+     DMA master adapter to allocate buffers for.
+   SizeOfMapBuffers
+     Size of the map buffers to allocate (not including the size already allocated).
+*/
 BOOLEAN
 NTAPI
 HalpGrowMapBuffers(
     _In_ PADAPTER_OBJECT AdapterObject,
     _In_ ULONG SizeOfMapBuffers)
 {
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return FALSE;
+    PROS_MAP_REGISTER_ENTRY CurrentEntry;
+    PROS_MAP_REGISTER_ENTRY PreviousEntry;
+    PHYSICAL_ADDRESS PhysicalAddress;
+    PHYSICAL_ADDRESS HighestAcceptableAddress;
+    PHYSICAL_ADDRESS LowestAcceptableAddress;
+    PHYSICAL_ADDRESS BoundryAddressMultiple;
+    PVOID VirtualAddress;
+    ULONG MapRegisterCount;
+    KIRQL OldIrql;
+
+    /* Check if enough map register slots are available. */
+    MapRegisterCount = BYTES_TO_PAGES(SizeOfMapBuffers);
+    if ((MapRegisterCount + AdapterObject->NumberOfMapRegisters) > MAX_MAP_REGISTERS)
+    {
+        DPRINT1("HalpGrowMapBuffers: No more map register slots available!\n");
+        DPRINT1("HalpGrowMapBuffers: Current %X, Requested %X, Limit %X\n",
+               AdapterObject->NumberOfMapRegisters, MapRegisterCount, MAX_MAP_REGISTERS);
+
+        return FALSE;
+    }
+
+    /* Allocate memory for the new map registers.
+       For 32-bit adapters we use two passes in order not to waste scare resource (low memory).
+    */
+    HighestAcceptableAddress = HalpGetAdapterMaximumPhysicalAddress(AdapterObject);
+
+    LowestAcceptableAddress.HighPart = 0;
+    LowestAcceptableAddress.LowPart = ((HighestAcceptableAddress.LowPart == 0xFFFFFFFF) ? 0x1000000 : 0);
+
+    BoundryAddressMultiple.QuadPart = 0;
+
+    VirtualAddress = 
+    MmAllocateContiguousMemorySpecifyCache((MapRegisterCount << PAGE_SHIFT),
+                                           LowestAcceptableAddress,
+                                           HighestAcceptableAddress,
+                                           BoundryAddressMultiple,
+                                           MmNonCached);
+
+    if (!VirtualAddress && LowestAcceptableAddress.LowPart)
+    {
+        LowestAcceptableAddress.LowPart = 0;
+
+        VirtualAddress =
+        MmAllocateContiguousMemorySpecifyCache((MapRegisterCount << PAGE_SHIFT),
+                                               LowestAcceptableAddress,
+                                               HighestAcceptableAddress,
+                                               BoundryAddressMultiple,
+                                               MmNonCached);
+    }
+
+    if (!VirtualAddress)
+    {
+        DPRINT1("HalpGrowMapBuffers: VirtualAddress is NULL!\n");
+        return FALSE;
+    }
+
+    PhysicalAddress = MmGetPhysicalAddress(VirtualAddress);
+
+    /* All the following must be done with the master adapter lock held to prevent corruption. */
+    KeAcquireSpinLock(&AdapterObject->SpinLock, &OldIrql);
+
+    /* Setup map register entries for the buffer allocated.
+       Each entry has a virtual and physical address and corresponds to PAGE_SIZE large buffer.
+    */
+    CurrentEntry = (AdapterObject->MapRegisterBase + AdapterObject->NumberOfMapRegisters);
+
+    for (; MapRegisterCount; MapRegisterCount--)
+    {
+        /* Leave one entry free for every non-contiguous memory region in the map register bitmap.
+           This ensures that we can search using RtlFindClearBits for contiguous map register regions.
+
+           Also for non-EISA DMA leave one free entry for every 64Kb break,
+           because the DMA controller can handle only coniguous 64Kb regions.
+        */
+        if (CurrentEntry != AdapterObject->MapRegisterBase)
+        {
+            PreviousEntry = (CurrentEntry - 1);
+
+            if ((PreviousEntry->PhysicalAddress.LowPart + PAGE_SIZE) == PhysicalAddress.LowPart)
+            {
+                if (!HalpEisaDma)
+                {
+                    if ((PreviousEntry->PhysicalAddress.LowPart ^ PhysicalAddress.LowPart) & 0xFFFF0000)
+                    {
+                        CurrentEntry++;
+                        AdapterObject->NumberOfMapRegisters++;
+                    }
+                }
+            }
+            else
+            {
+                CurrentEntry++;
+                AdapterObject->NumberOfMapRegisters++;
+            }
+        }
+
+        RtlClearBit(AdapterObject->MapRegisters, (ULONG)(CurrentEntry - AdapterObject->MapRegisterBase));
+
+        CurrentEntry->VirtualAddress = VirtualAddress;
+        CurrentEntry->PhysicalAddress = PhysicalAddress;
+
+        PhysicalAddress.LowPart += PAGE_SIZE;
+        VirtualAddress = (PVOID)((ULONG_PTR)VirtualAddress + PAGE_SIZE);
+
+        CurrentEntry++;
+        AdapterObject->NumberOfMapRegisters++;
+    }
+
+    KeReleaseSpinLock(&AdapterObject->SpinLock, OldIrql);
+    return TRUE;
 }
 
 /* HaliGetDmaAdapter
@@ -312,32 +453,6 @@ HalPutDmaAdapter(
     //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
     UNIMPLEMENTED;
     ASSERT(FALSE); // HalpDbgBreakPointEx();
-}
-
-/* HalpGetAdapterMaximumPhysicalAddress
-      Get the maximum physical address acceptable by the device represented by the passed DMA adapter.
-*/
-PHYSICAL_ADDRESS
-NTAPI
-HalpGetAdapterMaximumPhysicalAddress(
-    _In_ PADAPTER_OBJECT AdapterObject)
-{
-    PHYSICAL_ADDRESS HighestAddress;
-
-    if (!AdapterObject->MasterDevice)
-    {
-        HighestAddress.QuadPart = 0xFFFFFF;
-    }
-    else if (AdapterObject->Dma64BitAddresses)
-    {
-        HighestAddress.QuadPart = 0xFFFFFFFFFFFFFFFFULL;
-    }
-    else if (AdapterObject->Dma32BitAddresses)
-    {
-        HighestAddress.QuadPart = 0xFFFFFFFF;
-    }
-
-    return HighestAddress;
 }
 
 PVOID
