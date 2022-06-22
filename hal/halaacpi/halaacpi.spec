@@ -1,6 +1,7 @@
 @ fastcall ExAcquireFastMutex(ptr) ntoskrnl.ExiAcquireFastMutex
 @ fastcall ExReleaseFastMutex(ptr) ntoskrnl.ExiReleaseFastMutex
 @ fastcall ExTryToAcquireFastMutex(ptr) ntoskrnl.ExiTryToAcquireFastMutex
+@ stdcall HalAcquireDisplayOwnership(ptr)
 @ stdcall HalAdjustResourceList(ptr)
 @ stdcall HalAllProcessorsStarted()
 @ stdcall HalAllocateAdapterChannel(ptr ptr long ptr)
@@ -27,6 +28,7 @@
 @ stdcall HalInitializeProcessor(long ptr)
 @ stdcall HalMakeBeep(long)
 @ stdcall HalProcessorIdle()
+@ stdcall HalQueryDisplayParameters(ptr ptr ptr ptr)
 @ stdcall HalQueryRealTimeClock(ptr)
 @ stdcall HalReadDmaCounter(ptr)
 @ stdcall HalReportResourceUsage()
@@ -35,6 +37,7 @@
 @ stdcall HalReturnToFirmware(long)
 @ stdcall HalSetBusData(long long long ptr long)
 @ stdcall HalSetBusDataByOffset(long long long ptr long long)
+@ stdcall HalSetDisplayParameters(long long)
 @ stdcall HalSetEnvironmentVariable(str str)
 @ stdcall HalSetProfileInterval(long)
 @ stdcall HalSetRealTimeClock(ptr)
