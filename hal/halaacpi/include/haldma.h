@@ -1,6 +1,11 @@
 
 #pragma once
 
+#define MAX_MAP_REGISTERS  64
+#define MAP_BASE_SW_SG     1
+#define MAX_SG_ELEMENTS    0x20 // old value - 0x10  // ??? NT not used it. 
+#define TAG_DMA            ' AMD'
+
 /* DMA Page Register Structure
    080     DMA        RESERVED
    081     DMA        Page Register (channel 2)
@@ -325,6 +330,13 @@ typedef struct _ADAPTER_OBJECT
    BOOLEAN Dma64BitAddresses;
    LIST_ENTRY AdapterList;
 } ADAPTER_OBJECT;
+
+typedef struct _GROW_WORK_ITEM
+{
+   WORK_QUEUE_ITEM WorkQueueItem;
+   PADAPTER_OBJECT AdapterObject;
+   ULONG NumberOfMapRegisters;
+} GROW_WORK_ITEM, *PGROW_WORK_ITEM;
 
 typedef struct _HALP_DMA_MASTER_ADAPTER
 {
