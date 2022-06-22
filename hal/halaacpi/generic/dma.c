@@ -782,6 +782,18 @@ IoFreeAdapterChannel(
     }
 }
 
+/* IoFreeMapRegisters
+      Free map registers reserved by the system for a DMA.
+ 
+   AdapterObject
+     DMA adapter to free map registers on.
+
+   MapRegisterBase
+     Handle to map registers to free.
+
+   NumberOfRegisters
+     Number of map registers to be freed.
+*/
 VOID
 NTAPI
 IoFreeMapRegisters(
@@ -789,9 +801,98 @@ IoFreeMapRegisters(
     _In_ PVOID MapRegisterBase,
     _In_ ULONG NumberOfMapRegisters)
 {
-    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
-    UNIMPLEMENTED;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
+    PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    PADAPTER_OBJECT MasterAdapter = AdapterObject->MasterAdapter;
+    PLIST_ENTRY ListEntry;
+    KIRQL OldIrql;
+    ULONG Index;
+    ULONG Result;
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+
+    if (!MasterAdapter)
+    {
+        DPRINT1("IoFreeMapRegisters: MasterAdapter is NULL\n");
+        return;
+    }
+
+    if (!MapRegisterBase)
+    {
+        DPRINT1("IoFreeMapRegisters: MapRegisterBase is NULL\n");
+        return;
+    }
+
+    KeAcquireSpinLock(&MasterAdapter->SpinLock, &OldIrql);
+
+    if (NumberOfMapRegisters != 0)
+    {
+        PROS_MAP_REGISTER_ENTRY RealMapRegisterBase;
+
+        RealMapRegisterBase = (PROS_MAP_REGISTER_ENTRY)((ULONG_PTR)MapRegisterBase & ~MAP_BASE_SW_SG);
+
+        RtlClearBits(MasterAdapter->MapRegisters,
+                     (ULONG)(RealMapRegisterBase - MasterAdapter->MapRegisterBase),
+                     NumberOfMapRegisters);
+    }
+
+    /* Now that we freed few map registers it's time to look at the master
+       adapter queue and see if there is someone waiting for map registers.
+    */
+    while (!IsListEmpty(&MasterAdapter->AdapterQueue))
+    {
+        ListEntry = RemoveHeadList(&MasterAdapter->AdapterQueue);
+        AdapterObject = CONTAINING_RECORD(ListEntry, struct _ADAPTER_OBJECT, AdapterQueue);
+
+        Index = RtlFindClearBitsAndSet(MasterAdapter->MapRegisters, AdapterObject->NumberOfMapRegisters, 0);
+        if (Index == MAXULONG)
+        {
+            InsertHeadList(&MasterAdapter->AdapterQueue, ListEntry);
+            break;
+        }
+
+        KeReleaseSpinLock(&MasterAdapter->SpinLock, OldIrql);
+
+        AdapterObject->MapRegisterBase = MasterAdapter->MapRegisterBase + Index;
+
+        if (!AdapterObject->ScatterGather)
+        {
+            AdapterObject->MapRegisterBase =
+            (PROS_MAP_REGISTER_ENTRY)((ULONG_PTR)AdapterObject->MapRegisterBase | MAP_BASE_SW_SG);
+        }
+
+        Result = ((PDRIVER_CONTROL)AdapterObject->CurrentWcb->DeviceRoutine)(AdapterObject->CurrentWcb->DeviceObject,
+                                                                             AdapterObject->CurrentWcb->CurrentIrp,
+                                                                             AdapterObject->MapRegisterBase,
+                                                                             AdapterObject->CurrentWcb->DeviceContext);
+        switch (Result)
+        {
+            case DeallocateObjectKeepRegisters:
+                AdapterObject->NumberOfMapRegisters = 0;
+                /* fall through */
+
+            case DeallocateObject:
+                if (AdapterObject->NumberOfMapRegisters)
+                {
+                    KeAcquireSpinLock(&MasterAdapter->SpinLock, &OldIrql);
+
+                    RtlClearBits(MasterAdapter->MapRegisters,
+                                 (ULONG)(AdapterObject->MapRegisterBase - MasterAdapter->MapRegisterBase),
+                                 AdapterObject->NumberOfMapRegisters);
+
+                    KeReleaseSpinLock(&MasterAdapter->SpinLock, OldIrql);
+                }
+
+                IoFreeAdapterChannel(DmaAdapter);
+                break;
+
+            default:
+                break;
+        }
+
+        KeAcquireSpinLock(&MasterAdapter->SpinLock, &OldIrql);
+    }
+
+    KeReleaseSpinLock(&MasterAdapter->SpinLock, OldIrql);
 }
 
 PHYSICAL_ADDRESS
