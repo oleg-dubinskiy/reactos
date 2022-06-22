@@ -349,6 +349,19 @@ typedef struct _HALP_DMA_MASTER_ADAPTER
     ULONG Unknown3;
 } HALP_DMA_MASTER_ADAPTER, *PHALP_DMA_MASTER_ADAPTER;
 
+typedef struct _SCATTER_GATHER_CONTEXT
+{
+    PADAPTER_OBJECT AdapterObject;
+    PMDL Mdl;
+    PUCHAR CurrentVa;
+    ULONG Length;
+    PDRIVER_LIST_CONTROL AdapterListControlRoutine;
+    PVOID AdapterListControlContext, MapRegisterBase;
+    ULONG MapRegisterCount;
+    BOOLEAN WriteToDevice;
+    WAIT_CONTEXT_BLOCK Wcb;
+} SCATTER_GATHER_CONTEXT, *PSCATTER_GATHER_CONTEXT;
+
 ULONG
 NTAPI
 HalpDmaGetDmaAlignment(
