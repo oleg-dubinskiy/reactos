@@ -2,7 +2,7 @@
 /* INCLUDES ******************************************************************/
 
 #include <hal.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 #if defined(ALLOC_PRAGMA) && !defined(_MINIHAL_)
@@ -812,7 +812,7 @@ IoFreeMapRegisters(
 
     if (!MasterAdapter)
     {
-        DPRINT1("IoFreeMapRegisters: MasterAdapter is NULL\n");
+        DPRINT("IoFreeMapRegisters: MasterAdapter is NULL\n");
         return;
     }
 
