@@ -895,21 +895,296 @@ IoFreeMapRegisters(
     KeReleaseSpinLock(&MasterAdapter->SpinLock, OldIrql);
 }
 
+/* IoMapTransfer
+      Map a DMA for transfer and do the DMA if it's a slave.
+
+   AdapterObject
+      Adapter object to do the DMA on. Bus-master may pass NULL.
+
+   Mdl
+      Locked-down user buffer to DMA in to or out of.
+
+   MapRegisterBase
+      Handle to map registers to use for this dma.
+
+   CurrentVa
+      Index into Mdl to transfer into/out of.
+
+   Length
+      Length of transfer. Number of bytes actually transferred on output.
+
+   WriteToDevice
+      TRUE if it's an output DMA, FALSE otherwise.
+
+   return: A logical address that can be used to program a DMA controller,
+           it's not meaningful for slave DMA device.
+
+   This function does a copyover to contiguous memory <16MB represented by the map registers if needed.
+   If the buffer described by MDL can be used as is no copyover is done.
+   If it's a slave transfer, this function actually performs it.
+*/
 PHYSICAL_ADDRESS
 NTAPI
 IoMapTransfer(
-_In_ PDMA_ADAPTER DmaAdapter,
-_In_ PMDL Mdl,
-_In_ PVOID MapRegisterBase,
-_In_ PVOID CurrentVa,
-_Inout_ PULONG Length,
-_In_ BOOLEAN WriteToDevice)
+    _In_ PDMA_ADAPTER DmaAdapter,
+    _In_ PMDL Mdl,
+    _In_ PVOID MapRegisterBase,
+    _In_ PVOID CurrentVa,
+    _Inout_ PULONG Length,
+    _In_ BOOLEAN WriteToDevice)
 {
-    //PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
-    PHYSICAL_ADDRESS HighestAddress;
-    UNIMPLEMENTED;HighestAddress.QuadPart = 0;
-    ASSERT(FALSE); // HalpDbgBreakPointEx();
-    return HighestAddress;
+    PADAPTER_OBJECT AdapterObject = (PADAPTER_OBJECT)DmaAdapter;
+    PROS_MAP_REGISTER_ENTRY RealMapRegisterBase;
+    PHYSICAL_ADDRESS HighestAcceptableAddress;
+    PHYSICAL_ADDRESS PhysicalAddress;
+    PDMA1_CONTROL DmaControl1;
+    PDMA2_CONTROL DmaControl2;
+    PPFN_NUMBER MdlPagesPtr;
+    PFN_NUMBER MdlPage1;
+    PFN_NUMBER MdlPage2;
+    DMA_MODE AdapterMode;
+    ULONG ByteOffset;
+    ULONG TransferOffset;
+    ULONG TransferLength;
+    ULONG Counter;
+    BOOLEAN UseMapRegisters;
+    KIRQL OldIrql;
+    PUCHAR Port;
+
+    /* Precalculate some values that are used in all cases.
+
+       ByteOffset is offset inside the page at which the transfer starts.
+       MdlPagesPtr is pointer inside the MDL page chain at the page where the transfer start.
+       PhysicalAddress is physical address corresponding to the transfer start page and offset.
+       TransferLength is the initial length of the transfer, which is reminder of the first page.
+          The actual value is calculated below.
+
+       Note that all the variables can change during the processing which takes place below.
+       These are just initial values.
+    */
+    ByteOffset = BYTE_OFFSET(CurrentVa);
+
+    MdlPagesPtr = MmGetMdlPfnArray(Mdl);
+    MdlPagesPtr += (((ULONG_PTR)CurrentVa - (ULONG_PTR)Mdl->StartVa) >> PAGE_SHIFT);
+
+    PhysicalAddress.QuadPart = (*MdlPagesPtr << PAGE_SHIFT);
+    PhysicalAddress.QuadPart += ByteOffset;
+
+    TransferLength = PAGE_SIZE - ByteOffset;
+
+    /* Special case for bus master adapters with S/G support.
+       We can directly use the buffer specified by the MDL, so not much work has to be done.
+     *
+       Just return the passed VA's corresponding physical address
+       and update length to the number of physically contiguous bytes found.
+       Also pages crossing the 4Gb boundary aren't considered physically contiguous.
+    */
+    if (MapRegisterBase == NULL)
+    {
+        for (; TransferLength < *Length; TransferLength += PAGE_SIZE)
+        {
+            MdlPage1 = *MdlPagesPtr;
+            MdlPage2 = *(MdlPagesPtr + 1);
+
+            if (MdlPage1 + 1 != MdlPage2)
+                break;
+
+            if ((MdlPage1 ^ MdlPage2) & ~0xFFFFF)
+                break;
+
+            MdlPagesPtr++;
+        }
+
+        if (TransferLength < *Length)
+            *Length = TransferLength;
+
+        return PhysicalAddress;
+    }
+
+    /* The code below applies to slave DMA adapters and bus master adapters without hardward S/G support. */
+    RealMapRegisterBase = (PROS_MAP_REGISTER_ENTRY)((ULONG_PTR)MapRegisterBase & ~MAP_BASE_SW_SG);
+
+    /* Try to calculate the size of the transfer.
+       We can only transfer pages that are physically contiguous and that don't cross
+       the 64Kb boundary (this limitation applies only for ISA controllers).
+    */
+    for (; TransferLength < *Length; TransferLength += PAGE_SIZE)
+    {
+        MdlPage1 = *MdlPagesPtr;
+        MdlPage2 = *(MdlPagesPtr + 1);
+
+        if (MdlPage1 + 1 != MdlPage2)
+            break;
+
+        if (!HalpEisaDma && ((MdlPage1 ^ MdlPage2) & ~0xF))
+            break;
+
+        MdlPagesPtr++;
+    }
+
+    if (TransferLength > *Length)
+        TransferLength = *Length;
+
+    /* If we're about to simulate software S/G and not all the pages are
+       physically contiguous then we must use the map registers to store
+       the data and allow the whole transfer to proceed at once.
+    */
+    if (((ULONG_PTR)MapRegisterBase & MAP_BASE_SW_SG) && (TransferLength < *Length))
+    {
+        UseMapRegisters = TRUE;
+
+        PhysicalAddress = RealMapRegisterBase->PhysicalAddress;
+        PhysicalAddress.QuadPart += ByteOffset;
+
+        TransferLength = *Length;
+        RealMapRegisterBase->Counter = MAXULONG;
+
+        Counter = 0;
+    }
+    else
+    {
+        /* This is ordinary DMA transfer, so just update the progress counters.
+           These are used by IoFlushAdapterBuffers to track the transfer progress.
+        */
+        UseMapRegisters = FALSE;
+        Counter = RealMapRegisterBase->Counter;
+        RealMapRegisterBase->Counter += (BYTES_TO_PAGES(ByteOffset + TransferLength));
+
+        /* Check if the buffer doesn't exceed the highest physical address limit of the device.
+           In that case we must use the map registers to store the data.
+        */
+        HighestAcceptableAddress = HalpGetAdapterMaximumPhysicalAddress(AdapterObject);
+
+        if ((PhysicalAddress.QuadPart + TransferLength) > HighestAcceptableAddress.QuadPart)
+        {
+            UseMapRegisters = TRUE;
+
+            PhysicalAddress = RealMapRegisterBase[Counter].PhysicalAddress;
+            PhysicalAddress.QuadPart += ByteOffset;
+
+            if ((ULONG_PTR)MapRegisterBase & MAP_BASE_SW_SG)
+            {
+                RealMapRegisterBase->Counter = MAXULONG;
+                Counter = 0;
+            }
+        }
+    }
+
+    /* If we decided to use the map registers (see above) and we're about
+       to transfer data to the device then copy the buffers into the map register memory.
+    */
+    if (UseMapRegisters && WriteToDevice)
+    {
+        HalpCopyBufferMap(Mdl,
+                          (RealMapRegisterBase + Counter),
+                          CurrentVa,
+                          TransferLength,
+                          WriteToDevice);
+    }
+
+    /* Return the length of transfer that actually takes place. */
+    *Length = TransferLength;
+
+    /* If we're doing slave (system) DMA then program the (E)ISA controller to actually start the transfer. */
+    if (!AdapterObject || AdapterObject->MasterDevice)
+        goto Exit;
+
+    AdapterMode = AdapterObject->AdapterMode;
+
+    if (WriteToDevice)
+    {
+        AdapterMode.TransferType = WRITE_TRANSFER;
+    }
+    else
+    {
+        AdapterMode.TransferType = READ_TRANSFER;
+
+        if (AdapterObject->IgnoreCount)
+            RtlZeroMemory((PUCHAR)RealMapRegisterBase[Counter].VirtualAddress + ByteOffset, TransferLength);
+    }
+
+    TransferOffset = (PhysicalAddress.LowPart & 0xFFFF);
+
+    if (AdapterObject->Width16Bits)
+    {
+        TransferLength >>= 1;
+        TransferOffset >>= 1;
+    }
+
+    KeAcquireSpinLock(&AdapterObject->MasterAdapter->SpinLock, &OldIrql);
+
+    if (AdapterObject->AdapterNumber == 1)
+    {
+        DmaControl1 = AdapterObject->AdapterBaseVa;
+
+        /* Reset Register */
+        WRITE_PORT_UCHAR(&DmaControl1->ClearBytePointer, 0);
+
+        /* Set the Mode */
+        WRITE_PORT_UCHAR(&DmaControl1->Mode, AdapterMode.Byte);
+
+        /* Set the Offset Register */
+        Port = &DmaControl1->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseAddress;
+        WRITE_PORT_UCHAR(Port, (UCHAR)(TransferOffset));
+        WRITE_PORT_UCHAR(Port, (UCHAR)(TransferOffset >> 8));
+
+        /* Set the Page Register */
+        Port = AdapterObject->PagePort + FIELD_OFFSET(EISA_CONTROL, DmaController1Pages);
+        WRITE_PORT_UCHAR(Port, (UCHAR)(PhysicalAddress.LowPart >> 16));
+
+        if (HalpEisaDma)
+            WRITE_PORT_UCHAR((AdapterObject->PagePort + FIELD_OFFSET(EISA_CONTROL, DmaController2Pages)), 0);
+
+        /* Set the Length */
+        Port = &DmaControl1->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseCount;
+        WRITE_PORT_UCHAR(Port, (UCHAR)(TransferLength - 1));
+        WRITE_PORT_UCHAR(Port, (UCHAR)((TransferLength - 1) >> 8));
+
+        /* Unmask the Channel */
+        WRITE_PORT_UCHAR(&DmaControl1->SingleMask, AdapterObject->ChannelNumber | DMA_CLEARMASK);
+
+        KeReleaseSpinLock(&AdapterObject->MasterAdapter->SpinLock, OldIrql);
+
+        goto Exit;
+    }
+
+    DmaControl2 = AdapterObject->AdapterBaseVa;
+
+    /* Reset Register */
+    WRITE_PORT_UCHAR(&DmaControl2->ClearBytePointer, 0);
+
+    /* Set the Mode */
+    WRITE_PORT_UCHAR(&DmaControl2->Mode, AdapterMode.Byte);
+
+    /* Set the Offset Register */
+    Port = &DmaControl2->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseAddress;
+    WRITE_PORT_UCHAR(Port, (UCHAR)(TransferOffset));
+    WRITE_PORT_UCHAR(Port, (UCHAR)(TransferOffset >> 8));
+
+    /* Set the Page Register */
+    Port = (AdapterObject->PagePort + FIELD_OFFSET(EISA_CONTROL, DmaController1Pages));
+    WRITE_PORT_UCHAR(Port, (UCHAR)(PhysicalAddress.u.LowPart >> 16));
+
+    if (HalpEisaDma)
+        WRITE_PORT_UCHAR(AdapterObject->PagePort + FIELD_OFFSET(EISA_CONTROL, DmaController2Pages), 0);
+
+    /* Set the Length */
+    Port = &DmaControl2->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseCount;
+    WRITE_PORT_UCHAR(Port, (UCHAR)(TransferLength - 1));
+    WRITE_PORT_UCHAR(Port, (UCHAR)((TransferLength - 1) >> 8));
+
+    /* Unmask the Channel */
+    WRITE_PORT_UCHAR(&DmaControl2->SingleMask, AdapterObject->ChannelNumber | DMA_CLEARMASK);
+
+    KeReleaseSpinLock(&AdapterObject->MasterAdapter->SpinLock, OldIrql);
+
+Exit:
+
+    /* Return physical address of the buffer with data that is used for the transfer.
+       It can either point inside the Mdl that was passed by the caller
+       or into the map registers if the Mdl buffer can't be used  directly.
+    */
+    return PhysicalAddress;
 }
 
 ULONG
