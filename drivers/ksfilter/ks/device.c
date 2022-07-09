@@ -202,7 +202,7 @@ IKsDevice_fnArbitrateAdapterChannel(
     ASSERT(This->AdapterObject);
 
     /* allocate adapter channel */
-    Status = IoAllocateAdapterChannel(This->AdapterObject, This->KsDevice.FunctionalDeviceObject, NumberOfMapRegisters, ExecutionRoutine, Context);
+    Status = IoAllocateAdapterChannel((PDMA_ADAPTER)This->AdapterObject, This->KsDevice.FunctionalDeviceObject, NumberOfMapRegisters, ExecutionRoutine, Context);
 
     /* done */
     return Status;
