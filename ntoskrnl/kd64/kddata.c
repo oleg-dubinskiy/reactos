@@ -11,7 +11,13 @@
 #include <ntoskrnl.h>
 #define NDEBUG
 #include <debug.h>
-#include <mm/ARM3/miarm.h>
+
+#ifdef MM_NEW
+  #include <mm_new/ARM3/miarm.h>
+#else
+  #include <mm/ARM3/miarm.h>
+#endif
+
 #undef MmSystemRangeStart
 
 VOID NTAPI RtlpBreakWithStatusInstruction(VOID);
@@ -58,6 +64,57 @@ VOID NTAPI RtlpBreakWithStatusInstruction(VOID);
 #endif
 
 /* GLOBALS *******************************************************************/
+
+#ifdef MM_NEW
+  extern PFN_NUMBER MmLowestPhysicalPage;
+  extern PFN_NUMBER MmHighestPhysicalPage;
+  extern PPOOL_DESCRIPTOR ExpPagedPoolDescriptor[16 + 1];
+  extern POOL_DESCRIPTOR NonPagedPoolDescriptor;
+  extern PPOOL_TRACKER_TABLE PoolTrackTable;
+  extern ULONG ExpNumberOfPagedPools;
+  extern PVOID MmSystemCacheStart;
+  extern PVOID MmSystemCacheEnd;
+  extern SIZE_T MmMaximumNonPagedPoolInBytes;
+  extern PVOID MmNonPagedSystemStart;
+  extern PVOID MmNonPagedPoolStart;
+  extern PVOID MmNonPagedPoolEnd;
+  extern SIZE_T MmSizeOfPagedPoolInBytes;
+  extern PVOID MmPagedPoolStart;
+  extern PVOID MmPagedPoolEnd;
+  extern PVOID MmSessionBase;
+  extern SIZE_T MmSessionSize;
+  extern PPHYSICAL_MEMORY_DESCRIPTOR MmPhysicalMemoryBlock;
+  extern PMMPTE MmSystemPtesStart[MaximumPtePoolTypes];
+  extern PMMPTE MmSystemPtesEnd[MaximumPtePoolTypes];
+  extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
+  extern SIZE_T MmAllocatedNonPagedPool;
+  extern ULONG MmSpecialPoolTag;
+  extern ULONG_PTR MmSubsectionBase;
+  extern PFN_NUMBER MmResidentAvailablePages;
+  extern MMSUPPORT MmSystemCacheWs;
+  extern PMMPFN MmPfnDatabase;
+  extern PFN_NUMBER MmAvailablePages;
+  extern LIST_ENTRY MmLoadedUserImageList;
+  extern ULONG MmNumberOfPagingFiles;
+  extern PVOID MmUnloadedDrivers;
+  extern PVOID MmLastUnloadedDrivers;
+  extern PVOID MmTriageActionTaken;
+  extern PVOID KernelVerifier;
+  extern MM_DRIVER_VERIFIER_DATA MmVerifierData;
+  extern SIZE_T MmTotalCommitLimit;
+  extern SIZE_T MmTotalCommittedPages;
+  extern SIZE_T MmSharedCommit;
+  extern SIZE_T MmDriverCommit;
+  extern SIZE_T MmProcessCommit;
+  extern SIZE_T MmPagedPoolCommit;
+  extern SIZE_T MmPeakCommitment;
+  extern SIZE_T MmtotalCommitLimitMaximum;
+  extern MMPFNLIST MmZeroedPageListHead;
+  extern MMPFNLIST MmFreePageListHead;
+  extern MMPFNLIST MmStandbyPageListHead;
+  extern MMPFNLIST MmModifiedPageListHead;
+  extern MMPFNLIST MmModifiedNoWritePageListHead;
+#endif
 
 //
 // Debugger State

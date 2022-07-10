@@ -14,7 +14,11 @@
 //#define NDEBUG
 #include <debug.h>
 
-#include "../mm/ARM3/miarm.h"
+#ifdef MM_NEW
+  #include "../mm_new/ARM3/miarm.h"
+#else
+  #include "../mm/ARM3/miarm.h"
+#endif
 
 /* GLOBALS ********************************************************************/
 

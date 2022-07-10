@@ -3,6 +3,8 @@ add_definitions(
     -D_NTHALDLL_
     -D_NTHAL_)
 
+add_definitions(-DMM_NEW)
+
 include_directories(include ${REACTOS_SOURCE_DIR}/ntoskrnl/include)
 
 # Handle the spec file for the dll name

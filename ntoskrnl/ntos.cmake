@@ -15,11 +15,32 @@ add_definitions(
     -D_IN_KERNEL_
     -DNTDDI_VERSION=0x05020400)
 
+set(MM_NEW TRUE)
+add_definitions(-DMM_NEW)
+
 if(NOT DEFINED NEWCC)
     set(NEWCC FALSE)
 endif()
 
-if(NEWCC)
+if(NOT DEFINED MM_NEW)
+    set(MM_NEW FALSE)
+    set(CACHE_NEW FALSE)
+else()
+    set(CACHE_NEW TRUE)
+    add_definitions(-DCACHE_NEW)
+endif()
+
+if(CACHE_NEW)
+    list(APPEND SOURCE
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache_new/cachesub.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache_new/copysup.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache_new/fssup.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache_new/lazyrite.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache_new/logsup.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache_new/mdlsup.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache_new/pinsup.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache_new/vacbsup.c)
+elseif(NEWCC)
     add_definitions(-DNEWCC)
     list(APPEND SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/cachesub.c
@@ -41,13 +62,19 @@ else()
 endif()
 
 list(APPEND SOURCE
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/include/ntoskrnl.h
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/include/ntoskrnl.h)
+
+if(NOT MM_NEW)
+  list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/io.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/data.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/fault.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/reqtools.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/sptab.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/swapout.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/swapout.c)
+endif()
+
+list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmalloc.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmapi.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
@@ -200,7 +227,9 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/listen.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/port.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/send.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/send.c)
+if(NOT MM_NEW)
+  list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/contmem.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/drvmgmt.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/dynamic.c
@@ -235,7 +264,42 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/region.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/rmap.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/section.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/shutdown.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/shutdown.c)
+else()
+  list(APPEND SOURCE
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/contmem.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/drvmgmt.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/dynamic.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/expool.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/hypermap.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/iosup.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/kdbg.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/largepag.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/mdlsup.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/mmdbg.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/mminit.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/mmsup.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/ncache.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/pagfault.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/pfnlist.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/pool.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/procsup.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/section.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/session.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/special.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/sysldr.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/syspte.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/vadnode.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/virtual.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/zeropage.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/balance.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/freelist.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/mminit.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/pagefile.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/shutdown.c)
+endif()
+
+list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/devicemap.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obdir.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obhandle.c
@@ -307,9 +371,17 @@ if(ARCH STREQUAL "i386")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/thrdini.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/traphdlr.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/usercall.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/v86vdm.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/i386/init.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/v86vdm.c)
+    if(NOT MM_NEW)
+        list(APPEND SOURCE
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/i386/init.c)
+    else()
+        list(APPEND SOURCE
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/i386/page.c
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/i386/init.c)
+    endif()
+    list(APPEND SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/i386/psctx.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/i386/psldt.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/vdm/vdmmain.c
@@ -330,9 +402,17 @@ elseif(ARCH STREQUAL "amd64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/krnlinit.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/spinlock.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/stubs.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/thrdini.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/init.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/page.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/thrdini.c)
+    if(NOT MM_NEW)
+        list(APPEND SOURCE
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/init.c
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/page.c)
+#    else()
+#        list(APPEND SOURCE
+#            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/amd64/init.c
+#            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/amd64/page.c)
+    endif()
+    list(APPEND SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/amd64/psctx.c)
 elseif(ARCH STREQUAL "arm")
     list(APPEND ASM_SOURCE
@@ -350,9 +430,17 @@ elseif(ARCH STREQUAL "arm")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/kiinit.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/thrdini.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trapc.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/usercall.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm/page.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/usercall.c)
+    if(NOT MM_NEW)
+        list(APPEND SOURCE
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm/page.c
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c)
+#    else()
+#        list(APPEND SOURCE
+#            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/arm/page.c
+#            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/arm/init.c)
+    endif()
+    list(APPEND SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm/psctx.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/arm/rtlexcpt.c)
 elseif(ARCH STREQUAL "powerpc")
@@ -369,8 +457,16 @@ elseif(ARCH STREQUAL "powerpc")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/powerpc/systimer.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/powerpc/thrdini.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/powerpc/ctxswitch.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/powerpc/pfault.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/powerpc/page.c)
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/powerpc/ctxswitch.c)
+    if(NOT MM_CC_NEW)
+        list(APPEND SOURCE
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/powerpc/pfault.c
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/powerpc/page.c)
+#    else()
+#        list(APPEND SOURCE
+#            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/powerpc/pfault.c
+#            ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/powerpc/page.c)
+    endif()
 endif()
 
 if(NOT _WINKD_)

@@ -20,15 +20,19 @@
 #pragma once
 
 #ifdef _M_IX86
-#include <internal/i386/mm.h>
+  #ifdef MM_NEW
+    #include <internal/i386/mm_new.h>
+  #else
+    #include <internal/i386/mm.h>
+  #endif
 #elif defined(_M_PPC)
-#include <internal/powerpc/mm.h>
+  #include <internal/powerpc/mm.h>
 #elif defined(_M_MIPS)
-#include <internal/mips/mm.h>
+  #include <internal/mips/mm.h>
 #elif defined(_M_ARM)
-#include <internal/arm/mm.h>
+  #include <internal/arm/mm.h>
 #elif defined(_M_AMD64)
-#include <internal/amd64/mm.h>
+  #include <internal/amd64/mm.h>
 #else
-#error "Unknown processor"
+  #error "Unknown processor"
 #endif

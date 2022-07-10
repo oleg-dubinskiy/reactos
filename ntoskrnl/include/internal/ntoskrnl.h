@@ -3,7 +3,6 @@
 #include <section_attribs.h>
 
 
-
 #ifdef _NTOSKRNL_
 
 #ifndef _ARM_
@@ -52,24 +51,29 @@
 #include "tag.h"
 #include "ke.h"
 #include "ob.h"
-#include "mm.h"
+#ifdef MM_NEW
+  #include "mm_new.h"
+  #include "cc_new.h"
+#else
+  #include "mm.h"
+  #include "cc.h"
+#endif
 #include "ex.h"
 #include "cm.h"
 #include "ps.h"
-#include "cc.h"
 #include "io.h"
 #include "po.h"
 #include "se.h"
 #include "ldr.h"
 #ifndef _WINKD_
-#include "kd.h"
+  #include "kd.h"
 #endif
 #include "kd64.h"
 #include "fsrtl.h"
 #include "lpc.h"
 #include "rtl.h"
 #ifdef KDBG
-#include <kdbg/kdb.h>
+  #include <kdbg/kdb.h>
 #endif
 #include "dbgk.h"
 #include "spinlock.h"

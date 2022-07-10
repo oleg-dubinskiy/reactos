@@ -23,8 +23,22 @@
 #define SIG_FIRM 0x4649524D
 #define SIG_RSMB 0x52534D42
 
+/* GLOBALS *******************************************************************/
+
 extern LIST_ENTRY HandleTableListHead;
 extern EX_PUSH_LOCK HandleTableListLock;
+
+#ifdef MM_NEW
+extern MM_MEMORY_CONSUMER MiMemoryConsumers[MC_MAXIMUM];
+extern PFN_NUMBER MmLowestPhysicalPage;
+extern PFN_NUMBER MmHighestPhysicalPage;
+extern PFN_NUMBER MmAvailablePages;
+extern PFN_COUNT MiUsedSwapPages;
+extern PFN_COUNT MiFreeSwapPages;
+extern LIST_ENTRY MmLoadedUserImageList;
+#endif
+
+/* PRIVATE FUNCTIONS *********************************************************/
 
 FAST_MUTEX ExpEnvironmentLock;
 ERESOURCE ExpFirmwareTableResource;

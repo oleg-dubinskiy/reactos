@@ -91,6 +91,10 @@ extern LIST_ENTRY IopPnpEnumerationRequestList;
 extern KEVENT PiEnumerationLock;
 extern BOOLEAN PipEnumerationInProgress;
 
+#ifdef MM_NEW
+  extern PFN_NUMBER MmHighestPhysicalPage;
+#endif
+
 /* PRIVATE FUNCTIONS *********************************************************/
 
 VOID

@@ -11,9 +11,42 @@
 #include "ntoskrnl.h"
 #define NDEBUG
 #include "debug.h"
-#include "./../mm/ARM3/miarm.h"
+
+#ifdef MM_NEW
+  #include "./../mm_new/ARM3/miarm.h"
+#else
+  #include "./../mm/ARM3/miarm.h"
+#endif
 
 /* GLOBALS *******************************************************************/
+
+#ifdef MM_NEW
+  extern UCHAR MmDisablePagingExecutive;
+  extern BOOLEAN MmLargeSystemCache;
+  extern BOOLEAN MmZeroPageFile;
+  extern BOOLEAN MmProtectFreedNonPagedPool;
+  extern BOOLEAN MmTrackLockedPages;
+  extern BOOLEAN MmTrackPtes;
+  extern BOOLEAN MmDynamicPfn;
+  extern BOOLEAN MmMirroring;
+  extern BOOLEAN MmMakeLowMemory;
+  extern BOOLEAN MmEnforceWriteProtection;
+  extern SIZE_T MmAllocationFragment;
+  extern ULONG MmConsumedPoolPercentage;
+  extern ULONG MmVerifyDriverBufferType;
+  extern ULONG MmVerifyDriverLevel;
+  extern WCHAR MmVerifyDriverBuffer[512];
+  extern ULONG MmVerifyDriverBufferLength;
+  extern SIZE_T MmSizeOfNonPagedPoolInBytes;
+  extern SIZE_T MmSizeOfPagedPoolInBytes;
+  extern ULONG MmSecondaryColors;
+  extern ULONG MmNumberOfSystemPtes;
+  extern ULONG MmLargeStackSize;
+  extern PFN_NUMBER MmLowMemoryThreshold;
+  extern PFN_NUMBER MmHighMemoryThreshold;
+  extern SIZE_T MmMinimumStackCommitInBytes;
+  extern ULONG MmCritsectTimeoutSeconds;
+#endif
 
 ULONG DummyData;
 ULONG CmNtGlobalFlag;

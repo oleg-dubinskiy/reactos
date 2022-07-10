@@ -89,6 +89,12 @@ PVOID ExpNlsSectionPointer;
 BOOLEAN ExCmosClockIsSane = TRUE;
 BOOLEAN ExpRealTimeIsUniversal;
 
+#ifdef MM_NEW
+  extern PFN_NUMBER MmAvailablePages;
+  extern MM_MEMORY_CONSUMER MiMemoryConsumers[MC_MAXIMUM];
+  extern PFN_NUMBER MmAvailablePages;
+#endif
+
 /* FUNCTIONS ****************************************************************/
 
 INIT_FUNCTION
