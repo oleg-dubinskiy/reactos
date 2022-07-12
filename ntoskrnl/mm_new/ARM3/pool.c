@@ -16,6 +16,21 @@ BOOLEAN MmProtectFreedNonPagedPool;
 
 /* FUNCTIONS ******************************************************************/
 
+INIT_FUNCTION
+VOID
+NTAPI
+MiInitializeNonPagedPool(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+MiInitializeNonPagedPoolThresholds(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 

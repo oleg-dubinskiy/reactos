@@ -8,6 +8,70 @@
 #define _1MB (1024 * _1KB)
 #define _1GB (1024 * _1MB)
 
+/* Protection Bits part of the internal memory manager Protection Mask, from:
+   http://reactos.org/wiki/Techwiki:Memory_management_in_the_Windows_XP_kernel
+   https://www.reactos.org/wiki/Techwiki:Memory_Protection_constants
+   and public assertions.
+*/
+#define MM_ZERO_ACCESS         0
+#define MM_READONLY            1
+#define MM_EXECUTE             2
+#define MM_EXECUTE_READ        3
+#define MM_READWRITE           4
+#define MM_WRITECOPY           5
+#define MM_EXECUTE_READWRITE   6
+#define MM_EXECUTE_WRITECOPY   7
+#define MM_PROTECT_ACCESS      7
+
+/* These are flags on top of the actual protection mask */
+#define MM_NOCACHE            0x08
+#define MM_GUARDPAGE          0x10
+#define MM_WRITECOMBINE       0x18
+#define MM_PROTECT_SPECIAL    0x18
+
+/* These are special cases */
+#define MM_DECOMMIT           (MM_ZERO_ACCESS | MM_GUARDPAGE)
+#define MM_NOACCESS           (MM_ZERO_ACCESS | MM_WRITECOMBINE)
+#define MM_OUTSWAPPED_KSTACK  (MM_EXECUTE_WRITECOPY | MM_WRITECOMBINE)
+#define MM_INVALID_PROTECTION  0xFFFFFFFF
+
+/* Specific PTE Definitions that map to the Memory Manager's Protection Mask Bits.
+   The Memory Manager's definition define the attributes that must be preserved
+   and these PTE definitions describe the attributes in the hardware sense.
+   This helps deal with hardware differences between the actual boolean expression of the argument.
+
+   For example, in the logical attributes, we want to express read-only as a flag but on x86,
+   it is writability that must be set. On the other hand, on x86, just like in the kernel,
+   it is disabling the caches that requires a special flag, while on certain architectures such as ARM,
+   it is enabling the cache which requires a flag.
+*/
+#if defined(_M_IX86)
+
+/* Access Flags */
+#define PTE_READONLY            0 // Doesn't exist on x86
+#define PTE_EXECUTE             0 // Not worrying about NX yet
+#define PTE_EXECUTE_READ        0 // Not worrying about NX yet
+#define PTE_READWRITE           0x2
+#define PTE_WRITECOPY           0x200
+#define PTE_EXECUTE_READWRITE   0x2 // Not worrying about NX yet
+#define PTE_EXECUTE_WRITECOPY   0x200
+#define PTE_PROTOTYPE           0x400
+
+/* State Flags */
+#define PTE_VALID               0x1
+#define PTE_ACCESSED            0x20
+#define PTE_DIRTY               0x40
+
+/* Cache flags */
+#define PTE_ENABLE_CACHE        0
+#define PTE_DISABLE_CACHE       0x10
+#define PTE_WRITECOMBINED_CACHE 0x10
+#define PTE_PROTECT_MASK        0x612
+
+#else
+  #error Define these please!
+#endif
+
 #if defined(_M_IX86) || defined(_M_ARM)
   /* PFN List Sentinel */
   #define LIST_HEAD 0xFFFFFFFF
@@ -16,7 +80,7 @@
      we need a manual definition suited to the number of bits _In_ the PteFrame.
      This is used as a LIST_HEAD for the colored list
   */
-  #define COLORED_LIST_HEAD ((1 << 25) - 1) // 0x1FFFFFF
+  #define COLORED_LIST_HEAD ((1 << 25) - 1)    // 0x1FFFFFF
 #elif defined(_M_AMD64)
   #define LIST_HEAD 0xFFFFFFFFFFFFFFFFLL
   #define COLORED_LIST_HEAD ((1ULL << 57) - 1) // 0x1FFFFFFFFFFFFFFLL
@@ -176,6 +240,13 @@ typedef struct _MM_SESSION_SPACE
     LONG ImageLoadingCount;
 } MM_SESSION_SPACE, *PMM_SESSION_SPACE;
 
+#if MI_TRACE_PFNS
+  #error Define these please!
+#else
+  #define MI_SET_USAGE(x)
+  #define MI_SET_PROCESS2(x)
+#endif
+
 extern PVOID MmPagedPoolStart;
 extern PVOID MmNonPagedPoolEnd;
 extern ULONG_PTR MmSubsectionBase;
@@ -331,12 +402,83 @@ MI_IS_MAPPED_PTE(
 
 #endif
 
+FORCEINLINE
+KIRQL 
+MiLockPfnDb(
+    _In_ KIRQL MaximumLevel)
+{
+    KIRQL OldIrql;
+
+    if (MaximumLevel == APC_LEVEL)
+        ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+    else if (MaximumLevel == DISPATCH_LEVEL)
+        ASSERT(KeGetCurrentIrql() <= DISPATCH_LEVEL);
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueuePfnLock);
+
+    ASSERT(MmPfnOwner == NULL);
+    MmPfnOwner = KeGetCurrentThread();
+
+    return OldIrql;
+}
+
+FORCEINLINE
+VOID 
+MiUnlockPfnDb(
+    _In_ KIRQL OldIrql,
+    _In_ KIRQL MaximumLevel)
+{
+    if (MaximumLevel == APC_LEVEL)
+        ASSERT(OldIrql <= APC_LEVEL);
+    else if (MaximumLevel == DISPATCH_LEVEL)
+        ASSERT(OldIrql <= DISPATCH_LEVEL);
+
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+    MmPfnOwner = NULL;
+
+    KeReleaseQueuedSpinLock(LockQueuePfnLock, OldIrql);
+
+    if (MaximumLevel == APC_LEVEL)
+        ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+    else if (MaximumLevel == DISPATCH_LEVEL)
+        ASSERT(KeGetCurrentIrql() <= DISPATCH_LEVEL);
+}
+
+/* Writes a valid PTE */
+FORCEINLINE
+VOID
+MI_WRITE_VALID_PTE(
+    _In_ PMMPTE Pte,
+    _In_ MMPTE TempPte)
+{
+    /* Write the valid PTE */
+    ASSERT(Pte->u.Hard.Valid == 0);
+    ASSERT(TempPte.u.Hard.Valid == 1);
+    *Pte = TempPte;
+}
+
 /* ARM3\i386\init.c */
 INIT_FUNCTION
 VOID
 NTAPI
 MiInitializeSessionSpaceLayout(
     VOID
+);
+
+INIT_FUNCTION
+NTSTATUS
+NTAPI
+MiInitMachineDependent(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock
+);
+
+/* ARM3\expool.c */
+INIT_FUNCTION
+VOID
+NTAPI
+InitializePool(
+    _In_ POOL_TYPE PoolType,
+    _In_ ULONG Threshold
 );
 
 /* mminit.c */
@@ -346,6 +488,61 @@ NTAPI
 MmInitializeMemoryLimits(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock,
     _In_ PBOOLEAN IncludeType
+);
+
+INIT_FUNCTION
+PFN_NUMBER
+NTAPI
+MxGetNextPage(
+    _In_ PFN_NUMBER PageCount
+);
+
+/* ARM3\pfnlist.c */
+PFN_NUMBER
+NTAPI
+MiRemoveAnyPage(
+    _In_ ULONG Color
+);
+
+/* ARM3\pool.c */
+INIT_FUNCTION
+VOID
+NTAPI
+MiInitializeNonPagedPool(
+    VOID
+);
+
+INIT_FUNCTION
+VOID
+NTAPI
+MiInitializeNonPagedPoolThresholds(
+    VOID
+);
+
+/* ARM3\syspte.c */
+INIT_FUNCTION
+VOID
+NTAPI
+MiInitializeSystemPtes(
+    _In_ PMMPTE StartingPte,
+    _In_ ULONG NumberOfPtes,
+    _In_ MMSYSTEM_PTE_POOL_TYPE PoolType
+);
+
+PMMPTE
+NTAPI
+MiReserveSystemPtes(
+    _In_ ULONG NumberOfPtes,
+    _In_ MMSYSTEM_PTE_POOL_TYPE SystemPtePoolType
+);
+
+/* balance.c */
+INIT_FUNCTION
+VOID
+NTAPI
+MmInitializeBalancer(
+    ULONG NrAvailablePages,
+    ULONG NrSystemPages
 );
 
 /* EOF */

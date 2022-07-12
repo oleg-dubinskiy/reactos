@@ -23,5 +23,13 @@ MMPFNLIST MmRomPageListHead = {0, StandbyPageList, LIST_HEAD, LIST_HEAD};
 
 /* FUNCTIONS ******************************************************************/
 
+PFN_NUMBER
+NTAPI
+MiRemoveAnyPage(
+    _In_ ULONG Color)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
 
 /* EOF */

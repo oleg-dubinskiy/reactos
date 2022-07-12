@@ -11,5 +11,14 @@ MM_MEMORY_CONSUMER MiMemoryConsumers[MC_MAXIMUM];
 
 /* FUNCTIONS ******************************************************************/
 
+INIT_FUNCTION
+VOID
+NTAPI
+MmInitializeBalancer(
+    ULONG NrAvailablePages,
+    ULONG NrSystemPages)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
 
 /* EOF */

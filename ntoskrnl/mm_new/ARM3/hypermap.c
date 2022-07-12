@@ -7,6 +7,9 @@
 
 /* GLOBALS ********************************************************************/
 
+PMMPTE MmFirstReservedMappingPte;
+PMMPTE MmLastReservedMappingPte;
+PMMPTE MiFirstReservedZeroingPte;
 
 /* FUNCTIONS ******************************************************************/
 

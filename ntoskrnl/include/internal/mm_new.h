@@ -8,6 +8,8 @@
 typedef ULONG_PTR SWAPENTRY;
 
 extern PFN_COUNT MmNumberOfPhysicalPages;
+extern PFN_NUMBER MmHighestPhysicalPage;
+extern PKTHREAD MmPfnOwner;
 
 /* Although Microsoft says this isn't hardcoded anymore, they won't be able to change it.
    Stuff depends on it
@@ -101,6 +103,8 @@ typedef struct _MMPFN
     } u4;
 } MMPFN, *PMMPFN;
 
+extern PMMPFN MmPfnDatabase;
+
 #if defined(_X86PAE_)
   #pragma pack()
 #endif
@@ -134,6 +138,29 @@ typedef struct _MM_PAGED_POOL_INFO
 } MM_PAGED_POOL_INFO, *PMM_PAGED_POOL_INFO;
 
 /* FUNCTIONS *****************************************************************/
+
+FORCEINLINE
+PMMPFN
+MiGetPfnEntry(
+    _In_ PFN_NUMBER Pfn)
+{
+    PMMPFN Page;
+    extern RTL_BITMAP MiPfnBitMap;
+
+    /* Make sure the PFN number is valid */
+    if (Pfn > MmHighestPhysicalPage)
+        return NULL;
+
+    /* Make sure this page actually has a PFN entry */
+    if (MiPfnBitMap.Buffer && !(RtlTestBit(&MiPfnBitMap, (ULONG)Pfn)))
+        return NULL;
+
+    /* Get the entry */
+    Page = &MmPfnDatabase[Pfn];
+
+    /* Return it */
+    return Page;
+};
 
 /* ARM3\contmem.c */
 /* ARM3\drvmgmt.c */
@@ -219,9 +246,6 @@ NTAPI
 MmGetExecuteOptions(
     _In_ PULONG ExecuteOptions
 );
-
-/* ARM3\pfnlist.c */
-/* ARM3\pool.c */
 
 /* ARM3\procsup.c */
 INIT_FUNCTION
@@ -475,7 +499,6 @@ MmCallDllInitialize(
     _In_ PLIST_ENTRY ListHead
 );
 
-/* ARM3\syspte.c */
 /* ARM3\vadnode.c */
 
 /* ARM3\virtual.c */
@@ -517,7 +540,6 @@ MmSetPageProtect(
     ULONG flProtect
 );
 
-/* balance.c */
 /* freelist.c */
 
 /* mminit.c */

@@ -62,6 +62,16 @@ ExpCheckPoolAllocation(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+INIT_FUNCTION
+VOID
+NTAPI
+InitializePool(
+    _In_ POOL_TYPE PoolType,
+    _In_ ULONG Threshold)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PVOID

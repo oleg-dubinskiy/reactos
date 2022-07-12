@@ -8,6 +8,7 @@
 /* GLOBALS ********************************************************************/
 
 SLIST_HEADER MmDeadStackSListHead;
+PMMWSL MmWorkingSetList;
 
 /* FUNCTIONS ******************************************************************/
 

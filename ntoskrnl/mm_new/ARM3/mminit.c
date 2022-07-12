@@ -329,6 +329,12 @@ ULONG MmThrottleBottom;
 /* If "/3GB" key in the "Boot.ini" - user address spaces enlarge up to 3 GB. */
 ULONG MmVirtualBias = 0;
 
+/* For debugging */
+PKTHREAD MmPfnOwner;
+
+/* The maximal index in a Vad bitmap array (MI_VAD_BITMAP). */
+ULONG MiLastVadBit = 1;
+
 /* The read cluster size */
 ULONG MmReadClusterSize = 7;
 
@@ -508,6 +514,16 @@ MiComputeColorInformation(VOID)
     /* Compute the mask and store it */
     MmSecondaryColorMask = (MmSecondaryColors - 1);
     KeGetCurrentPrcb()->SecondaryColorMask = MmSecondaryColorMask;
+}
+
+INIT_FUNCTION
+PFN_NUMBER
+NTAPI
+MxGetNextPage(
+    _In_ PFN_NUMBER PageCount)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
 }
 
 INIT_FUNCTION
@@ -814,6 +830,10 @@ MmArmInitSystem(
            which would cause us to end up with only 0x5F000 bytes -- when we actually want to have 0x60000 bytes.
         */
         MxPfnAllocation++;
+
+        /* Initialize the platform-specific parts */
+        MiInitMachineDependent(LoaderBlock);
+
         ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
 
     }
