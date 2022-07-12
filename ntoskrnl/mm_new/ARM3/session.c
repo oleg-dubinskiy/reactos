@@ -4,9 +4,11 @@
 #include <ntoskrnl.h>
 //#define NDEBUG
 #include <debug.h>
+#include "miarm.h"
 
 /* GLOBALS ********************************************************************/
 
+PMM_SESSION_SPACE MmSessionSpace;
 
 /* FUNCTIONS ******************************************************************/
 
