@@ -391,7 +391,72 @@ NTAPI
 MiScanMemoryDescriptors(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMEMORY_ALLOCATION_DESCRIPTOR Descriptor;
+    PFN_NUMBER PageFrameIndex;
+    PFN_NUMBER FreePages = 0;
+    PLIST_ENTRY ListEntry;
+
+    /* Loop the memory descriptors */
+    for (ListEntry = LoaderBlock->MemoryDescriptorListHead.Flink;
+         ListEntry != &LoaderBlock->MemoryDescriptorListHead;
+         ListEntry = ListEntry->Flink)
+    {
+        /* Get the descriptor */
+        Descriptor = CONTAINING_RECORD(ListEntry, MEMORY_ALLOCATION_DESCRIPTOR, ListEntry);
+
+        DPRINT("MD Type: %lx Base: %lx Count: %lx\n",
+               Descriptor->MemoryType, Descriptor->BasePage, Descriptor->PageCount);
+
+        /* Count this descriptor */
+        MiNumberDescriptors++;
+
+        /* Check if this is invisible memory */
+        if ((Descriptor->MemoryType == LoaderFirmwarePermanent) ||
+            (Descriptor->MemoryType == LoaderSpecialMemory) ||
+            (Descriptor->MemoryType == LoaderHALCachedMemory) ||
+            (Descriptor->MemoryType == LoaderBBTMemory))
+        {
+            continue; /* Skip this descriptor */
+        }
+
+        /* Check if this is bad memory */
+        if (Descriptor->MemoryType != LoaderBad)
+            /* Count this in the total of pages */
+            MmNumberOfPhysicalPages += (PFN_COUNT)Descriptor->PageCount;
+
+        /* Check if this is the new lowest page */
+        if (Descriptor->BasePage < MmLowestPhysicalPage)
+            /* Update the lowest page */
+            MmLowestPhysicalPage = Descriptor->BasePage;
+
+        /* Check if this is the new highest page */
+        PageFrameIndex = (Descriptor->BasePage + Descriptor->PageCount);
+
+        if (PageFrameIndex > MmHighestPhysicalPage)
+            /* Update the highest page */
+            MmHighestPhysicalPage = (PageFrameIndex - 1);
+
+        /* Check if this is free memory */
+        if ((Descriptor->MemoryType == LoaderFree) ||
+            (Descriptor->MemoryType == LoaderLoadedProgram) ||
+            (Descriptor->MemoryType == LoaderFirmwareTemporary) ||
+            (Descriptor->MemoryType == LoaderOsloaderStack))
+        {
+            /* Count it too free pages */
+            MiNumberOfFreePages += Descriptor->PageCount;
+
+            /* Check if this is the largest memory descriptor */
+            if (Descriptor->PageCount > FreePages)
+            {
+                /* Remember it */
+                MxFreeDescriptor = Descriptor;
+                FreePages = Descriptor->PageCount;
+            }
+        }
+    }
+
+    /* Save original values of the free descriptor, since it'll be altered by early allocations */
+    MxOldFreeDescriptor = *MxFreeDescriptor;
 }
 
 INIT_FUNCTION
@@ -706,7 +771,6 @@ MmArmInitSystem(
            which would cause us to end up with only 0x5F000 bytes -- when we actually want to have 0x60000 bytes.
         */
         MxPfnAllocation++;
-
         ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
 
     }
