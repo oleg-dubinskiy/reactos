@@ -29,6 +29,9 @@ extern PVOID MmNonPagedPoolStart;
 extern SIZE_T MmSizeOfNonPagedPoolInBytes;
 extern PVOID MmNonPagedPoolExpansionStart;
 extern SIZE_T MmMaximumNonPagedPoolInBytes;
+extern PFN_NUMBER MmMaximumNonPagedPoolInPages;
+extern PFN_NUMBER MiLowNonPagedPoolThreshold;
+extern PFN_NUMBER MiHighNonPagedPoolThreshold;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -135,7 +138,17 @@ VOID
 NTAPI
 MiInitializeNonPagedPoolThresholds(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PFN_NUMBER Size = MmMaximumNonPagedPoolInPages;
+
+    /* Default low threshold of 8MB or one third of nonpaged pool */
+    MiLowNonPagedPoolThreshold = ((8 * _1MB) >> PAGE_SHIFT);
+    MiLowNonPagedPoolThreshold = min(MiLowNonPagedPoolThreshold, (Size / 3));
+
+    /* Default high threshold of 20MB or 50% */
+    MiHighNonPagedPoolThreshold = ((20 * _1MB) >> PAGE_SHIFT);
+    MiHighNonPagedPoolThreshold = min(MiHighNonPagedPoolThreshold, (Size / 2));
+
+    ASSERT(MiLowNonPagedPoolThreshold < MiHighNonPagedPoolThreshold);
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
