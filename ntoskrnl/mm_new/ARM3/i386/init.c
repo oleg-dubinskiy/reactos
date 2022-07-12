@@ -53,8 +53,15 @@ extern PMMPTE MmFirstReservedMappingPte;
 extern PMMPTE MmLastReservedMappingPte;
 extern PMMPTE MiFirstReservedZeroingPte;
 extern PMMWSL MmWorkingSetList;
+extern PMMWSL MmSystemCacheWorkingSetList;
 extern ULONG MiLastVadBit;
 extern ULONG MmSecondaryColors;
+extern PVOID MmHyperSpaceEnd;
+extern SIZE_T MmMinimumNonPagedPoolSize;
+extern ULONG MmMinAdditionNonPagedPoolPerMb;
+extern ULONG MmMaximumNonPagedPoolPercent;
+extern SIZE_T MmDefaultMaximumNonPagedPool;
+extern ULONG MmMaxAdditionNonPagedPoolPerMb;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -121,7 +128,100 @@ NTAPI
 MiComputeNonPagedPoolVa(
     _In_ ULONG FreePages)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PFN_NUMBER PoolPages;
+
+    /* Check if this is a machine with less than 256MB of RAM, and no overide */
+    if ((MmNumberOfPhysicalPages <= MI_MIN_PAGES_FOR_NONPAGED_POOL_TUNING) &&
+        !(MmSizeOfNonPagedPoolInBytes))
+    {
+        /* Force the non paged pool to be 2MB so we can reduce RAM usage */
+        MmSizeOfNonPagedPoolInBytes = (2 * _1MB);
+    }
+
+    /* Hyperspace ends here */
+    MmHyperSpaceEnd = (PVOID)((ULONG_PTR)MmSystemCacheWorkingSetList - 1);
+
+    /* Check if the user gave a ridicuously large nonpaged pool RAM size */
+    if ((MmSizeOfNonPagedPoolInBytes >> PAGE_SHIFT) > (FreePages * 7 / 8))
+        /* More than 7/8ths of RAM was dedicated to nonpaged pool, ignore! */
+        MmSizeOfNonPagedPoolInBytes = 0;
+
+    /* Check if no registry setting was set, or if the setting was too low */
+    if (MmSizeOfNonPagedPoolInBytes < MmMinimumNonPagedPoolSize)
+    {
+        /* Start with the minimum (256 KB) and add 32 KB for each MB above 4 */
+        MmSizeOfNonPagedPoolInBytes = MmMinimumNonPagedPoolSize;
+        MmSizeOfNonPagedPoolInBytes += ((FreePages - 1024) / 256 * MmMinAdditionNonPagedPoolPerMb);
+    }
+
+    /* Check if the registy setting or our dynamic calculation was too high */
+    if (MmSizeOfNonPagedPoolInBytes > MI_MAX_INIT_NONPAGED_POOL_SIZE)
+        /* Set it to the maximum */
+        MmSizeOfNonPagedPoolInBytes = MI_MAX_INIT_NONPAGED_POOL_SIZE;
+
+    /* Check if a percentage cap was set through the registry */
+    if (MmMaximumNonPagedPoolPercent)
+        UNIMPLEMENTED;
+
+    /* Page-align the nonpaged pool size */
+    MmSizeOfNonPagedPoolInBytes &= ~(PAGE_SIZE - 1);
+
+    /* Now, check if there was a registry size for the maximum size */
+    if (!MmMaximumNonPagedPoolInBytes)
+    {
+        /* Start with the default (1MB) */
+        MmMaximumNonPagedPoolInBytes = MmDefaultMaximumNonPagedPool;
+
+        /* Add space for PFN database */
+        MmMaximumNonPagedPoolInBytes += (ULONG)PAGE_ALIGN((MmHighestPhysicalPage +  1) * sizeof(MMPFN));
+
+        /* Check if the machine has more than 512MB of free RAM */
+        if (FreePages >= 0x1F000)
+        {
+            /* Add 200KB for each MB above 4 */
+            MmMaximumNonPagedPoolInBytes += ((FreePages - 1024) / 256 * (MmMaxAdditionNonPagedPoolPerMb / 2));
+
+            if (MmMaximumNonPagedPoolInBytes < MI_MAX_NONPAGED_POOL_SIZE)
+                /* Make it at least 128MB since this machine has a lot of RAM */
+                MmMaximumNonPagedPoolInBytes = MI_MAX_NONPAGED_POOL_SIZE;
+        }
+        else
+        {
+            /* Add 400KB for each MB above 4 */
+            MmMaximumNonPagedPoolInBytes += ((FreePages - 1024) / 256 * MmMaxAdditionNonPagedPoolPerMb);
+        }
+    }
+
+    /* Make sure there's at least 16 pages + the PFN available for expansion */
+    PoolPages = (MmSizeOfNonPagedPoolInBytes + (16 * PAGE_SIZE));
+    PoolPages += ((ULONG)PAGE_ALIGN(MmHighestPhysicalPage + 1) * sizeof(MMPFN));
+
+    if (MmMaximumNonPagedPoolInBytes < PoolPages)
+        /* The maximum should be at least high enough to cover all the above */
+        MmMaximumNonPagedPoolInBytes = PoolPages;
+
+    /* Systems with 2GB of kernel address space get double the size */
+    PoolPages = (MI_MAX_NONPAGED_POOL_SIZE * 2);
+
+    /* On the other hand, make sure that PFN + nonpaged pool doesn't get too big */
+    if (MmMaximumNonPagedPoolInBytes > PoolPages)
+        /* Trim it down to the maximum architectural limit (256MB) */
+        MmMaximumNonPagedPoolInBytes = PoolPages;
+
+    /* Check if this is a system with > 128MB of non paged pool */
+    if (MmMaximumNonPagedPoolInBytes <= MI_MAX_NONPAGED_POOL_SIZE)
+        return;
+
+    /* Check if the initial size is less than the extra 128MB boost */
+    if (MmSizeOfNonPagedPoolInBytes >= (MmMaximumNonPagedPoolInBytes - MI_MAX_NONPAGED_POOL_SIZE))
+        return;
+
+    /* FIXME: Should check if the initial pool can be expanded */
+
+    /* Assume no expansion possible, check ift he maximum is too large */
+    if (MmMaximumNonPagedPoolInBytes > (MmSizeOfNonPagedPoolInBytes + MI_MAX_NONPAGED_POOL_SIZE))
+        /* Set it to the initial value plus the boost */
+        MmMaximumNonPagedPoolInBytes = (MmSizeOfNonPagedPoolInBytes + MI_MAX_NONPAGED_POOL_SIZE);
 }
 
 INIT_FUNCTION
