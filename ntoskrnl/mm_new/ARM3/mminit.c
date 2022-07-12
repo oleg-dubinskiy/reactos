@@ -464,7 +464,50 @@ VOID
 NTAPI
 MiComputeColorInformation(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ULONG L2Associativity;
+
+    /* Check if no setting was provided already */
+    if (!MmSecondaryColors)
+    {
+        /* Get L2 cache information */
+        L2Associativity = KeGetPcr()->SecondLevelCacheAssociativity;
+
+        /* The number of colors is the number of cache bytes by set/way */
+        MmSecondaryColors = KeGetPcr()->SecondLevelCacheSize;
+
+        if (L2Associativity)
+            MmSecondaryColors /= L2Associativity;
+    }
+
+    /* Now convert cache bytes into pages */
+    MmSecondaryColors >>= PAGE_SHIFT;
+
+    if (!MmSecondaryColors)
+    {
+        /* If there was no cache data from the KPCR, use the default colors */
+        MmSecondaryColors = MI_SECONDARY_COLORS;
+    }
+    else
+    {
+        /* Otherwise, make sure there aren't too many colors */
+        if (MmSecondaryColors > MI_MAX_SECONDARY_COLORS)
+            /* Set the maximum */
+            MmSecondaryColors = MI_MAX_SECONDARY_COLORS;
+
+        /* Make sure there aren't too little colors */
+        if (MmSecondaryColors < MI_MIN_SECONDARY_COLORS)
+            /* Set the default */
+            MmSecondaryColors = MI_SECONDARY_COLORS;
+
+        /* Finally make sure the colors are a power of two */
+        if (MmSecondaryColors & (MmSecondaryColors - 1))
+            /* Set the default */
+            MmSecondaryColors = MI_SECONDARY_COLORS;
+    }
+
+    /* Compute the mask and store it */
+    MmSecondaryColorMask = (MmSecondaryColors - 1);
+    KeGetCurrentPrcb()->SecondaryColorMask = MmSecondaryColorMask;
 }
 
 INIT_FUNCTION
