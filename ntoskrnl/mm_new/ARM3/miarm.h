@@ -247,6 +247,18 @@ typedef struct _MM_SESSION_SPACE
   #define MI_SET_PROCESS2(x)
 #endif
 
+/* Signature of a freed block */
+#define MM_FREE_POOL_SIGNATURE 'ARM3'
+
+/* Entry describing free pool memory */
+typedef struct _MMFREE_POOL_ENTRY
+{
+    LIST_ENTRY List;
+    PFN_COUNT Size;
+    ULONG Signature;
+    struct _MMFREE_POOL_ENTRY *Owner;
+} MMFREE_POOL_ENTRY, *PMMFREE_POOL_ENTRY;
+
 extern PVOID MmPagedPoolStart;
 extern PVOID MmNonPagedPoolEnd;
 extern ULONG_PTR MmSubsectionBase;
