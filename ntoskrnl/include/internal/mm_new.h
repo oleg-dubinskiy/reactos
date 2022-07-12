@@ -135,7 +135,6 @@ typedef struct _MM_PAGED_POOL_INFO
 
 /* FUNCTIONS *****************************************************************/
 
-/* ARM3\i386\init.c */
 /* ARM3\contmem.c */
 /* ARM3\drvmgmt.c */
 /* ARM3\dynamic.c */

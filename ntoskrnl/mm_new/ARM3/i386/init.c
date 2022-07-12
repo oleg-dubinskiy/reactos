@@ -10,5 +10,12 @@
 
 /* FUNCTIONS ******************************************************************/
 
+INIT_FUNCTION
+VOID
+NTAPI
+MiInitializeSessionSpaceLayout(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
 
 /* EOF */
