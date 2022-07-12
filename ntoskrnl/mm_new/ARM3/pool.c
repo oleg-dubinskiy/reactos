@@ -8,6 +8,7 @@
 /* GLOBALS ********************************************************************/
 
 MM_PAGED_POOL_INFO MmPagedPoolInfo;
+KGUARDED_MUTEX MmPagedPoolMutex;
 SIZE_T MmAllocatedNonPagedPool;
 ULONG MmSpecialPoolTag;
 ULONG MmConsumedPoolPercentage;

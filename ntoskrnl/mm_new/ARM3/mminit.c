@@ -326,8 +326,27 @@ LARGE_INTEGER MmOneSecond = {{(-1000 * 10000), -1}}; // 1 second
 ULONG MmThrottleTop;
 ULONG MmThrottleBottom;
 
+/* If "/3GB" key in the "Boot.ini" - user address spaces enlarge up to 3 GB. */
+ULONG MmVirtualBias = 0;
+
 /* The read cluster size */
 ULONG MmReadClusterSize = 7;
+
+/* The page support stack S-LIST */
+SLIST_HEADER MmInPageSupportSListHead;
+
+extern MMPFNLIST MmStandbyPageListByPriority[8];
+extern LIST_ENTRY MmLoadedUserImageList;
+extern KGUARDED_MUTEX MmPagedPoolMutex;
+extern KGUARDED_MUTEX MmSectionCommitMutex;
+extern KGUARDED_MUTEX MmSectionBasedMutex;
+extern KMUTANT MmSystemLoadLock;
+extern KEVENT MmZeroingPageEvent;
+extern KEVENT MmCollidedFlushEvent;
+extern SLIST_HEADER MmDeadStackSListHead;
+extern SLIST_HEADER MmInPageSupportSListHead;
+extern PVOID MmHighSectionBase;
+extern ULONG MmSpecialPoolTag;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -360,14 +379,350 @@ MmFreeLoaderBlock(
 }
 
 INIT_FUNCTION
+VOID
+NTAPI
+MiDbgDumpMemoryDescriptors(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+MiScanMemoryDescriptors(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+MiComputeColorInformation(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+INIT_FUNCTION
 BOOLEAN
 NTAPI
 MmArmInitSystem(
     _In_ ULONG Phase,
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    BOOLEAN IncludeType[LoaderMaximum];
+    //PPHYSICAL_MEMORY_RUN Run;
+    PFN_NUMBER PageCount;
+    //PVOID Bitmap;
+    ULONG SystemCacheSizeInPages;
+    ULONG ix;
+  #if defined(_X86_)
+    ULONG BiasPages;
+  #endif
+  #if DBG
+    PMMPTE TestPte;
+    PMMPTE Pte;
+    MMPTE TempPte;
+    ULONG jx;
+
+    DPRINT1("MmArmInitSystem: Phase %X, LoaderBlock %X\n", Phase, LoaderBlock);
+
+    /* Dump memory descriptors */
+    if (MiDbgEnableMdDump)
+        MiDbgDumpMemoryDescriptors();
+  #endif
+
+    /* Instantiate memory that we don't consider RAM/usable.
+       We use the same exclusions that Windows does, in order to try to be compatible with WinLDR-style booting.
+    */
+    for (ix = 0; ix < LoaderMaximum; ix++)
+        IncludeType[ix] = TRUE;
+
+    IncludeType[LoaderBad] = FALSE;
+    IncludeType[LoaderFirmwarePermanent] = FALSE;
+    IncludeType[LoaderSpecialMemory] = FALSE;
+    IncludeType[LoaderBBTMemory] = FALSE;
+
+    if (Phase == 0)
+    {
+        /* Count physical pages on the system */
+        MiScanMemoryDescriptors(LoaderBlock);
+
+        /* Initialize the phase 0 temporary event */
+        KeInitializeEvent(&MiTempEvent, NotificationEvent, FALSE);
+
+        /* Set all the events to use the temporary event for now */
+        MiLowMemoryEvent = &MiTempEvent;
+        MiHighMemoryEvent = &MiTempEvent;
+        MiLowPagedPoolEvent = &MiTempEvent;
+        MiHighPagedPoolEvent = &MiTempEvent;
+        MiLowNonPagedPoolEvent = &MiTempEvent;
+        MiHighNonPagedPoolEvent = &MiTempEvent;
+
+        /* Default throttling limits for Cc.
+           May be ajusted later on depending on system type.
+        */
+        MmThrottleTop = 450;
+        MmThrottleBottom = 127;
+
+        /* Define the basic user vs. kernel address space separation */
+        MmSystemRangeStart = (PVOID)MI_DEFAULT_SYSTEM_RANGE_START;
+        MmUserProbeAddress = (ULONG_PTR)MI_USER_PROBE_ADDRESS;
+        MmHighestUserAddress = (PVOID)MI_HIGHEST_USER_ADDRESS;
+
+        /* Highest PTE and PDE based on the addresses above */
+        MiHighestUserPte = MiAddressToPte(MmHighestUserAddress);
+        MiHighestUserPde = MiAddressToPde(MmHighestUserAddress);
+
+        /* Get the size of the boot loader's image allocations and then round that region up to a PDE size,
+           so that any PDEs we might create for whatever follows are separate from the PDEs
+           that boot loader might've already created (and later, we can blow all that away if we want to).
+        */
+        MmBootImageSize = KeLoaderBlock->Extension->LoaderPagesSpanned;
+        MmBootImageSize *= PAGE_SIZE;
+        MmBootImageSize = ((MmBootImageSize + (PDE_MAPPED_VA - 1)) & ~(PDE_MAPPED_VA - 1));
+
+        ASSERT((MmBootImageSize % PDE_MAPPED_VA) == 0);
+
+      #if defined(_X86_)
+        /* Enlargement user address space not yet implemented. */
+        MmVirtualBias = LoaderBlock->u.I386.VirtualBias;
+        ASSERT(MmVirtualBias == 0);
+      #endif
+
+        /* Initialize session space address layout */
+        MiInitializeSessionSpaceLayout();
+
+        /* Set the based section highest address */
+        MmHighSectionBase = (PVOID)((ULONG_PTR)MmHighestUserAddress - 0x800000);
+
+        /* Calculate size of system cache */
+        SystemCacheSizeInPages = ((ULONG_PTR)MI_PAGED_POOL_START - (ULONG_PTR)MmSystemCacheStart);
+        SystemCacheSizeInPages /= PAGE_SIZE;
+
+      #if defined(_X86_)
+        if (MmSizeOfPagedPoolInBytes == (SIZE_T)(-1) && MmVirtualBias == 0)
+        {
+            /* The registry has requested the maximum possible size of the paged pool.
+               Increase paged pool size due to the size of the system cache.
+            */
+            BiasPages = (SystemCacheSizeInPages / 3 + (PTE_PER_PAGE - 1)) & ~(PTE_PER_PAGE - 1);
+            SystemCacheSizeInPages -= BiasPages;
+
+            MmPagedPoolStart = (PVOID)((ULONG_PTR)MmPagedPoolStart - (BiasPages * PAGE_SIZE));
+        }
+
+        /* Setting variables if enabled bias */
+        if (MmVirtualBias)
+        {
+            /* Not yet implemented. FIXME. */
+            ASSERT(MmVirtualBias == 0);
+        }        
+      #endif
+
+      #if DBG
+
+        /* Prototype PTEs are assumed to be in paged pool, so check if the math works */
+        Pte = (PMMPTE)MmPagedPoolStart;
+        MI_MAKE_PROTOTYPE_PTE(&TempPte, Pte);
+        TestPte = MiGetProtoPtr(&TempPte);
+        ASSERT(Pte == TestPte);
+
+        /* Try the last nonpaged pool address */
+        Pte = (PMMPTE)MI_NONPAGED_POOL_END;
+        MI_MAKE_PROTOTYPE_PTE(&TempPte, Pte);
+        TestPte = MiGetProtoPtr(&TempPte);
+        ASSERT(Pte == TestPte);
+
+        /* Try a bunch of random addresses near the end of the address space */
+        Pte = (PMMPTE)((ULONG_PTR)MI_HIGHEST_SYSTEM_ADDRESS - 0x37FFF);
+
+        for (jx = 0; jx < 20; jx += 1)
+        {
+            MI_MAKE_PROTOTYPE_PTE(&TempPte, Pte);
+            TestPte = MiGetProtoPtr(&TempPte);
+            ASSERT(Pte == TestPte);
+            Pte++;
+        }
+
+        /* Subsection PTEs are always in nonpaged pool, pick a random address to try */
+        Pte = (PMMPTE)((ULONG_PTR)MI_NONPAGED_POOL_END - _1MB);
+        MI_MAKE_SUBSECTION_PTE(&TempPte, Pte);
+        TestPte = MiSubsectionPteToSubsection(&TempPte);
+        ASSERT(Pte == TestPte);
+
+      #endif
+
+        /* Loop all 8 standby lists */
+        for (ix = 0; ix < 8; ix++)
+        {
+            /* Initialize them */
+            MmStandbyPageListByPriority[ix].Total = 0;
+            MmStandbyPageListByPriority[ix].ListName = StandbyPageList;
+            MmStandbyPageListByPriority[ix].Flink = MM_EMPTY_LIST;
+            MmStandbyPageListByPriority[ix].Blink = MM_EMPTY_LIST;
+        }
+
+        /* Initialize the user mode image list */
+        InitializeListHead(&MmLoadedUserImageList);
+
+        /* Initialize critical section timeout value (relative time is negative) */
+        MmCriticalSectionTimeout.QuadPart = MmCritsectTimeoutSeconds * (-10000000LL);
+
+        /* Initialize the paged pool mutex and the section commit mutex */
+        KeInitializeGuardedMutex(&MmPagedPoolMutex);
+        KeInitializeGuardedMutex(&MmSectionCommitMutex);
+        KeInitializeGuardedMutex(&MmSectionBasedMutex);
+
+        /* Initialize the Loader Lock */
+        KeInitializeMutant(&MmSystemLoadLock, FALSE);
+
+        /* Set up the zero page event */
+        KeInitializeEvent(&MmZeroingPageEvent, NotificationEvent, FALSE);
+        KeInitializeEvent(&MmCollidedFlushEvent, NotificationEvent, FALSE);
+
+        /* Initialize the dead stack S-LIST */
+        InitializeSListHead(&MmDeadStackSListHead);
+
+        /* Initialize the page support stack S-LIST */
+        InitializeSListHead(&MmInPageSupportSListHead);
+
+        /* Check if this is a machine with less than 19MB of RAM */
+        PageCount = MmNumberOfPhysicalPages;
+
+        if (PageCount < MI_MIN_PAGES_FOR_SYSPTE_TUNING)
+        {
+            /* Use the very minimum of system PTEs */
+            MmNumberOfSystemPtes = 7000;
+        }
+        else
+        {
+            /* Use the default */
+            MmNumberOfSystemPtes = 11000;
+
+            if (PageCount > MI_MIN_PAGES_FOR_SYSPTE_BOOST)
+            {
+                /* Double the amount of system PTEs */
+                MmNumberOfSystemPtes <<= 1;
+            }
+            if (PageCount > MI_MIN_PAGES_FOR_SYSPTE_BOOST_BOOST)
+            {
+                /* Double the amount of system PTEs */
+                MmNumberOfSystemPtes <<= 1;
+            }
+            if (MmSpecialPoolTag != 0 && MmSpecialPoolTag != -1)
+            {
+                /* Add some extra PTEs for special pool */
+                MmNumberOfSystemPtes += 0x6000;
+            }
+        }
+
+        DPRINT("System PTE count has been tuned to %lu (%lu bytes)\n",
+               MmNumberOfSystemPtes, (MmNumberOfSystemPtes * PAGE_SIZE));
+
+        /* Check if no values are set for the heap limits */
+        if (!MmHeapSegmentReserve)
+            MmHeapSegmentReserve = 2 * _1MB;
+
+        if (!MmHeapSegmentCommit)
+            MmHeapSegmentCommit = 2 * PAGE_SIZE;
+
+        if (MmHeapDeCommitTotalFreeThreshold == 0)
+            MmHeapDeCommitTotalFreeThreshold = 64 * _1KB;
+
+        if (MmHeapDeCommitFreeBlockThreshold == 0)
+            MmHeapDeCommitFreeBlockThreshold = PAGE_SIZE;
+
+        /* Initialize the working set lock */
+        ExInitializePushLock(&MmSystemCacheWs.WorkingSetMutex);
+
+        /* Set commit limit */
+        MmTotalCommitLimit = (2 * _1GB) >> PAGE_SHIFT;
+        MmTotalCommitLimitMaximum = MmTotalCommitLimit;
+
+        /* Has the allocation fragment been setup? */
+        if (!MmAllocationFragment)
+        {
+            /* Use the default value */
+            MmAllocationFragment = MI_ALLOCATION_FRAGMENT;
+
+            if (PageCount < ((256 * _1MB) / PAGE_SIZE))
+            {
+                /* On memory systems with less than 256MB, divide by 4 */
+                MmAllocationFragment = MI_ALLOCATION_FRAGMENT / 4;
+            }
+            else if (PageCount < (_1GB / PAGE_SIZE))
+            {
+                /* On systems with less than 1GB, divide by 2 */
+                MmAllocationFragment = MI_ALLOCATION_FRAGMENT / 2;
+            }
+        }
+        else
+        {
+            /* Convert from 1KB fragments to pages */
+            MmAllocationFragment *= _1KB;
+            MmAllocationFragment = ROUND_TO_PAGES(MmAllocationFragment);
+
+            /* Don't let it past the maximum */
+            MmAllocationFragment = min(MmAllocationFragment, MI_MAX_ALLOCATION_FRAGMENT);
+
+            /* Don't let it too small either */
+            MmAllocationFragment = max(MmAllocationFragment, MI_MIN_ALLOCATION_FRAGMENT);
+        }
+
+        /* Check for kernel stack size that's too big */
+        if (MmLargeStackSize > (KERNEL_LARGE_STACK_SIZE / _1KB))
+        {
+            /* Sanitize to default value */
+            MmLargeStackSize = KERNEL_LARGE_STACK_SIZE;
+        }
+        else
+        {
+            /* Take the registry setting, and convert it into bytes */
+            MmLargeStackSize *= _1KB;
+
+            /* Now align it to a page boundary */
+            MmLargeStackSize = PAGE_ROUND_UP(MmLargeStackSize);
+
+            /* Sanity checks */
+            ASSERT(MmLargeStackSize <= KERNEL_LARGE_STACK_SIZE);
+            ASSERT((MmLargeStackSize & (PAGE_SIZE - 1)) == 0);
+
+            /* Make sure it's not too low */
+            if (MmLargeStackSize < KERNEL_STACK_SIZE)
+                MmLargeStackSize = KERNEL_STACK_SIZE;
+        }
+
+        /* Compute color information (L2 cache-separated paging lists) */
+        MiComputeColorInformation();
+
+        /* Calculate the number of bytes for the PFN database then add the color tables and convert to pages */
+        MxPfnAllocation = (MmHighestPhysicalPage + 1) * sizeof(MMPFN);
+        MxPfnAllocation += (MmSecondaryColors * sizeof(MMCOLOR_TABLES) * 2);
+        MxPfnAllocation >>= PAGE_SHIFT;
+
+        /* We have to add one to the count here, because in the process of shifting down to the page size,
+           we actually ended up getting the lower aligned size (so say, 0x5FFFF bytes is now 0x5F pages).
+           Later on, we'll shift this number back into bytes,
+           which would cause us to end up with only 0x5F000 bytes -- when we actually want to have 0x60000 bytes.
+        */
+        MxPfnAllocation++;
+
+        ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
+
+    }
+    else if (Phase == 2)
+    {
+        DPRINT1("MmInitSystem: FIXME MiEnablePagingTheExecutive\n");
+        //MiEnablePagingTheExecutive();
+        return TRUE;
+    }
+    else
+    {
+        ASSERT(Phase == 0 || Phase == 2);
+    }
+
+    /* Always return success for now */
+    return TRUE;
 }
 
 /* EOF */

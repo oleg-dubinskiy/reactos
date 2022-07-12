@@ -7,6 +7,10 @@
 
 /* GLOBALS ********************************************************************/
 
+KGUARDED_MUTEX MmSectionCommitMutex;
+KGUARDED_MUTEX MmSectionBasedMutex;
+KEVENT MmCollidedFlushEvent;
+PVOID MmHighSectionBase;
 
 /* FUNCTIONS ******************************************************************/
 

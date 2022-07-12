@@ -11,6 +11,7 @@ LIST_ENTRY PsLoadedModuleList;
 LIST_ENTRY MmLoadedUserImageList;
 ERESOURCE PsLoadedModuleResource;
 ULONG_PTR PsNtosImageBase;
+KMUTANT MmSystemLoadLock;
 
 PVOID MmUnloadedDrivers;
 PVOID MmLastUnloadedDrivers;
