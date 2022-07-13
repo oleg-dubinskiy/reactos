@@ -29,6 +29,19 @@ extern SIZE_T MmSizeOfNonPagedPoolInBytes;
 
 /* FUNCTIONS ******************************************************************/
 
+FORCEINLINE
+ULONG
+ExpComputeHashForTag(
+    _In_ ULONG Tag,
+    _In_ SIZE_T BucketMask)
+{
+    /* Compute the hash by multiplying with a large prime number and then XORing with the HIDWORD of the result.
+       Finally, AND with the bucket mask to generate a valid index/bucket into the table
+    */
+    ULONGLONG Result = ((ULONGLONG)0x9E5F * Tag); // 40543
+    return ((ULONG)BucketMask & ((ULONG)Result ^ (Result >> 32)));
+}
+
 INIT_FUNCTION
 VOID
 NTAPI
