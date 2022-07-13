@@ -22,8 +22,10 @@ typedef struct _MM_ALLOCATION_REQUEST
 MM_MEMORY_CONSUMER MiMemoryConsumers[MC_MAXIMUM];
 
 static ULONG MiMinimumAvailablePages;
+static ULONG MiNrTotalPages;
 static LIST_ENTRY AllocationListHead;
 static KSPIN_LOCK AllocationListLock;
+static ULONG MiMinimumPagesPerRun;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -34,7 +36,31 @@ MmInitializeBalancer(
     ULONG NrAvailablePages,
     ULONG NrSystemPages)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    memset(MiMemoryConsumers, 0, sizeof(MiMemoryConsumers));
+
+    InitializeListHead(&AllocationListHead);
+    KeInitializeSpinLock(&AllocationListLock);
+
+    MiNrTotalPages = NrAvailablePages;
+
+    /* Set up targets. */
+    MiMinimumAvailablePages = 0x100;
+    MiMinimumPagesPerRun = 0x100;
+
+    if ((NrAvailablePages + NrSystemPages) >= 0x2000)
+    {
+        MiMemoryConsumers[MC_CACHE].PagesTarget = (NrAvailablePages / 4 * 3);
+    }
+    else if ((NrAvailablePages + NrSystemPages) >= 0x1000)
+    {
+        MiMemoryConsumers[MC_CACHE].PagesTarget = (NrAvailablePages / 3 * 2);
+    }
+    else
+    {
+        MiMemoryConsumers[MC_CACHE].PagesTarget = (NrAvailablePages / 8);
+    }
+
+    MiMemoryConsumers[MC_USER].PagesTarget = (NrAvailablePages - MiMinimumAvailablePages);
 }
 
 BOOLEAN
