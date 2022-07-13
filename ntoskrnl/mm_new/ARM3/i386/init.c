@@ -62,6 +62,7 @@ extern ULONG MmMinAdditionNonPagedPoolPerMb;
 extern ULONG MmMaximumNonPagedPoolPercent;
 extern SIZE_T MmDefaultMaximumNonPagedPool;
 extern ULONG MmMaxAdditionNonPagedPoolPerMb;
+extern PFN_NUMBER MmLowestPhysicalPage;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -369,6 +370,60 @@ MiInitializeColorTables(VOID)
         MmFreePagesByColor[FreePageList][ix].Count = 0;
     }
 }
+
+INIT_FUNCTION
+BOOLEAN
+NTAPI
+MiIsRegularMemory(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock,
+    _In_ PFN_NUMBER Pfn)
+{
+    PLIST_ENTRY NextEntry;
+    PMEMORY_ALLOCATION_DESCRIPTOR MdBlock;
+
+    /* Loop the memory descriptors */
+    
+    for (NextEntry = LoaderBlock->MemoryDescriptorListHead.Flink;
+         NextEntry != &LoaderBlock->MemoryDescriptorListHead;
+         NextEntry = MdBlock->ListEntry.Flink)
+    {
+        /* Get the memory descriptor */
+        MdBlock = CONTAINING_RECORD(NextEntry, MEMORY_ALLOCATION_DESCRIPTOR, ListEntry);
+
+        /* Check if this PFN could be part of the block */
+        if (Pfn < (MdBlock->BasePage))
+            /* Blocks are ordered, so if it's not here, it doesn't exist */
+            break;
+
+        /* Check if it really is part of the block */
+        if (Pfn < (MdBlock->BasePage + MdBlock->PageCount))
+        {
+            /* Check if the block is actually memory we don't map */
+            if ((MdBlock->MemoryType == LoaderFirmwarePermanent) ||
+                (MdBlock->MemoryType == LoaderBBTMemory) ||
+                (MdBlock->MemoryType == LoaderSpecialMemory))
+            {
+                /* We don't need PFN database entries for this memory */
+                break;
+            }
+
+            /* This is memory we want to map */
+            return TRUE;
+        }
+    }
+
+    /* Check if this PFN is actually from our free memory descriptor */
+    if ((Pfn >= MxOldFreeDescriptor.BasePage) &&
+        (Pfn < MxOldFreeDescriptor.BasePage + MxOldFreeDescriptor.PageCount))
+    {
+        /* We use these pages for initial mappings, so we do want to count them */
+        return TRUE;
+    }
+
+    /* Otherwise this isn't memory that we describe or care about */
+    return FALSE;
+}
+
 INIT_FUNCTION
 VOID
 NTAPI
