@@ -456,6 +456,27 @@ MiUnlockPfnDb(
         ASSERT(KeGetCurrentIrql() <= DISPATCH_LEVEL);
 }
 
+/* Returns the PFN Database entry for the given page number.
+   Warning: This is not necessarily a valid PFN database entry!
+*/
+FORCEINLINE
+PMMPFN
+MI_PFN_ELEMENT(
+    _In_ PFN_NUMBER Pfn)
+{
+    /* Get the entry */
+    return &MmPfnDatabase[Pfn];
+};
+
+FORCEINLINE
+PFN_NUMBER
+MiGetPfnEntryIndex(
+    _In_ PMMPFN Pfn1)
+{
+    /* This will return the Page Frame Number (PFN) from the MMPFN */
+    return (Pfn1 - MmPfnDatabase);
+}
+
 /* Writes a valid PTE */
 FORCEINLINE
 VOID
@@ -516,6 +537,18 @@ MiRemoveAnyPage(
     _In_ ULONG Color
 );
 
+VOID
+NTAPI
+MiInsertPageInFreeList(
+    _In_ PFN_NUMBER PageFrameIndex
+);
+
+VOID
+NTAPI
+MiZeroPhysicalPage(
+    _In_ PFN_NUMBER PageFrameIndex
+);
+
 /* ARM3\pool.c */
 INIT_FUNCTION
 VOID
@@ -555,6 +588,11 @@ NTAPI
 MmInitializeBalancer(
     ULONG NrAvailablePages,
     ULONG NrSystemPages
+);
+
+BOOLEAN
+MmRosNotifyAvailablePage(
+    PFN_NUMBER Page
 );
 
 /* EOF */

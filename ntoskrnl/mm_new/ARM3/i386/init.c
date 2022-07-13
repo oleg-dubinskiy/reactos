@@ -604,7 +604,17 @@ NTAPI
 MiInitializePfnDatabase(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    /* Scan memory and start setting up PFN entries */
+    MiBuildPfnDatabaseFromPages(LoaderBlock);
+
+    /* Add the zero page */
+    MiBuildPfnDatabaseZeroPage();
+
+    /* Scan the loader block and build the rest of the PFN database */
+    MiBuildPfnDatabaseFromLoaderBlock(LoaderBlock);
+
+    /* Finally add the pages for the PFN database itself */
+    MiBuildPfnDatabaseSelf();
 }
 
 INIT_FUNCTION
