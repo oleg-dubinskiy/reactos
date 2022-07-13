@@ -44,6 +44,22 @@ ExpComputeHashForTag(
     return ((ULONG)BucketMask & ((ULONG)Result ^ (Result >> 32)));
 }
 
+PLIST_ENTRY
+NTAPI
+ExpEncodePoolLink(
+    _In_ PLIST_ENTRY Link)
+{
+    return (PLIST_ENTRY)((ULONG_PTR)Link | 1);
+}
+
+VOID
+NTAPI
+ExpInitializePoolListHead(
+    _In_ PLIST_ENTRY ListHead)
+{
+    ListHead->Flink = ListHead->Blink = ExpEncodePoolLink(ListHead);
+}
+
 INIT_FUNCTION
 VOID
 NTAPI
@@ -273,7 +289,35 @@ ExInitializePoolDescriptor(
     _In_ ULONG Threshold,
     _In_ PVOID PoolLock)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PLIST_ENTRY NextEntry;
+
+    /* Setup the descriptor based on the caller's request */
+    PoolDescriptor->PoolType = PoolType;
+    PoolDescriptor->PoolIndex = PoolIndex;
+    PoolDescriptor->Threshold = Threshold;
+    PoolDescriptor->LockAddress = PoolLock;
+
+    /* Initialize accounting data */
+    PoolDescriptor->RunningAllocs = 0;
+    PoolDescriptor->RunningDeAllocs = 0;
+    PoolDescriptor->TotalPages = 0;
+    PoolDescriptor->TotalBytes = 0;
+    PoolDescriptor->TotalBigPages = 0;
+
+    /* Nothing pending for now */
+    PoolDescriptor->PendingFrees = NULL;
+    PoolDescriptor->PendingFreeDepth = 0;
+
+    /* Loop all the descriptor's allocation lists and initialize them */
+    for (NextEntry = PoolDescriptor->ListHeads;
+         NextEntry < (PoolDescriptor->ListHeads + POOL_LISTS_PER_PAGE);
+         NextEntry++)
+    {
+        ExpInitializePoolListHead(NextEntry);
+    }
+
+    /* Note that ReactOS does not support Session Pool Yet */
+    ASSERT(PoolType != PagedPoolSession);
 }
 
 NTSTATUS
