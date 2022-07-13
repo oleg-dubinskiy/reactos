@@ -230,7 +230,96 @@ NTAPI
 MiMapPfnDatabase(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMEMORY_ALLOCATION_DESCRIPTOR MdBlock;
+    MMPTE TempPte = ValidKernelPte;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    PFN_NUMBER FreePage;
+    PFN_NUMBER FreePageCount;
+    PFN_NUMBER PagesLeft;
+    PFN_NUMBER BasePage;
+    PFN_NUMBER PageCount;
+    PLIST_ENTRY NextEntry;
+
+    /* Get current page data, since we won't be using MxGetNextPage as it would corrupt our state */
+    FreePage = MxFreeDescriptor->BasePage;
+    FreePageCount = MxFreeDescriptor->PageCount;
+    PagesLeft = 0;
+
+    /* Loop the memory descriptors */
+    for (NextEntry = LoaderBlock->MemoryDescriptorListHead.Flink;
+         NextEntry != &LoaderBlock->MemoryDescriptorListHead;
+         NextEntry = MdBlock->ListEntry.Flink)
+    {
+        /* Get the descriptor */
+        MdBlock = CONTAINING_RECORD(NextEntry, MEMORY_ALLOCATION_DESCRIPTOR, ListEntry);
+
+        if ((MdBlock->MemoryType == LoaderFirmwarePermanent) ||
+            (MdBlock->MemoryType == LoaderBBTMemory) ||
+            (MdBlock->MemoryType == LoaderSpecialMemory))
+        {
+            /* These pages are not part of the PFN database */
+            NextEntry = MdBlock->ListEntry.Flink;
+            continue;
+        }
+
+        /* Next, check if this is our special free descriptor we've found */
+        if (MdBlock == MxFreeDescriptor)
+        {
+            /* Use the real numbers instead */
+            BasePage = MxOldFreeDescriptor.BasePage;
+            PageCount = MxOldFreeDescriptor.PageCount;
+        }
+        else
+        {
+            /* Use the descriptor's numbers */
+            BasePage = MdBlock->BasePage;
+            PageCount = MdBlock->PageCount;
+        }
+
+        /* Get the PTEs for this range */
+        Pte = MiAddressToPte(&MmPfnDatabase[BasePage]);
+        LastPte = MiAddressToPte(((ULONG_PTR)&MmPfnDatabase[BasePage + PageCount]) - 1);
+
+        DPRINT("MD Type: %lx Base: %lx Count: %lx\n", MdBlock->MemoryType, BasePage, PageCount);
+
+        /* Loop them */
+        for (; Pte <= LastPte; Pte++)
+        {
+            /* We'll only touch PTEs that aren't already valid */
+            if (Pte->u.Hard.Valid)
+                continue;
+
+            /* Use the next free page */
+            TempPte.u.Hard.PageFrameNumber = FreePage;
+            ASSERT(FreePageCount != 0);
+
+            /* Consume free pages */
+            FreePage++;
+            FreePageCount--;
+
+            if (!FreePageCount)
+            {
+                /* Out of memory */
+                KeBugCheckEx(INSTALL_MORE_MEMORY,
+                             MmNumberOfPhysicalPages,
+                             FreePageCount,
+                             MxOldFreeDescriptor.PageCount,
+                             1);
+            }
+
+            /* Write out this PTE */
+            PagesLeft++;
+            MI_WRITE_VALID_PTE(Pte, TempPte);
+
+            /* Zero this page */
+            RtlZeroMemory(MiPteToAddress(Pte), PAGE_SIZE);
+        }
+    }
+
+    /* Now update the free descriptors to consume the pages we used up during the PFN allocation loop */
+    MxFreeDescriptor->BasePage = FreePage;
+    MxFreeDescriptor->PageCount = FreePageCount;
 }
 
 INIT_FUNCTION
