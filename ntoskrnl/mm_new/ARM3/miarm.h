@@ -259,6 +259,14 @@ typedef struct _MMFREE_POOL_ENTRY
     struct _MMFREE_POOL_ENTRY *Owner;
 } MMFREE_POOL_ENTRY, *PMMFREE_POOL_ENTRY;
 
+typedef struct _POOL_TRACKER_BIG_PAGES
+{
+    PVOID Va;
+    ULONG Key;
+    ULONG NumberOfPages;
+    PVOID QuotaObject;
+} POOL_TRACKER_BIG_PAGES, *PPOOL_TRACKER_BIG_PAGES;
+
 extern PVOID MmPagedPoolStart;
 extern PVOID MmNonPagedPoolEnd;
 extern ULONG_PTR MmSubsectionBase;
@@ -562,6 +570,13 @@ VOID
 NTAPI
 MiInitializeNonPagedPoolThresholds(
     VOID
+);
+
+PVOID
+NTAPI
+MiAllocatePoolPages(
+    _In_ POOL_TYPE PoolType,
+    _In_ SIZE_T SizeInBytes
 );
 
 /* ARM3\syspte.c */

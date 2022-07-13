@@ -151,6 +151,16 @@ MiInitializeNonPagedPoolThresholds(VOID)
     ASSERT(MiLowNonPagedPoolThreshold < MiHighNonPagedPoolThreshold);
 }
 
+PVOID
+NTAPI
+MiAllocatePoolPages(
+    _In_ POOL_TYPE PoolType,
+    _In_ SIZE_T SizeInBytes)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PVOID
