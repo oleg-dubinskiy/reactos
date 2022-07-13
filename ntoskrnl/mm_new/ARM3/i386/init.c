@@ -327,9 +327,48 @@ VOID
 NTAPI
 MiInitializeColorTables(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
-}
+    MMPTE TempPte = ValidKernelPte;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    ULONG ix;
 
+    /* The color table starts after the ARM3 PFN database */
+    MmFreePagesByColor[0] = (PMMCOLOR_TABLES)&MmPfnDatabase[MmHighestPhysicalPage + 1];
+
+    /* Loop the PTEs. We have two color tables for each secondary color */
+    Pte = MiAddressToPte(&MmFreePagesByColor[0][0]);
+    LastPte = MiAddressToPte((ULONG_PTR)MmFreePagesByColor[0] + (MmSecondaryColors * 2 * sizeof(MMCOLOR_TABLES)) - 1);
+
+    for (; Pte <= LastPte; Pte++)
+    {
+        /* Check for valid PTE */
+        if (Pte->u.Hard.Valid)
+            continue;
+
+        /* Get a page and map it */
+        TempPte.u.Hard.PageFrameNumber = MxGetNextPage(1);
+        MI_WRITE_VALID_PTE(Pte, TempPte);
+
+        /* Zero out the page */
+        RtlZeroMemory(MiPteToAddress(Pte), PAGE_SIZE);
+    }
+
+    /* Now set the address of the next list, right after this one */
+    MmFreePagesByColor[1] = &MmFreePagesByColor[0][MmSecondaryColors];
+
+    /* Now loop the lists to set them up */
+    for (ix = 0; ix < MmSecondaryColors; ix++)
+    {
+        /* Set both free and zero lists for each color */
+        MmFreePagesByColor[ZeroedPageList][ix].Flink = LIST_HEAD;
+        MmFreePagesByColor[ZeroedPageList][ix].Blink = (PVOID)LIST_HEAD;
+        MmFreePagesByColor[ZeroedPageList][ix].Count = 0;
+
+        MmFreePagesByColor[FreePageList][ix].Flink = LIST_HEAD;
+        MmFreePagesByColor[FreePageList][ix].Blink = (PVOID)LIST_HEAD;
+        MmFreePagesByColor[FreePageList][ix].Count = 0;
+    }
+}
 INIT_FUNCTION
 VOID
 NTAPI
