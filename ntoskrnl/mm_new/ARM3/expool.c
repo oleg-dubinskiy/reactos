@@ -47,7 +47,114 @@ VOID
 NTAPI
 ExpSeedHotTags(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PPOOL_TRACKER_TABLE TrackTable = PoolTrackTable;
+    ULONG Key;
+    ULONG Hash;
+    ULONG Index;
+    ULONG ix;
+    ULONG TagList[] =
+    {
+        '  oI',
+        ' laH',
+        'PldM',
+        'LooP',
+        'tSbO',
+        ' prI',
+        'bdDN',
+        'LprI',
+        'pOoI',
+        ' ldM',
+        'eliF',
+        'aVMC',
+        'dSeS',
+        'CFtN',
+        'looP',
+        'rPCT',
+        'bNMC',
+        'dTeS',
+        'sFtN',
+        'TPCT',
+        'CPCT',
+        ' yeK',
+        'qSbO',
+        'mNoI',
+        'aEoI',
+        'cPCT',
+        'aFtN',
+        '0ftN',
+        'tceS',
+        'SprI',
+        'ekoT',
+        '  eS',
+        'lCbO',
+        'cScC',
+        'lFtN',
+        'cAeS',
+        'mfSF',
+        'kWcC',
+        'miSF',
+        'CdfA',
+        'EdfA',
+        'orSF',
+        'nftN',
+        'PRIU',
+        'rFpN',
+        'RFpN',
+        'aPeS',
+        'sUeS',
+        'FpcA',
+        'MpcA',
+        'cSeS',
+        'mNbO',
+        'sFpN',
+        'uLeS',
+        'DPcS',
+        'nevE',
+        'vrqR',
+        'ldaV',
+        '  pP',
+        'SdaV',
+        ' daV',
+        'LdaV',
+        'FdaV',
+        ' GIB',
+    };
+
+    /* Loop all 0x40 hot tags */
+    ASSERT((sizeof(TagList) / sizeof(ULONG)) == 0x40);
+
+    for (ix = 0; ix < (sizeof(TagList) / sizeof(ULONG)); ix++)
+    {
+        /* Get the current tag, and compute its hash in the tracker table*/
+        Key = TagList[ix];
+        Hash = ExpComputeHashForTag(Key, PoolTrackTableMask);
+
+        /* Loop all the hashes in this index/bucket */
+        Index = Hash;
+
+        do
+        {
+            /* Find an empty entry, and make sure this isn't the last hash that can fit.
+               On checked builds, also make sure this is the first time we are seeding this tag.
+            */
+            ASSERT(TrackTable[Hash].Key != Key);
+
+            if (!TrackTable[Hash].Key && Hash != (PoolTrackTableSize - 1))
+            {
+                /* It has been seeded, move on to the next tag */
+                TrackTable[Hash].Key = Key;
+                break;
+            }
+
+            /* This entry was already taken,
+               compute the next possible hash while making sure we're not back at our initial index.
+            */
+            ASSERT(TrackTable[Hash].Key != Key);
+
+            Hash = ((Hash + 1) & PoolTrackTableMask);
+        }
+        while (Hash != Index);
+    }
 }
 
 VOID
