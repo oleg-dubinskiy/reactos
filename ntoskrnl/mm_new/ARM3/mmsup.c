@@ -38,8 +38,22 @@ NTAPI
 MmIsAddressValid(
     _In_ PVOID VirtualAddress)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+  #if _MI_PAGING_LEVELS >= 3
+    #error FIXME
+  #endif
+
+  #if _MI_PAGING_LEVELS >= 2
+    /* Check if the PDE is valid */
+    if (!MiAddressToPde(VirtualAddress)->u.Hard.Valid)
+        return FALSE;
+  #endif
+
+    /* Check if the PTE is valid */
+    if (!MiAddressToPte(VirtualAddress)->u.Hard.Valid)
+        return FALSE;
+
+    /* This address is valid now, but it will only stay so if the caller holds the PFN lock */
+    return TRUE;
 }
 
 BOOLEAN
