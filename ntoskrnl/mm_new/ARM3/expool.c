@@ -24,6 +24,8 @@ SIZE_T PoolTrackTableSize;
 SIZE_T PoolTrackTableMask;
 SIZE_T PoolBigPageTableSize;
 SIZE_T PoolBigPageTableHash;
+ULONG PoolHitTag;
+BOOLEAN ExStopBadTags;
 
 extern SIZE_T MmSizeOfNonPagedPoolInBytes;
 
@@ -164,7 +166,101 @@ ExpInsertPoolTracker(
     _In_ SIZE_T NumberOfBytes,
     _In_ POOL_TYPE PoolType)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PPOOL_TRACKER_TABLE TableEntry;
+    PPOOL_TRACKER_TABLE Table;
+    SIZE_T TableSize;
+    SIZE_T TableMask;
+    ULONG Index;
+    ULONG Hash;
+    KIRQL OldIrql;
+
+    /* Remove the PROTECTED_POOL flag which is not part of the tag */
+    Key &= ~PROTECTED_POOL;
+
+    /* With WinDBG you can set a tag you want to break on when an allocation is attempted */
+    if (Key == PoolHitTag)
+        DbgBreakPoint();
+
+    /* There is also an internal flag you can set to break on malformed tags */
+    if (ExStopBadTags)
+        ASSERT(Key & 0xFFFFFF00);
+
+    /* ASSERT on ReactOS features not yet supported */
+    ASSERT(!(PoolType & SESSION_POOL_MASK));
+    ASSERT(KeGetCurrentProcessorNumber() == 0);
+
+    /* Why the double indirection?
+       Because normally this function is also used when doing session pool allocations,
+       which has another set of tables, sizes, and masks that live in session pool.
+       Now we don't support session pool so we only ever use the regular tables,
+       but I'm keeping the code this way so that the day we DO support session pool,
+       it won't require that many changes.
+    */
+    Table = PoolTrackTable;
+    TableMask = PoolTrackTableMask;
+    TableSize = PoolTrackTableSize;
+
+    DBG_UNREFERENCED_LOCAL_VARIABLE(TableSize);
+
+    /* Compute the hash for this key, and loop all the possible buckets */
+    Hash = ExpComputeHashForTag(Key, TableMask);
+    Index = Hash;
+
+    do
+    {
+        /* Do we already have an entry for this tag? */
+        TableEntry = &Table[Hash];
+        if (TableEntry->Key == Key)
+        {
+            /* Increment the counters depending on if this was paged or nonpaged pool */
+            if ((PoolType & BASE_POOL_TYPE_MASK) == NonPagedPool)
+            {
+                InterlockedIncrement(&TableEntry->NonPagedAllocs);
+                InterlockedExchangeAddSizeT(&TableEntry->NonPagedBytes, NumberOfBytes);
+                return;
+            }
+
+            InterlockedIncrement(&TableEntry->PagedAllocs);
+            InterlockedExchangeAddSizeT(&TableEntry->PagedBytes, NumberOfBytes);
+            return;
+        }
+
+        /* We don't have an entry yet, but we've found a free bucket for it */
+        if (!TableEntry->Key && Hash != (PoolTrackTableSize - 1))
+        {
+            /* We need to hold the lock while creating a new entry,
+               since other processors might be in this code path as well.
+            */
+            ExAcquireSpinLock(&ExpTaggedPoolLock, &OldIrql);
+
+            if (!PoolTrackTable[Hash].Key)
+            {
+                /* We've won the race, so now create this entry in the bucket */
+                ASSERT(Table[Hash].Key == 0);
+
+                PoolTrackTable[Hash].Key = Key;
+                TableEntry->Key = Key;
+            }
+
+            ExReleaseSpinLock(&ExpTaggedPoolLock, OldIrql);
+
+            /* Now we force the loop to run again,
+               and we should now end up in the code path above which does the interlocked increments...
+            */
+            continue;
+        }
+
+        /* This path is hit when we don't have an entry, and the current bucket is full,
+           so we simply try the next one.
+        */
+        Hash = ((Hash + 1) & TableMask);
+    }
+    while (Hash != Index);
+
+    /* And finally this path is hit when all the buckets are full, and we need some expansion.
+       This path is not yet supported in ReactOS and so we'll ignore the tag
+    */
+    DPRINT1("Out of pool tag space, ignoring...\n");
 }
 
 INIT_FUNCTION
