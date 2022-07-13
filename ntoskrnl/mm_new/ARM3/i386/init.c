@@ -566,7 +566,141 @@ NTAPI
 MiBuildPfnDatabaseFromLoaderBlock(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMEMORY_ALLOCATION_DESCRIPTOR MdBlock;
+    PLIST_ENTRY NextEntry;
+    PFN_NUMBER PageCount = 0;
+    PFN_NUMBER PageFrameIndex;
+    PMMPFN Pfn;
+    PMMPTE Pte;
+    PMMPDE Pde;
+    KIRQL OldIrql;
+
+    /* Now loop through the descriptors */
+    for (NextEntry = LoaderBlock->MemoryDescriptorListHead.Flink;
+         NextEntry != &LoaderBlock->MemoryDescriptorListHead;
+         NextEntry = MdBlock->ListEntry.Flink)
+    {
+        /* Get the current descriptor */
+        MdBlock = CONTAINING_RECORD(NextEntry, MEMORY_ALLOCATION_DESCRIPTOR, ListEntry);
+
+        /* Read its data */
+        PageCount = MdBlock->PageCount;
+        PageFrameIndex = MdBlock->BasePage;
+
+        /* Don't allow memory above what the PFN database is mapping */
+        if (PageFrameIndex > MmHighestPhysicalPage)
+            /* Since they are ordered, everything past here will be larger */
+            break;
+
+        /* On the other hand, the end page might be higher up... */
+        if ((PageFrameIndex + PageCount) > (MmHighestPhysicalPage + 1))
+        {
+            /* In which case we'll trim the descriptor to go as high as we can */
+            PageCount = (MmHighestPhysicalPage + 1 - PageFrameIndex);
+            MdBlock->PageCount = PageCount;
+
+            /* But if there's nothing left to trim, we got too high, so quit */
+            if (!PageCount)
+                break;
+        }
+
+        /* Now check the descriptor type */
+        switch (MdBlock->MemoryType)
+        {
+            /* Check for bad RAM */
+            case LoaderBad:
+                DPRINT1("You either have specified /BURNMEMORY or damaged RAM modules.\n");
+                break;
+
+            /* Check for free RAM */
+            case LoaderFree:
+            case LoaderLoadedProgram:
+            case LoaderFirmwareTemporary:
+            case LoaderOsloaderStack:
+            {
+                /* Get the last page of this descriptor. Note we loop backwards */
+                PageFrameIndex += (PageCount - 1);
+                Pfn = MiGetPfnEntry(PageFrameIndex);
+
+                /* Lock the PFN Database */
+                OldIrql = MiLockPfnDb(APC_LEVEL);
+
+                while (PageCount--)
+                {
+                    /* If the page really has no references, mark it as free */
+                    if (!Pfn->u3.e2.ReferenceCount)
+                    {
+                        /* Add it to the free list */
+                        Pfn->u3.e1.CacheAttribute = MiNonCached;
+                        MiInsertPageInFreeList(PageFrameIndex);
+                    }
+
+                    /* Go to the next page */
+                    Pfn--;
+                    PageFrameIndex--;
+                }
+
+                /* Release PFN database */
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                /* Done with this block */
+                break;
+            }
+            /* Check for pages that are invisible to us */
+            case LoaderFirmwarePermanent:
+            case LoaderSpecialMemory:
+            case LoaderBBTMemory:
+                /* And skip them */
+                break;
+
+            default:
+            {
+                /* Map these pages with the KSEG0 mapping that adds 0x80000000 */
+                Pte = MiAddressToPte(KSEG0_BASE + (PageFrameIndex << PAGE_SHIFT));
+
+                Pfn = MiGetPfnEntry(PageFrameIndex);
+                while (PageCount--)
+                {
+                    /* Check if the page is really unused */
+                    Pde = MiAddressToPde(KSEG0_BASE + (PageFrameIndex << PAGE_SHIFT));
+
+                    if (!Pfn->u3.e2.ReferenceCount)
+                    {
+                        /* Mark it as being in-use */
+                        Pfn->u4.PteFrame = PFN_FROM_PTE(Pde);
+                        Pfn->PteAddress = Pte;
+                        Pfn->u2.ShareCount++;
+                        Pfn->u3.e2.ReferenceCount = 1;
+                        Pfn->u3.e1.PageLocation = ActiveAndValid;
+                        Pfn->u3.e1.CacheAttribute = MiNonCached;
+                      #if MI_TRACE_PFNS
+                        Pfn->PfnUsage = MI_USAGE_BOOT_DRIVER;
+                      #endif
+
+                        /* Check for RAM disk page */
+                        if (MdBlock->MemoryType == LoaderXIPRom)
+                        {
+                            /* Make it a pseudo-I/O ROM mapping */
+                            Pfn->u1.Flink = 0;
+                            Pfn->u2.ShareCount = 0;
+                            Pfn->u3.e2.ReferenceCount = 0;
+                            Pfn->u3.e1.PageLocation = 0;
+                            Pfn->u3.e1.Rom = 1;
+                            Pfn->u4.InPageError = 0;
+                            Pfn->u3.e1.PrototypePte = 1;
+                        }
+                    }
+
+                    /* Advance page structures */
+                    Pfn++;
+                    PageFrameIndex++;
+                    Pte++;
+                }
+
+                break;
+            }
+        }
+    }
 }
 
 INIT_FUNCTION
