@@ -536,6 +536,33 @@ NextPTE:
 INIT_FUNCTION
 VOID
 NTAPI
+MiBuildPfnDatabaseZeroPage(VOID)
+{
+    PMMPFN Pfn;
+    PMMPDE Pde;
+
+    if (MmLowestPhysicalPage)
+        return;
+
+    /* Grab the lowest page and check if it has no real references */
+    Pfn = MiGetPfnEntry(MmLowestPhysicalPage);
+
+    if (Pfn->u3.e2.ReferenceCount)
+        return;
+
+    /* Make it a bogus page to catch errors */
+    Pde = MiAddressToPde(0xFFFFFFFF);
+    Pfn->u4.PteFrame = PFN_FROM_PTE(Pde);
+    Pfn->PteAddress = (PMMPTE)Pde;
+    Pfn->u2.ShareCount++;
+    Pfn->u3.e2.ReferenceCount = 0xFFF0;
+    Pfn->u3.e1.PageLocation = ActiveAndValid;
+    Pfn->u3.e1.CacheAttribute = MiNonCached;
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
 MiInitializePfnDatabase(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
