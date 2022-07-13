@@ -427,6 +427,115 @@ MiIsRegularMemory(
 INIT_FUNCTION
 VOID
 NTAPI
+MiBuildPfnDatabaseFromPages(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    ULONG_PTR BaseAddress = 0;
+    PFN_NUMBER PageFrameIndex;
+    PFN_NUMBER StartupPdIndex;
+    PFN_NUMBER PtePageIndex;
+    PMMPDE Pde;
+    PMMPTE Pte;
+    PMMPFN Pfn1;
+    PMMPFN Pfn2;
+    ULONG Count;
+    ULONG ix;
+    ULONG jx;
+
+    /* PFN of the startup page directory */
+    StartupPdIndex = PFN_FROM_PTE(MiAddressToPde(PDE_BASE));
+
+    /* Start with the first PDE and scan them all */
+    Pde = MiAddressToPde(NULL);
+    Count = (PD_COUNT * PDE_PER_PAGE);
+
+    for (ix = 0; ix < Count; ix++, Pde++)
+    {
+        /* Check for valid PDE */
+        if (Pde->u.Hard.Valid != 1)
+        {
+            /* Next PDE mapped address */
+            BaseAddress += PDE_MAPPED_VA;
+            continue;
+        }
+
+        /* Get the PFN from it */
+        PageFrameIndex = PFN_FROM_PTE(Pde);
+
+        /* Do we want a PFN entry for this page? */
+        if (MiIsRegularMemory(LoaderBlock, PageFrameIndex))
+        {
+            /* Yes we do, set it up */
+            Pfn1 = MiGetPfnEntry(PageFrameIndex);
+            Pfn1->u4.PteFrame = StartupPdIndex;
+            Pfn1->PteAddress = (PMMPTE)Pde;
+            Pfn1->u2.ShareCount++;
+            Pfn1->u3.e2.ReferenceCount = 1;
+            Pfn1->u3.e1.PageLocation = ActiveAndValid;
+            Pfn1->u3.e1.CacheAttribute = MiNonCached;
+          #if MI_TRACE_PFNS
+            Pfn1->PfnUsage = MI_USAGE_INIT_MEMORY;
+            memcpy(Pfn1->ProcessName, "Initial PDE", 16);
+          #endif
+        }
+        else
+        {
+            /* No PFN entry */
+            Pfn1 = NULL;
+        }
+
+        /* Now get the PTE and scan the pages */
+        Pte = MiAddressToPte(BaseAddress);
+
+        for (jx = 0; jx < PTE_PER_PAGE; jx++)
+        {
+            /* Check for a valid PTE */
+            if (Pte->u.Hard.Valid != 1)
+                goto NextPTE;
+
+            /* Increase the shared count of the PFN entry for the PDE */
+            ASSERT(Pfn1 != NULL);
+            Pfn1->u2.ShareCount++;
+
+            /* Now check if the PTE is valid memory too */
+            PtePageIndex = PFN_FROM_PTE(Pte);
+
+            if (!MiIsRegularMemory(LoaderBlock, PtePageIndex))
+                goto NextPTE;
+
+            /* Only add pages above the end of system code or pages that are part of nonpaged pool */
+            if ((BaseAddress >= 0xA0000000) ||
+                ((BaseAddress >= (ULONG_PTR)MmNonPagedPoolStart) &&
+                 (BaseAddress < (ULONG_PTR)MmNonPagedPoolStart + MmSizeOfNonPagedPoolInBytes)))
+            {
+                /* Get the PFN entry and make sure it too is valid */
+                Pfn2 = MiGetPfnEntry(PtePageIndex);
+
+                if ((MmIsAddressValid(Pfn2)) && (MmIsAddressValid(Pfn2 + 1)))
+                {
+                    /* Setup the PFN entry */
+                    Pfn2->u4.PteFrame = PageFrameIndex;
+                    Pfn2->PteAddress = Pte;
+                    Pfn2->u2.ShareCount++;
+                    Pfn2->u3.e2.ReferenceCount = 1;
+                    Pfn2->u3.e1.PageLocation = ActiveAndValid;
+                    Pfn2->u3.e1.CacheAttribute = MiNonCached;
+                  #if MI_TRACE_PFNS
+                    Pfn2->PfnUsage = MI_USAGE_INIT_MEMORY;
+                    memcpy(Pfn1->ProcessName, "Initial PTE", 16);
+                  #endif
+                }
+            }
+NextPTE:
+            Pte++;
+            BaseAddress += PAGE_SIZE;
+        }
+    }
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
 MiInitializePfnDatabase(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
