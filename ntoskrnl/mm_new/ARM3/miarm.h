@@ -72,6 +72,9 @@
   #error Define these please!
 #endif
 
+/* Creates a software PTE with the given protection */
+#define MI_MAKE_SOFTWARE_PTE(p, x)          ((p)->u.Long = (x << MM_PTE_SOFTWARE_PROTECTION_BITS))
+
 #if defined(_M_IX86) || defined(_M_ARM)
   /* PFN List Sentinel */
   #define LIST_HEAD 0xFFFFFFFF
@@ -88,6 +91,19 @@
   #error Define these please!
 #endif
 
+/* Returns the color of a page */
+#define MI_GET_PAGE_COLOR(x)          ((x) & MmSecondaryColorMask)
+#if !defined(CONFIG_SMP)
+  #define MI_GET_NEXT_COLOR()         (MI_GET_PAGE_COLOR(++MmSystemPageColor))
+#else
+  #define MI_GET_NEXT_COLOR()         (MI_GET_PAGE_COLOR(++KeGetCurrentPrcb()->PageColor))
+#endif
+#define MI_GET_NEXT_PROCESS_COLOR(x)  (MI_GET_PAGE_COLOR(++(x)->NextPageColor))
+
+/* These two mappings are actually used by Windows itself, based on the ASSERTS */
+#define StartOfAllocation ReadInProgress
+#define EndOfAllocation WriteInProgress
+
 /* FIXFIX: These should go _In_ ex.h after the pool merge */
 
 #ifdef _WIN64
@@ -97,6 +113,7 @@
 #endif
 
 #define POOL_LISTS_PER_PAGE (PAGE_SIZE / POOL_BLOCK_SIZE)
+#define BASE_POOL_TYPE_MASK 1
 
 typedef struct _POOL_DESCRIPTOR
 {
@@ -464,6 +481,28 @@ MiUnlockPfnDb(
         ASSERT(KeGetCurrentIrql() <= DISPATCH_LEVEL);
 }
 
+FORCEINLINE
+VOID
+MiAcquirePfnLockAtDpcLevel(VOID)
+{
+    PKSPIN_LOCK_QUEUE LockQueue;
+
+    ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
+    LockQueue = &KeGetCurrentPrcb()->LockQueue[LockQueuePfnLock];
+    KeAcquireQueuedSpinLockAtDpcLevel(LockQueue);
+}
+
+FORCEINLINE
+VOID
+MiReleasePfnLockFromDpcLevel(VOID)
+{
+    PKSPIN_LOCK_QUEUE LockQueue;
+
+    LockQueue = &KeGetCurrentPrcb()->LockQueue[LockQueuePfnLock];
+    KeReleaseQueuedSpinLockFromDpcLevel(LockQueue);
+    ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
+}
+
 /* Returns the PFN Database entry for the given page number.
    Warning: This is not necessarily a valid PFN database entry!
 */
@@ -496,6 +535,20 @@ MI_WRITE_VALID_PTE(
     ASSERT(Pte->u.Hard.Valid == 0);
     ASSERT(TempPte.u.Hard.Valid == 1);
     *Pte = TempPte;
+}
+
+/* Writes an invalid PTE */
+FORCEINLINE
+VOID
+MI_WRITE_INVALID_PTE(
+    _In_ PMMPTE Pte,
+    _In_ MMPTE InvalidPte)
+{
+    ASSERT(InvalidPte.u.Hard.Valid == 0);
+    ASSERT(InvalidPte.u.Long != 0);
+
+    /* Write the invalid PTE */
+    *Pte = InvalidPte;
 }
 
 /* ARM3\i386\init.c */
@@ -555,6 +608,14 @@ VOID
 NTAPI
 MiZeroPhysicalPage(
     _In_ PFN_NUMBER PageFrameIndex
+);
+
+VOID
+NTAPI
+MiInitializePfnForOtherProcess(
+    _In_ PFN_NUMBER PageFrameIndex,
+    _In_ PVOID PteAddress,
+    _In_ PFN_NUMBER PteFrame
 );
 
 /* ARM3\pool.c */

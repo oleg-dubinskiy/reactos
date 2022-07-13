@@ -24,6 +24,7 @@
 
 BOOLEAN MmDynamicPfn;
 BOOLEAN MmMirroring;
+ULONG MmSystemPageColor;
 
 MMPFNLIST MmZeroedPageListHead = {0, ZeroedPageList, LIST_HEAD, LIST_HEAD};
 MMPFNLIST MmFreePageListHead = {0, FreePageList, LIST_HEAD, LIST_HEAD};
@@ -196,6 +197,16 @@ MiInsertPageInFreeList(
     Pfn->PfnUsage = MI_USAGE_FREE_PAGE;
     RtlZeroMemory(Pfn->ProcessName, 16);
   #endif
+}
+
+VOID
+NTAPI
+MiInitializePfnForOtherProcess(
+    _In_ PFN_NUMBER PageFrameIndex,
+    _In_ PVOID PteAddress,
+    _In_ PFN_NUMBER PteFrame)
+{
+    UNIMPLEMENTED_DBGBREAK();
 }
 
 /* EOF */
