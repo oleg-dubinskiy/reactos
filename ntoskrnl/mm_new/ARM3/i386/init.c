@@ -563,6 +563,44 @@ MiBuildPfnDatabaseZeroPage(VOID)
 INIT_FUNCTION
 VOID
 NTAPI
+MiBuildPfnDatabaseFromLoaderBlock(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+MiBuildPfnDatabaseSelf(VOID)
+{
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    PMMPFN Pfn;
+
+    /* Loop the PFN database page */
+    Pte = MiAddressToPte(MiGetPfnEntry(MmLowestPhysicalPage));
+    LastPte = MiAddressToPte(MiGetPfnEntry(MmHighestPhysicalPage));
+
+    for (; Pte <= LastPte; Pte++)
+    {
+        /* Make sure the page is valid */
+        if (Pte->u.Hard.Valid != 1)
+            continue;
+
+        /* Get the PFN entry and just mark it referenced */
+        Pfn = MiGetPfnEntry(Pte->u.Hard.PageFrameNumber);
+        Pfn->u2.ShareCount = 1;
+        Pfn->u3.e2.ReferenceCount = 1;
+      #if MI_TRACE_PFNS
+        Pfn->PfnUsage = MI_USAGE_PFN_DATABASE;
+      #endif
+    }
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
 MiInitializePfnDatabase(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
