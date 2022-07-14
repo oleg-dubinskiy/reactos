@@ -25,6 +25,7 @@
 BOOLEAN MmDynamicPfn;
 BOOLEAN MmMirroring;
 ULONG MmSystemPageColor;
+ULONG MmStandbyRePurposed;
 
 MMPFNLIST MmZeroedPageListHead = {0, ZeroedPageList, LIST_HEAD, LIST_HEAD};
 MMPFNLIST MmFreePageListHead = {0, FreePageList, LIST_HEAD, LIST_HEAD};
@@ -45,6 +46,7 @@ extern PFN_NUMBER MmLowMemoryThreshold;
 extern PFN_NUMBER MmHighMemoryThreshold;
 extern PKEVENT MiLowMemoryEvent;
 extern PKEVENT MiHighMemoryEvent;
+extern ULONG MmSecondaryColors;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -55,6 +57,7 @@ MiIncrementAvailablePages(
 {
     /* Increment available pages */
     MmAvailablePages++;
+    //DPRINT("MiIncrementAvailablePages: MmAvailablePages %X\n", MmAvailablePages);
 
     /* Check if we've reached the configured low memory threshold */
     if (MmAvailablePages == MmLowMemoryThreshold)
@@ -71,11 +74,150 @@ MiIncrementAvailablePages(
 
 PFN_NUMBER
 NTAPI
-MiRemoveAnyPage(
+MiRemovePageByColor(
+    _In_ PFN_NUMBER PageIndex,
     _In_ ULONG Color)
 {
     UNIMPLEMENTED_DBGBREAK();
     return 0;
+}
+
+PFN_NUMBER
+NTAPI
+MiRemovePageFromList(
+    _In_ PMMPFNLIST ListHead)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+PFN_NUMBER
+NTAPI
+MiRemoveAnyPage(
+    _In_ ULONG Color)
+{
+    PFN_NUMBER PageIndex;
+    PMMPFNLIST StandbyListHead;
+    PMMPFN Pfn1;
+
+    //DPRINT("MiRemoveAnyPage: Color %X\n", Color);
+
+    /* Make sure PFN lock is held and we have pages */
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    //ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    ASSERT(MmAvailablePages != 0);
+    ASSERT(Color < MmSecondaryColors);
+
+    /* Check the colored free list */
+    PageIndex = MmFreePagesByColor[FreePageList][Color].Flink;
+    if (PageIndex != LIST_HEAD)
+    {
+        /* Sanity checks */
+        Pfn1 = MI_PFN_ELEMENT(PageIndex);
+        ASSERT(Pfn1->u3.e1.PageLocation == FreePageList);
+        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        /* Remove the page */
+        PageIndex = MiRemovePageByColor(PageIndex, Color);
+
+        ASSERT(Pfn1 == MI_PFN_ELEMENT(PageIndex));
+        ASSERT(Pfn1->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn1->u2.ShareCount == 0);
+        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        return PageIndex;
+    }
+
+    /* Check the colored zero list */
+    PageIndex = MmFreePagesByColor[ZeroedPageList][Color].Flink;
+    if (PageIndex != LIST_HEAD)
+    {
+        /* Sanity checks */
+        Pfn1 = MI_PFN_ELEMENT(PageIndex);
+        ASSERT(Pfn1->u3.e1.PageLocation == ZeroedPageList);
+        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        /* Remove the page */
+        PageIndex = MiRemovePageByColor(PageIndex, Color);
+
+        ASSERT(Pfn1 == MI_PFN_ELEMENT(PageIndex));
+        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        return PageIndex;
+    }
+
+    /* Check the free list */
+    PageIndex = MmFreePageListHead.Flink;
+    if (PageIndex != LIST_HEAD)
+    {
+        /* Sanity checks */
+        Pfn1 = MI_PFN_ELEMENT(PageIndex);
+        ASSERT(Pfn1->u3.e1.PageLocation == FreePageList);
+        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        /* Remove the page */
+        Color = (PageIndex & MmSecondaryColorMask);
+        PageIndex = MiRemovePageByColor(PageIndex, Color);
+
+        ASSERT(Pfn1 == MI_PFN_ELEMENT(PageIndex));
+        ASSERT(Pfn1->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn1->u2.ShareCount == 0);
+        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        return PageIndex;
+    }
+
+    ASSERT(MmFreePageListHead.Total == 0);
+
+    /* Check the zero list */
+    PageIndex = MmZeroedPageListHead.Flink;
+    if (PageIndex != LIST_HEAD)
+    {
+        Pfn1 = MI_PFN_ELEMENT(PageIndex);
+
+        /* Remove the page */
+        Color = (PageIndex & MmSecondaryColorMask);
+        PageIndex = MiRemovePageByColor(PageIndex, Color);
+
+        /* Sanity checks */
+        ASSERT(Pfn1 == MI_PFN_ELEMENT(PageIndex));
+        ASSERT(Pfn1->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn1->u2.ShareCount == 0);
+        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        return PageIndex;
+    }
+
+    ASSERT(MmZeroedPageListHead.Total == 0);
+
+    /* Check the standby list */
+    for (StandbyListHead = &MmStandbyPageListByPriority[0];
+         StandbyListHead < &MmStandbyPageListByPriority[8];
+         StandbyListHead++)
+    {
+        if (StandbyListHead->Total)
+        {
+            /* Remove the page */
+            PageIndex = MiRemovePageFromList(StandbyListHead);
+            break;
+        }
+    }
+
+    /* Sanity checks */
+    ASSERT(StandbyListHead < &MmStandbyPageListByPriority[8]);
+    ASSERT((MI_PFN_ELEMENT(PageIndex))->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+    MmStandbyRePurposed++;
+
+    // ? MiMirroringActive
+
+    /* Sanity checks */
+    Pfn1 = MI_PFN_ELEMENT(PageIndex);
+    ASSERT(Pfn1->u3.e2.ReferenceCount == 0);
+    ASSERT(Pfn1->u2.ShareCount == 0);
+
+    return PageIndex;
 }
 
 /* HACK for keeping legacy Mm alive */
@@ -100,6 +242,8 @@ MiInsertPageInFreeList(
     PMMPFN Pfn;
     ULONG Color;
     PMMPFN Blink;
+
+    //DPRINT("MiInsertPageInFreeList: PageFrameIndex %X\n", PageFrameIndex);
 
     /* Make sure the page index is valid */
     ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);

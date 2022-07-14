@@ -169,7 +169,7 @@ PPHYSICAL_MEMORY_DESCRIPTOR MmPhysicalMemoryBlock;
 
 /* This is where we keep track of the most basic physical layout markers */
 PFN_NUMBER MmLowestPhysicalPage = -1;
-PFN_NUMBER MmHighestPhysicalPage = -1;
+PFN_NUMBER MmHighestPhysicalPage;
 PFN_COUNT MmNumberOfPhysicalPages;
 
 /* The total number of pages mapped by the boot loader, which include the kernel HAL, boot drivers,
@@ -410,7 +410,7 @@ MiScanMemoryDescriptors(
         /* Get the descriptor */
         Descriptor = CONTAINING_RECORD(ListEntry, MEMORY_ALLOCATION_DESCRIPTOR, ListEntry);
 
-        DPRINT("MD Type: %lx Base: %lx Count: %lx\n",
+        DPRINT("MiScanMemoryDescriptors: [%02X] Base %X, Count %X\n",
                Descriptor->MemoryType, Descriptor->BasePage, Descriptor->PageCount);
 
         /* Count this descriptor */

@@ -42,6 +42,8 @@ typedef struct _MMPFNENTRY
     USHORT ParityError:1;
 } MMPFNENTRY;
 
+#define MI_MAGIC_AWE_PTEFRAME  0X01FFEDCB
+
 /* Mm internal */
 
 #if defined(_X86PAE_)

@@ -282,7 +282,7 @@ MiMapPfnDatabase(
         Pte = MiAddressToPte(&MmPfnDatabase[BasePage]);
         LastPte = MiAddressToPte(((ULONG_PTR)&MmPfnDatabase[BasePage + PageCount]) - 1);
 
-        DPRINT("MD Type: %lx Base: %lx Count: %lx\n", MdBlock->MemoryType, BasePage, PageCount);
+        DPRINT("MiMapPfnDatabase: [%02X] Base %X, Count %X\n", MdBlock->MemoryType, BasePage, PageCount);
 
         /* Loop them */
         for (; Pte <= LastPte; Pte++)
