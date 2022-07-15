@@ -17,13 +17,151 @@ ULONG MmTotalSystemPtes;
 
 /* FUNCTIONS ******************************************************************/
 
+FORCEINLINE
+ULONG
+MI_GET_CLUSTER_SIZE(
+    _In_ PMMPTE Pte)
+{
+    /* First check for a single PTE */
+    if (Pte->u.List.OneEntry)
+        return 1;
+
+    /* Then read the size from the trailing PTE */
+    Pte++;
+
+    return ((ULONG)Pte->u.List.NextEntry);
+}
+
+PMMPTE
+NTAPI
+MiReserveAlignedSystemPtes(
+    _In_ ULONG NumberOfPtes,
+    _In_ MMSYSTEM_PTE_POOL_TYPE SystemPtePoolType,
+    _In_ ULONG Alignment)
+{
+    PMMPTE PreviousPte;
+    PMMPTE NextPte;
+    PMMPTE ReturnPte;
+    ULONG ClusterSize;
+    KIRQL OldIrql;
+
+    /* Sanity check */
+    ASSERT(Alignment <= PAGE_SIZE);
+
+    /* Acquire the System PTE lock */
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueSystemSpaceLock);
+
+    /* Find the last cluster in the list that doesn't contain enough PTEs */
+    PreviousPte = &MmFirstFreeSystemPte[SystemPtePoolType];
+
+    while (PreviousPte->u.List.NextEntry != MM_EMPTY_PTE_LIST)
+    {
+        /* Get the next cluster and its size */
+        NextPte = (MmSystemPteBase + PreviousPte->u.List.NextEntry);
+        ClusterSize = MI_GET_CLUSTER_SIZE(NextPte);
+
+        /* Check if this cluster contains enough PTEs */
+        if (NumberOfPtes <= ClusterSize)
+            break;
+
+        /* On to the next cluster */
+        PreviousPte = NextPte;
+    }
+
+    /* Make sure we didn't reach the end of the cluster list */
+    if (PreviousPte->u.List.NextEntry == MM_EMPTY_PTE_LIST)
+    {
+        /* Release the System PTE lock and return failure */
+        KeReleaseQueuedSpinLock(LockQueueSystemSpaceLock, OldIrql);
+        return NULL;
+    }
+
+    /* Unlink the cluster */
+    PreviousPte->u.List.NextEntry = NextPte->u.List.NextEntry;
+
+    /* Check if the reservation spans the whole cluster */
+    if (ClusterSize == NumberOfPtes)
+    {
+        /* Return the first PTE of this cluster */
+        ReturnPte = NextPte;
+
+        /* Zero the cluster */
+        if (NextPte->u.List.OneEntry == 0)
+        {
+            NextPte->u.Long = 0;
+            NextPte++;
+        }
+
+        NextPte->u.Long = 0;
+    }
+    else
+    {
+        /* Divide the cluster into two parts */
+        ClusterSize -= NumberOfPtes;
+        ReturnPte = (NextPte + ClusterSize);
+
+        /* Set the size of the first cluster, zero the second if needed */
+        if (ClusterSize == 1)
+        {
+            NextPte->u.List.OneEntry = 1;
+            ReturnPte->u.Long = 0;
+        }
+        else
+        {
+            NextPte++;
+            NextPte->u.List.NextEntry = ClusterSize;
+        }
+
+        /* Step through the cluster list to find out where to insert the first */
+        PreviousPte = &MmFirstFreeSystemPte[SystemPtePoolType];
+
+        while (PreviousPte->u.List.NextEntry != MM_EMPTY_PTE_LIST)
+        {
+            /* Get the next cluster */
+            NextPte = (MmSystemPteBase + PreviousPte->u.List.NextEntry);
+
+            /* Check if the cluster to insert is smaller or of equal size */
+            if (ClusterSize <= MI_GET_CLUSTER_SIZE(NextPte))
+                break;
+
+            /* On to the next cluster */
+            PreviousPte = NextPte;
+        }
+
+        /* Retrieve the first cluster and link it back into the cluster list */
+        NextPte = (ReturnPte - ClusterSize);
+
+        NextPte->u.List.NextEntry = PreviousPte->u.List.NextEntry;
+        PreviousPte->u.List.NextEntry = (NextPte - MmSystemPteBase);
+    }
+
+    /* Decrease availability */
+    MmTotalFreeSystemPtes[SystemPtePoolType] -= NumberOfPtes;
+
+    /* Release the System PTE lock */
+    KeReleaseQueuedSpinLock(LockQueueSystemSpaceLock, OldIrql);
+
+    /* Flush the TLB */
+    KeFlushProcessTb();
+
+    /* Return the reserved PTEs */
+    return ReturnPte;
+}
+
 PMMPTE
 NTAPI
 MiReserveSystemPtes(
     _In_ ULONG NumberOfPtes,
     _In_ MMSYSTEM_PTE_POOL_TYPE SystemPtePoolType)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMMPTE Pte;
+
+    /* Use the extended function */
+    Pte = MiReserveAlignedSystemPtes(NumberOfPtes, SystemPtePoolType, 0);
+    if (Pte)
+        return Pte;
+
+    DPRINT1("MiReserveSystemPtes: Failed to reserve %X PTE(s)!\n", NumberOfPtes);
     return NULL;
 }
 
