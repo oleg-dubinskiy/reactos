@@ -127,8 +127,250 @@ MmInitializeProcessAddressSpace(
     _Inout_ PULONG Flags,
     _In_ POBJECT_NAME_INFORMATION* AuditName OPTIONAL)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PSECTION_IMAGE_INFORMATION ImageInformation;
+    PSECTION Section = SectionObject;
+    LARGE_INTEGER SectionOffset;
+    UNICODE_STRING FileName;
+    PFN_NUMBER PageFrameNumber;
+    PFILE_OBJECT FileObject;
+    PVOID ImageBase = NULL;
+    PSEGMENT Segment;
+    PWCHAR Source;
+    PCHAR Destination;
+    PMMPDE Pde;
+    PMMPTE Pte;
+    MMPTE TempPte;
+    SIZE_T ViewSize = 0;
+    ULONG AllocationType = 0;
+    USHORT Length = 0;
+    KIRQL OldIrql;
+    NTSTATUS status;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("MmInitializeProcessAddressSpace: Process %p, Clone %p, Section %p, Flags %X\n",
+           Process, ProcessClone, SectionObject, (Flags?*Flags:0));
+
+    /* We should have a PDE */
+    ASSERT(Process->Pcb.DirectoryTableBase[0] != 0);
+    ASSERT(Process->PdeUpdateNeeded == FALSE);
+
+    /* Attach to the process */
+    KeAttachProcess(&Process->Pcb);
+
+    /* The address space should now been in phase 1 or 0 */
+    ASSERT(Process->AddressSpaceInitialized <= 1);
+    Process->AddressSpaceInitialized = 2;
+
+    /* Initialize the Addresss Space lock */
+    KeInitializeGuardedMutex(&Process->AddressCreationLock);
+    Process->Vm.WorkingSetExpansionLinks.Flink = NULL;
+
+    /* Initialize AVL tree */
+    ASSERT(Process->VadRoot.NumberGenericTableElements == 0);
+    Process->VadRoot.BalancedRoot.u1.Parent = &Process->VadRoot.BalancedRoot;
+
+    /* Lock PFN database */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    /* Setup the PFN for the page directory of this process */
+#ifdef _M_AMD64
+    #error FIXME
+#else
+    Pde = MiAddressToPte(PDE_BASE);
+#endif
+
+    PageFrameNumber = PFN_FROM_PTE(Pde);
+    MiInitializePfn(PageFrameNumber, Pde, TRUE);
+    DPRINT("MmInitializeProcessAddressSpace: PDE_BASE %p, Pde %p [%I64X]\n",
+           PDE_BASE, Pde, MiGetPteContents(Pde));
+
+    ASSERT(Process->Pcb.DirectoryTableBase[0] == (PageFrameNumber * PAGE_SIZE));
+
+    /* Do the same for hyperspace page */
+#ifdef _M_AMD64
+    #error FIXME
+#else
+    Pde = MiAddressToPde(HYPER_SPACE);
+#endif
+
+    PageFrameNumber = PFN_FROM_PTE(Pde);
+    //ASSERT(Process->Pcb.DirectoryTableBase[0] == PageFrameNumber * PAGE_SIZE); // we're not lucky
+    MiInitializePfn(PageFrameNumber, (PMMPTE)Pde, TRUE);
+    DPRINT("MmInitializeProcessAddressSpace: PDE_BASE %p, Pde %p [%I64X]\n",
+           PDE_BASE, Pde, MiGetPteContents(Pde));
+
+    /* Setup the TempPte */
+    Pte = MiAddressToPte(MI_VAD_BITMAP);
+    DPRINT("MmInitializeProcessAddressSpace: MI_VAD_BITMAP %p, Pte %p [%p]\n",
+           MI_VAD_BITMAP, Pte, MiGetPteContents(Pte));
+    MI_MAKE_HARDWARE_PTE(&TempPte, Pte, MM_READWRITE, 0);
+    MI_MAKE_DIRTY_PAGE(&TempPte);
+    DPRINT("MmInitializeProcessAddressSpace: TempPte %p\n", TempPte.u.Long);
+
+    /* Setup for the vad bitmap page */
+    ASSERT(Pte->u.Long != 0);
+    PageFrameNumber = PFN_FROM_PTE(Pte);
+    MI_WRITE_INVALID_PTE(Pte, DemandZeroPte);
+    MiInitializePfn(PageFrameNumber, Pte, TRUE);
+    DPRINT("MmInitializeProcessAddressSpace: MI_VAD_BITMAP %p, Pte %p [%I64X]\n",
+           MI_VAD_BITMAP, Pte, MiGetPteContents(Pte));
+
+    TempPte.u.Hard.PageFrameNumber = PageFrameNumber;
+    MI_WRITE_VALID_PTE(Pte, TempPte);
+    DPRINT("MmInitializeProcessAddressSpace: MI_VAD_BITMAP %p, Pte %p [%I64X]\n",
+           MI_VAD_BITMAP, Pte, MiGetPteContents(Pte));
+
+    /* Setup for the working set page */
+    Pte = MiAddressToPte(MI_WORKING_SET_LIST);
+    ASSERT(Pte->u.Long != 0);
+    PageFrameNumber = PFN_FROM_PTE(Pte);
+    MI_WRITE_INVALID_PTE(Pte, DemandZeroPte);
+    MiInitializePfn(PageFrameNumber, Pte, TRUE);
+    DPRINT("MmInitializeProcessAddressSpace: MI_WORKING_SET_LIST %p, Pte %p [%I64X]\n",
+           MI_WORKING_SET_LIST, Pte, MiGetPteContents(Pte));
+
+    TempPte.u.Hard.PageFrameNumber = PageFrameNumber;
+    MI_WRITE_VALID_PTE(Pte, TempPte);
+    DPRINT("MmInitializeProcessAddressSpace: MI_WORKING_SET_LIST %p, Pte %p [%I64X]\n",
+           MI_WORKING_SET_LIST, Pte, MiGetPteContents(Pte));
+
+    /* Now initialize the working set list */
+    MiInitializeWorkingSetList(Process);
+
+    /* Sanity check */
+    ASSERT(Process->PhysicalVadRoot == NULL);
+
+    /* Release PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    /* Check if there's a Section Object */
+    if (!Section)
+    {
+        if (ProcessClone)
+        {
+            DPRINT1("MmInitializeProcessAddressSpace: ProcessClone %p\n", ProcessClone);
+            ASSERT(FALSE);
+        }
+        else
+        {
+            /* Be nice and detach */
+            KeDetachProcess();
+            Status = STATUS_SUCCESS;
+        }
+
+        if (NT_SUCCESS(Status))
+            *Flags &= ~0x10; // FIXME
+
+        goto Exit;
+    }
+
+    if (!Section->u.Flags.Image)
+    {
+        DPRINT1("MmInitializeProcessAddressSpace: STATUS_SECTION_NOT_IMAGE\n");
+        Status = STATUS_SECTION_NOT_IMAGE;
+        goto Exit1;
+    }
+
+    Segment = Section->Segment;
+    FileObject = Segment->ControlArea->FilePointer;
+    ImageInformation = Segment->u2.ImageInformation;
+
+    /* Determine the image file name and save it to EPROCESS */
+    FileName = FileObject->FileName;
+    Source = (PWCHAR)((PCHAR)FileName.Buffer + FileName.Length);
+
+    if (FileName.Buffer)
+    {
+        /* Loop the file name*/
+        while (Source > FileName.Buffer)
+        {
+            /* Make sure this isn't a backslash */
+            if (*--Source == OBJ_NAME_PATH_SEPARATOR)
+            {
+                /* If so, stop it here */
+                Source++;
+                break;
+            }
+            else
+            {
+                /* Otherwise, keep going */
+                Length++;
+            }
+        }
+    }
+
+    /* Copy the to the process and truncate it to 15 characters if necessary */
+    Destination = Process->ImageFileName;
+    Length = min(Length, sizeof(Process->ImageFileName) - 1);
+
+    while (Length--)
+        *Destination++ = (UCHAR)*Source++;
+
+    *Destination = ANSI_NULL;
+
+    /* Check if caller wants an audit name */
+    if (AuditName)
+    {
+        /* Setup the audit name */
+        Status = SeInitializeProcessAuditName(FileObject, FALSE, AuditName);
+        if (!NT_SUCCESS(Status))
+        {
+            /* Fail */
+            KeDetachProcess();
+            return Status;
+        }
+    }
+
+    Process->SubSystemMajorVersion = (UCHAR)ImageInformation->SubSystemMajorVersion;
+    Process->SubSystemMinorVersion = (UCHAR)ImageInformation->SubSystemMinorVersion;
+
+    if ((*Flags & 0x10) == 0x10)
+        AllocationType = 0x20000000;
+
+    /* Map the section */
+    SectionOffset.QuadPart = 0;
+    Status = MmMapViewOfSection(SectionObject,
+                                Process,
+                                &ImageBase,
+                                0,
+                                0,
+                                &SectionOffset,
+                                &ViewSize,
+                                ViewShare,
+                                AllocationType,
+                                PAGE_READWRITE);
+    /* Save the pointer */
+    Process->SectionBaseAddress = ImageBase;
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmInitializeProcessAddressSpace: Status %X\n", Status);
+        goto Exit1;
+    }
+
+
+    if (*Flags & 0x10)
+    {
+        DPRINT1("MmInitializeProcessAddressSpace: *Flags %X\n", *Flags);
+        ASSERT(FALSE);
+    }
+
+    status = PspMapSystemDll(Process, NULL, FALSE);
+    if (!NT_SUCCESS(status))
+    {
+        DPRINT1("MmInitializeProcessAddressSpace: status %X\n", status);
+        Status = status;
+    }
+
+Exit1:
+
+    DPRINT1("MmInitializeProcessAddressSpace: FIXME MiAllowWorkingSetExpansion\n");
+    KeDetachProcess();
+
+Exit:
+    /* Return status to caller */
+    DPRINT1("MmInitializeProcessAddressSpace: return %X\n", Status);
+    return Status;
 }
 
 NTSTATUS
