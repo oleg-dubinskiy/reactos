@@ -15,8 +15,6 @@ typedef struct _MM_ALLOCATION_REQUEST
     KEVENT Event;
 } MM_ALLOCATION_REQUEST, *PMM_ALLOCATION_REQUEST;
 
-#define MI_ASSERT_PFN_LOCK_HELD() ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL)
-
 /* GLOBALS ********************************************************************/
 
 MM_MEMORY_CONSUMER MiMemoryConsumers[MC_MAXIMUM];

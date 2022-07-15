@@ -45,6 +45,7 @@
    it is disabling the caches that requires a special flag, while on certain architectures such as ARM,
    it is enabling the cache which requires a flag.
 */
+
 #if defined(_M_IX86)
 
 /* Access Flags */
@@ -71,6 +72,35 @@
 #else
   #error Define these please!
 #endif
+
+extern const ULONG_PTR MmProtectToPteMask[32];
+extern const ULONG MmProtectToValue[32];
+extern PMMPTE MiSessionBasePte;
+extern PMMPTE MiSessionLastPte;
+extern PVOID MmSessionBase;
+extern PVOID MiSessionSpaceEnd;
+
+/* Assertions for session images, addresses, and PTEs */
+#define MI_IS_SESSION_IMAGE_ADDRESS(Address) \
+    (((Address) >= MiSessionImageStart) && ((Address) < MiSessionImageEnd))
+
+#define MI_IS_SESSION_ADDRESS(Address) \
+    (((Address) >= MmSessionBase) && ((Address) < MiSessionSpaceEnd))
+
+#define MI_IS_SESSION_PTE(Pte) \
+    ((((PMMPTE)Pte) >= MiSessionBasePte) && (((PMMPTE)Pte) < MiSessionLastPte))
+
+#define MI_IS_PAGE_TABLE_ADDRESS(Address) \
+    (((PVOID)(Address) >= (PVOID)PTE_BASE) && ((PVOID)(Address) <= (PVOID)PTE_TOP))
+
+#define MI_IS_SYSTEM_PAGE_TABLE_ADDRESS(Address) \
+    (((Address) >= (PVOID)MiAddressToPte(MmSystemRangeStart)) && ((Address) <= (PVOID)PTE_TOP))
+
+#define MI_IS_PAGE_TABLE_OR_HYPER_ADDRESS(Address) \
+    (((PVOID)(Address) >= (PVOID)PTE_BASE) && ((PVOID)(Address) <= (PVOID)MmHyperSpaceEnd))
+
+#define InterlockedExchangePte(PointerPte, Value) \
+    InterlockedExchange((PLONG)(PointerPte), Value)
 
 /* Creates a software PTE with the given protection */
 #define MI_MAKE_SOFTWARE_PTE(p, x)          ((p)->u.Long = (x << MM_PTE_SOFTWARE_PROTECTION_BITS))
@@ -103,6 +133,9 @@
 /* These two mappings are actually used by Windows itself, based on the ASSERTS */
 #define StartOfAllocation ReadInProgress
 #define EndOfAllocation WriteInProgress
+
+#define MiGetPteContents(PointerPte) \
+    (ULONGLONG)((PointerPte != NULL) ? (PointerPte->u.Long) : (0))
 
 /* FIXFIX: These should go in ex.h after the pool merge */
 
@@ -257,6 +290,8 @@ typedef struct _MM_SESSION_SPACE
     LONG ImageLoadingCount;
 } MM_SESSION_SPACE, *PMM_SESSION_SPACE;
 
+#define MI_ASSERT_PFN_LOCK_HELD()  ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL)
+
 #if MI_TRACE_PFNS
   #error Define these please!
 #else
@@ -288,6 +323,9 @@ extern PVOID MmPagedPoolStart;
 extern PVOID MmNonPagedPoolEnd;
 extern ULONG_PTR MmSubsectionBase;
 extern ULONG MmSystemPageColor;
+extern PMMPDE MiHighestUserPde;
+extern PMMPTE MiHighestUserPte;
+extern MMPTE ValidKernelPte;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -524,6 +562,95 @@ MiGetPfnEntryIndex(
     return (Pfn1 - MmPfnDatabase);
 }
 
+#ifdef _M_AMD64
+  #error FIXME
+#else
+FORCEINLINE
+BOOLEAN
+MiIsUserPde(PVOID Address)
+{
+    return ((Address >= (PVOID)MiAddressToPde(NULL)) &&
+            (Address <= (PVOID)MiHighestUserPde));
+}
+
+FORCEINLINE
+BOOLEAN
+MiIsUserPte(PVOID Address)
+{
+    return (Address <= (PVOID)MiHighestUserPte);
+}
+#endif
+
+/* Figures out the hardware bits for a PTE */
+FORCEINLINE
+ULONG_PTR
+MiDetermineUserGlobalPteMask(
+    _In_ PVOID Pte)
+{
+    MMPTE TempPte;
+
+    /* Start fresh */
+    TempPte.u.Long = 0;
+
+    /* Make it valid and accessed */
+    TempPte.u.Hard.Valid = TRUE;
+    MI_MAKE_ACCESSED_PAGE(&TempPte);
+
+    /* Is this for user-mode? */
+    if (
+      #if (_MI_PAGING_LEVELS >= 3)
+        #error FIXME
+      #endif
+        MiIsUserPde(Pte) ||
+        MiIsUserPte(Pte))
+    {
+        /* Set the owner bit */
+        MI_MAKE_OWNER_PAGE(&TempPte);
+    }
+
+    /* FIXME: We should also set the global bit */
+
+    /* Return the protection */
+    return TempPte.u.Long;
+}
+
+/* Creates a valid PTE with the given protection */
+FORCEINLINE
+VOID
+MI_MAKE_HARDWARE_PTE(
+    _In_ PMMPTE NewPte,
+    _In_ PMMPTE MappingPte,
+    _In_ ULONG_PTR ProtectionMask,
+    _In_ PFN_NUMBER PageFrameNumber)
+{
+    /* Set the protection and page */
+    NewPte->u.Long = MiDetermineUserGlobalPteMask(MappingPte);
+    NewPte->u.Long |= MmProtectToPteMask[ProtectionMask];
+    NewPte->u.Hard.PageFrameNumber = PageFrameNumber;
+}
+
+/* Creates a valid kernel PTE with the given protection */
+FORCEINLINE
+VOID
+MI_MAKE_HARDWARE_PTE_KERNEL(
+    _In_ PMMPTE NewPte,
+    _In_ PMMPTE MappingPte,
+    _In_ ULONG_PTR ProtectionMask,
+    _In_ PFN_NUMBER PageFrameNumber)
+{
+    /* Only valid for kernel, non-session PTEs */
+    ASSERT(MappingPte > MiHighestUserPte);
+    ASSERT(!MI_IS_SESSION_PTE(MappingPte));
+    ASSERT((MappingPte < (PMMPTE)PDE_BASE) || (MappingPte > (PMMPTE)PDE_TOP));
+
+    /* Start fresh */
+    *NewPte = ValidKernelPte;
+
+    /* Set the protection and page */
+    NewPte->u.Hard.PageFrameNumber = PageFrameNumber;
+    NewPte->u.Long |= MmProtectToPteMask[ProtectionMask];
+}
+
 /* Writes a valid PTE */
 FORCEINLINE
 VOID
@@ -591,6 +718,13 @@ MxGetNextPage(
     _In_ PFN_NUMBER PageCount
 );
 
+/* ARM3\pagfault.c */
+NTSTATUS
+FASTCALL
+MiCheckPdeForPagedPool(
+    _In_ PVOID Address
+);
+
 /* ARM3\pfnlist.c */
 PFN_NUMBER
 NTAPI
@@ -616,6 +750,14 @@ MiInitializePfnForOtherProcess(
     _In_ PFN_NUMBER PageFrameIndex,
     _In_ PVOID PteAddress,
     _In_ PFN_NUMBER PteFrame
+);
+
+VOID
+NTAPI
+MiInitializePfn(
+    _In_ PFN_NUMBER PageFrameIndex,
+    _In_ PMMPTE Pte,
+    _In_ BOOLEAN Modified
 );
 
 /* ARM3\pool.c */

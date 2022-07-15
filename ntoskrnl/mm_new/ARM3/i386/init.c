@@ -16,6 +16,10 @@ MMPTE ValidKernelPte = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }
 MMPTE ValidKernelPdeLocal = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
 MMPTE ValidKernelPteLocal = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
 
+/* Template PDE for a demand-zero page */
+MMPDE DemandZeroPde  = {{ (MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS) }};
+MMPTE DemandZeroPte  = {{ (MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS) }};
+
 extern PMMCOLOR_TABLES MmFreePagesByColor[FreePageList + 1];
 extern PMEMORY_ALLOCATION_DESCRIPTOR MxFreeDescriptor;
 extern MEMORY_ALLOCATION_DESCRIPTOR MxOldFreeDescriptor;
