@@ -128,6 +128,50 @@ MiCheckPdeForSessionSpace(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+FASTCALL
+MiCheckPdeForPagedPool(
+    _In_ PVOID Address)
+{
+    PMMPDE Pde;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    /* Check session PDE */
+    if (MI_IS_SESSION_ADDRESS(Address))
+        return MiCheckPdeForSessionSpace(Address);
+
+    if (MI_IS_SESSION_PTE(Address))
+        return MiCheckPdeForSessionSpace(Address);
+
+    /* Check if this is a fault while trying to access the page table itself */
+    if (MI_IS_SYSTEM_PAGE_TABLE_ADDRESS(Address))
+    {
+        /* Send a hint to the page fault handler that this is only a valid fault
+           if we already detected this was access within the page table range.
+        */
+        Pde = (PMMPDE)MiAddressToPte(Address);
+        Status = STATUS_WAIT_1;
+    }
+    else if (Address < MmSystemRangeStart)
+    {
+        /* This is totally illegal */
+        DPRINT1("MiCheckPdeForPagedPool: STATUS_ACCESS_VIOLATION. Address %p\n", Address);
+        //ASSERT(FALSE); // MiDbgBreakPointEx(); 
+        return STATUS_ACCESS_VIOLATION;
+    }
+    else
+    {
+        /* Get the PDE for the address */
+        Pde = MiAddressToPde(Address);
+    }
+
+    /* Check if it's not valid */
+    if (!Pde->u.Hard.Valid)
+        /* Copy it from our double-mapped system page directory */
+        InterlockedExchangePte(Pde, MmSystemPagePtes[MiGetPdeOffset(Pde)].u.Long);
+
+    return Status;
+}
 #else
   #error FIXME
 #endif
