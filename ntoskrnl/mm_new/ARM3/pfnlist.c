@@ -72,6 +72,36 @@ MiIncrementAvailablePages(
     }
 }
 
+static
+VOID
+MiDecrementAvailablePages(
+    VOID)
+{
+    ASSERT(MmAvailablePages > 0);
+
+    /* See if we hit any thresholds */
+    if (MmAvailablePages == MmHighMemoryThreshold)
+        /* Clear the high memory event */
+        KeClearEvent(MiHighMemoryEvent);
+    else if (MmAvailablePages == MmLowMemoryThreshold)
+        /* Signal the low memory event */
+        KeSetEvent(MiLowMemoryEvent, 0, FALSE);
+
+    /* One less page */
+    MmAvailablePages--;
+
+    if (MmAvailablePages >= MmMinimumFreePages)
+        return;
+
+    /* FIXME: Should wake up the MPW and working set manager, if we had one */
+    DPRINT1("MiDecrementAvailablePages: MmAvailablePages %X\n", MmAvailablePages);
+    DPRINT1("MiDecrementAvailablePages: FIXME MiObtainFreePages()\n");
+
+    /* Call RosMm and see if it can release any pages for us */
+    DPRINT1("MiDecrementAvailablePages: call MmRebalanceMemoryConsumers()\n");
+    MmRebalanceMemoryConsumers();
+}
+
 PFN_NUMBER
 NTAPI
 MiRemovePageByColor(
