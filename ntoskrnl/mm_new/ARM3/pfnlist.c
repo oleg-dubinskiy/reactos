@@ -131,7 +131,7 @@ MiRemovePageByColor(
     USHORT cacheAttribute;
 
     /* Make sure PFN lock is held */
-    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    MI_ASSERT_PFN_LOCK_HELD();
     //ASSERT(MmPfnOwner == KeGetCurrentThread());
 
     /* Get the PFN entry */
@@ -223,12 +223,12 @@ MiRemoveAnyPage(
 {
     PFN_NUMBER PageIndex;
     PMMPFNLIST StandbyListHead;
-    PMMPFN Pfn1;
+    PMMPFN Pfn;
 
     //DPRINT("MiRemoveAnyPage: Color %X\n", Color);
 
     /* Make sure PFN lock is held and we have pages */
-    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    MI_ASSERT_PFN_LOCK_HELD();
     //ASSERT(MmPfnOwner == KeGetCurrentThread());
 
     ASSERT(MmAvailablePages != 0);
@@ -239,17 +239,17 @@ MiRemoveAnyPage(
     if (PageIndex != LIST_HEAD)
     {
         /* Sanity checks */
-        Pfn1 = MI_PFN_ELEMENT(PageIndex);
-        ASSERT(Pfn1->u3.e1.PageLocation == FreePageList);
-        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+        Pfn = MI_PFN_ELEMENT(PageIndex);
+        ASSERT(Pfn->u3.e1.PageLocation == FreePageList);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
 
         /* Remove the page */
         PageIndex = MiRemovePageByColor(PageIndex, Color);
 
-        ASSERT(Pfn1 == MI_PFN_ELEMENT(PageIndex));
-        ASSERT(Pfn1->u3.e2.ReferenceCount == 0);
-        ASSERT(Pfn1->u2.ShareCount == 0);
-        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+        ASSERT(Pfn == MI_PFN_ELEMENT(PageIndex));
+        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn->u2.ShareCount == 0);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
 
         return PageIndex;
     }
@@ -259,15 +259,15 @@ MiRemoveAnyPage(
     if (PageIndex != LIST_HEAD)
     {
         /* Sanity checks */
-        Pfn1 = MI_PFN_ELEMENT(PageIndex);
-        ASSERT(Pfn1->u3.e1.PageLocation == ZeroedPageList);
-        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+        Pfn = MI_PFN_ELEMENT(PageIndex);
+        ASSERT(Pfn->u3.e1.PageLocation == ZeroedPageList);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
 
         /* Remove the page */
         PageIndex = MiRemovePageByColor(PageIndex, Color);
 
-        ASSERT(Pfn1 == MI_PFN_ELEMENT(PageIndex));
-        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+        ASSERT(Pfn == MI_PFN_ELEMENT(PageIndex));
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
 
         return PageIndex;
     }
@@ -277,18 +277,18 @@ MiRemoveAnyPage(
     if (PageIndex != LIST_HEAD)
     {
         /* Sanity checks */
-        Pfn1 = MI_PFN_ELEMENT(PageIndex);
-        ASSERT(Pfn1->u3.e1.PageLocation == FreePageList);
-        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+        Pfn = MI_PFN_ELEMENT(PageIndex);
+        ASSERT(Pfn->u3.e1.PageLocation == FreePageList);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
 
         /* Remove the page */
         Color = (PageIndex & MmSecondaryColorMask);
         PageIndex = MiRemovePageByColor(PageIndex, Color);
 
-        ASSERT(Pfn1 == MI_PFN_ELEMENT(PageIndex));
-        ASSERT(Pfn1->u3.e2.ReferenceCount == 0);
-        ASSERT(Pfn1->u2.ShareCount == 0);
-        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+        ASSERT(Pfn == MI_PFN_ELEMENT(PageIndex));
+        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn->u2.ShareCount == 0);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
 
         return PageIndex;
     }
@@ -299,17 +299,17 @@ MiRemoveAnyPage(
     PageIndex = MmZeroedPageListHead.Flink;
     if (PageIndex != LIST_HEAD)
     {
-        Pfn1 = MI_PFN_ELEMENT(PageIndex);
+        Pfn = MI_PFN_ELEMENT(PageIndex);
 
         /* Remove the page */
         Color = (PageIndex & MmSecondaryColorMask);
         PageIndex = MiRemovePageByColor(PageIndex, Color);
 
         /* Sanity checks */
-        ASSERT(Pfn1 == MI_PFN_ELEMENT(PageIndex));
-        ASSERT(Pfn1->u3.e2.ReferenceCount == 0);
-        ASSERT(Pfn1->u2.ShareCount == 0);
-        ASSERT(Pfn1->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+        ASSERT(Pfn == MI_PFN_ELEMENT(PageIndex));
+        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn->u2.ShareCount == 0);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
 
         return PageIndex;
     }
@@ -338,9 +338,9 @@ MiRemoveAnyPage(
     // ? MiMirroringActive
 
     /* Sanity checks */
-    Pfn1 = MI_PFN_ELEMENT(PageIndex);
-    ASSERT(Pfn1->u3.e2.ReferenceCount == 0);
-    ASSERT(Pfn1->u2.ShareCount == 0);
+    Pfn = MI_PFN_ELEMENT(PageIndex);
+    ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+    ASSERT(Pfn->u2.ShareCount == 0);
 
     return PageIndex;
 }
@@ -476,6 +476,79 @@ MiInitializePfnForOtherProcess(
     _In_ PFN_NUMBER PteFrame)
 {
     UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+MiInitializePfn(
+    _In_ PFN_NUMBER PageFrameIndex,
+    _In_ PMMPTE Pte,
+    _In_ BOOLEAN Modified)
+{
+    PMMPFN Pfn;
+    PMMPTE Pde;
+    NTSTATUS Status;
+
+    MI_ASSERT_PFN_LOCK_HELD();
+
+    /* Setup the PTE */
+    Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+    Pfn->PteAddress = Pte;
+
+    /* Check if this PFN is part of a valid address space */
+    if (Pte->u.Hard.Valid == 1)
+    {
+        /* Only valid from MmCreateProcessAddressSpace path */
+        ASSERT(PsGetCurrentProcess()->Vm.WorkingSetSize == 0);
+
+        /* Make this a demand zero PTE */
+        MI_MAKE_SOFTWARE_PTE(&Pfn->OriginalPte, MM_READWRITE);
+    }
+    else
+    {
+        /* Copy the PTE data */
+        Pfn->OriginalPte = *Pte;
+
+        ASSERT(!((Pfn->OriginalPte.u.Soft.Prototype == 0) &&
+                 (Pfn->OriginalPte.u.Soft.Transition == 1)));
+    }
+
+    /* Otherwise this is a fresh page -- set it up */
+    ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+    Pfn->u3.e2.ReferenceCount = 1;
+    Pfn->u2.ShareCount = 1;
+    Pfn->u3.e1.PageLocation = ActiveAndValid;
+    ASSERT(Pfn->u3.e1.Rom == 0);
+    Pfn->u3.e1.Modified = Modified;
+
+    /* Get the page table for the PTE */
+    Pde = MiAddressToPte(Pte);
+
+    if (!Pde->u.Hard.Valid)
+    {
+        /* Make sure the PDE gets paged in properly */
+        DPRINT1("MiInitializePfn: call MiCheckPdeForPagedPool(%p)\n", Pte);
+
+        Status = MiCheckPdeForPagedPool(Pte);
+        if (!NT_SUCCESS(Status))
+        {
+            /* Crash */
+            ASSERT(FALSE);KeBugCheckEx(MEMORY_MANAGEMENT,
+                         0x61940,
+                         (ULONG_PTR)Pte,
+                         (ULONG_PTR)Pde->u.Long,
+                         (ULONG_PTR)MiPteToAddress(Pte));
+        }
+    }
+
+    /* Get the PFN for the page table */
+    PageFrameIndex = PFN_FROM_PTE(Pde);
+    ASSERT(PageFrameIndex != 0);
+    Pfn->u4.PteFrame = PageFrameIndex;
+
+    /* Increase its share count so we don't get rid of it */
+    Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+    Pfn->u2.ShareCount++;
 }
 
 /* EOF */
