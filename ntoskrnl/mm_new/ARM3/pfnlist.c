@@ -37,6 +37,18 @@ MMPFNLIST MmModifiedNoWritePageListHead = {0, ModifiedNoWritePageList, LIST_HEAD
 MMPFNLIST MmBadPageListHead = {0, BadPageList, LIST_HEAD, LIST_HEAD};
 MMPFNLIST MmRomPageListHead = {0, StandbyPageList, LIST_HEAD, LIST_HEAD};
 
+PMMPFNLIST MmPageLocationList[] =
+{
+    &MmZeroedPageListHead,
+    &MmFreePageListHead,
+    &MmStandbyPageListHead,
+    &MmModifiedPageListHead,
+    &MmModifiedNoWritePageListHead,
+    &MmBadPageListHead,
+    NULL,
+    NULL
+};
+
 extern PMMCOLOR_TABLES MmFreePagesByColor[FreePageList + 1];
 extern PFN_NUMBER MmLowestPhysicalPage;
 extern ULONG MmSecondaryColorMask;
@@ -47,6 +59,7 @@ extern PFN_NUMBER MmHighMemoryThreshold;
 extern PKEVENT MiLowMemoryEvent;
 extern PKEVENT MiHighMemoryEvent;
 extern ULONG MmSecondaryColors;
+extern PFN_NUMBER MmMinimumFreePages;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -108,8 +121,90 @@ MiRemovePageByColor(
     _In_ PFN_NUMBER PageIndex,
     _In_ ULONG Color)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    PMMCOLOR_TABLES ColorTable;
+    PMMPFNLIST ListHead;
+    MMLISTS ListName;
+    PFN_NUMBER OldFlink;
+    PFN_NUMBER OldBlink;
+    PMMPFN Pfn;
+    USHORT pageColor;
+    USHORT cacheAttribute;
+
+    /* Make sure PFN lock is held */
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    //ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    /* Get the PFN entry */
+    Pfn = MI_PFN_ELEMENT (PageIndex);
+
+    /* Capture data for later */
+    pageColor = Pfn->u3.e1.PageColor;
+    cacheAttribute = Pfn->u3.e1.CacheAttribute;
+
+    DPRINT("MiRemovePageByColor: FIXME PPerfGlobalGroupMask and MiMirroringActive\n");
+
+    /* Could be either on free or zero list */
+    ListHead = MmPageLocationList[Pfn->u3.e1.PageLocation];
+    ListName = ListHead->ListName;
+
+    /* Remove a page */
+    ListHead->Total--;
+
+    /* Get the forward and back pointers */
+    OldFlink = Pfn->u1.Flink;
+    OldBlink = Pfn->u2.Blink;
+
+    /* Check if the next entry is the list head */
+    if (OldFlink != LIST_HEAD)
+        /* It is not, so set the backlink of the actual entry, to our backlink */
+        MI_PFN_ELEMENT(OldFlink)->u2.Blink = OldBlink;
+    else
+        /* Set the list head's backlink instead */
+        ListHead->Blink = OldBlink;
+
+    /* Check if the back entry is the list head */
+    if (OldBlink != LIST_HEAD)
+        /* It is not, so set the backlink of the actual entry, to our backlink */
+        MI_PFN_ELEMENT(OldBlink)->u1.Flink = OldFlink;
+    else
+        ListHead->Flink = OldFlink;
+
+    ASSERT(Pfn->u3.e1.RemovalRequested == 0);
+    ASSERT(Pfn->u3.e1.Rom == 0);
+
+    /* Zero flags but restore color and cache */
+    Pfn->u3.e2.ShortFlags = 0;
+    Pfn->u3.e1.PageColor = pageColor;
+    Pfn->u3.e1.CacheAttribute = cacheAttribute;
+
+    /* We are not on a list anymore */
+    Pfn->u1.Flink = 0;
+    Pfn->u2.Blink = 0;
+
+    /* Get the first page on the color list */
+    ASSERT(Color < MmSecondaryColors);
+
+    ColorTable = &MmFreePagesByColor[ListName][Color];
+    ASSERT(ColorTable->Count >= 1);
+
+    /* Set the forward link to whoever we were pointing to */
+    ColorTable->Flink = Pfn->OriginalPte.u.Long;
+
+    /* Get the first page on the color list */
+    if (ColorTable->Flink == LIST_HEAD)
+        /* This is the beginning of the list, so set the sentinel value */
+        ColorTable->Blink = (PVOID)LIST_HEAD;
+    else
+        /* The list is empty, so we are the first page */
+        MI_PFN_ELEMENT(ColorTable->Flink)->u4.PteFrame = COLORED_LIST_HEAD;
+
+    /* One less page */
+    ColorTable->Count--;
+
+    /* Decrement number of available pages */
+    MiDecrementAvailablePages();
+
+    return PageIndex;
 }
 
 PFN_NUMBER

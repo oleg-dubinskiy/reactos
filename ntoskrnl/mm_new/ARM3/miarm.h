@@ -80,7 +80,7 @@
   #define LIST_HEAD 0xFFFFFFFF
 
   /* Because GCC cannot automatically downcast 0xFFFFFFFF to lesser-width bits,
-     we need a manual definition suited to the number of bits _In_ the PteFrame.
+     we need a manual definition suited to the number of bits in the PteFrame.
      This is used as a LIST_HEAD for the colored list
   */
   #define COLORED_LIST_HEAD ((1 << 25) - 1)    // 0x1FFFFFF
@@ -104,7 +104,7 @@
 #define StartOfAllocation ReadInProgress
 #define EndOfAllocation WriteInProgress
 
-/* FIXFIX: These should go _In_ ex.h after the pool merge */
+/* FIXFIX: These should go in ex.h after the pool merge */
 
 #ifdef _WIN64
   #define POOL_BLOCK_SIZE 16
@@ -669,6 +669,12 @@ MmInitializeBalancer(
 BOOLEAN
 MmRosNotifyAvailablePage(
     PFN_NUMBER Page
+);
+
+VOID
+NTAPI
+MmRebalanceMemoryConsumers(
+    VOID
 );
 
 /* EOF */

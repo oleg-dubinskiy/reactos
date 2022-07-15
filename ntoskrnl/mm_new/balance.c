@@ -109,4 +109,11 @@ MmRosNotifyAvailablePage(
     return TRUE;
 }
 
+VOID
+NTAPI
+MmRebalanceMemoryConsumers(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 /* EOF */
