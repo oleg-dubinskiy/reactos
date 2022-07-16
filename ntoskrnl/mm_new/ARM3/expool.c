@@ -36,6 +36,7 @@ ULONG PoolHitTag;
 ULONG ExpPoolFlags;
 ULONG ExPoolFailures;
 ULONG ExpPoolBigEntriesInUse;
+ULONG ExpBigTableExpansionFailed;
 ULONGLONG MiLastPoolDumpTime;
 BOOLEAN ExStopBadTags;
 
@@ -958,6 +959,92 @@ MmUseSpecialPool(
     return (Tag == MmSpecialPoolTag);
 }
 
+_IRQL_requires_(DISPATCH_LEVEL)
+BOOLEAN
+NTAPI
+ExpExpandBigPageTable(
+    _In_ _IRQL_restores_ KIRQL OldIrql)
+{
+    ULONG OldSize = PoolBigPageTableSize;
+    ULONG NewSize = (2 * OldSize);
+    ULONG NewSizeInBytes;
+    PPOOL_TRACKER_BIG_PAGES NewTable;
+    PPOOL_TRACKER_BIG_PAGES OldTable;
+    ULONG ix;
+    ULONG PagesFreed;
+    ULONG Hash;
+    ULONG HashMask;
+
+    /* Must be holding ExpLargePoolTableLock */
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+
+    /* Make sure we don't overflow */
+    if (!NT_SUCCESS(RtlULongMult(2, (OldSize * sizeof(POOL_TRACKER_BIG_PAGES)), &NewSizeInBytes)))
+    {
+        DPRINT1("Overflow expanding big page table. Size=%lu\n", OldSize);
+        KeReleaseSpinLock(&ExpLargePoolTableLock, OldIrql);
+        return FALSE;
+    }
+
+    NewTable = MiAllocatePoolPages(NonPagedPool, NewSizeInBytes);
+    if (!NewTable)
+    {
+        DPRINT1("Could not allocate %lu bytes for new big page table\n", NewSizeInBytes);
+        KeReleaseSpinLock(&ExpLargePoolTableLock, OldIrql);
+        return FALSE;
+    }
+
+    DPRINT("Expanding big pool tracker table to %lu entries\n", NewSize);
+
+    /* Initialize the new table */
+    RtlZeroMemory(NewTable, NewSizeInBytes);
+
+    for (ix = 0; ix < NewSize; ix++)
+        NewTable[ix].Va = (PVOID)POOL_BIG_TABLE_ENTRY_FREE;
+
+    /* Copy over all items */
+    OldTable = PoolBigPageTable;
+    HashMask = (NewSize - 1);
+
+    for (ix = 0; ix < OldSize; ix++)
+    {
+        /* Skip over empty items */
+        if ((ULONG_PTR)OldTable[ix].Va & POOL_BIG_TABLE_ENTRY_FREE)
+            continue;
+
+        /* Recalculate the hash due to the new table size */
+        Hash = (ExpComputePartialHashForAddress(OldTable[ix].Va) & HashMask);
+
+        /* Find the location in the new table */
+        while (!((ULONG_PTR)NewTable[Hash].Va & POOL_BIG_TABLE_ENTRY_FREE))
+        {
+            Hash = ((Hash + 1) & HashMask);
+        }
+
+        /* We just enlarged the table, so we must have space */
+        ASSERT((ULONG_PTR)NewTable[Hash].Va & POOL_BIG_TABLE_ENTRY_FREE);
+
+        /* Finally, copy the item */
+        NewTable[Hash] = OldTable[ix];
+    }
+
+    /* Activate the new table */
+    PoolBigPageTable = NewTable;
+    PoolBigPageTableSize = NewSize;
+    PoolBigPageTableHash = (PoolBigPageTableSize - 1);
+
+    /* Release the lock, we're done changing global state */
+    KeReleaseSpinLock(&ExpLargePoolTableLock, OldIrql);
+
+    /* Free the old table and update our tracker */
+    PagesFreed = MiFreePoolPages(OldTable);
+
+    ExpRemovePoolTracker('looP', (PagesFreed << PAGE_SHIFT), 0);
+    ExpInsertPoolTracker('looP', ALIGN_UP_BY(NewSizeInBytes, PAGE_SIZE), 0);
+
+    return TRUE;
+}
+
 BOOLEAN
 NTAPI
 ExpAddTagForBigPages(
@@ -966,7 +1053,93 @@ ExpAddTagForBigPages(
     _In_ ULONG NumberOfPages,
     _In_ POOL_TYPE PoolType)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PPOOL_TRACKER_BIG_PAGES EntryStart;
+    PPOOL_TRACKER_BIG_PAGES EntryEnd;
+    PPOOL_TRACKER_BIG_PAGES Entry;
+    PVOID OldVa;
+    SIZE_T TableSize;
+    ULONG Hash;
+    ULONG ix = 0;
+    KIRQL OldIrql;
+
+    ASSERT(((ULONG_PTR)Va & POOL_BIG_TABLE_ENTRY_FREE) == 0);
+    ASSERT(!(PoolType & SESSION_POOL_MASK));
+
+    /* As the table is expandable, these values must only be read after acquiring the lock
+       to avoid a teared access during an expansion.
+       NOTE: Windows uses a special reader/writer SpinLock
+       to improve performance in the common case (add/remove a tracker entry).
+    */
+
+Retry:
+
+    Hash = ExpComputePartialHashForAddress(Va);
+    KeAcquireSpinLock(&ExpLargePoolTableLock, &OldIrql);
+    Hash &= PoolBigPageTableHash;
+    TableSize = PoolBigPageTableSize;
+
+    /* We loop from the current hash bucket to the end of the table,
+       and then rollover to hash bucket 0 and keep going from there.
+       If we return back to the beginning, then we attempt expansion at the bottom of the loop
+    */
+    EntryStart = Entry = &PoolBigPageTable[Hash];
+    EntryEnd = &PoolBigPageTable[TableSize];
+
+    do
+    {
+        /* Make sure that this is a free entry and attempt to atomically make the entry busy now.
+           NOTE: the Interlocked operation cannot fail with an exclusive SpinLock.
+        */
+        OldVa = Entry->Va;
+
+        if (((ULONG_PTR)OldVa & POOL_BIG_TABLE_ENTRY_FREE) &&
+            (NT_VERIFY(InterlockedCompareExchangePointer(&Entry->Va, Va, OldVa) == OldVa)))
+        {
+            /* We now own this entry, write down the size and the pool tag */
+            Entry->Key = Key;
+            Entry->NumberOfPages = NumberOfPages;
+
+            /* Add one more entry to the count, and see if we're getting within 25% of the table size,
+               at which point we'll do an expansion now to avoid blocking too hard later on.
+
+               Note that we only do this if it's also been the 16th time
+               that we keep losing the race or that we are not finding a free entry anymore,
+               which implies a massive number of concurrent big pool allocations.
+            */
+            InterlockedIncrementUL(&ExpPoolBigEntriesInUse);
+
+            if (ix >= 0x10 && ExpPoolBigEntriesInUse > (TableSize / 4))
+            {
+                DPRINT("Attempting expansion since we now have %lu entries\n", ExpPoolBigEntriesInUse);
+                ASSERT(TableSize == PoolBigPageTableSize);
+                ExpExpandBigPageTable(OldIrql);
+                return TRUE;
+            }
+
+            /* We have our entry, return */
+            KeReleaseSpinLock(&ExpLargePoolTableLock, OldIrql);
+            return TRUE;
+        }
+
+        /* We don't have our entry yet, so keep trying, making the entry list circular if we reach the last entry.
+           We'll eventually break out of the loop once we've rolled over and returned back to our original hash bucket
+        */
+        ix++;
+        if (++Entry >= EntryEnd)
+            Entry = &PoolBigPageTable[0];
+    }
+    while (Entry != EntryStart);
+
+    /* This means there's no free hash buckets whatsoever, so we now have to attempt expanding the table */
+    ASSERT(TableSize == PoolBigPageTableSize);
+
+    if (ExpExpandBigPageTable(OldIrql))
+        goto Retry;
+
+    ExpBigTableExpansionFailed++;
+
+    DPRINT1("Big pool table expansion failed\n");
+
     return FALSE;
 }
 
