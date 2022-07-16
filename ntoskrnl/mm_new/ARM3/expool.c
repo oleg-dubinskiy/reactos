@@ -27,6 +27,7 @@ PPOOL_DESCRIPTOR PoolVector[2];
 PPOOL_TRACKER_TABLE PoolTrackTable;
 PPOOL_TRACKER_BIG_PAGES PoolBigPageTable;
 KSPIN_LOCK ExpTaggedPoolLock;
+KSPIN_LOCK ExpLargePoolTableLock;
 SIZE_T PoolTrackTableSize;
 SIZE_T PoolTrackTableMask;
 SIZE_T PoolBigPageTableSize;
@@ -34,6 +35,7 @@ SIZE_T PoolBigPageTableHash;
 ULONG PoolHitTag;
 ULONG ExpPoolFlags;
 ULONG ExPoolFailures;
+ULONG ExpPoolBigEntriesInUse;
 ULONGLONG MiLastPoolDumpTime;
 BOOLEAN ExStopBadTags;
 
@@ -237,6 +239,24 @@ ExUnlockPool(
         KeReleaseGuardedMutex(Descriptor->LockAddress);
 }
 
+FORCEINLINE
+ULONG
+ExpComputePartialHashForAddress(
+    _In_ PVOID BaseAddress)
+{
+    ULONG Result;
+
+    /* Compute the hash by converting the address into a page number, and then XORing each nibble with the next one.
+
+       We do *NOT* AND with the bucket mask at this point because big table expansion might happen.
+       Therefore, the final step of the hash must be performed while holding the expansion pushlock,
+       and this is why we call this a "partial" hash only.
+    */
+    Result = (ULONG)((ULONG_PTR)BaseAddress >> PAGE_SHIFT);
+
+    return ((Result >> 24) ^ (Result >> 16) ^ (Result >> 8) ^ Result);
+}
+
 PLIST_ENTRY
 NTAPI
 ExpEncodePoolLink(
@@ -299,6 +319,39 @@ ExpRemovePoolHeadList(
     Flink->Blink = ExpEncodePoolLink(ListHead);
 
     return Entry;
+}
+
+VOID
+NTAPI
+ExpRemovePoolEntryList(
+    _In_ PLIST_ENTRY Entry)
+{
+    PLIST_ENTRY Flink;
+    PLIST_ENTRY Blink;
+
+    Flink = ExpDecodePoolLink(Entry->Flink);
+    Blink = ExpDecodePoolLink(Entry->Blink);
+    Flink->Blink = ExpEncodePoolLink(Blink);
+    Blink->Flink = ExpEncodePoolLink(Flink);
+}
+
+VOID
+NTAPI
+ExpInsertPoolHeadList(
+    _In_ PLIST_ENTRY ListHead,
+    _In_ PLIST_ENTRY Entry)
+{
+    PLIST_ENTRY Flink;
+
+    ExpCheckPoolLinks(ListHead);
+
+    Flink = ExpDecodePoolLink(ListHead->Flink);
+    Entry->Flink = ExpEncodePoolLink(Flink);
+    Entry->Blink = ExpEncodePoolLink(ListHead);
+    Flink->Blink = ExpEncodePoolLink(Entry);
+    ListHead->Flink = ExpEncodePoolLink(Entry);
+
+    ExpCheckPoolLinks(ListHead);
 }
 
 VOID
@@ -537,6 +590,84 @@ ExpInsertPoolTracker(
 
     /* And finally this path is hit when all the buckets are full, and we need some expansion.
        This path is not yet supported in ReactOS and so we'll ignore the tag
+    */
+    DPRINT1("Out of pool tag space, ignoring...\n");
+}
+
+VOID
+NTAPI
+ExpRemovePoolTracker(
+    _In_ ULONG Key,
+    _In_ SIZE_T NumberOfBytes,
+    _In_ POOL_TYPE PoolType)
+{
+    PPOOL_TRACKER_TABLE Table;
+    PPOOL_TRACKER_TABLE TableEntry;
+    SIZE_T TableMask;
+    SIZE_T TableSize;
+    ULONG Hash;
+    ULONG Index;
+
+    DPRINT1("ExpRemovePoolTracker: PoolType %X, NumberOfBytes %X, Key %X\n", PoolType, NumberOfBytes, Key);
+
+    /* Remove the PROTECTED_POOL flag which is not part of the tag. */
+    Key &= ~PROTECTED_POOL;
+
+    /* With WinDBG you can set a tag you want to break on when an allocation is attempted. */
+    if (Key == PoolHitTag)
+        DbgBreakPoint();
+
+    /* Why the double indirection? Because normally this function is also used when doing session pool allocations,
+       which has another set of tables, sizes, and masks that live in session pool.
+       Now we don't support session pool so we only ever use the regular tables,
+       but I'm keeping the code this way so that the day we DO support session pool, it won't require that many changes.
+    */
+    Table = PoolTrackTable;
+    TableMask = PoolTrackTableMask;
+    TableSize = PoolTrackTableSize;
+
+    DBG_UNREFERENCED_LOCAL_VARIABLE(TableSize);
+
+    /* Compute the hash for this key, and loop all the possible buckets. */
+    Hash = ExpComputeHashForTag(Key, TableMask);
+    Index = Hash;
+
+    while (TRUE)
+    {
+        /* Have we found the entry for this tag? */
+        TableEntry = &Table[Hash];
+        if (TableEntry->Key == Key)
+        {
+            /* Decrement the counters depending on if this was paged or nonpaged pool. */
+            if ((PoolType & BASE_POOL_TYPE_MASK) == NonPagedPool)
+            {
+                InterlockedIncrement(&TableEntry->NonPagedFrees);
+                InterlockedExchangeAddSizeT(&TableEntry->NonPagedBytes, -(SSIZE_T)NumberOfBytes);
+                return;
+            }
+
+            InterlockedIncrement(&TableEntry->PagedFrees);
+            InterlockedExchangeAddSizeT(&TableEntry->PagedBytes, -(SSIZE_T)NumberOfBytes);
+            return;
+        }
+
+        /* We should have only ended up with an empty entry if we've reached the last bucket. */
+        if (!TableEntry->Key)
+        {
+            DPRINT1("Empty item reached in tracker table. Hash %X, TableMask %X, Tag %X, Bytes %X, PoolType %X\n",
+                    Hash, TableMask, Key, (ULONG)NumberOfBytes, PoolType);
+
+            ASSERT(Hash == TableMask);
+        }
+
+        /* This path is hit when we don't have an entry, and the current bucket is full, so we simply try the next one. */
+        Hash = ((Hash + 1) & TableMask);
+        if (Hash == Index)
+            break;
+    }
+
+    /* And finally this path is hit when all the buckets are full, and we need some expansion.
+       This path is not yet supported in ReactOS and so we'll ignore the tag.
     */
     DPRINT1("Out of pool tag space, ignoring...\n");
 }
@@ -839,6 +970,71 @@ ExpAddTagForBigPages(
     return FALSE;
 }
 
+ULONG
+NTAPI
+ExpFindAndRemoveTagBigPages(
+    _In_ PVOID Va,
+    _Out_ PULONG_PTR BigPages,
+    _In_ POOL_TYPE PoolType)
+{
+    PPOOL_TRACKER_BIG_PAGES Entry;
+    SIZE_T TableSize;
+    ULONG PoolTag;
+    ULONG Hash;
+    KIRQL OldIrql;
+    BOOLEAN FirstTry = TRUE;
+
+    ASSERT(((ULONG_PTR)Va & POOL_BIG_TABLE_ENTRY_FREE) == 0);
+    ASSERT(!(PoolType & SESSION_POOL_MASK));
+
+    /* As the table is expandable, these values must only be read after acquiring the lock
+       to avoid a teared access during an expansion.
+    */
+    Hash = ExpComputePartialHashForAddress(Va);
+    KeAcquireSpinLock(&ExpLargePoolTableLock, &OldIrql);
+    Hash &= PoolBigPageTableHash;
+    TableSize = PoolBigPageTableSize;
+
+    /* Loop while trying to find this big page allocation. */
+    while (PoolBigPageTable[Hash].Va != Va)
+    {
+        /* Increment the size until we go past the end of the table. */
+        if (++Hash < TableSize)
+            continue;
+
+        /* Is this the second time we've tried? */
+        if (!FirstTry)
+        {
+            /* This means it was never inserted into the pool table and it received the special "BIG" tag -- return
+               that and return 0 so that the code can ask Mm for the page count instead.
+            */
+            KeReleaseSpinLock(&ExpLargePoolTableLock, OldIrql);
+            *BigPages = 0;
+            return ' GIB';
+        }
+
+        /* The first time this happens, reset the hash index and try again. */
+        Hash = 0;
+        FirstTry = FALSE;
+    }
+
+    /* Now capture all the information we need from the entry,
+       since after we release the lock, the data can change
+    */
+    Entry = &PoolBigPageTable[Hash];
+    *BigPages = Entry->NumberOfPages;
+    PoolTag = Entry->Key;
+
+    /* Set the free bit, and decrement the number of allocations.
+       Finally, release the lock and return the tag that was located.
+    */
+    InterlockedIncrement((PLONG)&Entry->Va);
+    InterlockedDecrementUL(&ExpPoolBigEntriesInUse);
+    KeReleaseSpinLock(&ExpLargePoolTableLock, OldIrql);
+
+    return PoolTag;
+}
+
 VOID
 NTAPI
 ExpCheckPoolHeader(
@@ -897,25 +1093,25 @@ ExpCheckPoolHeader(
     NextEntry = POOL_NEXT_BLOCK(Entry);
 
     /* If this is the last block, then we'll be page-aligned, otherwise, check this block */
-    if (PAGE_ALIGN(NextEntry) != NextEntry)
+    if (PAGE_ALIGN(NextEntry) == NextEntry)
+        return;
+
+    /* The two blocks must be on the same page! */
+    if (PAGE_ALIGN(Entry) != PAGE_ALIGN(NextEntry))
     {
-        /* The two blocks must be on the same page! */
-        if (PAGE_ALIGN(Entry) != PAGE_ALIGN(NextEntry))
-        {
-            /* Something is messed up */
-            KeBugCheckEx(BAD_POOL_HEADER, 9, (ULONG_PTR)NextEntry, __LINE__, (ULONG_PTR)Entry);
-        }
-
-        /* And this block should think we are as large as we truly are */
-        if (NextEntry->PreviousSize != Entry->BlockSize)
-        {
-            /* Otherwise, someone corrupted the field */
-            DPRINT1("Entry BlockSize %lu, tag %.4s. NextEntry PreviousSize %lu, tag %.4s\n",
-                    Entry->BlockSize, (char *)&Entry->PoolTag, NextEntry->PreviousSize, (char *)&NextEntry->PoolTag);
-
-            KeBugCheckEx(BAD_POOL_HEADER, 5, (ULONG_PTR)NextEntry, __LINE__, (ULONG_PTR)Entry);
-        }
+        /* Something is messed up */
+        KeBugCheckEx(BAD_POOL_HEADER, 9, (ULONG_PTR)NextEntry, __LINE__, (ULONG_PTR)Entry);
     }
+
+    /* And this block should think we are as large as we truly are */
+    if (NextEntry->PreviousSize == Entry->BlockSize)
+        return;
+
+    /* Otherwise, someone corrupted the field */
+    DPRINT1("Entry BlockSize %lu, tag %.4s. NextEntry PreviousSize %lu, tag %.4s\n",
+            Entry->BlockSize, (char *)&Entry->PoolTag, NextEntry->PreviousSize, (char *)&NextEntry->PoolTag);
+
+    KeBugCheckEx(BAD_POOL_HEADER, 5, (ULONG_PTR)NextEntry, __LINE__, (ULONG_PTR)Entry);
 }
 
 VOID
@@ -1443,7 +1639,317 @@ ExFreePoolWithTag(
     _In_ PVOID P,
     _In_ ULONG TagToFree)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PKPRCB Prcb = KeGetCurrentPrcb();
+    PGENERAL_LOOKASIDE LookasideList;
+    PPOOL_DESCRIPTOR PoolDesc;
+    PPOOL_HEADER Entry;
+    PPOOL_HEADER NextEntry;
+    PEPROCESS Process;
+    POOL_TYPE PoolType;
+    PFN_NUMBER PageCount;
+    PFN_NUMBER RealPageCount;
+    ULONG Tag;
+    USHORT BlockSize;
+    KIRQL OldIrql;
+    BOOLEAN Combined = FALSE;
+
+    /* Check if any of the debug flags are enabled. */
+    if (ExpPoolFlags & (POOL_FLAG_CHECK_TIMERS |
+                        POOL_FLAG_CHECK_WORKERS |
+                        POOL_FLAG_CHECK_RESOURCES |
+                        POOL_FLAG_VERIFIER |
+                        POOL_FLAG_CHECK_DEADLOCK |
+                        POOL_FLAG_SPECIAL_POOL))
+    {
+        /* Check if special pool is enabled. */
+        if (ExpPoolFlags & POOL_FLAG_SPECIAL_POOL)
+        {
+            /* Check if it was allocated from a special pool. */
+            if (MmIsSpecialPoolAddress(P))
+            {
+                /* Was deadlock verification also enabled? We can do some extra checks at this point. */
+                if (ExpPoolFlags & POOL_FLAG_CHECK_DEADLOCK)
+                {
+                    DPRINT1("Verifier not yet supported\n");
+                }
+
+                /* It is, so handle it via special pool free routine. */
+                MmFreeSpecialPool(P);
+                return;
+            }
+        }
+
+        /* For non-big page allocations, we'll do a bunch of checks in here. */
+        if (PAGE_ALIGN(P) != P)
+        {
+            /* Get the entry for this pool allocation.
+               The pointer math here may look wrong or confusing, but it is quite right.
+            */
+            Entry = P;
+            Entry--;
+
+            /* Get the pool type. */
+            PoolType = ((Entry->PoolType - 1) & BASE_POOL_TYPE_MASK);
+
+            /* FIXME: Many other debugging checks go here. */
+            ExpCheckPoolIrqlLevel(PoolType, 0, P);
+        }
+    }
+
+    /* Check if this is a big page allocation. */
+    if (PAGE_ALIGN(P) == P)
+    {
+        /* We need to find the tag for it, so first we need to find out what kind of allocation this was
+           (paged or nonpaged), then we can go ahead and try finding the tag for it.
+           Remember to get rid of the PROTECTED_POOL tag if it's found.
+
+           Note that if at insertion time, we failed to add the tag for a big pool allocation,
+           we used a special tag called 'BIG' to identify the allocation, and we may get this tag back.
+           In this scenario, we must manually get the size of the allocation by actually counting through the PFN database.
+        */
+        PoolType = MmDeterminePoolType(P);
+        ExpCheckPoolIrqlLevel(PoolType, 0, P);
+
+        Tag = ExpFindAndRemoveTagBigPages(P, &PageCount, PoolType);
+        if (!Tag)
+        {
+            DPRINT1("We do not know the size of this allocation. This is not yet supported\n");
+            ASSERT(Tag == ' GIB');
+            PageCount = 1; /* We are going to lie! This might screw up accounting? */
+        }
+        else if (Tag & PROTECTED_POOL)
+        {
+            Tag &= ~PROTECTED_POOL;
+        }
+
+        /* Check block tag. */
+        if (TagToFree && TagToFree != Tag)
+        {
+            DPRINT1("Freeing pool - invalid tag specified: %.4s != %.4s\n", (char*)&TagToFree, (char*)&Tag);
+          #if DBG
+            KeBugCheckEx(BAD_POOL_CALLER, 0x0A, (ULONG_PTR)P, Tag, TagToFree);
+          #endif
+        }
+
+        /* We have our tag and our page count, so we can go ahead and remove this tracker now. */
+        ExpRemovePoolTracker(Tag, PageCount << PAGE_SHIFT, PoolType);
+
+        /* Check if any of the debug flags are enabled. */
+        if (ExpPoolFlags & (POOL_FLAG_CHECK_TIMERS |
+                            POOL_FLAG_CHECK_WORKERS |
+                            POOL_FLAG_CHECK_RESOURCES |
+                            POOL_FLAG_CHECK_DEADLOCK))
+        {
+            /* Was deadlock verification also enabled? We can do some extra checks at this point. */
+            if (ExpPoolFlags & POOL_FLAG_CHECK_DEADLOCK)
+            {
+                DPRINT1("Verifier not yet supported\n");
+            }
+
+            /* FIXME: Many debugging checks go here. */
+        }
+
+        /* Update counters. */
+        PoolDesc = PoolVector[PoolType];
+        InterlockedIncrement((PLONG)&PoolDesc->RunningDeAllocs);
+        InterlockedExchangeAddSizeT(&PoolDesc->TotalBytes, -(LONG_PTR)(PageCount << PAGE_SHIFT));
+
+        /* Do the real free now and update the last counter with the big page count. */
+        RealPageCount = MiFreePoolPages(P);
+        ASSERT(RealPageCount == PageCount);
+        InterlockedExchangeAdd((PLONG)&PoolDesc->TotalBigPages, -(LONG)RealPageCount);
+        return;
+    }
+
+    /* Get the entry for this pool allocation.
+       The pointer math here may look wrong or confusing, but it is quite right.
+    */
+    Entry = P;
+    Entry--;
+    ASSERT((ULONG_PTR)Entry % POOL_BLOCK_SIZE == 0);
+
+    /* Get the size of the entry, and it's pool type, then load the descriptor for this pool type. */
+    BlockSize = Entry->BlockSize;
+    PoolType = ((Entry->PoolType - 1) & BASE_POOL_TYPE_MASK);
+    PoolDesc = PoolVector[PoolType];
+
+    /* Make sure that the IRQL makes sense. */
+    ExpCheckPoolIrqlLevel(PoolType, 0, P);
+
+    /* Get the pool tag and get rid of the PROTECTED_POOL flag. */
+    Tag = Entry->PoolTag;
+    if (Tag & PROTECTED_POOL)
+        Tag &= ~PROTECTED_POOL;
+
+    /* Check block tag */
+    if (TagToFree && TagToFree != Tag)
+    {
+        DPRINT1("Freeing pool - invalid tag specified: %.4s != %.4s\n", (char*)&TagToFree, (char*)&Tag);
+      #if DBG
+        KeBugCheckEx(BAD_POOL_CALLER, 0x0A, (ULONG_PTR)P, Tag, TagToFree);
+      #endif
+    }
+
+    /* Track the removal of this allocation. */
+    ExpRemovePoolTracker(Tag, (BlockSize * POOL_BLOCK_SIZE), Entry->PoolType - 1);
+
+    /* Release pool quota, if any. */
+    if ((Entry->PoolType - 1) & QUOTA_POOL_MASK)
+    {
+        Process = ((PVOID *)POOL_NEXT_BLOCK(Entry))[-1];
+        if (Process)
+        {
+            if (Process->Pcb.Header.Type != ProcessObject)
+            {
+                DPRINT1("Object %p is not a process. Type %u, pool type 0x%x, block size %u\n",
+                        Process, Process->Pcb.Header.Type, Entry->PoolType, BlockSize);
+
+                KeBugCheckEx(BAD_POOL_CALLER, POOL_BILLED_PROCESS_INVALID, (ULONG_PTR)P, Tag, (ULONG_PTR)Process);
+            }
+
+            PsReturnPoolQuota(Process, PoolType, (BlockSize * POOL_BLOCK_SIZE));
+            ObDereferenceObject(Process);
+        }
+    }
+
+    /* Is this allocation small enough to have come from a lookaside list? */
+    if (BlockSize <= NUMBER_POOL_LOOKASIDE_LISTS)
+    {
+        /* Try pushing it into the per-CPU lookaside list. */
+        LookasideList = (PoolType == PagedPool) ?
+                         Prcb->PPPagedLookasideList[BlockSize - 1].P :
+                         Prcb->PPNPagedLookasideList[BlockSize - 1].P;
+
+        LookasideList->TotalFrees++;
+
+        if (ExQueryDepthSList(&LookasideList->ListHead) < LookasideList->Depth)
+        {
+            LookasideList->FreeHits++;
+            InterlockedPushEntrySList(&LookasideList->ListHead, P);
+            return;
+        }
+
+        /* We failed, try to push it into the global lookaside list. */
+        LookasideList = (PoolType == PagedPool) ?
+                         Prcb->PPPagedLookasideList[BlockSize - 1].L :
+                         Prcb->PPNPagedLookasideList[BlockSize - 1].L;
+
+        LookasideList->TotalFrees++;
+
+        if (ExQueryDepthSList(&LookasideList->ListHead) < LookasideList->Depth)
+        {
+            LookasideList->FreeHits++;
+            InterlockedPushEntrySList(&LookasideList->ListHead, P);
+            return;
+        }
+    }
+
+    /* Get the pointer to the next entry. */
+    NextEntry = POOL_BLOCK(Entry, BlockSize);
+
+    /* Update performance counters. */
+    InterlockedIncrement((PLONG)&PoolDesc->RunningDeAllocs);
+    InterlockedExchangeAddSizeT(&PoolDesc->TotalBytes, (-BlockSize * POOL_BLOCK_SIZE));
+
+    /* Acquire the pool lock. */
+    OldIrql = ExLockPool(PoolDesc);
+
+    /* Check if the next allocation is at the end of the page. */
+    ExpCheckPoolBlocks(Entry);
+
+    if (PAGE_ALIGN(NextEntry) != NextEntry)
+    {
+        /* We may be able to combine the block if it's free. */
+        if (NextEntry->PoolType == 0)
+        {
+            /* The next block is free, so we'll do a combine. */
+            Combined = TRUE;
+
+            /* Make sure there's actual data in the block -- anything smaller than this means we only have the header,
+               so there's no linked list for us to remove.
+            */
+            if ((NextEntry->BlockSize != 1))
+            {
+                /* The block is at least big enough to have a linked list, so go ahead and remove it. */
+                ExpCheckPoolLinks(POOL_FREE_BLOCK(NextEntry));
+                ExpRemovePoolEntryList(POOL_FREE_BLOCK(NextEntry));
+                ExpCheckPoolLinks(ExpDecodePoolLink((POOL_FREE_BLOCK(NextEntry))->Flink));
+                ExpCheckPoolLinks(ExpDecodePoolLink((POOL_FREE_BLOCK(NextEntry))->Blink));
+            }
+
+            /* Our entry is now combined with the next entry. */
+            Entry->BlockSize = (Entry->BlockSize + NextEntry->BlockSize);
+        }
+    }
+
+    /* Now check if there was a previous entry on the same page as us. */
+    if (Entry->PreviousSize)
+    {
+        /* Great, grab that entry and check if it's free. */
+        NextEntry = POOL_PREV_BLOCK(Entry);
+
+        if (NextEntry->PoolType == 0)
+        {
+            /* It is, so we can do a combine. */
+            Combined = TRUE;
+
+            /* Make sure there's actual data in the block -- anything smaller
+               than this means we only have the header so there's no linked list for us to remove.
+            */
+            if ((NextEntry->BlockSize != 1))
+            {
+                /* The block is at least big enough to have a linked list, so go ahead and remove it. */
+                ExpCheckPoolLinks(POOL_FREE_BLOCK(NextEntry));
+                ExpRemovePoolEntryList(POOL_FREE_BLOCK(NextEntry));
+                ExpCheckPoolLinks(ExpDecodePoolLink((POOL_FREE_BLOCK(NextEntry))->Flink));
+                ExpCheckPoolLinks(ExpDecodePoolLink((POOL_FREE_BLOCK(NextEntry))->Blink));
+            }
+
+            /* Combine our original block (which might've already been combined with the next block),
+               into the previous block.
+            */
+            NextEntry->BlockSize = (NextEntry->BlockSize + Entry->BlockSize);
+
+            /* And now we'll work with the previous block instead. */
+            Entry = NextEntry;
+        }
+    }
+
+    /* By now, it may have been possible for our combined blocks to actually have made up a full page
+       (if there were only 2-3 allocations on the page, they could've all been combined).
+    */
+    if ((PAGE_ALIGN(Entry) == Entry) &&
+        (PAGE_ALIGN(POOL_NEXT_BLOCK(Entry)) == POOL_NEXT_BLOCK(Entry)))
+    {
+        /* In this case, release the pool lock, update the performance counter, and free the page. */
+        ExUnlockPool(PoolDesc, OldIrql);
+        InterlockedExchangeAdd((PLONG)&PoolDesc->TotalPages, -1);
+        MiFreePoolPages(Entry);
+        return;
+    }
+
+    /* Otherwise, we now have a free block (or a combination of 2 or 3). */
+    Entry->PoolType = 0;
+    BlockSize = Entry->BlockSize;
+    ASSERT(BlockSize != 1);
+
+    /* Check if we actually did combine it with anyone. */
+    if (Combined)
+    {
+        /* Get the first combined block (either our original to begin with,
+           or the one after the original, depending if we combined with the previous).
+        */
+        NextEntry = POOL_NEXT_BLOCK(Entry);
+
+        /* As long as the next block isn't on a page boundary, have it point back to us. */
+        if (PAGE_ALIGN(NextEntry) != NextEntry)
+            NextEntry->PreviousSize = BlockSize;
+    }
+
+    /* Insert this new free block, and release the pool lock. */
+    ExpInsertPoolHeadList(&PoolDesc->ListHeads[BlockSize - 1], POOL_FREE_BLOCK(Entry));
+    ExpCheckPoolLinks(POOL_FREE_BLOCK(Entry));
+    ExUnlockPool(PoolDesc, OldIrql);
 }
 
 SIZE_T
