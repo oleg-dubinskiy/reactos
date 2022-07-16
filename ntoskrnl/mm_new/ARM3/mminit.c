@@ -633,6 +633,60 @@ MxGetNextPage(
 }
 
 INIT_FUNCTION
+VOID
+NTAPI
+MiAddHalIoMappings(VOID)
+{
+    PVOID BaseAddress;
+    PMMPDE Pde;
+    PMMPDE LastPde;
+    PMMPTE Pte;
+    PFN_NUMBER PageFrameIndex;
+    ULONG ix;
+
+    /* HAL Heap address -- should be on a PDE boundary */
+    BaseAddress = (PVOID)MM_HAL_VA_START;
+    ASSERT(MiAddressToPteOffset(BaseAddress) == 0);
+
+    /* Check how many PDEs the heap has */
+    LastPde = MiAddressToPde((PVOID)MM_HAL_VA_END);
+
+    for (Pde = MiAddressToPde(BaseAddress); Pde <= LastPde; Pde++)
+    {
+        /* Does the HAL own this mapping? */
+        if (Pde->u.Hard.Valid != 1 || MI_IS_PAGE_LARGE(Pde))
+        {
+            /* Move to the next address */
+            BaseAddress = (PVOID)((ULONG_PTR)BaseAddress + PDE_MAPPED_VA);
+            continue;
+        }
+
+        /* Get the PTE for it and scan each page */
+        Pte = MiAddressToPte(BaseAddress);
+
+        for (ix = 0; ix < PTE_PER_PAGE; ix++)
+        {
+            /* Does the HAL own this page? */
+            if (Pte->u.Hard.Valid == 1)
+            {
+                /* Is the HAL using it for device or I/O mapped memory? */
+                PageFrameIndex = PFN_FROM_PTE(Pte);
+
+                if (!MiGetPfnEntry(PageFrameIndex))
+                {
+                    /* FIXME: For PAT, we need to track I/O cache attributes for coherency */
+                    DPRINT1("HAL I/O Mapping at %p is unsafe\n", BaseAddress);
+                }
+            }
+
+            /* Move to the next page */
+            BaseAddress = (PVOID)((ULONG_PTR)BaseAddress + PAGE_SIZE);
+            Pte++;
+        }
+    }
+}
+
+INIT_FUNCTION
 BOOLEAN
 NTAPI
 MmArmInitSystem(
@@ -978,6 +1032,9 @@ MmArmInitSystem(
 
         /* Look for large page cache entries that need caching */
         MiSyncCachedRanges();
+
+        /* Loop for HAL Heap I/O device mappings that need coherency tracking */
+        MiAddHalIoMappings();
 
         ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
 
