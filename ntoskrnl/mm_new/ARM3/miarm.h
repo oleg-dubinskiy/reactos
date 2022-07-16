@@ -147,6 +147,35 @@ extern PVOID MiSessionSpaceEnd;
 
 #define POOL_LISTS_PER_PAGE (PAGE_SIZE / POOL_BLOCK_SIZE)
 #define BASE_POOL_TYPE_MASK 1
+#define POOL_MAX_ALLOC      (PAGE_SIZE - (sizeof(POOL_HEADER) + POOL_BLOCK_SIZE))
+
+/* Pool debugging/analysis/tracing flags */
+#define POOL_FLAG_CHECK_TIMERS         0x01
+#define POOL_FLAG_CHECK_WORKERS        0x02
+#define POOL_FLAG_CHECK_RESOURCES      0x04
+#define POOL_FLAG_VERIFIER             0x08
+#define POOL_FLAG_CHECK_DEADLOCK       0x10
+#define POOL_FLAG_SPECIAL_POOL         0x20
+#define POOL_FLAG_DBGPRINT_ON_FAILURE  0x40
+#define POOL_FLAG_CRASH_ON_FAILURE     0x80
+
+/* BAD_POOL_HEADER codes during pool bugcheck */
+#define POOL_CORRUPTED_LIST                3
+#define POOL_SIZE_OR_INDEX_MISMATCH        5
+#define POOL_ENTRIES_NOT_ALIGNED_PREVIOUS  6
+#define POOL_HEADER_NOT_ALIGNED            7
+#define POOL_HEADER_IS_ZERO                8
+#define POOL_ENTRIES_NOT_ALIGNED_NEXT      9
+#define POOL_ENTRY_NOT_FOUND               10
+
+/* BAD_POOL_CALLER codes during pool bugcheck */
+#define POOL_ENTRY_CORRUPTED         1
+#define POOL_ENTRY_ALREADY_FREE      6
+#define POOL_ENTRY_NOT_ALLOCATED     7
+#define POOL_ALLOC_IRQL_INVALID      8
+#define POOL_FREE_IRQL_INVALID       9
+#define POOL_BILLED_PROCESS_INVALID  13
+#define POOL_HEADER_SIZE_INVALID     32
 
 typedef struct _POOL_DESCRIPTOR
 {
@@ -164,6 +193,47 @@ typedef struct _POOL_DESCRIPTOR
     SIZE_T Spare0;
     LIST_ENTRY ListHeads[POOL_LISTS_PER_PAGE];
 } POOL_DESCRIPTOR, *PPOOL_DESCRIPTOR;
+
+typedef struct _POOL_HEADER
+{
+    union
+    {
+        struct
+        {
+          #ifdef _WIN64
+            USHORT PreviousSize:8;
+            USHORT PoolIndex:8;
+            USHORT BlockSize:8;
+            USHORT PoolType:8;
+          #else
+            USHORT PreviousSize:9;
+            USHORT PoolIndex:7;
+            USHORT BlockSize:9;
+            USHORT PoolType:7;
+          #endif
+        };
+        ULONG Ulong1;
+    };
+  #ifdef _WIN64
+    ULONG PoolTag;
+  #endif
+    union
+    {
+      #ifdef _WIN64
+        PEPROCESS ProcessBilled;
+      #else
+        ULONG PoolTag;
+      #endif
+        struct
+        {
+            USHORT AllocatorBackTraceIndex;
+            USHORT PoolTagHash;
+        };
+    };
+} POOL_HEADER, *PPOOL_HEADER;
+
+C_ASSERT(sizeof(POOL_HEADER) == POOL_BLOCK_SIZE);
+C_ASSERT(POOL_BLOCK_SIZE == sizeof(LIST_ENTRY));
 
 typedef struct _POOL_TRACKER_TABLE
 {
@@ -520,6 +590,21 @@ MiUnlockPfnDb(
 }
 
 FORCEINLINE
+KIRQL
+MiAcquirePfnLock(VOID)
+{
+    return KeAcquireQueuedSpinLock(LockQueuePfnLock);
+}
+
+FORCEINLINE
+VOID
+MiReleasePfnLock(
+    _In_ KIRQL OldIrql)
+{
+    KeReleaseQueuedSpinLock(LockQueuePfnLock, OldIrql);
+}
+
+FORCEINLINE
 VOID
 MiAcquirePfnLockAtDpcLevel(VOID)
 {
@@ -760,6 +845,14 @@ MiInitializePfn(
     _In_ BOOLEAN Modified
 );
 
+VOID
+NTAPI
+MiInitializePfnAndMakePteValid(
+    _In_ PFN_NUMBER PageFrameIndex,
+    _In_ PMMPTE Pte,
+    _In_ MMPTE TempPte
+);
+
 /* ARM3\pool.c */
 INIT_FUNCTION
 VOID
@@ -780,6 +873,16 @@ NTAPI
 MiAllocatePoolPages(
     _In_ POOL_TYPE PoolType,
     _In_ SIZE_T SizeInBytes
+);
+
+/* ARM3\special.c */
+PVOID
+NTAPI
+MmAllocateSpecialPool(
+    _In_ SIZE_T NumberOfBytes,
+    _In_ ULONG Tag,
+    _In_ POOL_TYPE PoolType,
+    _In_ ULONG SpecialType
 );
 
 /* ARM3\syspte.c */

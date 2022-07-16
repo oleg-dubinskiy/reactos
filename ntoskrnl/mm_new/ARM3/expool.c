@@ -13,6 +13,13 @@
 
 /* GLOBALS ********************************************************************/
 
+/* Pool block/header/list access macros */
+#define POOL_ENTRY(x)       (PPOOL_HEADER)((ULONG_PTR)(x) - sizeof(POOL_HEADER))
+#define POOL_FREE_BLOCK(x)  (PLIST_ENTRY)((ULONG_PTR)(x)  + sizeof(POOL_HEADER))
+#define POOL_BLOCK(x, i)    (PPOOL_HEADER)((ULONG_PTR)(x) + ((i) * POOL_BLOCK_SIZE))
+#define POOL_NEXT_BLOCK(x)  POOL_BLOCK((x), (x)->BlockSize)
+#define POOL_PREV_BLOCK(x)  POOL_BLOCK((x), -((x)->PreviousSize))
+
 ULONG ExpNumberOfPagedPools;
 POOL_DESCRIPTOR NonPagedPoolDescriptor;
 PPOOL_DESCRIPTOR ExpPagedPoolDescriptor[16 + 1];
@@ -25,11 +32,166 @@ SIZE_T PoolTrackTableMask;
 SIZE_T PoolBigPageTableSize;
 SIZE_T PoolBigPageTableHash;
 ULONG PoolHitTag;
+ULONG ExpPoolFlags;
+ULONG ExPoolFailures;
+ULONGLONG MiLastPoolDumpTime;
 BOOLEAN ExStopBadTags;
 
 extern SIZE_T MmSizeOfNonPagedPoolInBytes;
+extern ULONG MmSpecialPoolTag;
+extern PMMPTE MiSpecialPoolFirstPte;
 
 /* FUNCTIONS ******************************************************************/
+
+#if DBG
+/*
+ * FORCEINLINE
+ * BOOLEAN
+ * ExpTagAllowPrint(CHAR Tag);
+ */
+#define ExpTagAllowPrint(Tag)   \
+    ((Tag) >= 0x20 /* Space */ && (Tag) <= 0x7E /* Tilde */)
+
+#ifdef KDBG
+  #define MiDumperPrint(dbg, fmt, ...)        \
+      if (dbg) KdbpPrint(fmt, ##__VA_ARGS__); \
+      else DPRINT1(fmt, ##__VA_ARGS__)
+#else
+  #define MiDumperPrint(dbg, fmt, ...)        \
+      DPRINT1(fmt, ##__VA_ARGS__)
+#endif
+
+VOID
+MiDumpPoolConsumers(
+    _In_ BOOLEAN CalledFromDbg,
+    _In_ ULONG Tag,
+    _In_ ULONG Mask,
+    _In_ ULONG Flags)
+{
+    SIZE_T ix;
+    BOOLEAN Verbose;
+
+    /* Only print header if called from OOM situation */
+    if (!CalledFromDbg)
+    {
+        DPRINT1("---------------------\n");
+        DPRINT1("Out of memory dumper!\n");
+    }
+  #ifdef KDBG
+    else
+    {
+        KdbpPrint("Pool Used:\n");
+    }
+  #endif
+
+    /* Remember whether we'll have to be verbose.
+       This is the only supported flag!
+    */
+    Verbose = BooleanFlagOn(Flags, 1);
+
+    /* Print table header */
+    if (Verbose)
+    {
+        MiDumperPrint(CalledFromDbg, "\t\t\t\tNonPaged\t\t\t\t\t\t\tPaged\n");
+        MiDumperPrint(CalledFromDbg, "Tag\t\tAllocs\t\tFrees\t\tDiff\t\tUsed\t\tAllocs\t\tFrees\t\tDiff\t\tUsed\n");
+    }
+    else
+    {
+        MiDumperPrint(CalledFromDbg, "\t\tNonPaged\t\t\tPaged\n");
+        MiDumperPrint(CalledFromDbg, "Tag\t\tAllocs\t\tUsed\t\tAllocs\t\tUsed\n");
+    }
+
+    /* We'll extract allocations for all the tracked pools */
+    for (ix = 0; ix < PoolTrackTableSize; ix++)
+    {
+        PPOOL_TRACKER_TABLE TableEntry;
+
+        TableEntry = &PoolTrackTable[ix];
+
+        /* We only care about tags which have allocated memory */
+        if (TableEntry->NonPagedBytes || TableEntry->PagedBytes)
+        {
+            /* If there's a tag, attempt to do a pretty print only if it matches the caller's tag,
+               or if any tag is allowed.
+               For checking whether it matches caller's tag,
+               use the mask to make sure not to mess with the wildcards.
+            */
+            if (TableEntry->Key != 0 && TableEntry->Key != TAG_NONE &&
+                (Tag == 0 || (TableEntry->Key & Mask) == (Tag & Mask)))
+            {
+                CHAR Tag[4];
+
+                /* Extract each 'component' and check whether they are printable */
+                Tag[0] = (TableEntry->Key & 0xFF);
+                Tag[1] = ((TableEntry->Key >> 8) & 0xFF);
+                Tag[2] = ((TableEntry->Key >> 16) & 0xFF);
+                Tag[3] = ((TableEntry->Key >> 24) & 0xFF);
+
+                if (ExpTagAllowPrint(Tag[0]) &&
+                    ExpTagAllowPrint(Tag[1]) &&
+                    ExpTagAllowPrint(Tag[2]) &&
+                    ExpTagAllowPrint(Tag[3]))
+                {
+                    /* Print in direct order to make !poolused TAG usage easier */
+                    if (Verbose)
+                    {
+                        MiDumperPrint(CalledFromDbg, "'%c%c%c%c'\t\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\n", Tag[0], Tag[1], Tag[2], Tag[3],
+                                      TableEntry->NonPagedAllocs, TableEntry->NonPagedFrees,
+                                      (TableEntry->NonPagedAllocs - TableEntry->NonPagedFrees), TableEntry->NonPagedBytes,
+                                      TableEntry->PagedAllocs, TableEntry->PagedFrees,
+                                      (TableEntry->PagedAllocs - TableEntry->PagedFrees), TableEntry->PagedBytes);
+                    }
+                    else
+                    {
+                        MiDumperPrint(CalledFromDbg, "'%c%c%c%c'\t\t%ld\t\t%ld\t\t%ld\t\t%ld\n", Tag[0], Tag[1], Tag[2], Tag[3],
+                                      TableEntry->NonPagedAllocs, TableEntry->NonPagedBytes,
+                                      TableEntry->PagedAllocs, TableEntry->PagedBytes);
+                    }
+                }
+                else
+                {
+                    if (Verbose)
+                    {
+                        MiDumperPrint(CalledFromDbg, "0x%08x\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\n", TableEntry->Key,
+                                      TableEntry->NonPagedAllocs, TableEntry->NonPagedFrees,
+                                      (TableEntry->NonPagedAllocs - TableEntry->NonPagedFrees), TableEntry->NonPagedBytes,
+                                      TableEntry->PagedAllocs, TableEntry->PagedFrees,
+                                      (TableEntry->PagedAllocs - TableEntry->PagedFrees), TableEntry->PagedBytes);
+                    }
+                    else
+                    {
+                        MiDumperPrint(CalledFromDbg, "0x%08x\t%ld\t\t%ld\t\t%ld\t\t%ld\n", TableEntry->Key,
+                                      TableEntry->NonPagedAllocs, TableEntry->NonPagedBytes,
+                                      TableEntry->PagedAllocs, TableEntry->PagedBytes);
+                    }
+                }
+            }
+            else if (Tag == 0 || (Tag & Mask) == (TAG_NONE & Mask))
+            {
+                if (Verbose)
+                {
+                    MiDumperPrint(CalledFromDbg, "Anon\t\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\t\t%ld\n",
+                                  TableEntry->NonPagedAllocs, TableEntry->NonPagedFrees,
+                                  (TableEntry->NonPagedAllocs - TableEntry->NonPagedFrees), TableEntry->NonPagedBytes,
+                                  TableEntry->PagedAllocs, TableEntry->PagedFrees,
+                                  (TableEntry->PagedAllocs - TableEntry->PagedFrees), TableEntry->PagedBytes);
+                }
+                else
+                {
+                    MiDumperPrint(CalledFromDbg, "Anon\t\t%ld\t\t%ld\t\t%ld\t\t%ld\n",
+                                  TableEntry->NonPagedAllocs, TableEntry->NonPagedBytes,
+                                  TableEntry->PagedAllocs, TableEntry->PagedBytes);
+                }
+            }
+        }
+    }
+
+    if (!CalledFromDbg)
+    {
+        DPRINT1("---------------------\n");
+    }
+}
+#endif
 
 FORCEINLINE
 ULONG

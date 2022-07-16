@@ -551,4 +551,14 @@ MiInitializePfn(
     Pfn->u2.ShareCount++;
 }
 
+VOID
+NTAPI
+MiInitializePfnAndMakePteValid(
+    _In_ PFN_NUMBER PageFrameIndex,
+    _In_ PMMPTE Pte,
+    _In_ MMPTE TempPte)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 /* EOF */
