@@ -11,6 +11,7 @@ KGUARDED_MUTEX MmSectionCommitMutex;
 KGUARDED_MUTEX MmSectionBasedMutex;
 KEVENT MmCollidedFlushEvent;
 PVOID MmHighSectionBase;
+LIST_ENTRY MmUnusedSubsectionList;
 
 /* FUNCTIONS ******************************************************************/
 

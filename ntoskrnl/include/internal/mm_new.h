@@ -186,7 +186,6 @@ ExReturnPoolQuota(
 /* ARM3\hypermap.c */
 /* ARM3\iosup.c */
 /* ARM3\kdbg.c */
-/* ARM3\largepag.c */
 /* ARM3\mdlsup.c */
 /* ARM3\miarm.h */
 

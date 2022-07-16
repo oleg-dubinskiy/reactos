@@ -353,6 +353,7 @@ extern SLIST_HEADER MmDeadStackSListHead;
 extern SLIST_HEADER MmInPageSupportSListHead;
 extern PVOID MmHighSectionBase;
 extern ULONG MmSpecialPoolTag;
+extern LIST_ENTRY MmUnusedSubsectionList;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -971,6 +972,12 @@ MmArmInitSystem(
             if (Run->PageCount)
                 RtlSetBits(&MiPfnBitMap, (ULONG)Run->BasePage, (ULONG)Run->PageCount);
         }
+
+        /* Initialize lists and event */
+        InitializeListHead(&MmUnusedSubsectionList);
+
+        /* Look for large page cache entries that need caching */
+        MiSyncCachedRanges();
 
         ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
 

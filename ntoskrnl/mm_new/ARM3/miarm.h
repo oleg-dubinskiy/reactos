@@ -806,7 +806,15 @@ InitializePool(
     _In_ ULONG Threshold
 );
 
-/* mminit.c */
+/* ARM3\largepag.c */
+INIT_FUNCTION
+VOID
+NTAPI
+MiSyncCachedRanges(
+    VOID
+);
+
+/* ARM3\mminit.c */
 INIT_FUNCTION
 PPHYSICAL_MEMORY_DESCRIPTOR
 NTAPI
