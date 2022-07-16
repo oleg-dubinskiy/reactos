@@ -245,12 +245,79 @@ ExpEncodePoolLink(
     return (PLIST_ENTRY)((ULONG_PTR)Link | 1);
 }
 
+PLIST_ENTRY
+NTAPI
+ExpDecodePoolLink(
+    _In_ PLIST_ENTRY Link)
+{
+    return (PLIST_ENTRY)((ULONG_PTR)Link & ~1);
+}
+
 VOID
 NTAPI
 ExpInitializePoolListHead(
     _In_ PLIST_ENTRY ListHead)
 {
     ListHead->Flink = ListHead->Blink = ExpEncodePoolLink(ListHead);
+}
+
+BOOLEAN
+NTAPI
+ExpIsPoolListEmpty(
+    _In_ PLIST_ENTRY ListHead)
+{
+    return (ExpDecodePoolLink(ListHead->Flink) == ListHead);
+}
+
+VOID
+NTAPI
+ExpCheckPoolLinks(
+    _In_ PLIST_ENTRY ListHead)
+{
+    if ((ExpDecodePoolLink(ExpDecodePoolLink(ListHead->Flink)->Blink) != ListHead) ||
+        (ExpDecodePoolLink(ExpDecodePoolLink(ListHead->Blink)->Flink) != ListHead))
+    {
+        KeBugCheckEx(BAD_POOL_HEADER,
+                     3,
+                     (ULONG_PTR)ListHead,
+                     (ULONG_PTR)ExpDecodePoolLink(ExpDecodePoolLink(ListHead->Flink)->Blink),
+                     (ULONG_PTR)ExpDecodePoolLink(ExpDecodePoolLink(ListHead->Blink)->Flink));
+    }
+}
+
+PLIST_ENTRY
+NTAPI
+ExpRemovePoolHeadList(
+    _In_ PLIST_ENTRY ListHead)
+{
+    PLIST_ENTRY Entry;
+    PLIST_ENTRY Flink;
+
+    Entry = ExpDecodePoolLink(ListHead->Flink);
+    Flink = ExpDecodePoolLink(Entry->Flink);
+    ListHead->Flink = ExpEncodePoolLink(Flink);
+    Flink->Blink = ExpEncodePoolLink(ListHead);
+
+    return Entry;
+}
+
+VOID
+NTAPI
+ExpInsertPoolTailList(
+    _In_ PLIST_ENTRY ListHead,
+    _In_ PLIST_ENTRY Entry)
+{
+    PLIST_ENTRY Blink;
+
+    ExpCheckPoolLinks(ListHead);
+
+    Blink = ExpDecodePoolLink(ListHead->Blink);
+    Entry->Flink = ExpEncodePoolLink(ListHead);
+    Entry->Blink = ExpEncodePoolLink(Blink);
+    Blink->Flink = ExpEncodePoolLink(Entry);
+    ListHead->Blink = ExpEncodePoolLink(Entry);
+
+    ExpCheckPoolLinks(ListHead);
 }
 
 INIT_FUNCTION
@@ -415,7 +482,7 @@ ExpInsertPoolTracker(
     Hash = ExpComputeHashForTag(Key, TableMask);
     Index = Hash;
 
-    do
+    while (TRUE)
     {
         /* Do we already have an entry for this tag? */
         TableEntry = &Table[Hash];
@@ -462,9 +529,11 @@ ExpInsertPoolTracker(
         /* This path is hit when we don't have an entry, and the current bucket is full,
            so we simply try the next one.
         */
-        Hash = ((Hash + 1) & TableMask);
+        //Hash = ((Hash + 1) & TableMask);
+        Hash = (Hash + 1) & TableMask;
+        if (Hash == Index)
+            break;
     }
-    while (Hash != Index);
 
     /* And finally this path is hit when all the buckets are full, and we need some expansion.
        This path is not yet supported in ReactOS and so we'll ignore the tag
@@ -568,6 +637,8 @@ InitializePool(
     SIZE_T TableSize;
     SIZE_T Size;
     ULONG ix;
+
+    DPRINT1("InitializePool: PoolType %X, Threshold %X\n", PoolType, Threshold);
 
     /* Check what kind of pool this is */
     if (PoolType == NonPagedPool)
@@ -714,6 +785,180 @@ InitializePool(
     else
     {
         UNIMPLEMENTED_DBGBREAK();
+    }
+}
+
+FORCEINLINE
+VOID
+ExpCheckPoolIrqlLevel(
+    _In_ POOL_TYPE PoolType,
+    _In_ SIZE_T NumberOfBytes,
+    _In_ PVOID Entry)
+{
+    /* Validate IRQL: It must be APC_LEVEL or lower for Paged Pool,
+       and it must be DISPATCH_LEVEL or lower for Non Paged Pool
+    */
+    if (((PoolType & BASE_POOL_TYPE_MASK) == PagedPool) ?
+        (KeGetCurrentIrql() > APC_LEVEL) :
+        (KeGetCurrentIrql() > DISPATCH_LEVEL))
+    {
+        // Take the system down
+        KeBugCheckEx(BAD_POOL_CALLER,
+                     !Entry ? POOL_ALLOC_IRQL_INVALID : POOL_FREE_IRQL_INVALID,
+                     KeGetCurrentIrql(),
+                     PoolType,
+                     !Entry ? NumberOfBytes : (ULONG_PTR)Entry);
+    }
+}
+
+BOOLEAN
+NTAPI
+MmUseSpecialPool(
+    _In_ SIZE_T NumberOfBytes,
+    _In_ ULONG Tag)
+{
+    /* Special pool is not suitable for allocations bigger than 1 page */
+    if (NumberOfBytes > (PAGE_SIZE - sizeof(POOL_HEADER)))
+        return FALSE;
+
+    if (MmSpecialPoolTag == '*')
+        return TRUE;
+
+    return (Tag == MmSpecialPoolTag);
+}
+
+BOOLEAN
+NTAPI
+ExpAddTagForBigPages(
+    _In_ PVOID Va,
+    _In_ ULONG Key,
+    _In_ ULONG NumberOfPages,
+    _In_ POOL_TYPE PoolType)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+VOID
+NTAPI
+ExpCheckPoolHeader(
+    _In_ PPOOL_HEADER Entry)
+{
+    PPOOL_HEADER PreviousEntry;
+    PPOOL_HEADER NextEntry;
+
+    /* Is there a block before this one? */
+    if (Entry->PreviousSize)
+    {
+        /* Get it */
+        PreviousEntry = POOL_PREV_BLOCK(Entry);
+
+        /* The two blocks must be on the same page! */
+        if (PAGE_ALIGN(Entry) != PAGE_ALIGN(PreviousEntry))
+        {
+            /* Something is awry */
+            KeBugCheckEx(BAD_POOL_HEADER, 6, (ULONG_PTR)PreviousEntry, __LINE__, (ULONG_PTR)Entry);
+        }
+
+        /* This block should also indicate that it's as large as we think it is */
+        if (PreviousEntry->BlockSize != Entry->PreviousSize)
+        {
+            /* Otherwise, someone corrupted one of the sizes */
+            DPRINT1("PreviousEntry BlockSize %lu, tag %.4s. Entry PreviousSize %lu, tag %.4s\n",
+                    PreviousEntry->BlockSize, (char *)&PreviousEntry->PoolTag, Entry->PreviousSize, (char *)&Entry->PoolTag);
+
+            KeBugCheckEx(BAD_POOL_HEADER, 5, (ULONG_PTR)PreviousEntry, __LINE__, (ULONG_PTR)Entry);
+        }
+    }
+    else if (PAGE_ALIGN(Entry) != Entry)
+    {
+        /* If there's no block before us, we are the first block, so we should be on a page boundary */
+        KeBugCheckEx(BAD_POOL_HEADER, 7, 0, __LINE__, (ULONG_PTR)Entry);
+    }
+
+    /* This block must have a size */
+    if (!Entry->BlockSize)
+    {
+        /* Someone must've corrupted this field */
+        if (Entry->PreviousSize)
+        {
+            PreviousEntry = POOL_PREV_BLOCK(Entry);
+            DPRINT1("PreviousEntry tag %.4s. Entry tag %.4s\n", (char *)&PreviousEntry->PoolTag, (char *)&Entry->PoolTag);
+        }
+        else
+        {
+            DPRINT1("Entry tag %.4s\n", (char *)&Entry->PoolTag);
+        }
+
+        KeBugCheckEx(BAD_POOL_HEADER, 8, 0, __LINE__, (ULONG_PTR)Entry);
+    }
+
+    /* Okay, now get the next block */
+    NextEntry = POOL_NEXT_BLOCK(Entry);
+
+    /* If this is the last block, then we'll be page-aligned, otherwise, check this block */
+    if (PAGE_ALIGN(NextEntry) != NextEntry)
+    {
+        /* The two blocks must be on the same page! */
+        if (PAGE_ALIGN(Entry) != PAGE_ALIGN(NextEntry))
+        {
+            /* Something is messed up */
+            KeBugCheckEx(BAD_POOL_HEADER, 9, (ULONG_PTR)NextEntry, __LINE__, (ULONG_PTR)Entry);
+        }
+
+        /* And this block should think we are as large as we truly are */
+        if (NextEntry->PreviousSize != Entry->BlockSize)
+        {
+            /* Otherwise, someone corrupted the field */
+            DPRINT1("Entry BlockSize %lu, tag %.4s. NextEntry PreviousSize %lu, tag %.4s\n",
+                    Entry->BlockSize, (char *)&Entry->PoolTag, NextEntry->PreviousSize, (char *)&NextEntry->PoolTag);
+
+            KeBugCheckEx(BAD_POOL_HEADER, 5, (ULONG_PTR)NextEntry, __LINE__, (ULONG_PTR)Entry);
+        }
+    }
+}
+
+VOID
+NTAPI
+ExpCheckPoolBlocks(
+    _In_ PVOID Block)
+{
+    BOOLEAN FoundBlock = FALSE;
+    SIZE_T Size = 0;
+    PPOOL_HEADER Entry;
+
+    /* Get the first entry for this page, make sure it really is the first */
+    Entry = PAGE_ALIGN(Block);
+    ASSERT(Entry->PreviousSize == 0);
+
+    /* Now scan each entry */
+    while (TRUE)
+    {
+        /* When we actually found our block, remember this */
+        if (Entry == Block)
+            FoundBlock = TRUE;
+
+        /* Now validate this block header */
+        ExpCheckPoolHeader(Entry);
+
+        /* And go to the next one, keeping track of our size */
+        Size += Entry->BlockSize;
+        Entry = POOL_NEXT_BLOCK(Entry);
+
+        /* If we hit the last block, stop */
+        if (Size >= (PAGE_SIZE / POOL_BLOCK_SIZE))
+            break;
+
+        /* If we hit the end of the page, stop */
+        if (PAGE_ALIGN(Entry) == Entry)
+            break;
+    }
+
+    /* We must've found our block, and we must have hit the end of the page */
+    if (PAGE_ALIGN(Entry) != Entry || !FoundBlock)
+    {
+        /* Otherwise, the blocks are messed up */
+        KeBugCheckEx(BAD_POOL_HEADER, 10, (ULONG_PTR)Block, __LINE__, (ULONG_PTR)Entry);
     }
 }
 
