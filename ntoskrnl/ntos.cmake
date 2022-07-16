@@ -287,6 +287,7 @@ else()
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/section.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/session.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/special.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/syscache.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/sysldr.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/syspte.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/vadnode.c

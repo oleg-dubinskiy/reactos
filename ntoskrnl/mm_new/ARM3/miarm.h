@@ -99,11 +99,19 @@ extern PVOID MiSessionSpaceEnd;
 #define MI_IS_PAGE_TABLE_OR_HYPER_ADDRESS(Address) \
     (((PVOID)(Address) >= (PVOID)PTE_BASE) && ((PVOID)(Address) <= (PVOID)MmHyperSpaceEnd))
 
-#define InterlockedExchangePte(PointerPte, Value) \
-    InterlockedExchange((PLONG)(PointerPte), Value)
+#define InterlockedExchangePte(Pte, Value) \
+    InterlockedExchange((PLONG)(Pte), Value)
 
 /* Creates a software PTE with the given protection */
-#define MI_MAKE_SOFTWARE_PTE(p, x)          ((p)->u.Long = (x << MM_PTE_SOFTWARE_PROTECTION_BITS))
+#define MI_MAKE_SOFTWARE_PTE(p, x)  ((p)->u.Long = (x << MM_PTE_SOFTWARE_PROTECTION_BITS))
+
+/* Marks a PTE as deleted */
+#define MI_SET_PFN_DELETED(x)       ((x)->PteAddress = (PMMPTE)((ULONG_PTR)(x)->PteAddress | 1))
+#define MI_IS_PFN_DELETED(x)        ((ULONG_PTR)((x)->PteAddress) & 1)
+
+#ifdef __REACTOS__
+  #define MI_IS_ROS_PFN(x)          ((x)->u4.AweAllocation == TRUE)
+#endif
 
 #if defined(_M_IX86) || defined(_M_ARM)
   /* PFN List Sentinel */
@@ -134,8 +142,8 @@ extern PVOID MiSessionSpaceEnd;
 #define StartOfAllocation ReadInProgress
 #define EndOfAllocation WriteInProgress
 
-#define MiGetPteContents(PointerPte) \
-    (ULONGLONG)((PointerPte != NULL) ? (PointerPte->u.Long) : (0))
+#define MiGetPteContents(Pte) \
+    (ULONGLONG)((Pte != NULL) ? (Pte->u.Long) : (0))
 
 /* FIXFIX: These should go in ex.h after the pool merge */
 
@@ -763,6 +771,17 @@ MI_WRITE_INVALID_PTE(
     *Pte = InvalidPte;
 }
 
+/* Erase the PTE completely */
+FORCEINLINE
+VOID
+MI_ERASE_PTE(
+    _In_ PMMPTE Pte)
+{
+    /* Zero out the PTE */
+    ASSERT(Pte->u.Long != 0);
+    Pte->u.Long = 0;
+}
+
 /* ARM3\i386\init.c */
 INIT_FUNCTION
 VOID
@@ -853,6 +872,13 @@ MiInitializePfnAndMakePteValid(
     _In_ MMPTE TempPte
 );
 
+VOID
+NTAPI
+MiDecrementShareCount(
+    _In_ PMMPFN Pfn,
+    _In_ PFN_NUMBER PageFrameIndex
+);
+
 /* ARM3\pool.c */
 INIT_FUNCTION
 VOID
@@ -875,6 +901,18 @@ MiAllocatePoolPages(
     _In_ SIZE_T SizeInBytes
 );
 
+ULONG
+NTAPI
+MiFreePoolPages(
+    _In_ PVOID StartingVa
+);
+
+POOL_TYPE
+NTAPI
+MmDeterminePoolType(
+    _In_ PVOID PoolAddress
+);
+
 /* ARM3\special.c */
 PVOID
 NTAPI
@@ -883,6 +921,12 @@ MmAllocateSpecialPool(
     _In_ ULONG Tag,
     _In_ POOL_TYPE PoolType,
     _In_ ULONG SpecialType
+);
+
+VOID
+NTAPI
+MmFreeSpecialPool(
+    _In_ PVOID P
 );
 
 /* ARM3\syspte.c */
@@ -900,6 +944,16 @@ NTAPI
 MiReserveSystemPtes(
     _In_ ULONG NumberOfPtes,
     _In_ MMSYSTEM_PTE_POOL_TYPE SystemPtePoolType
+);
+
+/* ARM3\virtual.c */
+PFN_COUNT
+NTAPI
+MiDeleteSystemPageableVm(
+    _In_ PMMPTE PointerPte,
+    _In_ PFN_NUMBER PageCount,
+    _In_ ULONG Flags,
+    _Out_ PPFN_NUMBER ValidPages
 );
 
 /* balance.c */

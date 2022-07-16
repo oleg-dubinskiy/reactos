@@ -26,6 +26,7 @@ ULONG MiPagedPoolSListMaximum = 8;
 BOOLEAN MmProtectFreedNonPagedPool;
 
 extern PVOID MmNonPagedPoolStart;
+extern PVOID MmPagedPoolEnd;
 extern SIZE_T MmSizeOfNonPagedPoolInBytes;
 extern PVOID MmNonPagedPoolExpansionStart;
 extern SIZE_T MmMaximumNonPagedPoolInBytes;
@@ -559,6 +560,30 @@ MiAllocatePoolPages(
 
     /* Return the address */
     return MiPteToAddress(StartPte);
+}
+
+ULONG
+NTAPI
+MiFreePoolPages(
+    _In_ PVOID StartingVa)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+POOL_TYPE
+NTAPI
+MmDeterminePoolType(
+    _In_ PVOID PoolAddress)
+{
+    // Use a simple bounds check
+    if (PoolAddress >= MmPagedPoolStart && PoolAddress <= MmPagedPoolEnd)
+        return PagedPool;
+
+    if (PoolAddress >= MmNonPagedPoolStart && PoolAddress <= MmNonPagedPoolEnd)
+        return NonPagedPool;
+
+    KeBugCheckEx(BAD_POOL_CALLER, 0x42, (ULONG_PTR)PoolAddress, 0, 0);
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/

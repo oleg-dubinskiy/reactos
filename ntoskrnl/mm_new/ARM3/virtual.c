@@ -65,6 +65,18 @@ MmUnsecureVirtualMemory(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+PFN_COUNT
+NTAPI
+MiDeleteSystemPageableVm(
+    _In_ PMMPTE PointerPte,
+    _In_ PFN_NUMBER PageCount,
+    _In_ ULONG Flags,
+    _Out_ PPFN_NUMBER ValidPages)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
 /* SYSTEM CALLS ***************************************************************/
 
 NTSTATUS
