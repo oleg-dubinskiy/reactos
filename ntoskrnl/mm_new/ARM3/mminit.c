@@ -371,8 +371,95 @@ MmInitializeMemoryLimits(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock,
     _In_ PBOOLEAN IncludeType)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PMEMORY_ALLOCATION_DESCRIPTOR MdBlock;
+    PPHYSICAL_MEMORY_DESCRIPTOR Buffer;
+    PPHYSICAL_MEMORY_DESCRIPTOR NewBuffer;
+    PLIST_ENTRY NextEntry;
+    PFN_NUMBER NextPage = -1;
+    PFN_NUMBER PageCount = 0;
+    ULONG InitialRuns;
+    ULONG Run = 0;
+    ULONG Size;
+
+    /* Start with the maximum we might need */
+    InitialRuns = MiNumberDescriptors;
+
+    /* Allocate the maximum we'll ever need */
+    Size = (sizeof(PHYSICAL_MEMORY_DESCRIPTOR) + ((InitialRuns - 1) * sizeof(PHYSICAL_MEMORY_RUN)));
+
+    Buffer = ExAllocatePoolWithTag(NonPagedPool, Size, 'lMmM');
+    if (!Buffer)
+    {
+        DPRINT1("MiScanMemoryDescriptors: Allocate failed\n");
+        return NULL;
+    }
+
+    /* For now that's how many runs we have */
+    Buffer->NumberOfRuns = InitialRuns;
+
+    /* Now loop through the descriptors again */
+    
+    for (NextEntry = LoaderBlock->MemoryDescriptorListHead.Flink;
+         NextEntry != &LoaderBlock->MemoryDescriptorListHead;
+         NextEntry = MdBlock->ListEntry.Flink)
+    {
+        /* Grab each one, and check if it's one we should include */
+        MdBlock = CONTAINING_RECORD(NextEntry, MEMORY_ALLOCATION_DESCRIPTOR, ListEntry);
+
+        if (MdBlock->MemoryType >= LoaderMaximum || !IncludeType[MdBlock->MemoryType])
+            continue;
+
+        /* Add this to our running total */
+        PageCount += MdBlock->PageCount;
+
+        /* Check if the next page is described by the next descriptor */
+        if (MdBlock->BasePage == NextPage)
+        {
+            /* Combine it into the same physical run */
+            ASSERT(MdBlock->PageCount != 0);
+
+            Buffer->Run[Run - 1].PageCount += MdBlock->PageCount;
+            NextPage += MdBlock->PageCount;
+        }
+        else
+        {
+            /* Otherwise just duplicate the descriptor's contents */
+            Buffer->Run[Run].BasePage = MdBlock->BasePage;
+            Buffer->Run[Run].PageCount = MdBlock->PageCount;
+
+            NextPage = (Buffer->Run[Run].BasePage + Buffer->Run[Run].PageCount);
+
+            /* And in this case, increase the number of runs */
+            Run++;
+        }
+    }
+
+    /* We should not have been able to go past our initial estimate */
+    ASSERT(Run <= Buffer->NumberOfRuns);
+
+    /* Our guess was probably exaggerated... */
+    if (InitialRuns > Run)
+    {
+        /* Allocate a more accurately sized buffer */
+        Size = (sizeof(PHYSICAL_MEMORY_DESCRIPTOR) + ((Run - 1) * sizeof(PHYSICAL_MEMORY_RUN)));
+
+        NewBuffer = ExAllocatePoolWithTag(NonPagedPool, Size, 'lMmM');
+        if (NewBuffer)
+        {
+            /* Copy the old buffer into the new, then free it */
+            RtlCopyMemory(NewBuffer->Run, Buffer->Run, (Run * sizeof(PHYSICAL_MEMORY_RUN)));
+            ExFreePoolWithTag(Buffer, 'lMmM');
+
+            /* Now use the new buffer */
+            Buffer = NewBuffer;
+        }
+    }
+
+    /* Write the final numbers, and return it */
+    Buffer->NumberOfRuns = Run;
+    Buffer->NumberOfPages = PageCount;
+
+    return Buffer;
 }
 
 INIT_FUNCTION
@@ -552,9 +639,9 @@ MmArmInitSystem(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     BOOLEAN IncludeType[LoaderMaximum];
-    //PPHYSICAL_MEMORY_RUN Run;
+    PPHYSICAL_MEMORY_RUN Run;
     PFN_NUMBER PageCount;
-    //PVOID Bitmap;
+    PVOID Bitmap;
     ULONG SystemCacheSizeInPages;
     ULONG ix;
   #if defined(_X86_)
@@ -851,6 +938,39 @@ MmArmInitSystem(
 
         /* Initialize the platform-specific parts */
         MiInitMachineDependent(LoaderBlock);
+
+        /* Build the physical memory block */
+        MmPhysicalMemoryBlock = MmInitializeMemoryLimits(LoaderBlock, IncludeType);
+
+        /* Allocate enough buffer for the PFN bitmap. Align it up to a 32-bit boundary */
+        //DPRINT1("MmArmInitSystem: MmHighestPhysicalPage %X, Size %X\n", MmHighestPhysicalPage, (((MmHighestPhysicalPage + 1) + 31) / 32) * 4);
+        Bitmap = ExAllocatePoolWithTag(NonPagedPool, ((((MmHighestPhysicalPage + 1) + 31) / 32) * 4), TAG_MM);
+        if (!Bitmap)
+        {
+            KeBugCheckEx(INSTALL_MORE_MEMORY,
+                         MmNumberOfPhysicalPages,
+                         MmLowestPhysicalPage,
+                         MmHighestPhysicalPage,
+                         0x101);
+        }
+
+        /* Initialize it and clear all the bits to begin with */
+        RtlInitializeBitMap(&MiPfnBitMap, Bitmap, ((ULONG)MmHighestPhysicalPage + 1));
+        RtlClearAllBits(&MiPfnBitMap);
+
+        /* Loop physical memory runs */
+        for (ix = 0; ix < MmPhysicalMemoryBlock->NumberOfRuns; ix++)
+        {
+            Run = &MmPhysicalMemoryBlock->Run[ix];
+
+            DPRINT("PHYSICAL RAM [0x%08p to 0x%08p]\n",
+                   Run->BasePage << PAGE_SHIFT,
+                   (Run->BasePage + Run->PageCount) << PAGE_SHIFT);
+
+            /* Make sure it has pages inside it */
+            if (Run->PageCount)
+                RtlSetBits(&MiPfnBitMap, (ULONG)Run->BasePage, (ULONG)Run->PageCount);
+        }
 
         ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
 
