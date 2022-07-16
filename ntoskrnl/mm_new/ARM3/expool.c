@@ -1002,8 +1002,419 @@ ExAllocatePoolWithTag(
     _In_ SIZE_T NumberOfBytes,
     _In_ ULONG Tag)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PKPRCB Prcb = KeGetCurrentPrcb();
+    PGENERAL_LOOKASIDE LookasideList;
+    PPOOL_DESCRIPTOR PoolDesc;
+    PPOOL_HEADER Entry;
+    PPOOL_HEADER NextEntry;
+    PPOOL_HEADER FragmentEntry;
+    PLIST_ENTRY ListHead;
+    ULONG OriginalType;
+    USHORT BlockSize;
+    USHORT ix;
+    KIRQL OldIrql;
+
+    /* Some sanity checks */
+    ASSERT(Tag != 0);
+    ASSERT(Tag != ' GIB');
+    ASSERT(NumberOfBytes != 0);
+
+    ExpCheckPoolIrqlLevel(PoolType, NumberOfBytes, NULL);
+
+    /* Not supported in ReactOS */
+    ASSERT(!(PoolType & SESSION_POOL_MASK));
+
+    /* Check if verifier or special pool is enabled */
+    if (ExpPoolFlags & (POOL_FLAG_VERIFIER | POOL_FLAG_SPECIAL_POOL))
+    {
+        /* For verifier, we should call the verification routine */
+        if (ExpPoolFlags & POOL_FLAG_VERIFIER)
+        {
+            DPRINT1("ExAllocatePoolWithTag: Driver Verifier is not yet supported\n");
+        }
+
+        /* For special pool, we check if this is a suitable allocation and do the special allocation if needed */
+        if (ExpPoolFlags & POOL_FLAG_SPECIAL_POOL)
+        {
+            /* Check if this is a special pool allocation */
+            if (MmUseSpecialPool(NumberOfBytes, Tag))
+            {
+                /* Try to allocate using special pool */
+                Entry = MmAllocateSpecialPool(NumberOfBytes, Tag, PoolType, 2);
+                if (Entry)
+                    return Entry;
+            }
+        }
+    }
+
+    /* Get the pool type and its corresponding vector for this request */
+    OriginalType = PoolType;
+    PoolType = PoolType & BASE_POOL_TYPE_MASK;
+    PoolDesc = PoolVector[PoolType];
+    ASSERT(PoolDesc != NULL);
+
+    /* Check if this is a big page allocation */
+    if (NumberOfBytes > POOL_MAX_ALLOC)
+    {
+        /* Allocate pages for it */
+        Entry = MiAllocatePoolPages(OriginalType, NumberOfBytes);
+        if (!Entry)
+        {
+#if DBG
+            /* Out of memory, display current consumption
+               Let's consider that if the caller wanted more than a hundred pages,
+               that's a bogus caller and we are not out of memory.
+               Dump at most once a second to avoid spamming the log.
+            */
+            if (NumberOfBytes < (100 * PAGE_SIZE) &&
+                KeQueryInterruptTime() >= (MiLastPoolDumpTime + 10000000))
+            {
+                MiDumpPoolConsumers(FALSE, 0, 0, 0);
+                MiLastPoolDumpTime = KeQueryInterruptTime();
+            }
+#endif
+
+            /* Must succeed pool is deprecated, but still supported.
+              These allocation failures must cause an immediate bugcheck.
+            */
+            if (OriginalType & MUST_SUCCEED_POOL_MASK)
+            {
+                KeBugCheckEx(MUST_SUCCEED_POOL_EMPTY,
+                             NumberOfBytes,
+                             NonPagedPoolDescriptor.TotalPages,
+                             NonPagedPoolDescriptor.TotalBigPages,
+                             0);
+            }
+
+            /* Internal debugging */
+            ExPoolFailures++;
+
+            /* This flag requests printing failures, and can also further specify breaking on failures */
+            if (ExpPoolFlags & POOL_FLAG_DBGPRINT_ON_FAILURE)
+            {
+                DPRINT1("EX: ExAllocatePool (%lu, 0x%x) returning NULL\n", NumberOfBytes, OriginalType);
+
+                if (ExpPoolFlags & POOL_FLAG_CRASH_ON_FAILURE)
+                    DbgBreakPoint();
+            }
+
+            /* Finally, this flag requests an exception, which we are more than happy to raise! */
+            if (OriginalType & POOL_RAISE_IF_ALLOCATION_FAILURE)
+                ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+
+            return NULL;
+        }
+
+        /* Increment required counters */
+        InterlockedExchangeAdd((PLONG)&PoolDesc->TotalBigPages, (LONG)BYTES_TO_PAGES(NumberOfBytes));
+        InterlockedExchangeAddSizeT(&PoolDesc->TotalBytes, NumberOfBytes);
+        InterlockedIncrement((PLONG)&PoolDesc->RunningAllocs);
+
+        /* Add a tag for the big page allocation and switch to the generic "BIG" tag
+           if we failed to do so, then insert a tracker for this alloation.
+        */
+        if (!ExpAddTagForBigPages(Entry, Tag, (ULONG)BYTES_TO_PAGES(NumberOfBytes), OriginalType))
+            Tag = ' GIB';
+
+        ExpInsertPoolTracker(Tag, ROUND_TO_PAGES(NumberOfBytes), OriginalType);
+        return Entry;
+    }
+
+    /* Should never request 0 bytes from the pool, but since so many drivers do it,
+       we'll just assume they want 1 byte, based on NT's similar behavior
+    */
+    if (!NumberOfBytes)
+        NumberOfBytes = 1;
+
+    /* A pool allocation is defined by its data, a linked list to connect it to the free list (if necessary),
+       and a pool header to store accounting info.
+       Calculate this size, then convert it into a block size (units of pool headers).
+    
+       Note that ix cannot overflow (past POOL_LISTS_PER_PAGE) because any such request would've been treated
+       as a POOL_MAX_ALLOC earlier and resulted in the direct allocation of pages.
+    */
+    ix = (USHORT)((NumberOfBytes + sizeof(POOL_HEADER) + (POOL_BLOCK_SIZE - 1)) / POOL_BLOCK_SIZE);
+    ASSERT(ix < POOL_LISTS_PER_PAGE);
+
+    /* Handle lookaside list optimization for both paged and nonpaged pool */
+    if (ix <= NUMBER_POOL_LOOKASIDE_LISTS)
+    {
+        /* Try popping it from the per-CPU lookaside list */
+        LookasideList = (PoolType == PagedPool) ?
+                         Prcb->PPPagedLookasideList[ix - 1].P :
+                         Prcb->PPNPagedLookasideList[ix - 1].P;
+
+        LookasideList->TotalAllocates++;
+
+        Entry = (PPOOL_HEADER)InterlockedPopEntrySList(&LookasideList->ListHead);
+        if (!Entry)
+        {
+            /* We failed, try popping it from the global list */
+            LookasideList = (PoolType == PagedPool) ?
+                             Prcb->PPPagedLookasideList[ix - 1].L :
+                             Prcb->PPNPagedLookasideList[ix - 1].L;
+
+            LookasideList->TotalAllocates++;
+            Entry = (PPOOL_HEADER)InterlockedPopEntrySList(&LookasideList->ListHead);
+        }
+
+        /* If we were able to pop it, update the accounting and return the block */
+        if (Entry)
+        {
+            LookasideList->AllocateHits++;
+
+            /* Get the real entry, write down its pool type, and track it */
+            Entry--;
+            Entry->PoolType = (OriginalType + 1);
+            ExpInsertPoolTracker(Tag, Entry->BlockSize * POOL_BLOCK_SIZE, OriginalType);
+
+            /* Return the pool allocation */
+            Entry->PoolTag = Tag;
+
+            (POOL_FREE_BLOCK(Entry))->Flink = NULL;
+            (POOL_FREE_BLOCK(Entry))->Blink = NULL;
+
+            return POOL_FREE_BLOCK(Entry);
+        }
+    }
+
+    /* Loop in the free lists looking for a block if this size.
+       Start with the list optimized for this kind of size lookup
+    */
+    ListHead = &PoolDesc->ListHeads[ix];
+    do
+    {
+        /* Are there any free entries available on this list? */
+        if (!ExpIsPoolListEmpty(ListHead))
+        {
+            /* Acquire the pool lock now */
+            OldIrql = ExLockPool(PoolDesc);
+
+            /* And make sure the list still has entries */
+            if (ExpIsPoolListEmpty(ListHead))
+            {
+                /* Someone raced us (and won) before we had a chance to acquire the lock.
+                   Try again!
+                */
+                ExUnlockPool(PoolDesc, OldIrql);
+                continue;
+            }
+
+            /* Remove a free entry from the list.
+               Note that due to the way we insert free blocks into multiple lists there is a guarantee
+               that any block on this list will either be of the correct size, or perhaps larger.
+            */
+            ExpCheckPoolLinks(ListHead);
+            Entry = POOL_ENTRY(ExpRemovePoolHeadList(ListHead));
+            ExpCheckPoolLinks(ListHead);
+            ExpCheckPoolBlocks(Entry);
+
+            ASSERT(Entry->BlockSize >= ix);
+            ASSERT(Entry->PoolType == 0);
+
+            /* Check if this block is larger that what we need.
+               The block could not possibly be smaller, due to the reason explained above
+               (and we would've asserted on a checked build if this was the case).
+            */
+            if (Entry->BlockSize != ix)
+            {
+                /* Is there an entry before this one? */
+                if (Entry->PreviousSize == 0)
+                {
+                    /* There isn't anyone before us, so take the next block and turn it into a fragment
+                       that contains the leftover data that we don't need to satisfy the caller's request
+                    */
+                    FragmentEntry = POOL_BLOCK(Entry, ix);
+                    FragmentEntry->BlockSize = Entry->BlockSize - ix;
+
+                    /* And make it point back to us */
+                    FragmentEntry->PreviousSize = ix;
+
+                    /* Now get the block that follows the new fragment
+                       and check if it's still on the same page as us (and not at the end)
+                    */
+                    NextEntry = POOL_NEXT_BLOCK(FragmentEntry);
+                    if (PAGE_ALIGN(NextEntry) != NextEntry)
+                        /* Adjust this next block to point to our newly created fragment block */
+                        NextEntry->PreviousSize = FragmentEntry->BlockSize;
+                }
+                else
+                {
+                    /* There is a free entry before us,
+                       which we know is smaller so we'll make this entry the fragment instead
+                    */
+                    FragmentEntry = Entry;
+
+                    /* And then we'll remove from it the actual size required.
+                       Now the entry is a leftover free fragment.
+                    */
+                    Entry->BlockSize -= ix;
+
+                    /* Now let's go to the next entry after the fragment (which used to point to our original free entry)
+                       and make it reference the new fragment entry instead.
+
+                       This is the entry that will actually end up holding the allocation!
+                    */
+                    Entry = POOL_NEXT_BLOCK(Entry);
+                    Entry->PreviousSize = FragmentEntry->BlockSize;
+
+                    /* And now let's go to the entry after that one
+                       and check if it's still on the same page, and not at the end
+                    */
+                    NextEntry = POOL_BLOCK(Entry, ix);
+
+                    if (PAGE_ALIGN(NextEntry) != NextEntry)
+                        /* Make it reference the allocation entry */
+                        NextEntry->PreviousSize = ix;
+                }
+
+                /* Now our (allocation) entry is the right size */
+                Entry->BlockSize = ix;
+
+                /* And the next entry is now the free fragment which contains the remaining difference
+                   between how big the original entry was, and the actual size the caller needs/requested.
+                */
+                FragmentEntry->PoolType = 0;
+                BlockSize = FragmentEntry->BlockSize;
+
+                /* Now check if enough free bytes remained for us to have a "full" entry, which contains enough bytes
+                   for a linked list and thus can be used for allocations (up to 8 bytes...)
+                */
+                ExpCheckPoolLinks(&PoolDesc->ListHeads[BlockSize - 1]);
+                if (BlockSize != 1)
+                {
+                    /* Insert the free entry into the free list for this size */
+                    ExpInsertPoolTailList(&PoolDesc->ListHeads[BlockSize - 1], POOL_FREE_BLOCK(FragmentEntry));
+                    ExpCheckPoolLinks(POOL_FREE_BLOCK(FragmentEntry));
+                }
+            }
+
+            /* We have found an entry for this allocation,
+               so set the pool type and release the lock since we're done
+            */
+            Entry->PoolType = (OriginalType + 1);
+            ExpCheckPoolBlocks(Entry);
+            ExUnlockPool(PoolDesc, OldIrql);
+
+            /* Increment required counters */
+            InterlockedExchangeAddSizeT(&PoolDesc->TotalBytes, (Entry->BlockSize * POOL_BLOCK_SIZE));
+            InterlockedIncrement((PLONG)&PoolDesc->RunningAllocs);
+
+            /* Track this allocation */
+            ExpInsertPoolTracker(Tag, (Entry->BlockSize * POOL_BLOCK_SIZE), OriginalType);
+
+            /* Return the pool allocation */
+            Entry->PoolTag = Tag;
+
+            (POOL_FREE_BLOCK(Entry))->Flink = NULL;
+            (POOL_FREE_BLOCK(Entry))->Blink = NULL;
+
+            return POOL_FREE_BLOCK(Entry);
+        }
+    }
+    while (++ListHead != &PoolDesc->ListHeads[POOL_LISTS_PER_PAGE]);
+
+    /* There were no free entries left, so we have to allocate a new fresh page */
+    Entry = MiAllocatePoolPages(OriginalType, PAGE_SIZE);
+    if (!Entry)
+    {
+#if DBG
+        /* Out of memory, display current consumption.
+           Let's consider that if the caller wanted more than a hundred pages,
+           that's a bogus caller and we are not out of memory.
+           Dump at most once a second to avoid spamming the log.
+        */
+        if (NumberOfBytes < (100 * PAGE_SIZE) &&
+            KeQueryInterruptTime() >= (MiLastPoolDumpTime + 10000000))
+        {
+            MiDumpPoolConsumers(FALSE, 0, 0, 0);
+            MiLastPoolDumpTime = KeQueryInterruptTime();
+        }
+#endif
+
+        /* Must succeed pool is deprecated, but still supported.
+           These allocation failures must cause an immediate bugcheck
+        */
+        if (OriginalType & MUST_SUCCEED_POOL_MASK)
+        {
+            KeBugCheckEx(MUST_SUCCEED_POOL_EMPTY,
+                         PAGE_SIZE,
+                         NonPagedPoolDescriptor.TotalPages,
+                         NonPagedPoolDescriptor.TotalBigPages,
+                         0);
+        }
+
+        /* Internal debugging */
+        ExPoolFailures++;
+
+        /* This flag requests printing failures, and can also further specify breaking on failures */
+        if (ExpPoolFlags & POOL_FLAG_DBGPRINT_ON_FAILURE)
+        {
+            DPRINT1("EX: ExAllocatePool (%lu, 0x%x) returning NULL\n", NumberOfBytes, OriginalType);
+            if (ExpPoolFlags & POOL_FLAG_CRASH_ON_FAILURE)
+                DbgBreakPoint();
+        }
+
+        /* Finally, this flag requests an exception, which we are more than happy to raise! */
+        if (OriginalType & POOL_RAISE_IF_ALLOCATION_FAILURE)
+            ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+
+        /* Return NULL to the caller in all other cases */
+        return NULL;
+    }
+
+    /* Setup the entry data */
+    Entry->Ulong1 = 0;
+    Entry->BlockSize = ix;
+    Entry->PoolType = OriginalType + 1;
+
+    /* This page will have two entries -- one for the allocation (which we just created above),
+       and one for the remaining free bytes, which we're about to create now.
+       The free bytes are the whole page minus what was allocated and then converted into units of block headers.
+    */
+    BlockSize = ((PAGE_SIZE / POOL_BLOCK_SIZE) - ix);
+
+    FragmentEntry = POOL_BLOCK(Entry, ix);
+    FragmentEntry->Ulong1 = 0;
+    FragmentEntry->BlockSize = BlockSize;
+    FragmentEntry->PreviousSize = ix;
+
+    /* Increment required counters */
+    InterlockedIncrement((PLONG)&PoolDesc->TotalPages);
+    InterlockedExchangeAddSizeT(&PoolDesc->TotalBytes, (Entry->BlockSize * POOL_BLOCK_SIZE));
+
+    /* Now check if enough free bytes remained for us to have a "full" entry,
+       which contains enough bytes for a linked list and thus can be used for allocations (up to 8 bytes...)
+    */
+    if (FragmentEntry->BlockSize != 1)
+    {
+        /* Excellent -- acquire the pool lock */
+        OldIrql = ExLockPool(PoolDesc);
+
+        /* And insert the free entry into the free list for this block size */
+        ExpCheckPoolLinks(&PoolDesc->ListHeads[BlockSize - 1]);
+        ExpInsertPoolTailList(&PoolDesc->ListHeads[BlockSize - 1], POOL_FREE_BLOCK(FragmentEntry));
+        ExpCheckPoolLinks(POOL_FREE_BLOCK(FragmentEntry));
+
+        /* Release the pool lock */
+        ExpCheckPoolBlocks(Entry);
+        ExUnlockPool(PoolDesc, OldIrql);
+    }
+    else
+    {
+        /* Simply do a sanity check */
+        ExpCheckPoolBlocks(Entry);
+    }
+
+    /* Increment performance counters and track this allocation */
+    InterlockedIncrement((PLONG)&PoolDesc->RunningAllocs);
+    ExpInsertPoolTracker(Tag, (Entry->BlockSize * POOL_BLOCK_SIZE), OriginalType);
+
+    /* And return the pool allocation */
+    ExpCheckPoolBlocks(Entry);
+    Entry->PoolTag = Tag;
+
+    return POOL_FREE_BLOCK(Entry);
 }
 
 PVOID
