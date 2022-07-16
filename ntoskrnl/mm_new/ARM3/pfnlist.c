@@ -60,6 +60,8 @@ extern PKEVENT MiLowMemoryEvent;
 extern PKEVENT MiHighMemoryEvent;
 extern ULONG MmSecondaryColors;
 extern PFN_NUMBER MmMinimumFreePages;
+extern PVOID MmPagedPoolEnd;
+extern ULONG MmFrontOfList;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -559,6 +561,178 @@ MiInitializePfnAndMakePteValid(
     _In_ MMPTE TempPte)
 {
     UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+MiInsertPageInList(
+    _In_ PMMPFNLIST ListHead,
+    _In_ PFN_NUMBER PageFrameIndex)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+FASTCALL
+MiInsertStandbyListAtFront(
+    _In_ PFN_NUMBER PageFrameIndex)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+MiDecrementReferenceCount(
+    _In_ PMMPFN Pfn,
+    _In_ PFN_NUMBER PageFrameIndex)
+{
+    /* PFN lock must be held */
+    MI_ASSERT_PFN_LOCK_HELD();
+
+    /* Sanity checks on the page */
+    if (PageFrameIndex > MmHighestPhysicalPage ||
+        Pfn != MI_PFN_ELEMENT(PageFrameIndex) ||
+        Pfn->u3.e2.ReferenceCount == 0 ||
+        Pfn->u3.e2.ReferenceCount >= 2500)
+    {
+        DPRINT1("PageFrameIndex=0x%lx, MmHighestPhysicalPage=0x%lx\n", PageFrameIndex, MmHighestPhysicalPage);
+        DPRINT1("Pfn=%p, Element=%p, RefCount=%u\n", Pfn, MI_PFN_ELEMENT(PageFrameIndex), Pfn->u3.e2.ReferenceCount);
+
+        ASSERT(PageFrameIndex <= MmHighestPhysicalPage);
+        ASSERT(Pfn == MI_PFN_ELEMENT(PageFrameIndex));
+        ASSERT(Pfn->u3.e2.ReferenceCount != 0);
+        ASSERT(Pfn->u3.e2.ReferenceCount < 2500);
+    }
+
+    /* Dereference the page, bail out if it's still alive */
+    InterlockedDecrement16((PSHORT)&Pfn->u3.e2.ReferenceCount);
+    if (Pfn->u3.e2.ReferenceCount)
+        return;
+
+    /* Nobody should still have reference to this page */
+    if (Pfn->u2.ShareCount)
+        /* Otherwise something's really wrong */
+        ASSERT(FALSE);KeBugCheckEx(PFN_LIST_CORRUPT, 7, PageFrameIndex, Pfn->u2.ShareCount, 0);
+
+    /* And it should be lying on some page list */
+    ASSERT(Pfn->u3.e1.PageLocation != ActiveAndValid);
+
+    /* Did someone set the delete flag? */
+    if (MI_IS_PFN_DELETED(Pfn))
+    {
+        /* Insert it into the free list, there's nothing left to do */
+        MiInsertPageInFreeList(PageFrameIndex);
+        return;
+    }
+
+    /* Check to see which list this page should go into */
+    if (Pfn->u3.e1.Modified == 1)
+    {
+        /* Push it into the modified page list */
+        MiInsertPageInList(&MmModifiedPageListHead, PageFrameIndex);
+        return;
+    }
+
+    /* Otherwise, insert this page into the standby list */
+    ASSERT(Pfn->u3.e1.RemovalRequested == 0);
+
+    if (!MmFrontOfList)
+        MiInsertPageInList(&MmStandbyPageListHead, PageFrameIndex);
+    else
+        MiInsertStandbyListAtFront(PageFrameIndex);
+
+}
+
+VOID
+NTAPI
+MiDecrementShareCount(
+    _In_ PMMPFN Pfn,
+    _In_ PFN_NUMBER PageFrameIndex)
+{
+    PMMPTE Pte;
+    MMPTE TempPte;
+
+    ASSERT(PageFrameIndex > 0);
+    ASSERT(MI_PFN_ELEMENT(PageFrameIndex) != NULL);
+    ASSERT(Pfn == MI_PFN_ELEMENT(PageFrameIndex));
+    ASSERT(MI_IS_ROS_PFN(Pfn) == FALSE);
+
+    /* Page must be in-use */
+    if ((Pfn->u3.e1.PageLocation != ActiveAndValid) &&
+        (Pfn->u3.e1.PageLocation != StandbyPageList))
+    {
+        /* Otherwise we have PFN corruption */
+        ASSERT(FALSE);
+        KeBugCheckEx(PFN_LIST_CORRUPT,
+                     0x99,
+                     PageFrameIndex,
+                     Pfn->u3.e1.PageLocation,
+                     0);
+    }
+
+    /* Page should at least have one reference */
+    ASSERT(Pfn->u3.e2.ReferenceCount != 0);
+
+    /* Check if the share count is now 0 */
+    ASSERT(Pfn->u2.ShareCount < 0xF000000);
+
+    if (--Pfn->u2.ShareCount)
+        return;
+
+    /* Was this a prototype PTE? */
+    if (Pfn->u3.e1.PrototypePte)
+    {
+        /* Grab the PTE address and make sure it's in prototype pool */
+        Pte = Pfn->PteAddress;
+        ASSERT((Pte >= (PMMPTE)MmPagedPoolStart) && (Pte <= (PMMPTE)MmPagedPoolEnd));
+
+        /* The PTE that backs it should also be valdi */
+        Pte = MiAddressToPte(Pte);
+        ASSERT(Pte->u.Hard.Valid == 1);
+
+        /* Get the original prototype PTE and turn it into a transition PTE */
+        Pte = Pfn->PteAddress;
+        TempPte = *Pte;
+        TempPte.u.Soft.Transition = 1;
+        TempPte.u.Soft.Valid = 0;
+        TempPte.u.Soft.Prototype = 0;
+        TempPte.u.Soft.Protection = Pfn->OriginalPte.u.Soft.Protection;
+
+        MI_WRITE_INVALID_PTE(Pte, TempPte);
+
+        DPRINT("Marking PTE: %p as transition (%p - %lx)\n", Pte, Pfn, MiGetPfnEntryIndex(Pfn));
+    }
+
+    /* Put the page in transition */
+    Pfn->u3.e1.PageLocation = TransitionPage;
+
+    /* PFN lock must be held */
+    MI_ASSERT_PFN_LOCK_HELD();
+
+    if (Pfn->u3.e2.ReferenceCount != 1)
+    {
+        /* Otherwise, just drop the reference count */
+        InterlockedDecrement16((PSHORT)&Pfn->u3.e2.ReferenceCount);
+        return;
+    }
+
+    /* Is there still a PFN for this page? */
+    if (!MI_IS_PFN_DELETED(Pfn))
+    {
+        /* PFN not yet deleted, drop a ref count */
+        MiDecrementReferenceCount(Pfn, PageFrameIndex);
+        return;
+    }
+
+    /* Clear the last reference */
+    Pfn->u3.e2.ReferenceCount = 0;
+    ASSERT(Pfn->OriginalPte.u.Soft.Prototype == 0);
+
+    /* Mark the page temporarily as valid, we're going to make it free soon */
+    Pfn->u3.e1.PageLocation = ActiveAndValid;
+
+    /* Bring it back into the free list */
+    MiInsertPageInFreeList(PageFrameIndex);
 }
 
 /* EOF */
