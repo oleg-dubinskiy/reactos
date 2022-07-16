@@ -814,6 +814,13 @@ MiSyncCachedRanges(
     VOID
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+MiInitializeLargePageSupport(
+    VOID
+);
+
 /* ARM3\mminit.c */
 INIT_FUNCTION
 PPHYSICAL_MEMORY_DESCRIPTOR
