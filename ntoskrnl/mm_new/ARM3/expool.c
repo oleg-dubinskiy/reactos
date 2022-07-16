@@ -206,6 +206,37 @@ ExpComputeHashForTag(
     return ((ULONG)BucketMask & ((ULONG)Result ^ (Result >> 32)));
 }
 
+FORCEINLINE
+KIRQL
+ExLockPool(
+    _In_ PPOOL_DESCRIPTOR Descriptor)
+{
+    /* Check if this is nonpaged pool */
+    if ((Descriptor->PoolType & BASE_POOL_TYPE_MASK) == NonPagedPool)
+        /* Use the queued spin lock */
+        return KeAcquireQueuedSpinLock(LockQueueNonPagedPoolLock);
+
+    /* Use the guarded mutex */
+    KeAcquireGuardedMutex(Descriptor->LockAddress);
+
+    return APC_LEVEL;
+}
+
+FORCEINLINE
+VOID
+ExUnlockPool(
+    _In_ PPOOL_DESCRIPTOR Descriptor,
+    _In_ KIRQL OldIrql)
+{
+    /* Check if this is nonpaged pool */
+    if ((Descriptor->PoolType & BASE_POOL_TYPE_MASK) == NonPagedPool)
+        /* Use the queued spin lock */
+        KeReleaseQueuedSpinLock(LockQueueNonPagedPoolLock, OldIrql);
+    else
+        /* Use the guarded mutex */
+        KeReleaseGuardedMutex(Descriptor->LockAddress);
+}
+
 PLIST_ENTRY
 NTAPI
 ExpEncodePoolLink(
