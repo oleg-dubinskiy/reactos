@@ -122,6 +122,17 @@ extern PVOID MiSessionSpaceEnd;
   #define MI_IS_ROS_PFN(x)          ((x)->u4.AweAllocation == TRUE)
 #endif
 
+/* Special values for LoadedImports */
+#ifdef _WIN64
+  #define MM_SYSLDR_NO_IMPORTS   (PVOID)0xFFFFFFFFFFFFFFFEULL
+  #define MM_SYSLDR_BOOT_LOADED  (PVOID)0xFFFFFFFFFFFFFFFFULL
+#else
+  #define MM_SYSLDR_NO_IMPORTS   (PVOID)0xFFFFFFFE
+  #define MM_SYSLDR_BOOT_LOADED  (PVOID)0xFFFFFFFF
+#endif
+
+#define MM_SYSLDR_SINGLE_ENTRY 0x1
+
 #if defined(_M_IX86) || defined(_M_ARM)
   /* PFN List Sentinel */
   #define LIST_HEAD 0xFFFFFFFF
@@ -1023,6 +1034,13 @@ INIT_FUNCTION
 VOID
 NTAPI
 MiReloadBootLoadedDrivers(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock
+);
+
+INIT_FUNCTION
+BOOLEAN
+NTAPI
+MiInitializeLoadedModuleList(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock
 );
 

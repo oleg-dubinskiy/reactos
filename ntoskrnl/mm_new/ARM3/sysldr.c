@@ -13,12 +13,20 @@ LIST_ENTRY MmLoadedUserImageList;
 ERESOURCE PsLoadedModuleResource;
 ULONG_PTR PsNtosImageBase;
 KMUTANT MmSystemLoadLock;
-
+KSPIN_LOCK PsLoadedModuleSpinLock;
+PMMPTE MiKernelResourceStartPte;
+PMMPTE MiKernelResourceEndPte;
 PVOID MmUnloadedDrivers;
 PVOID MmLastUnloadedDrivers;
-
+ULONG_PTR ExPoolCodeStart;
+ULONG_PTR ExPoolCodeEnd;
+ULONG_PTR MmPoolCodeStart;
+ULONG_PTR MmPoolCodeEnd;
+ULONG_PTR MmPteCodeStart;
+ULONG_PTR MmPteCodeEnd;
 BOOLEAN MmMakeLowMemory;
 BOOLEAN MmEnforceWriteProtection = FALSE; // FIXME: should be TRUE, but that would cause CORE-16387 & CORE-16449
+
 
 /* FUNCTIONS ******************************************************************/
 
@@ -686,6 +694,90 @@ MiLocateKernelSections(
             MmPteCodeEnd = (MmPteCodeStart + Size);
         }
     }
+}
+
+INIT_FUNCTION
+BOOLEAN
+NTAPI
+MiInitializeLoadedModuleList(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    PLDR_DATA_TABLE_ENTRY LdrEntry;
+    PLDR_DATA_TABLE_ENTRY NewEntry;
+    PLIST_ENTRY ListHead;
+    PLIST_ENTRY NextEntry;
+    ULONG EntrySize;
+    ULONG Size;
+
+    /* Setup the loaded module list and locks */
+    ExInitializeResourceLite(&PsLoadedModuleResource);
+    KeInitializeSpinLock(&PsLoadedModuleSpinLock);
+    InitializeListHead(&PsLoadedModuleList);
+
+    /* Get loop variables and the kernel entry */
+    ListHead = &LoaderBlock->LoadOrderListHead;
+    LdrEntry = CONTAINING_RECORD(ListHead->Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+    PsNtosImageBase = (ULONG_PTR)LdrEntry->DllBase;
+
+    /* Locate resource section, pool code, and system pte code */
+    MiLocateKernelSections(LdrEntry);
+
+    /* Loop the loader block */
+    for (NextEntry = ListHead->Flink;
+         NextEntry != ListHead;
+         NextEntry = NextEntry->Flink)
+    {
+        /* Get the loader entry */
+        LdrEntry = CONTAINING_RECORD(NextEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+        /* FIXME: ROS HACK. Make sure this is a driver */
+        if (!RtlImageNtHeader(LdrEntry->DllBase))
+            /* Skip this entry */
+            continue;
+
+        /* Calculate the size we'll need and allocate a copy */
+        EntrySize = (sizeof(LDR_DATA_TABLE_ENTRY) + LdrEntry->BaseDllName.MaximumLength + sizeof(UNICODE_NULL));
+
+        NewEntry = ExAllocatePoolWithTag(NonPagedPool, EntrySize, TAG_MODULE_OBJECT);
+        if (!NewEntry)
+        {
+            DPRINT1("MiInitializeLoadedModuleList: Allocate failed\n");
+            return FALSE;
+        }
+
+        /* Copy the entry over */
+        *NewEntry = *LdrEntry;
+
+        /* Allocate the name */
+        Size = (LdrEntry->FullDllName.MaximumLength + sizeof(UNICODE_NULL));
+
+        NewEntry->FullDllName.Buffer = ExAllocatePoolWithTag(PagedPool, Size, TAG_LDR_WSTR);
+        if (!NewEntry->FullDllName.Buffer)
+        {
+            DPRINT1("MiInitializeLoadedModuleList: Allocate failed\n");
+            ExFreePoolWithTag(NewEntry, TAG_MODULE_OBJECT);
+            return FALSE;
+        }
+
+        /* Set the base name */
+        NewEntry->BaseDllName.Buffer = (PVOID)(NewEntry + 1);
+
+        /* Copy the full and base name */
+        RtlCopyMemory(NewEntry->FullDllName.Buffer, LdrEntry->FullDllName.Buffer, LdrEntry->FullDllName.MaximumLength);
+        RtlCopyMemory(NewEntry->BaseDllName.Buffer, LdrEntry->BaseDllName.Buffer, LdrEntry->BaseDllName.MaximumLength);
+
+        /* Null-terminate the base name */
+        NewEntry->BaseDllName.Buffer[NewEntry->BaseDllName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+        /* Insert the entry into the list */
+        InsertTailList(&PsLoadedModuleList, &NewEntry->InLoadOrderLinks);
+    }
+
+    /* Build the import lists for the boot drivers */
+    MiBuildImportsForBootDrivers();
+
+    /* We're done */
+    return TRUE;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
