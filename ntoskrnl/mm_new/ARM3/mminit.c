@@ -354,6 +354,12 @@ extern SLIST_HEADER MmInPageSupportSListHead;
 extern PVOID MmHighSectionBase;
 extern ULONG MmSpecialPoolTag;
 extern LIST_ENTRY MmUnusedSubsectionList;
+extern PFN_NUMBER MmAvailablePages;
+extern PFN_NUMBER MmResidentAvailablePages;
+extern ULONG MmMaximumDeadKernelStacks;
+extern ULONG MmDataClusterSize;
+extern ULONG MmCodeClusterSize;
+extern ULONG MmInPageSupportMinimum;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -683,6 +689,83 @@ MiAddHalIoMappings(VOID)
             BaseAddress = (PVOID)((ULONG_PTR)BaseAddress + PAGE_SIZE);
             Pte++;
         }
+    }
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+MiSetSystemSize(VOID)
+{
+    /* Check how many pages the system has */
+    if (MmNumberOfPhysicalPages <= ((13 * _1MB) / PAGE_SIZE))
+    {
+        /* Set small system */
+        MmSystemSize = MmSmallSystem;
+
+        MmMaximumDeadKernelStacks = 0;
+        MmInPageSupportMinimum = 2;
+
+        MmDataClusterSize = 0;
+        MmCodeClusterSize = 1;
+        MmReadClusterSize = 2;
+    }
+    else if (MmNumberOfPhysicalPages <= ((19 * _1MB) / PAGE_SIZE))
+    {
+        /* Set small system and add 100 pages for the cache */
+        MmSystemSize = MmSmallSystem;
+
+        MmSystemCacheWsMinimum += 100;
+        MmMaximumDeadKernelStacks = 2;
+        MmInPageSupportMinimum = 3;
+
+        MmDataClusterSize = 1;
+        MmCodeClusterSize = 2;
+        MmReadClusterSize = 4;
+    }
+    else
+    {
+        /* Set medium system and add 400 pages for the cache */
+        MmSystemSize = MmMediumSystem;
+
+        MmSystemCacheWsMinimum += 400;
+        MmMaximumDeadKernelStacks = 5;
+        MmInPageSupportMinimum = 4;
+
+        MmDataClusterSize = 3;
+        MmCodeClusterSize = 7;
+        MmReadClusterSize = 7;
+    }
+
+    /* Check for less than 24MB */
+    if (MmNumberOfPhysicalPages < ((24 * _1MB) / PAGE_SIZE))
+        /* No more than 32 pages */
+        MmSystemCacheWsMinimum = 32;
+
+    /* Check for more than 32MB */
+    if (MmNumberOfPhysicalPages >= ((32 * _1MB) / PAGE_SIZE))
+    {
+        /* Check for product type being "Wi" for WinNT */
+        if (MmProductType == '\0i\0W')
+        {
+            /* Then this is a large system */
+            MmSystemSize = MmLargeSystem;
+        }
+        else
+        {
+            /* For servers, we need 64MB to consider this as being large */
+            if (MmNumberOfPhysicalPages >= ((64 * _1MB) / PAGE_SIZE))
+                /* Set it as large */
+                MmSystemSize = MmLargeSystem;
+        }
+    }
+
+    /* Check for more than 33 MB */
+    if (MmNumberOfPhysicalPages > ((33 * _1MB) / PAGE_SIZE))
+    {
+        /* Add another 500 pages to the cache */
+        MmSystemCacheWsMinimum += 500;
+        MmInPageSupportMinimum += 4;
     }
 }
 
@@ -1036,6 +1119,9 @@ MmArmInitSystem(
         /* Loop for HAL Heap I/O device mappings that need coherency tracking */
         MiAddHalIoMappings();
 
+        /* Set the initial resident page count */
+        MmResidentAvailablePages = (MmAvailablePages - 0x20);
+
         /* Initialize large page structures on PAE/x64, and MmProcessList on x86 */
         MiInitializeLargePageSupport();
 
@@ -1045,6 +1131,11 @@ MmArmInitSystem(
         /* Relocate the boot drivers into system PTE space and fixup their PFNs */
         DPRINT("MmArmInitSystem: MiReloadBootLoadedDrivers LoaderBlock %X\n", LoaderBlock);
         MiReloadBootLoadedDrivers(LoaderBlock);
+
+        /* FIXME: Call out into Driver Verifier for initialization  */
+
+        /* Set variables depending on the size of the memory */
+        MiSetSystemSize();
 
         ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
 

@@ -10,6 +10,7 @@
 
 SLIST_HEADER MmDeadStackSListHead;
 PMMWSL MmWorkingSetList;
+ULONG MmMaximumDeadKernelStacks = 5;
 
 extern MMPTE DemandZeroPte;
 

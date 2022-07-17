@@ -8,6 +8,10 @@
 
 /* GLOBALS ********************************************************************/
 
+ULONG MmDataClusterSize;
+ULONG MmCodeClusterSize;
+ULONG MmInPageSupportMinimum = 4;
+
 extern PMMPTE MiSessionLastPte;
 extern PMM_SESSION_SPACE MmSessionSpace;
 #if (_MI_PAGING_LEVELS <= 3)
