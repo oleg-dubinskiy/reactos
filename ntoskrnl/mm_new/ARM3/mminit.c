@@ -1042,6 +1042,10 @@ MmArmInitSystem(
         /* Check if the registry says any drivers should be loaded with large pages */
         MiInitializeDriverLargePageList();
 
+        /* Relocate the boot drivers into system PTE space and fixup their PFNs */
+        DPRINT("MmArmInitSystem: MiReloadBootLoadedDrivers LoaderBlock %X\n", LoaderBlock);
+        MiReloadBootLoadedDrivers(LoaderBlock);
+
         ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
 
     }

@@ -951,6 +951,14 @@ MmFreeSpecialPool(
     _In_ PVOID P
 );
 
+/* ARM3\sysldr.c */
+INIT_FUNCTION
+VOID
+NTAPI
+MiReloadBootLoadedDrivers(
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock
+);
+
 /* ARM3\syspte.c */
 INIT_FUNCTION
 VOID
