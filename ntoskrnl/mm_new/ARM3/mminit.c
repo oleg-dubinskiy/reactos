@@ -367,6 +367,8 @@ extern PFN_COUNT MiExpansionPoolPagesInitialCharge;
 extern PFN_NUMBER MmResidentAvailableAtInit;
 extern MMPDE ValidKernelPde;
 extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
+extern PVOID MiDebugMapping;
+extern PMMPTE MmDebugPte;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1452,8 +1454,11 @@ MmArmInitSystem(
         /* Size up paged pool and build the shadow system page directory */
         MiBuildPagedPool();
 
-        ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
+        /* Debugger physical memory support is now ready to be used */
+        MmDebugPte = MiAddressToPte(MiDebugMapping);
 
+        /* Initialize the loaded module list */
+        MiInitializeLoadedModuleList(LoaderBlock);
     }
     else if (Phase == 2)
     {
