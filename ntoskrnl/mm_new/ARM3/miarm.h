@@ -8,6 +8,9 @@
 #define _1MB (1024 * _1KB)
 #define _1GB (1024 * _1MB)
 
+/* Number of pages in one unit of the system cache */
+#define MM_PAGES_PER_VACB  (VACB_MAPPING_GRANULARITY / PAGE_SIZE)
+
 /* Protection Bits part of the internal memory manager Protection Mask, from:
    http://reactos.org/wiki/Techwiki:Memory_management_in_the_Windows_XP_kernel
    https://www.reactos.org/wiki/Techwiki:Memory_Protection_constants
@@ -972,6 +975,14 @@ VOID
 NTAPI
 MmFreeSpecialPool(
     _In_ PVOID P
+);
+
+/* ARM3\syscache.c */
+VOID
+NTAPI
+MiInitializeSystemCache(
+    _In_ ULONG MinimumWorkingSetSize,
+    _In_ ULONG MaximumWorkingSetSize
 );
 
 /* ARM3\sysldr.c */

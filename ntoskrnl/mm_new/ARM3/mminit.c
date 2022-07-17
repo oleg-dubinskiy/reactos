@@ -1269,6 +1269,9 @@ MmArmInitSystem(
         /* Define limits for system cache */
         MiSetSystemCache(SystemCacheSizeInPages);
 
+        /* Initialize the system cache */
+        MiInitializeSystemCache(MmSystemCacheWsMinimum, MmAvailablePages);
+
         ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
 
     }
