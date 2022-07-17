@@ -770,6 +770,20 @@ MiSetSystemSize(VOID)
 }
 
 INIT_FUNCTION
+VOID
+NTAPI
+MiAdjustWorkingSetManagerParameters(
+    _In_ BOOLEAN Client)
+{
+    /* This function needs to do more work, for now, we tune page minimums */
+
+    /* Check for a system with around 64MB RAM or more */
+    if (MmNumberOfPhysicalPages >= (63 * _1MB) / PAGE_SIZE)
+        /* Double the minimum amount of pages we consider for a "plenty free" scenario */
+        MmPlentyFreePages *= 2;
+}
+
+INIT_FUNCTION
 BOOLEAN
 NTAPI
 MmArmInitSystem(
