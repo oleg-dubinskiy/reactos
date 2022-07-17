@@ -31,6 +31,7 @@ PVOID MmSpecialPoolStart;
 PVOID MmSpecialPoolEnd;
 PVOID MiSpecialPoolExtra;
 ULONG MiSpecialPoolExtraCount;
+ULONG MmSpecialPoolTag;
 
 PMMPTE MiSpecialPoolFirstPte;
 PMMPTE MiSpecialPoolLastPte;
@@ -48,6 +49,9 @@ BOOLEAN MmSpecialPoolCatchOverruns = TRUE;
 extern PFN_NUMBER MmAvailablePages;
 extern PMMPTE MmSystemPteBase;
 extern ULONG MmSecondaryColorMask;
+extern ULONG MmNumberOfSystemPtes;
+extern PFN_NUMBER MmResidentAvailablePages;
+extern ULONG ExpPoolFlags;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -492,6 +496,91 @@ MmFreeSpecialPool(
 
     /* Update page counter */
     InterlockedDecrementUL(&MmSpecialPagesInUse);
+}
+
+VOID
+NTAPI
+MiInitializeSpecialPool(VOID)
+{
+    ULONG SpecialPoolPtes;
+    ULONG ix;
+    PMMPTE Pte;
+
+    /* Check if there is a special pool tag */
+    if (MmSpecialPoolTag == 0 || MmSpecialPoolTag == -1)
+        return;
+
+    /* Calculate number of system PTEs for the special pool */
+    if (MmNumberOfSystemPtes >= 0x3000)
+        SpecialPoolPtes = (MmNumberOfSystemPtes / 3);
+    else
+        SpecialPoolPtes = (MmNumberOfSystemPtes / 6);
+
+    /* Don't let the number go too high */
+    if (SpecialPoolPtes > 0x6000)
+        SpecialPoolPtes = 0x6000;
+
+    /* Round up to the page size */
+    SpecialPoolPtes = PAGE_ROUND_UP(SpecialPoolPtes);
+
+    ASSERT((SpecialPoolPtes & (PTE_PER_PAGE - 1)) == 0);
+
+    /* Reserve those PTEs */
+    do
+    {
+        Pte = MiReserveAlignedSystemPtes(SpecialPoolPtes, SystemPteSpace, /*0x400000*/0); // FIXME:
+        if (Pte)
+            break;
+
+        /* Reserving didn't work, so try to reduce the requested size */
+        ASSERT(SpecialPoolPtes >= PTE_PER_PAGE);
+        SpecialPoolPtes -= PTE_PER_PAGE;
+    }
+    while (SpecialPoolPtes);
+
+    /* Fail if we couldn't reserve them at all */
+    if (!SpecialPoolPtes)
+        return;
+
+    /* Make sure we got enough */
+    ASSERT(SpecialPoolPtes >= PTE_PER_PAGE);
+
+    /* Save first PTE and its address */
+    MiSpecialPoolFirstPte = Pte;
+    MmSpecialPoolStart = MiPteToAddress(Pte);
+
+    for (ix = 0; ix < (PTE_PER_PAGE / 2); ix++)
+    {
+        /* Point it to the next entry */
+        Pte->u.List.NextEntry = (&Pte[2] - MmSystemPteBase);
+
+        /* Move to the next pair */
+        Pte += 2;
+    }
+
+    /* Save extra values */
+    MiSpecialPoolExtra = Pte;
+    MiSpecialPoolExtraCount = (SpecialPoolPtes - PTE_PER_PAGE);
+
+    /* Mark the previous PTE as the last one */
+    MiSpecialPoolLastPte = (Pte - 2);
+    MiSpecialPoolLastPte->u.List.NextEntry = MM_EMPTY_PTE_LIST;
+
+    /* Save end address of the special pool */
+    MmSpecialPoolEnd = MiPteToAddress(MiSpecialPoolLastPte + 1);
+
+    /* Calculate maximum non-paged part of the special pool */
+    MiSpecialPagesNonPagedMaximum = (MmResidentAvailablePages >> 4);
+
+    /* And limit it if it turned out to be too big */
+    if (MmNumberOfPhysicalPages > 0x3FFF)
+        MiSpecialPagesNonPagedMaximum = (MmResidentAvailablePages >> 3);
+
+    DPRINT1("Special pool start %p - end %p\n", MmSpecialPoolStart, MmSpecialPoolEnd);
+
+    ExpPoolFlags |= POOL_FLAG_SPECIAL_POOL;
+
+    //MiTestSpecialPool();
 }
 
 /* EOF */

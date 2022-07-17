@@ -8,6 +8,12 @@
 #define _1MB (1024 * _1KB)
 #define _1GB (1024 * _1MB)
 
+/* Everyone loves 64K */
+#define _64K (64 * _1KB)
+
+/* System views are binned into 64K chunks*/
+#define MI_SYSTEM_VIEW_BUCKET_SIZE  _64K
+
 /* Number of pages in one unit of the system cache */
 #define MM_PAGES_PER_VACB  (VACB_MAPPING_GRANULARITY / PAGE_SIZE)
 
@@ -785,6 +791,20 @@ MI_ERASE_PTE(
     Pte->u.Long = 0;
 }
 
+/* Writes a valid PDE */
+FORCEINLINE
+VOID
+MI_WRITE_VALID_PDE(
+    _In_ PMMPDE Pde,
+    _In_ MMPDE TempPde)
+{
+    /* Write the valid PDE */
+    ASSERT(Pde->u.Hard.Valid == 0);
+    ASSERT(TempPde.u.Hard.Valid == 1);
+
+    *Pde = TempPde;
+}
+
 /* ARM3\i386\init.c */
 INIT_FUNCTION
 VOID
@@ -961,6 +981,13 @@ MmDeterminePoolType(
     _In_ PVOID PoolAddress
 );
 
+/* ARM3\section.c */
+BOOLEAN
+NTAPI
+MiInitializeSystemSpaceMap(
+    _In_ PMMSESSION InputSession OPTIONAL
+);
+
 /* ARM3\special.c */
 PVOID
 NTAPI
@@ -975,6 +1002,12 @@ VOID
 NTAPI
 MmFreeSpecialPool(
     _In_ PVOID P
+);
+
+VOID
+NTAPI
+MiInitializeSpecialPool(
+    VOID
 );
 
 /* ARM3\syscache.c */
@@ -1008,6 +1041,14 @@ NTAPI
 MiReserveSystemPtes(
     _In_ ULONG NumberOfPtes,
     _In_ MMSYSTEM_PTE_POOL_TYPE SystemPtePoolType
+);
+
+PMMPTE
+NTAPI
+MiReserveAlignedSystemPtes(
+    _In_ ULONG NumberOfPtes,
+    _In_ MMSYSTEM_PTE_POOL_TYPE SystemPtePoolType,
+    _In_ ULONG Alignment
 );
 
 /* ARM3\virtual.c */
