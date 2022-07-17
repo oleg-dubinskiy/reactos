@@ -386,6 +386,250 @@ MiReloadBootLoadedDrivers(
     }
 }
 
+INIT_FUNCTION
+NTSTATUS
+NTAPI
+MiBuildImportsForBootDrivers(VOID)
+{
+    UNICODE_STRING KernelName = RTL_CONSTANT_STRING(L"ntoskrnl.exe");
+    UNICODE_STRING HalName = RTL_CONSTANT_STRING(L"hal.dll");
+    PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor;
+    PLDR_DATA_TABLE_ENTRY LdrEntry;
+    PLDR_DATA_TABLE_ENTRY KernelEntry = NULL;
+    PLDR_DATA_TABLE_ENTRY HalEntry = NULL;
+    PLDR_DATA_TABLE_ENTRY LdrEntry2;
+    PLDR_DATA_TABLE_ENTRY LastEntry = NULL;
+    PLDR_DATA_TABLE_ENTRY* EntryArray;
+    PLOAD_IMPORTS LoadedImports;
+    PLIST_ENTRY NextEntry;
+    PLIST_ENTRY NextEntry2;
+    ULONG LoadedImportsSize;
+    ULONG ImportSize;
+    PULONG_PTR ImageThunk;
+    ULONG_PTR DllBase;
+    ULONG_PTR DllEnd;
+    ULONG Modules = 0;
+    ULONG ix;
+    ULONG jx = 0;
+
+    /* Loop the loaded module list... we are early enough that no lock is needed */
+    for (NextEntry = PsLoadedModuleList.Flink;
+         NextEntry != &PsLoadedModuleList;
+         NextEntry = NextEntry->Flink)
+    {
+        /* Get the entry */
+        LdrEntry = CONTAINING_RECORD(NextEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+        /* Check if it's the kernel or HAL */
+        if (RtlEqualUnicodeString(&KernelName, &LdrEntry->BaseDllName, TRUE))
+            /* Found it */
+            KernelEntry = LdrEntry;
+        else if (RtlEqualUnicodeString(&HalName, &LdrEntry->BaseDllName, TRUE))
+            /* Found it */
+            HalEntry = LdrEntry;
+
+        /* Check if this is a driver DLL */
+        if (LdrEntry->Flags & LDRP_DRIVER_DEPENDENT_DLL)
+        {
+            /* Check if this is the HAL or kernel */
+            if ((LdrEntry == HalEntry) || (LdrEntry == KernelEntry))
+                /* Add a reference */
+                LdrEntry->LoadCount = 1;
+            else
+                /* No referencing needed */
+                LdrEntry->LoadCount = 0;
+        }
+        else
+        {
+            /* Add a reference for all other modules as well */
+            LdrEntry->LoadCount = 1;
+        }
+
+        /* Remember this came from the loader */
+        LdrEntry->LoadedImports = MM_SYSLDR_BOOT_LOADED;
+
+        /* Keep looping */
+        Modules++;
+    }
+
+    /* We must have at least found the kernel and HAL */
+    if (!(HalEntry) || (!KernelEntry))
+        return STATUS_NOT_FOUND;
+
+    /* Allocate the list */
+    EntryArray = ExAllocatePoolWithTag(PagedPool, (Modules * sizeof(PVOID)), TAG_LDR_IMPORTS);
+    if (!EntryArray)
+    {
+        DPRINT1("MiBuildImportsForBootDrivers: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Loop the loaded module list again */
+    for (NextEntry = PsLoadedModuleList.Flink;
+         NextEntry != &PsLoadedModuleList;
+         NextEntry = NextEntry->Flink)
+    {
+        /* Get the entry */
+        LdrEntry = CONTAINING_RECORD(NextEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+        /* Get its imports */
+        ImportDescriptor = RtlImageDirectoryEntryToData(LdrEntry->DllBase,
+                                                        TRUE,
+                                                        IMAGE_DIRECTORY_ENTRY_IMPORT,
+                                                        &ImportSize);
+        if (!ImportDescriptor)
+        {
+            /* None present */
+            LdrEntry->LoadedImports = MM_SYSLDR_NO_IMPORTS;
+            continue;
+        }
+
+        /* Clear the list and count the number of IAT thunks */
+        RtlZeroMemory(EntryArray, Modules * sizeof(PVOID));
+        DllBase = DllEnd = ix = 0;
+        while ((ImportDescriptor->Name) && (ImportDescriptor->OriginalFirstThunk))
+        {
+            /* Get the image thunk */
+            ImageThunk = (PVOID)((ULONG_PTR)LdrEntry->DllBase + ImportDescriptor->FirstThunk);
+            while (*ImageThunk)
+            {
+                /* Do we already have an address? */
+                if (DllBase)
+                {
+                    /* Is the thunk in the same address? */
+                    if ((*ImageThunk >= DllBase) && (*ImageThunk < DllEnd))
+                    {
+                        /* Skip it, we already have a reference for it */
+                        ASSERT(EntryArray[jx]);
+                        ImageThunk++;
+                        continue;
+                    }
+                }
+
+                /* Loop the loaded module list to locate this address owner */
+                jx = 0;
+                NextEntry2 = PsLoadedModuleList.Flink;
+                while (NextEntry2 != &PsLoadedModuleList)
+                {
+                    /* Get the entry */
+                    LdrEntry2 = CONTAINING_RECORD(NextEntry2, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+                    /* Get the address range for this module */
+                    DllBase = (ULONG_PTR)LdrEntry2->DllBase;
+                    DllEnd = DllBase + LdrEntry2->SizeOfImage;
+
+                    /* Check if this IAT entry matches it */
+                    if ((*ImageThunk >= DllBase) && (*ImageThunk < DllEnd))
+                    {
+                        /* Save it */
+                        //DPRINT1("Found imported dll: %wZ\n", &LdrEntry2->BaseDllName);
+                        EntryArray[jx] = LdrEntry2;
+                        break;
+                    }
+
+                    /* Keep searching */
+                    NextEntry2 = NextEntry2->Flink;
+                    jx++;
+                }
+
+                /* Do we have a thunk outside the range? */
+                if ((*ImageThunk < DllBase) || (*ImageThunk >= DllEnd))
+                {
+                    /* Could be 0... */
+                    if (*ImageThunk)
+                    {
+                        /* Should not be happening */
+                        ERROR_FATAL("Broken IAT entry for %p at %p (%lx)\n", LdrEntry, ImageThunk, *ImageThunk);
+                    }
+
+                    /* Reset if we hit this */
+                    DllBase = 0;
+                }
+
+                ImageThunk++;
+            }
+
+            ix++;
+            ImportDescriptor++;
+        }
+
+        /* Now scan how many imports we really have */
+        for (ix = 0, ImportSize = 0; ix < Modules; ix++)
+        {
+            /* Skip HAL and kernel */
+            if ((EntryArray[ix]) &&
+                (EntryArray[ix] != HalEntry) &&
+                (EntryArray[ix] != KernelEntry))
+            {
+                /* A valid reference */
+                LastEntry = EntryArray[ix];
+                ImportSize++;
+            }
+        }
+
+        /* Do we have any imports after all? */
+        if (!ImportSize)
+        {
+            /* No */
+            LdrEntry->LoadedImports = MM_SYSLDR_NO_IMPORTS;
+        }
+        else if (ImportSize == 1)
+        {
+            /* A single entry import */
+            LdrEntry->LoadedImports = (PVOID)((ULONG_PTR)LastEntry | MM_SYSLDR_SINGLE_ENTRY);
+            LastEntry->LoadCount++;
+        }
+        else
+        {
+            /* We need an import table */
+            LoadedImportsSize = (ImportSize * sizeof(PVOID) + sizeof(SIZE_T));
+
+            LoadedImports = ExAllocatePoolWithTag(PagedPool, LoadedImportsSize, TAG_LDR_IMPORTS);
+            if (!LoadedImports)
+            {
+                DPRINT1("MiBuildImportsForBootDrivers: Allocate failed\n");
+                ASSERT(LoadedImports);
+            }
+
+            /* Save the count */
+            LoadedImports->Count = ImportSize;
+
+            /* Now copy all imports */
+            for (ix = 0, jx = 0; ix < Modules; ix++)
+            {
+                /* Skip HAL and kernel */
+                if ((EntryArray[ix]) &&
+                    (EntryArray[ix] != HalEntry) &&
+                    (EntryArray[ix] != KernelEntry))
+                {
+                    /* A valid reference */
+                    //DPRINT1("Found valid entry: %p\n", EntryArray[ix]);
+                    LoadedImports->Entry[jx] = EntryArray[ix];
+
+                    EntryArray[ix]->LoadCount++;
+                    jx++;
+                }
+            }
+
+            /* Should had as many entries as we expected */
+            ASSERT(jx == ImportSize);
+            LdrEntry->LoadedImports = LoadedImports;
+        }
+    }
+
+    /* Free the initial array */
+    ExFreePoolWithTag(EntryArray, TAG_LDR_IMPORTS);
+
+    /* FIXME: Might not need to keep the HAL/Kernel imports around */
+
+    /* Kernel and HAL are loaded at boot */
+    KernelEntry->LoadedImports = MM_SYSLDR_BOOT_LOADED;
+    HalEntry->LoadedImports = MM_SYSLDR_BOOT_LOADED;
+
+    /* All worked well */
+    return STATUS_SUCCESS;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PVOID
