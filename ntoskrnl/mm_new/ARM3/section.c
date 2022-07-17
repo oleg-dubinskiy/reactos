@@ -4,6 +4,7 @@
 #include <ntoskrnl.h>
 //#define NDEBUG
 #include <debug.h>
+#include "miarm.h"
 
 /* GLOBALS ********************************************************************/
 
@@ -12,6 +13,12 @@ KGUARDED_MUTEX MmSectionBasedMutex;
 KEVENT MmCollidedFlushEvent;
 PVOID MmHighSectionBase;
 LIST_ENTRY MmUnusedSubsectionList;
+MMSESSION MmSession;
+
+extern PVOID MiSessionViewStart;   // 0xBE000000
+extern SIZE_T MmSessionViewSize;
+extern PVOID MiSystemViewStart;
+extern SIZE_T MmSystemViewSize;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -50,6 +57,77 @@ MmGetImageInformation (
     _Out_ PSECTION_IMAGE_INFORMATION ImageInformation)
 {
     UNIMPLEMENTED_DBGBREAK();
+}
+
+BOOLEAN
+NTAPI
+MiInitializeSystemSpaceMap(
+    _In_ PMMSESSION InputSession OPTIONAL)
+{
+    PMMSESSION Session;
+    PVOID ViewStart;
+    SIZE_T AllocSize;
+    SIZE_T BitmapSize;
+    SIZE_T Size;
+    POOL_TYPE PoolType;
+
+    DPRINT("MiInitializeSystemSpaceMap: InputSession %p\n", InputSession);
+
+    /* Check if this a session or system space */
+    if (InputSession)
+    {
+        /* Use the input session */
+        Session = InputSession;
+        ViewStart = MiSessionViewStart;
+        Size = MmSessionViewSize;
+    }
+    else
+    {
+        /* Use the system space "session" */
+        Session = &MmSession;
+        ViewStart = MiSystemViewStart;
+        Size = MmSystemViewSize;
+    }
+
+    /* Initialize the system space lock */
+    Session->SystemSpaceViewLockPointer = &Session->SystemSpaceViewLock;
+    KeInitializeGuardedMutex(Session->SystemSpaceViewLockPointer);
+
+    /* Set the start address */
+    Session->SystemSpaceViewStart = ViewStart;
+
+    /* Create a bitmap to describe system space */
+    BitmapSize = sizeof(RTL_BITMAP);
+    BitmapSize += ((((Size / MI_SYSTEM_VIEW_BUCKET_SIZE) + 0x1F) / 0x20) * sizeof(ULONG));
+
+    Session->SystemSpaceBitMap = ExAllocatePoolWithTag(NonPagedPool, BitmapSize, TAG_MM);
+    ASSERT(Session->SystemSpaceBitMap);
+
+    RtlInitializeBitMap(Session->SystemSpaceBitMap,
+                        (PULONG)(Session->SystemSpaceBitMap + 1),
+                        (ULONG)(Size / MI_SYSTEM_VIEW_BUCKET_SIZE));
+
+    /* Set system space fully empty to begin with */
+    RtlClearAllBits(Session->SystemSpaceBitMap);
+
+    /* Set default hash flags */
+    Session->SystemSpaceHashSize = 0x1F;
+    Session->SystemSpaceHashKey = (Session->SystemSpaceHashSize - 1);
+    Session->SystemSpaceHashEntries = 0;
+
+    /* Calculate how much space for the hash views we'll need */
+    AllocSize = (sizeof(MMVIEW) * Session->SystemSpaceHashSize);
+    ASSERT(AllocSize < PAGE_SIZE);
+
+    /* Allocate and zero the view table */
+    PoolType = (Session == &MmSession ? NonPagedPool : PagedPool);
+
+    Session->SystemSpaceViewTable = ExAllocatePoolWithTag(PoolType, AllocSize, TAG_MM);
+    ASSERT(Session->SystemSpaceViewTable != NULL);
+
+    RtlZeroMemory(Session->SystemSpaceViewTable, AllocSize);
+
+    return TRUE;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
