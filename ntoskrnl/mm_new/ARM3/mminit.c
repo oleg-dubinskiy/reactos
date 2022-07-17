@@ -366,6 +366,7 @@ extern ULONG MmInPageSupportMinimum;
 extern PFN_COUNT MiExpansionPoolPagesInitialCharge;
 extern PFN_NUMBER MmResidentAvailableAtInit;
 extern MMPDE ValidKernelPde;
+extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -849,6 +850,174 @@ MiSetSystemCache(
 #endif
 
 INIT_FUNCTION
+VOID
+NTAPI
+MiBuildPagedPool(VOID)
+{
+    MMPDE TempPde = ValidKernelPde;
+    MMPTE TempPte = ValidKernelPte;
+    PMMPTE PointerPte;
+    PMMPDE PointerPde;
+    PFN_NUMBER PageFrameIndex;
+    SIZE_T Size;
+    ULONG BitMapSize;
+    KIRQL OldIrql;
+
+  #if (_MI_PAGING_LEVELS == 2)
+
+    /* Get the page frame number for the system page directory */
+    PointerPte = MiAddressToPte(PDE_BASE);
+    ASSERT(PD_COUNT == 1);
+    MmSystemPageDirectory[0] = PFN_FROM_PTE(PointerPte);
+
+    /* Allocate a system PTE which will hold a copy of the page directory */
+    PointerPte = MiReserveSystemPtes(1, SystemPteSpace);
+    ASSERT(PointerPte);
+    MmSystemPagePtes = MiPteToAddress(PointerPte);
+
+    /* Make this system PTE point to the system page directory.
+       It is now essentially double-mapped.
+       This will be used later for lazy evaluation of PDEs accross process switches,
+       similarly to how the Global page directory array in the old ReactOS Mm is used (but in a less hacky way).
+    */
+    TempPte = ValidKernelPte;
+    ASSERT(PD_COUNT == 1);
+    TempPte.u.Hard.PageFrameNumber = MmSystemPageDirectory[0];
+    MI_WRITE_VALID_PTE(PointerPte, TempPte);
+
+  #elif (_MI_PAGING_LEVELS == 3)
+    #error FIXME
+  #endif
+
+  #ifdef _M_IX86
+    /* Let's get back to paged pool work: size it up.
+       By default, it should be twice as big as nonpaged pool.
+    */
+    MmSizeOfPagedPoolInBytes = 2 * MmMaximumNonPagedPoolInBytes;
+    if (MmSizeOfPagedPoolInBytes > ((ULONG_PTR)MmNonPagedSystemStart - (ULONG_PTR)MmPagedPoolStart))
+    {
+        /* On the other hand, we have limited VA space,
+           so make sure that the VA for paged pool doesn't overflow into nonpaged pool VA.
+           Otherwise, set whatever maximum is possible.
+        */
+        MmSizeOfPagedPoolInBytes = (ULONG_PTR)MmNonPagedSystemStart - (ULONG_PTR)MmPagedPoolStart;
+    }
+  #endif
+
+    /* Get the size in pages and make sure paged pool is at least 32MB. */
+    Size = MmSizeOfPagedPoolInBytes;
+    if (Size < MI_MIN_INIT_PAGED_POOLSIZE)
+        Size = MI_MIN_INIT_PAGED_POOLSIZE;
+
+    Size = BYTES_TO_PAGES(Size);
+
+    /* Now check how many PTEs will be required for these many pages. */
+    Size = (Size + (1024 - 1)) / 1024;
+
+    /* Recompute the page-aligned size of the paged pool, in bytes and pages. */
+    MmSizeOfPagedPoolInBytes = Size * PAGE_SIZE * 1024;
+    MmSizeOfPagedPoolInPages = MmSizeOfPagedPoolInBytes >> PAGE_SHIFT;
+
+  #ifdef _M_IX86
+    /* Let's be really sure this doesn't overflow into nonpaged system VA */
+    ASSERT((MmSizeOfPagedPoolInBytes + (ULONG_PTR)MmPagedPoolStart) <= (ULONG_PTR)MmNonPagedSystemStart);
+  #endif
+
+    /* This is where paged pool ends */
+    MmPagedPoolEnd = (PVOID)(((ULONG_PTR)MmPagedPoolStart + MmSizeOfPagedPoolInBytes) - 1);
+
+    /* Lock the PFN database */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    /* So now get the PDE for paged pool and zero it out */
+    PointerPde = MiAddressToPde(MmPagedPoolStart);
+    RtlZeroMemory(PointerPde, (1 + MiAddressToPde(MmPagedPoolEnd) - PointerPde) * sizeof(MMPDE));
+
+    /* Next, get the first and last PTE */
+    PointerPte = MiAddressToPte(MmPagedPoolStart);
+    MmPagedPoolInfo.FirstPteForPagedPool = PointerPte;
+    MmPagedPoolInfo.LastPteForPagedPool = MiAddressToPte(MmPagedPoolEnd);
+
+    /* Allocate a page and map the first paged pool PDE */
+    MI_SET_USAGE(MI_USAGE_PAGED_POOL);
+    MI_SET_PROCESS2("Kernel");
+    PageFrameIndex = MiRemoveZeroPage(0);
+    TempPde.u.Hard.PageFrameNumber = PageFrameIndex;
+    MI_WRITE_VALID_PDE(PointerPde, TempPde);
+
+    /* Initialize the PFN entry for it */
+    MiInitializePfnForOtherProcess(PageFrameIndex,
+                                   (PMMPTE)PointerPde,
+                                   MmSystemPageDirectory[MiGetPdIndex(PointerPde)]);
+
+    /* Release the PFN database lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    /* We only have one PDE mapped for now... at fault time,
+       additional PDEs will be allocated to handle paged pool growth.
+       This is where they'll have to start.
+    */
+    MmPagedPoolInfo.NextPdeForPagedPoolExpansion = PointerPde + 1;
+
+    /* We keep track of each page via a bit, so check how big the bitmap will have to be
+       (make sure to align our page count such that it fits nicely into a 4-byte aligned bitmap.
+       We'll also allocate the bitmap header itself part of the same buffer.
+    */
+    Size = Size * 1024;
+    ASSERT(Size == MmSizeOfPagedPoolInPages);
+    BitMapSize = (ULONG)Size;
+    Size = sizeof(RTL_BITMAP) + (((Size + 31) / 32) * sizeof(ULONG));
+
+    /* Allocate the allocation bitmap, which tells us which regions have not yet been mapped into memory. */
+    MmPagedPoolInfo.PagedPoolAllocationMap = ExAllocatePoolWithTag(NonPagedPool, Size, TAG_MM);
+    ASSERT(MmPagedPoolInfo.PagedPoolAllocationMap);
+
+    /* Initialize it such that at first,
+       only the first page's worth of PTEs is marked as allocated (incidentially,
+       the first PDE we allocated earlier).
+    */
+    RtlInitializeBitMap(MmPagedPoolInfo.PagedPoolAllocationMap,
+                        (PULONG)(MmPagedPoolInfo.PagedPoolAllocationMap + 1),
+                        BitMapSize);
+
+    RtlSetAllBits(MmPagedPoolInfo.PagedPoolAllocationMap);
+    RtlClearBits(MmPagedPoolInfo.PagedPoolAllocationMap, 0, 1024);
+
+    /* We have a second bitmap, which keeps track of where allocations end.
+       Given the allocation bitmap and a base address, we can therefore figure out
+       which page is the last page of that allocation, and thus how big the entire allocation is.
+    */
+    MmPagedPoolInfo.EndOfPagedPoolBitmap = ExAllocatePoolWithTag(NonPagedPool, Size, TAG_MM);
+    ASSERT(MmPagedPoolInfo.EndOfPagedPoolBitmap);
+
+    RtlInitializeBitMap(MmPagedPoolInfo.EndOfPagedPoolBitmap,
+                        (PULONG)(MmPagedPoolInfo.EndOfPagedPoolBitmap + 1),
+                        BitMapSize);
+
+    /* Since no allocations have been made yet, there are no bits set as the end */
+    RtlClearAllBits(MmPagedPoolInfo.EndOfPagedPoolBitmap);
+
+    /* Initialize paged pool. */
+    InitializePool(PagedPool, 0);
+
+    /* Initialize special pool */
+    MiInitializeSpecialPool();
+
+    /* Default low threshold of 30MB or one fifth of paged pool */
+    MiLowPagedPoolThreshold = (30 * _1MB) >> PAGE_SHIFT;
+    MiLowPagedPoolThreshold = min(MiLowPagedPoolThreshold, Size / 5);
+
+    /* Default high threshold of 60MB or 25% */
+    MiHighPagedPoolThreshold = (60 * _1MB) >> PAGE_SHIFT;
+    MiHighPagedPoolThreshold = min(MiHighPagedPoolThreshold, (Size * 2) / 5);
+
+    ASSERT(MiLowPagedPoolThreshold < MiHighPagedPoolThreshold);
+
+    /* Setup the global session space */
+    MiInitializeSystemSpaceMap(NULL);
+}
+
+INIT_FUNCTION
 BOOLEAN
 NTAPI
 MmArmInitSystem(
@@ -1271,6 +1440,17 @@ MmArmInitSystem(
 
         /* Initialize the system cache */
         MiInitializeSystemCache(MmSystemCacheWsMinimum, MmAvailablePages);
+
+        /* Update the commit limit */
+        if (MmAvailablePages > 0x400)
+            MmTotalCommitLimit = (MmAvailablePages - 0x400);
+        else
+            MmTotalCommitLimit = MmAvailablePages;
+
+        MmTotalCommitLimitMaximum = MmTotalCommitLimit;
+
+        /* Size up paged pool and build the shadow system page directory */
+        MiBuildPagedPool();
 
         ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
 
