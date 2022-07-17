@@ -11,6 +11,7 @@ PMMPFN MmPfnDatabase;
 
 PFN_NUMBER MmAvailablePages;
 PFN_NUMBER MmResidentAvailablePages;
+PFN_NUMBER MmResidentAvailableAtInit;
 
 SIZE_T MmTotalCommittedPages;
 SIZE_T MmSharedCommit;

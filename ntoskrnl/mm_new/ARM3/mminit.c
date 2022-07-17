@@ -332,6 +332,9 @@ ULONG MmVirtualBias = 0;
 /* For debugging */
 PKTHREAD MmPfnOwner;
 
+/* Hack! It relation with MmLargeSystemCache FIXME */
+ULONG MiMaximumSystemCacheSizeExtra = 0;
+
 /* The maximal index in a Vad bitmap array (MI_VAD_BITMAP). */
 ULONG MiLastVadBit = 1;
 
@@ -360,6 +363,9 @@ extern ULONG MmMaximumDeadKernelStacks;
 extern ULONG MmDataClusterSize;
 extern ULONG MmCodeClusterSize;
 extern ULONG MmInPageSupportMinimum;
+extern PFN_COUNT MiExpansionPoolPagesInitialCharge;
+extern PFN_NUMBER MmResidentAvailableAtInit;
+extern MMPDE ValidKernelPde;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -784,6 +790,65 @@ MiAdjustWorkingSetManagerParameters(
 }
 
 INIT_FUNCTION
+VOID
+NTAPI
+MiSetSystemCache(
+    _In_ ULONG SystemCacheSizeInPages)
+#ifndef _M_AMD64
+{
+    PMMPDE StartPde;
+    PMMPDE EndPde;
+    MMPDE TmpPde;
+    ULONG Color;
+    PFN_NUMBER PageNumber;
+    KIRQL OldIrql;
+
+    /* Calculate size and end system cache */
+    StartPde = MiAddressToPde(MmSystemCacheWorkingSetList);
+
+  #if (_MI_PAGING_LEVELS == 2)
+    ASSERT((StartPde + 1) == MiAddressToPde(MmSystemCacheStart));
+  #endif
+
+    MmSystemCacheEnd = (PVOID)(((ULONG_PTR)MmSystemCacheStart + (SystemCacheSizeInPages * PAGE_SIZE)) - 1);
+    ASSERT(MmSystemCacheEnd == (PVOID)((ULONG_PTR)MI_PAGED_POOL_START - 1));
+    EndPde = MiAddressToPde(MmSystemCacheEnd);
+
+    if (MiMaximumSystemCacheSizeExtra)
+    {
+        DPRINT1("MmArmInitSystem: FIXME MmSizeOfSystemCacheInPages\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        MmSizeOfSystemCacheInPages = SystemCacheSizeInPages;
+    }
+
+    /* Initialize PDEs and PFNs for system cache */
+    TmpPde.u.Long = ValidKernelPde.u.Long;
+
+    for (; StartPde <= EndPde; StartPde++)
+    {
+        ASSERT(StartPde->u.Hard.Valid == 0);
+
+        Color = MI_GET_NEXT_COLOR();
+
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        PageNumber = MiRemoveZeroPage(Color);
+        TmpPde.u.Hard.PageFrameNumber = PageNumber;
+        MiInitializePfnAndMakePteValid(PageNumber, StartPde, TmpPde);
+
+        MmResidentAvailablePages--;
+
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    }
+}
+#else
+  #error FIXME
+#endif
+
+INIT_FUNCTION
 BOOLEAN
 NTAPI
 MmArmInitSystem(
@@ -1150,6 +1215,59 @@ MmArmInitSystem(
 
         /* Set variables depending on the size of the memory */
         MiSetSystemSize();
+
+        /* Now setup the shared user data fields */
+        ASSERT(SharedUserData->NumberOfPhysicalPages == 0);
+        SharedUserData->NumberOfPhysicalPages = MmNumberOfPhysicalPages;
+        SharedUserData->LargePageMinimum = 0;
+
+        /* Check for workstation (Wi for WinNT) */
+        if (MmProductType == '\0i\0W')
+        {
+            /* Set Windows NT Workstation product type */
+            SharedUserData->NtProductType = NtProductWinNt;
+            MmProductType = 0;
+
+            /* For this product, we wait till the last moment to throttle */
+            MmThrottleTop = 250;
+            MmThrottleBottom = 30;
+        }
+        else
+        {
+            /* Check for LanMan server (La for LanmanNT) */
+            if (MmProductType == '\0a\0L')
+                /* This is a domain controller */
+                SharedUserData->NtProductType = NtProductLanManNt;
+            else
+                /* Otherwise it must be a normal server (Se for ServerNT) */
+                SharedUserData->NtProductType = NtProductServer;
+
+            /* Set the product type, and make the system more aggressive with low memory */
+            MmProductType = 1;
+            MmMinimumFreePages = 81;
+            MmInPageSupportMinimum += 8;
+
+            /* We will throttle earlier to preserve memory */
+            MmThrottleTop = 450;
+            MmThrottleBottom = 80;
+        }
+
+        /* Update working set tuning parameters */
+        MiAdjustWorkingSetManagerParameters(!MmProductType);
+
+        /* Finetune the page count by removing working set and NP expansion */
+        MmResidentAvailablePages -= MiExpansionPoolPagesInitialCharge;
+        MmResidentAvailablePages -= MmSystemCacheWsMinimum;
+        MmResidentAvailableAtInit = MmResidentAvailablePages;
+        if (MmResidentAvailablePages <= 0)
+        {
+            /* This should not happen */
+            DPRINT1("System cache working set too big\n");
+            return FALSE;
+        }
+
+        /* Define limits for system cache */
+        MiSetSystemCache(SystemCacheSizeInPages);
 
         ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
 
