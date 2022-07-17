@@ -627,7 +627,34 @@ MiInitializePfnForOtherProcess(
     _In_ PVOID PteAddress,
     _In_ PFN_NUMBER PteFrame)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMMPFN Pfn;
+
+    /* Setup the PTE */
+    Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+    Pfn->PteAddress = PteAddress;
+
+    /* Make this a software PTE */
+    MI_MAKE_SOFTWARE_PTE(&Pfn->OriginalPte, MM_READWRITE);
+
+    /* Setup the page */
+    ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+
+    Pfn->u3.e2.ReferenceCount = 1;
+    Pfn->u2.ShareCount = 1;
+    Pfn->u3.e1.PageLocation = ActiveAndValid;
+    Pfn->u3.e1.Modified = TRUE;
+    Pfn->u4.InPageError = FALSE;
+
+    /* Did we get a PFN for the page table */
+    if (!PteFrame)
+        return;
+
+    /* Store it */
+    Pfn->u4.PteFrame = PteFrame;
+
+    /* Increase its share count so we don't get rid of it */
+    Pfn = MI_PFN_ELEMENT(PteFrame);
+    Pfn->u2.ShareCount++;
 }
 
 VOID

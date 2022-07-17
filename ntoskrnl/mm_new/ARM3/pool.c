@@ -11,7 +11,6 @@
 MM_PAGED_POOL_INFO MmPagedPoolInfo;
 KGUARDED_MUTEX MmPagedPoolMutex;
 SIZE_T MmAllocatedNonPagedPool;
-ULONG MmSpecialPoolTag;
 ULONG MmConsumedPoolPercentage;
 LIST_ENTRY MmNonPagedPoolFreeListHead[MI_MAX_FREE_PAGE_LISTS];
 PFN_COUNT MmNumberOfFreeNonPagedPool;
