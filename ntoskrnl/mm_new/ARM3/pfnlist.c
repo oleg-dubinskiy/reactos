@@ -62,6 +62,7 @@ extern ULONG MmSecondaryColors;
 extern PFN_NUMBER MmMinimumFreePages;
 extern PVOID MmPagedPoolEnd;
 extern ULONG MmFrontOfList;
+extern MMPTE DemandZeroPte;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -494,7 +495,17 @@ NTAPI
 MiZeroPhysicalPage(
     _In_ PFN_NUMBER PageFrameIndex)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    KIRQL OldIrql;
+    PVOID VirtualAddress;
+    PEPROCESS Process = PsGetCurrentProcess();
+
+    /* Map in hyperspace, then wipe it using XMMI or MEMSET */
+    VirtualAddress = MiMapPageInHyperSpace(Process, PageFrameIndex, &OldIrql);
+    ASSERT(VirtualAddress);
+
+    KeZeroPages(VirtualAddress, PAGE_SIZE);
+
+    MiUnmapPageInHyperSpace(Process, VirtualAddress, OldIrql);
 }
 
 VOID
@@ -699,7 +710,59 @@ MiInitializePfnAndMakePteValid(
     _In_ PMMPTE Pte,
     _In_ MMPTE TempPte)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMMPFN Pfn;
+    PMMPTE Pde;
+    NTSTATUS Status;
+
+    MI_ASSERT_PFN_LOCK_HELD();
+
+    /* PTE must be invalid */
+    ASSERT(Pte->u.Hard.Valid == 0);
+
+    /* Setup the PTE */
+    Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+    Pfn->PteAddress = Pte;
+    Pfn->OriginalPte = DemandZeroPte;
+
+    /* Otherwise this is a fresh page -- set it up */
+    ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+    Pfn->u3.e2.ReferenceCount++;
+    Pfn->u2.ShareCount++;
+    Pfn->u3.e1.PageLocation = ActiveAndValid;
+    ASSERT(Pfn->u3.e1.Rom == 0);
+    Pfn->u3.e1.Modified = 1;
+
+    /* Get the page table for the PTE */
+    Pde = MiAddressToPte(Pte);
+    if (!Pde->u.Hard.Valid)
+    {
+        /* Make sure the PDE gets paged in properly */
+        DPRINT1("MiCheckPdeForPagedPool(Address %p)\n", Pte);
+
+        Status = MiCheckPdeForPagedPool(Pte);
+        if (!NT_SUCCESS(Status))
+        {
+            /* Crash */
+            ASSERT(FALSE);
+            KeBugCheckEx(MEMORY_MANAGEMENT,
+                         0x61940,
+                         (ULONG_PTR)Pte,
+                         (ULONG_PTR)Pde->u.Long,
+                         (ULONG_PTR)MiPteToAddress(Pte));
+        }
+    }
+
+    /* Get the PFN for the page table */
+    PageFrameIndex = PFN_FROM_PTE(Pde);
+    ASSERT(PageFrameIndex != 0);
+    Pfn->u4.PteFrame = PageFrameIndex;
+
+    /* Increase its share count so we don't get rid of it */
+    Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+    Pfn->u2.ShareCount++;
+
+    /* Write valid PTE */
+    MI_WRITE_VALID_PTE(Pte, TempPte);
 }
 
 VOID
