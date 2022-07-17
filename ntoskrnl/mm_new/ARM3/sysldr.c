@@ -630,6 +630,64 @@ MiBuildImportsForBootDrivers(VOID)
     return STATUS_SUCCESS;
 }
 
+INIT_FUNCTION
+VOID
+NTAPI
+MiLocateKernelSections(
+    _In_ PLDR_DATA_TABLE_ENTRY LdrEntry)
+{
+    PIMAGE_NT_HEADERS NtHeaders;
+    PIMAGE_SECTION_HEADER SectionHeader;
+    ULONG_PTR DllBase;
+    ULONG Sections;
+    ULONG Size;
+
+    /* Get the kernel section header */
+    DllBase = (ULONG_PTR)LdrEntry->DllBase;
+    NtHeaders = RtlImageNtHeader((PVOID)DllBase);
+    SectionHeader = IMAGE_FIRST_SECTION(NtHeaders);
+
+    /* Loop all the sections */
+    for (Sections = NtHeaders->FileHeader.NumberOfSections;
+         Sections > 0;
+         Sections--, SectionHeader++)
+    {
+        /* Grab the size of the section */
+        Size = max(SectionHeader->SizeOfRawData, SectionHeader->Misc.VirtualSize);
+
+        /* Check for .RSRC section */
+        if (*(PULONG)SectionHeader->Name == 'rsr.')
+        {
+            /* Remember the PTEs so we can modify them later */
+            MiKernelResourceStartPte = MiAddressToPte(DllBase + SectionHeader->VirtualAddress);
+            MiKernelResourceEndPte = MiAddressToPte(ROUND_TO_PAGES(DllBase + SectionHeader->VirtualAddress + Size));
+        }
+        else if (*(PULONG)SectionHeader->Name == 'LOOP')
+        {
+            /* POOLCODE vs. POOLMI */
+            if (*(PULONG)&SectionHeader->Name[4] == 'EDOC')
+            {
+                /* Found Ex* Pool code */
+                ExPoolCodeStart = (DllBase + SectionHeader->VirtualAddress);
+                ExPoolCodeEnd = (ExPoolCodeStart + Size);
+            }
+            else if (*(PUSHORT)&SectionHeader->Name[4] == 'MI')
+            {
+                /* Found Mm* Pool code */
+                MmPoolCodeStart = (DllBase + SectionHeader->VirtualAddress);
+                MmPoolCodeEnd = (MmPoolCodeStart + Size);
+            }
+        }
+        else if ((*(PULONG)SectionHeader->Name == 'YSIM') &&
+                 (*(PULONG)&SectionHeader->Name[4] == 'ETPS'))
+        {
+            /* Found MISYSPTE (Mm System PTE code) */
+            MmPteCodeStart = (DllBase + SectionHeader->VirtualAddress);
+            MmPteCodeEnd = (MmPteCodeStart + Size);
+        }
+    }
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PVOID
