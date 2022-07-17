@@ -26,6 +26,7 @@ PPOOL_DESCRIPTOR ExpPagedPoolDescriptor[16 + 1];
 PPOOL_DESCRIPTOR PoolVector[2];
 PPOOL_TRACKER_TABLE PoolTrackTable;
 PPOOL_TRACKER_BIG_PAGES PoolBigPageTable;
+PKGUARDED_MUTEX ExpPagedPoolMutex;
 KSPIN_LOCK ExpTaggedPoolLock;
 KSPIN_LOCK ExpLargePoolTableLock;
 SIZE_T PoolTrackTableSize;
@@ -765,7 +766,7 @@ InitializePool(
     _In_ POOL_TYPE PoolType,
     _In_ ULONG Threshold)
 {
-    //PPOOL_DESCRIPTOR Descriptor;
+    PPOOL_DESCRIPTOR Descriptor;
     SIZE_T TableSize;
     SIZE_T Size;
     ULONG ix;
@@ -916,7 +917,28 @@ InitializePool(
     }
     else
     {
-        UNIMPLEMENTED_DBGBREAK();
+        /* No support for NUMA systems at this time */
+        ASSERT(KeNumberNodes == 1);
+
+        /* Allocate the pool descriptor */
+        Size = (sizeof(KGUARDED_MUTEX) + sizeof(POOL_DESCRIPTOR));
+
+        Descriptor = ExAllocatePoolWithTag(NonPagedPool, Size, 'looP');
+        if (!Descriptor)
+            /* This is really bad... */
+            KeBugCheckEx(MUST_SUCCEED_POOL_EMPTY, 0, -1, -1, -1);
+
+        /* Setup the vector and guarded mutex for paged pool */
+        PoolVector[PagedPool] = Descriptor;
+        ExpPagedPoolMutex = (PKGUARDED_MUTEX)(Descriptor + 1);
+        ExpPagedPoolDescriptor[0] = Descriptor;
+
+        KeInitializeGuardedMutex(ExpPagedPoolMutex);
+        ExInitializePoolDescriptor(Descriptor, PagedPool, 0, Threshold, ExpPagedPoolMutex);
+
+        /* Insert the generic tracker for all of nonpaged pool */
+        Size = ROUND_TO_PAGES(PoolTrackTableSize * sizeof(POOL_TRACKER_TABLE));
+        ExpInsertPoolTracker('looP', Size, NonPagedPool);
     }
 }
 
