@@ -806,6 +806,23 @@ InitializePool(
     _In_ ULONG Threshold
 );
 
+/* ARM3\hypermap.c */
+PVOID
+NTAPI
+MiMapPageInHyperSpace(
+    _In_ PEPROCESS Process,
+    _In_ PFN_NUMBER Page,
+    _In_ PKIRQL OldIrql
+);
+
+VOID
+NTAPI
+MiUnmapPageInHyperSpace(
+    _In_ PEPROCESS Process,
+    _In_ PVOID Address,
+    _In_ KIRQL OldIrql
+);
+
 /* ARM3\largepag.c */
 INIT_FUNCTION
 VOID

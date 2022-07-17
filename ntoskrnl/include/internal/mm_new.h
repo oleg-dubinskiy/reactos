@@ -183,7 +183,6 @@ ExReturnPoolQuota(
     _In_ PVOID P
 );
 
-/* ARM3\hypermap.c */
 /* ARM3\iosup.c */
 /* ARM3\kdbg.c */
 /* ARM3\mdlsup.c */
