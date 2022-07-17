@@ -1036,6 +1036,12 @@ MmArmInitSystem(
         /* Loop for HAL Heap I/O device mappings that need coherency tracking */
         MiAddHalIoMappings();
 
+        /* Initialize large page structures on PAE/x64, and MmProcessList on x86 */
+        MiInitializeLargePageSupport();
+
+        /* Check if the registry says any drivers should be loaded with large pages */
+        MiInitializeDriverLargePageList();
+
         ASSERT(FALSE);if(IncludeType[LoaderBad]){;}
 
     }

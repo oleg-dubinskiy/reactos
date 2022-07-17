@@ -11,6 +11,10 @@
 ULONG MiLargePageRangeIndex;
 PMMPTE MiLargePageHyperPte;
 LIST_ENTRY MmProcessList;
+LIST_ENTRY MiLargePageDriverList;
+ULONG MmLargePageDriverBufferLength = -1;
+WCHAR MmLargePageDriverBuffer[512] = {0};
+BOOLEAN MiLargePageAllDrivers;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -45,6 +49,48 @@ MiSyncCachedRanges(VOID)
     for (ix = 0; ix < MiLargePageRangeIndex; ix++)
     {
         UNIMPLEMENTED_DBGBREAK("No support for large pages\n");
+    }
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+MiInitializeDriverLargePageList(VOID)
+{
+    PWCHAR pChar;
+    PWCHAR pLastChar;
+
+    /* Initialize the list */
+    InitializeListHead(&MiLargePageDriverList);
+
+    /* Bail out if there's nothing */
+    if (MmLargePageDriverBufferLength == 0xFFFFFFFF)
+        return;
+
+    /* Loop from start to finish */
+    pChar = MmLargePageDriverBuffer;
+    pLastChar = (MmLargePageDriverBuffer + (MmLargePageDriverBufferLength / sizeof(WCHAR)));
+
+    while (pChar < pLastChar)
+    {
+        /* Skip whitespaces */
+        if ((*pChar == L' ') || (*pChar == L'\n') || (*pChar == L'\r') || (*pChar == L'\t'))
+        {
+            /* Skip the character */
+            pChar++;
+            continue;
+        }
+
+        /* A star means everything */
+        if (*pChar == L'*')
+        {
+            /* No need to keep going */
+            MiLargePageAllDrivers = TRUE;
+            break;
+        }
+
+        DPRINT1("Large page drivers not supported\n");
+        ASSERT(FALSE);
     }
 }
 
