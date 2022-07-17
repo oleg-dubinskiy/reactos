@@ -347,6 +347,145 @@ MiRemoveAnyPage(
     return PageIndex;
 }
 
+PFN_NUMBER
+NTAPI
+MiRemoveZeroPage(
+    _In_ ULONG Color)
+{
+    PMMCOLOR_TABLES FreePagesByColor;
+    PMMPFNLIST ListHead;
+    PFN_NUMBER PageIndex;
+    PFN_NUMBER Page;
+    PMMPFN Pfn;
+
+    DPRINT("MiRemoveZeroPage: Color %X\n", Color);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+    ASSERT(MmAvailablePages != 0);
+
+    FreePagesByColor = MmFreePagesByColor[ZeroedPageList];
+
+    ASSERT(Color < MmSecondaryColors);
+
+    PageIndex = FreePagesByColor[Color].Flink;
+    if (PageIndex != -1)
+    {
+        Pfn = MI_PFN_ELEMENT(PageIndex);
+
+        ASSERT((Pfn->u3.e1.PageLocation == ZeroedPageList) ||
+              ((Pfn->u3.e1.PageLocation == FreePageList) &&
+               (FreePagesByColor == MmFreePagesByColor[FreePageList])));
+
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        Page = MiRemovePageByColor(PageIndex, Color);
+
+        ASSERT(Pfn == MI_PFN_ELEMENT(Page));
+        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn->u2.ShareCount == 0);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);//0x1FFEDCB
+
+        return Page;
+    }
+
+    PageIndex = MmZeroedPageListHead.Flink;
+    if (PageIndex != -1)
+    {
+        Pfn = MI_PFN_ELEMENT(PageIndex);
+
+        ASSERT(Pfn->u3.e1.PageLocation == ZeroedPageList);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        Page = MiRemovePageByColor(PageIndex, PageIndex & MmSecondaryColorMask);
+
+        ASSERT(Pfn == MI_PFN_ELEMENT(Page));
+        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn->u2.ShareCount == 0);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        return Page;
+    }
+
+    FreePagesByColor = MmFreePagesByColor[FreePageList];
+
+    PageIndex = FreePagesByColor[Color].Flink;
+    if (PageIndex != -1)
+    {
+        Pfn = MI_PFN_ELEMENT(PageIndex);
+
+        ASSERT(Pfn->u3.e1.PageLocation == FreePageList);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        Page = MiRemovePageByColor(PageIndex, Color);
+
+        ASSERT(Pfn == MI_PFN_ELEMENT(Page));
+        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn->u2.ShareCount == 0);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        Pfn = MI_PFN_ELEMENT(Page);
+        MiZeroPhysicalPage(Page);
+
+        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn->u2.ShareCount == 0);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        return Page;
+    }
+
+    PageIndex = MmFreePageListHead.Flink;
+    if (PageIndex != -1)
+    {
+        Pfn = MI_PFN_ELEMENT(PageIndex);
+        Page = MiRemovePageByColor(PageIndex, PageIndex & MmSecondaryColorMask);
+
+        ASSERT(Pfn == MI_PFN_ELEMENT(Page));
+        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn->u2.ShareCount == 0);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        Pfn = MI_PFN_ELEMENT(Page);
+        MiZeroPhysicalPage(Page);
+
+        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn->u2.ShareCount == 0);
+        ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+        return Page;
+    }
+
+    ASSERT(MmZeroedPageListHead.Total == 0);
+    ASSERT(MmFreePageListHead.Total == 0);
+
+    for (ListHead = &MmStandbyPageListByPriority[0];
+         ListHead < &MmStandbyPageListByPriority[8];
+         ListHead++)
+    {
+        if (ListHead->Total)
+        {
+            Page = MiRemovePageFromList(ListHead);
+            break;
+        }
+    }
+
+    ASSERT(ListHead < &MmStandbyPageListByPriority[8]);
+    ASSERT((MI_PFN_ELEMENT(Page))->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+    MmStandbyRePurposed++;
+
+    // ? MiMirroringActive
+
+    Pfn = MI_PFN_ELEMENT(Page);
+    MiZeroPhysicalPage(Page);
+
+    ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+    ASSERT(Pfn->u2.ShareCount == 0);
+    ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+    return Page;
+}
+
 /* HACK for keeping legacy Mm alive */
 extern BOOLEAN MmRosNotifyAvailablePage(PFN_NUMBER PageFrameIndex);
 

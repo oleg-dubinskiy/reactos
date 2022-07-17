@@ -901,6 +901,12 @@ MiDecrementShareCount(
     _In_ PFN_NUMBER PageFrameIndex
 );
 
+PFN_NUMBER
+NTAPI
+MiRemoveZeroPage(
+    _In_ ULONG Color
+);
+
 /* ARM3\pool.c */
 INIT_FUNCTION
 VOID
