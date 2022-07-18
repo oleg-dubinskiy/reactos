@@ -99,8 +99,8 @@ NTAPI
 MmIsSessionAddress(
     _In_ PVOID Address)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    /* Check if it is in range */
+    return (MI_IS_SESSION_ADDRESS(Address) ? TRUE : FALSE);
 }
 
 
