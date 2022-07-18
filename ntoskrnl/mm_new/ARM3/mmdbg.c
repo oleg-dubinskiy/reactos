@@ -70,6 +70,21 @@ MiDbgTranslatePhysicalAddress(
     return (PVOID)((ULONG_PTR)MappingBaseAddress + BYTE_OFFSET(PhysicalAddress));
 }
 
+VOID
+NTAPI
+MiDbgUnTranslatePhysicalAddress(VOID)
+{
+    PVOID MappingBaseAddress;
+
+    /* The address must still be valid at this point */
+    MappingBaseAddress = MiPteToAddress(MmDebugPte);
+    ASSERT(MmIsAddressValid(MappingBaseAddress));
+
+    /* Clear the mapping PTE and invalidate its TLB entry */
+    MmDebugPte->u.Long = 0;
+    KeInvalidateTlbEntry(MappingBaseAddress);
+}
+
 NTSTATUS
 NTAPI
 MmDbgCopyMemory(
