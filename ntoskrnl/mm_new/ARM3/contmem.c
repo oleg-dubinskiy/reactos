@@ -475,8 +475,18 @@ MmAllocateContiguousMemory(
     _In_ SIZE_T NumberOfBytes,
     _In_ PHYSICAL_ADDRESS HighestAcceptableAddress)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PFN_NUMBER HighestPfn;
+
+    /* Verify byte count */
+    ASSERT(NumberOfBytes != 0);
+
+    /* Convert and normalize the highest address into a PFN */
+    HighestPfn = (PFN_NUMBER)(HighestAcceptableAddress.QuadPart >> PAGE_SHIFT);
+    if (HighestPfn > MmHighestPhysicalPage)
+        HighestPfn = MmHighestPhysicalPage;
+
+    /* Let the contiguous memory allocator handle it */
+    return MiAllocateContiguousMemory(NumberOfBytes, 0, HighestPfn, 0, MmCached);
 }
 
 PVOID
@@ -497,7 +507,8 @@ NTAPI
 MmFreeContiguousMemory(
     _In_ PVOID BaseAddress)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    /* Let the contiguous memory allocator handle it */
+    MiFreeContiguousMemory(BaseAddress);
 }
 
 VOID
