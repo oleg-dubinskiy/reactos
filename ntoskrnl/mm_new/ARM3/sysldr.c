@@ -58,8 +58,31 @@ NTAPI
 MmChangeKernelResourceSectionProtection(
     _In_ ULONG_PTR ProtectionMask)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PMMPTE Pte;
+    MMPTE TempPte;
+
+    /* Don't do anything if the resource section is already writable */
+    if (!MiKernelResourceStartPte || !MiKernelResourceEndPte)
+        return FALSE;
+
+    /* If the resource section is physical, we cannot change its protection */
+    if (MI_IS_PHYSICAL_ADDRESS(MiPteToAddress(MiKernelResourceStartPte)))
+        return FALSE;
+
+    /* Loop the PTEs */
+    for (Pte = MiKernelResourceStartPte; Pte < MiKernelResourceEndPte; Pte++)
+    {
+        /* Read the PTE */
+        TempPte = *Pte;
+
+        /* Update the protection */
+        MI_MAKE_HARDWARE_PTE_KERNEL(&TempPte, Pte, ProtectionMask, TempPte.u.Hard.PageFrameNumber);
+        MI_UPDATE_VALID_PTE(Pte, TempPte);
+    }
+
+    /* Only flush the current processor's TLB */
+    KeFlushCurrentTb();
+    return TRUE;
 }
 
 VOID
