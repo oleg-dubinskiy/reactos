@@ -372,6 +372,41 @@ extern PMMPTE MmDebugPte;
 
 /* FUNCTIONS ******************************************************************/
 
+INIT_FUNCTION
+VOID
+NTAPI
+MiNotifyMemoryEvents(VOID)
+{
+    /* Are we in a low-memory situation? */
+    if (MmAvailablePages < MmLowMemoryThreshold)
+    {
+        /* Clear high, set low  */
+        if (KeReadStateEvent(MiHighMemoryEvent))
+            KeClearEvent(MiHighMemoryEvent);
+
+        if (!KeReadStateEvent(MiLowMemoryEvent))
+            KeSetEvent(MiLowMemoryEvent, 0, FALSE);
+    }
+    else if (MmAvailablePages < MmHighMemoryThreshold)
+    {
+        /* We are in between, clear both */
+        if (KeReadStateEvent(MiHighMemoryEvent))
+            KeClearEvent(MiHighMemoryEvent);
+
+        if (KeReadStateEvent(MiLowMemoryEvent))
+            KeClearEvent(MiLowMemoryEvent);
+    }
+    else
+    {
+        /* Clear low, set high  */
+        if (KeReadStateEvent(MiLowMemoryEvent))
+            KeClearEvent(MiLowMemoryEvent);
+
+        if (!KeReadStateEvent(MiHighMemoryEvent))
+            KeSetEvent(MiHighMemoryEvent, 0, FALSE);
+    }
+}
+
 VOID
 NTAPI
 MmDumpArmPfnDatabase(
