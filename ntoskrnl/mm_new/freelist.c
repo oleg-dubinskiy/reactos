@@ -8,6 +8,8 @@
 
 /* GLOBALS ********************************************************************/
 
+#define ASSERT_IS_ROS_PFN(x)  ASSERT(MI_IS_ROS_PFN(x) == TRUE);
+
 PMMPFN MmPfnDatabase;
 
 PFN_NUMBER MmAvailablePages;
@@ -22,7 +24,31 @@ SIZE_T MmPagedPoolCommit;
 SIZE_T MmPeakCommitment;
 SIZE_T MmtotalCommitLimitMaximum;
 
+static RTL_BITMAP MiUserPfnBitMap;
+
 /* FUNCTIONS ******************************************************************/
+
+VOID
+NTAPI
+MiInitializeUserPfnBitmap(VOID)
+{
+    PVOID Bitmap;
+    ULONG Size;
+
+    /* Allocate enough buffer for the PFN bitmap and align it on 32-bits */
+    Size = ((((MmHighestPhysicalPage + 1) + 0x1F) / 0x20) * 4);
+
+    Bitmap = ExAllocatePoolWithTag(NonPagedPool, Size, TAG_MM);
+    if (!Bitmap)
+    {
+        DPRINT1("MiInitializeUserPfnBitmap: Allocate failed\n");
+        ASSERT(Bitmap);
+    }
+
+    /* Initialize it and clear all the bits to begin with */
+    RtlInitializeBitMap(&MiUserPfnBitMap, Bitmap, ((ULONG)MmHighestPhysicalPage + 1));
+    RtlClearAllBits(&MiUserPfnBitMap);
+}
 
 BOOLEAN
 NTAPI
