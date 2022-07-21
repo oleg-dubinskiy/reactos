@@ -25,6 +25,13 @@ static LIST_ENTRY AllocationListHead;
 static KSPIN_LOCK AllocationListLock;
 static ULONG MiMinimumPagesPerRun;
 
+static CLIENT_ID MiBalancerThreadId;
+static HANDLE MiBalancerThreadHandle = NULL;
+static KEVENT MiBalancerEvent;
+static KTIMER MiBalancerTimer;
+
+extern PFN_NUMBER MmAvailablePages;
+
 /* FUNCTIONS ******************************************************************/
 
 INIT_FUNCTION
@@ -59,6 +66,16 @@ MmInitializeBalancer(
     }
 
     MiMemoryConsumers[MC_USER].PagesTarget = (NrAvailablePages - MiMinimumAvailablePages);
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+MmInitializeMemoryConsumer(
+    ULONG Consumer,
+    PMM_MEMORY_CONSUMER_TRIM Trim)
+{
+    MiMemoryConsumers[Consumer].Trim = Trim;
 }
 
 BOOLEAN
