@@ -964,4 +964,119 @@ MiDecrementShareCount(
     MiInsertPageInFreeList(PageFrameIndex);
 }
 
+VOID
+NTAPI
+MiUnlinkFreeOrZeroedPage(
+    _In_ PMMPFN Entry)
+{
+    PMMCOLOR_TABLES ColorTable;
+    PMMPFNLIST ListHead;
+    MMLISTS ListName;
+    PFN_NUMBER OldFlink;
+    PFN_NUMBER OldBlink;
+    ULONG Color;
+    PMMPFN Pfn;
+
+    /* Make sure the PFN lock is held */
+    MI_ASSERT_PFN_LOCK_HELD();
+
+    /* Make sure the PFN entry isn't in-use */
+    ASSERT(Entry->u3.e1.WriteInProgress == 0);
+    ASSERT(Entry->u3.e1.ReadInProgress == 0);
+
+    /* Find the list for this entry, make sure it's the free or zero list */
+    ListHead = MmPageLocationList[Entry->u3.e1.PageLocation];
+    ListName = ListHead->ListName;
+
+    ASSERT(ListHead != NULL);
+    ASSERT(ListName <= FreePageList);
+    ASSERT_LIST_INVARIANT(ListHead);
+
+    /* Remove one count */
+    ASSERT(ListHead->Total != 0);
+    ListHead->Total--;
+
+    /* Get the forward and back pointers */
+    OldFlink = Entry->u1.Flink;
+    OldBlink = Entry->u2.Blink;
+
+    /* Check if the next entry is the list head */
+    if (OldFlink != LIST_HEAD)
+        /* It is not, so set the backlink of the actual entry, to our backlink */
+        MI_PFN_ELEMENT(OldFlink)->u2.Blink = OldBlink;
+    else
+        /* Set the list head's backlink instead */
+        ListHead->Blink = OldBlink;
+
+    /* Check if the back entry is the list head */
+    if (OldBlink != LIST_HEAD)
+        /* It is not, so set the backlink of the actual entry, to our backlink */
+        MI_PFN_ELEMENT(OldBlink)->u1.Flink = OldFlink;
+    else
+        /* Set the list head's backlink instead */
+        ListHead->Flink = OldFlink;
+
+    /* Get the page color */
+    OldBlink = MiGetPfnEntryIndex(Entry);
+    Color = OldBlink & MmSecondaryColorMask;
+
+    /* Get the first page on the color list */
+    ColorTable = &MmFreePagesByColor[ListName][Color];
+
+    /* Check if this was was actually the head */
+    OldFlink = ColorTable->Flink;
+    if (OldFlink == OldBlink)
+    {
+        /* Make the table point to the next page this page was linking to */
+        ColorTable->Flink = Entry->OriginalPte.u.Long;
+
+        if (ColorTable->Flink != LIST_HEAD)
+            /* And make the previous link point to the head now */
+            MI_PFN_ELEMENT(ColorTable->Flink)->u4.PteFrame = COLORED_LIST_HEAD;
+        else
+            /* And if that page was the head, loop the list back around */
+            ColorTable->Blink = (PVOID)LIST_HEAD;
+    }
+    else
+    {
+        /* This page shouldn't be pointing back to the head */
+        ASSERT(Entry->u4.PteFrame != COLORED_LIST_HEAD);
+
+        /* Make the back link point to whoever the next page is */
+        Pfn = MI_PFN_ELEMENT(Entry->u4.PteFrame);
+        Pfn->OriginalPte.u.Long = Entry->OriginalPte.u.Long;
+
+        /* Check if this page was pointing to the head */
+        if (Entry->OriginalPte.u.Long != LIST_HEAD)
+        {
+            /* Make the back link point to the head */
+            Pfn = MI_PFN_ELEMENT(Entry->OriginalPte.u.Long);
+            Pfn->u4.PteFrame = Entry->u4.PteFrame;
+        }
+        else
+        {
+            /* Then the table is directly back pointing to this page now */
+            ColorTable->Blink = Pfn;
+        }
+    }
+
+    /* One less colored page */
+    ASSERT(ColorTable->Count >= 1);
+    ColorTable->Count--;
+
+    /* ReactOS Hack */
+    Entry->OriginalPte.u.Long = 0;
+
+    /* We are not on a list anymore */
+    Entry->u1.Flink = Entry->u2.Blink = 0;
+    ASSERT_LIST_INVARIANT(ListHead);
+
+    /* Decrement number of available pages */
+    MiDecrementAvailablePages();
+
+  #if MI_TRACE_PFNS
+    #error FIXME
+  #endif
+}
+
 /* EOF */
