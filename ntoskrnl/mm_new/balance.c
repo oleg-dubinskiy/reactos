@@ -167,4 +167,38 @@ MmTrimUserMemory(
     return STATUS_SUCCESS;
 }
 
+INIT_FUNCTION
+VOID
+NTAPI
+MiInitBalancerThread(VOID)
+{
+    LARGE_INTEGER DueTime;
+    KPRIORITY Priority;
+    NTSTATUS Status;
+
+    DueTime.QuadPart = (-10000 * 2000); /* 2 sec */
+
+    KeInitializeEvent(&MiBalancerEvent, SynchronizationEvent, FALSE);
+    KeInitializeTimerEx(&MiBalancerTimer, SynchronizationTimer);
+
+    KeSetTimerEx(&MiBalancerTimer, DueTime, 2000, NULL);
+
+    Status = PsCreateSystemThread(&MiBalancerThreadHandle,
+                                  THREAD_ALL_ACCESS,
+                                  NULL,
+                                  NULL,
+                                  &MiBalancerThreadId,
+                                  MiBalancerThread,
+                                  NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MiInitBalancerThread: Status %X\n", Status);
+        KeBugCheck(MEMORY_MANAGEMENT);
+    }
+
+    Priority = (LOW_REALTIME_PRIORITY + 1);
+
+    NtSetInformationThread(MiBalancerThreadHandle, ThreadPriority, &Priority, sizeof(Priority));
+}
+
 /* EOF */
