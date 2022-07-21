@@ -200,6 +200,114 @@ MiResolveDemandZeroFault(
 
 NTSTATUS
 NTAPI
+MiDispatchFault(
+    _In_ ULONG FaultCode,
+    _In_ PVOID Address,
+    _In_ PMMPTE Pte,
+    _In_ PMMPTE SectionProto,
+    _In_ BOOLEAN Recursive,
+    _In_ PEPROCESS Process,
+    _In_ PVOID TrapInformation,
+    _In_ PMMVAD Vad)
+{
+    PMMPFN LockedProtoPfn = NULL;
+    PMMSUPPORT SessionWs = NULL;
+    MMPTE TempPte;
+    KIRQL OldIrql;
+    //KIRQL LockIrql = MM_NOIRQL;
+    NTSTATUS Status;
+
+    DPRINT("MiDispatchFault: %X, %p, Pte %p [%p], Proto %p [%I64X], %X, %p, %p, %p\n",
+           FaultCode, Address, Pte, Pte->u.Long, SectionProto, MiGetPteContents(SectionProto),
+           Recursive, Process, TrapInformation, Vad);
+
+    /* Make sure APCs are off and we're not at dispatch */
+    OldIrql = KeGetCurrentIrql();
+    ASSERT(OldIrql <= APC_LEVEL);
+    ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+    /* Do we have a prototype PTE? */
+    if (SectionProto)
+    {
+        DPRINT1("MiDispatchFault: FIXME! SectionProto %X\n", SectionProto);
+        ASSERT(FALSE);
+    }
+
+    TempPte = *Pte;
+
+    ASSERT(TempPte.u.Hard.Valid == 0);
+    ASSERT(TempPte.u.Soft.Prototype == 0);
+    ASSERT(TempPte.u.Long != 0);
+
+    if (TempPte.u.Soft.Transition)
+    {
+        DPRINT1("MiDispatchFault: FIXME! TempPte.u.Soft.Transition %X\n", TempPte.u.Soft.Transition);
+        ASSERT(FALSE);Status = STATUS_NOT_IMPLEMENTED;
+    }
+    else if (TempPte.u.Soft.PageFileHigh)
+    {
+        DPRINT1("MiDispatchFault: FIXME! TempPte.u.Soft.PageFileHigh %X\n", TempPte.u.Soft.PageFileHigh);
+        ASSERT(FALSE);Status = STATUS_NOT_IMPLEMENTED;
+    }
+    else
+    {
+        Status = MiResolveDemandZeroFault(Address, Pte, Pte->u.Soft.Protection, Process, MM_NOIRQL);
+    }
+
+    ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+    if (NT_SUCCESS(Status))
+    {
+        if (LockedProtoPfn)
+        {
+            DPRINT1("MiDispatchFault: FIXME! LockedProtoPfn %X\n", LockedProtoPfn);
+            ASSERT(FALSE);
+        }
+
+        if (SessionWs)
+        {
+            DPRINT1("MiDispatchFault: FIXME! SessionWs %X\n", SessionWs);
+            ASSERT(FALSE);
+        }
+
+        ASSERT(OldIrql == KeGetCurrentIrql());
+        ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+
+        return Status;
+    }
+
+    if (Status == 0xC0033333)
+    {
+        DPRINT1("MiDispatchFault: FIXME! Status == 0xC0033333\n");
+        ASSERT(FALSE);
+    }
+
+    if (Status == 0xC7303001 || Status == 0x87303000)
+        Status = STATUS_SUCCESS;
+
+    ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+    if (SessionWs)
+    {
+        DPRINT1("MiDispatchFault: FIXME! SessionWs %X\n", SessionWs);
+        ASSERT(FALSE);
+    }
+
+    if (LockedProtoPfn)
+    {
+        DPRINT1("MiDispatchFault: FIXME! LockedProtoPfn %X\n", LockedProtoPfn);
+        ASSERT(FALSE);
+    }
+
+    ASSERT(OldIrql == KeGetCurrentIrql());
+    ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+    DPRINT("MiDispatchFault: return Status %X\n", Status);
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 MmAccessFault(
     _In_ ULONG FaultCode,
     _In_ PVOID Address,
