@@ -276,6 +276,32 @@ MmInitSectionImplementation(VOID)
 }
 
 INIT_FUNCTION
+NTSTATUS
+NTAPI
+MmInitBsmThread(VOID)
+{
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    HANDLE ThreadHandle;
+    NTSTATUS Status;
+
+    /* Create the thread */
+    InitializeObjectAttributes(&ObjectAttributes, NULL, 0, NULL, NULL);
+
+    Status = PsCreateSystemThread(&ThreadHandle,
+                                  THREAD_ALL_ACCESS,
+                                  &ObjectAttributes,
+                                  NULL,
+                                  NULL,
+                                  KeBalanceSetManager,
+                                  NULL);
+
+    /* Close the handle and return status */
+    ZwClose(ThreadHandle);
+
+    return Status;
+}
+
+INIT_FUNCTION
 BOOLEAN
 NTAPI
 MmInitSystem(_In_ ULONG Phase,
