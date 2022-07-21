@@ -232,6 +232,50 @@ MmCreatePhysicalMemorySection(VOID)
 }
 
 INIT_FUNCTION
+NTSTATUS
+NTAPI
+MmInitSectionImplementation(VOID)
+{
+    OBJECT_TYPE_INITIALIZER ObjectTypeInitializer;
+    UNICODE_STRING SectionName = RTL_CONSTANT_STRING(L"Section");
+    NTSTATUS Status;
+
+    DPRINT("MmInitSectionImplementation: Creating Section Object Type\n");
+
+    /* Initialize the section based root */
+    ASSERT(MmSectionBasedRoot.NumberGenericTableElements == 0);
+    MmSectionBasedRoot.BalancedRoot.u1.Parent = &MmSectionBasedRoot.BalancedRoot;
+
+    /* Initialize the Section object type  */
+    RtlZeroMemory(&ObjectTypeInitializer, sizeof(ObjectTypeInitializer));
+
+    ObjectTypeInitializer.Length = sizeof(ObjectTypeInitializer);
+    ObjectTypeInitializer.DefaultPagedPoolCharge = sizeof(SECTION);
+    ObjectTypeInitializer.PoolType = PagedPool;
+    ObjectTypeInitializer.UseDefaultObject = TRUE;
+    ObjectTypeInitializer.GenericMapping = MmpSectionMapping;
+    ObjectTypeInitializer.DeleteProcedure = MmpDeleteSection;
+    ObjectTypeInitializer.CloseProcedure = MmpCloseSection;
+    ObjectTypeInitializer.ValidAccessMask = SECTION_ALL_ACCESS;
+    ObjectTypeInitializer.InvalidAttributes = OBJ_OPENLINK;
+
+    Status = ObCreateObjectType(&SectionName, &ObjectTypeInitializer, NULL, &MmSectionObjectType);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmInitSectionImplementation: Status %X\n", Status);
+        return Status;
+    }
+
+    Status = MmCreatePhysicalMemorySection();
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmInitSectionImplementation: Status %X\n", Status);
+    }
+
+    return Status;
+}
+
+INIT_FUNCTION
 BOOLEAN
 NTAPI
 MmInitSystem(_In_ ULONG Phase,
