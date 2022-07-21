@@ -37,13 +37,6 @@ extern MMPDE ValidKernelPte;
 extern ULONG MmSecondaryColorMask;
 extern ULONG MmSystemPageColor;
 
-#if (_MI_PAGING_LEVELS <= 3)
-  extern PFN_NUMBER MmSystemPageDirectory[PD_COUNT];
-  extern PMMPDE MmSystemPagePtes;
-#else
-  #error FIXME
-#endif
-
 /* FUNCTIONS ******************************************************************/
 
 INIT_FUNCTION
@@ -566,8 +559,274 @@ NTAPI
 MiFreePoolPages(
     _In_ PVOID StartingVa)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    PMMFREE_POOL_ENTRY FreeEntry;
+    PMMFREE_POOL_ENTRY NextEntry;
+    PMMFREE_POOL_ENTRY LastEntry;
+    PMMPTE Pte;
+    PMMPTE StartPte;
+    PMMPFN Pfn;
+    PMMPFN StartPfn;
+    PFN_COUNT FreePages;
+    PFN_COUNT NumberOfPages;
+    ULONG_PTR Offset;
+    ULONG ix;
+    ULONG End;
+    KIRQL OldIrql;
+
+    /* Handle paged pool */
+    if ((StartingVa >= MmPagedPoolStart) && (StartingVa <= MmPagedPoolEnd))
+    {
+        /* Calculate the offset from the beginning of paged pool, and convert it into pages */
+        Offset = ((ULONG_PTR)StartingVa - (ULONG_PTR)MmPagedPoolStart);
+        ix = (ULONG)(Offset >> PAGE_SHIFT);
+        End = ix;
+
+        /* Now use the end bitmap to scan until we find a set bit, meaning that this allocation finishes here */
+        while (!RtlTestBit(MmPagedPoolInfo.EndOfPagedPoolBitmap, End))
+            End++;
+
+        /* Now calculate the total number of pages this allocation spans.
+           If it's only one page, add it to the S-LIST instead of freeing it.
+        */
+        NumberOfPages = (End - ix + 1);
+
+        if ((NumberOfPages == 1) &&
+            (ExQueryDepthSList(&MiPagedPoolSListHead) < MiPagedPoolSListMaximum))
+        {
+            InterlockedPushEntrySList(&MiPagedPoolSListHead, StartingVa);
+            return 1;
+        }
+
+        /* Delete the actual pages */
+        Pte = (MmPagedPoolInfo.FirstPteForPagedPool + ix);
+        FreePages = MiDeleteSystemPageableVm(Pte, NumberOfPages, 0, NULL);
+        ASSERT(FreePages == NumberOfPages);
+
+        /* Acquire the paged pool lock */
+        KeAcquireGuardedMutex(&MmPagedPoolMutex);
+
+        /* Clear the allocation and free bits */
+        RtlClearBit(MmPagedPoolInfo.EndOfPagedPoolBitmap, End);
+        RtlClearBits(MmPagedPoolInfo.PagedPoolAllocationMap, ix, NumberOfPages);
+
+        /* Update the hint if we need to */
+        if (ix < MmPagedPoolInfo.PagedPoolHint)
+            MmPagedPoolInfo.PagedPoolHint = ix;
+
+        /* Release the lock protecting the bitmaps */
+        KeReleaseGuardedMutex(&MmPagedPoolMutex);
+
+        /* And finally return the number of pages freed */
+        return NumberOfPages;
+    }
+
+    /* Get the first PTE and its corresponding PFN entry.
+       If this is also the last PTE, meaning that this allocation was only for one page,
+       push it into the S-LIST instead of freeing it.
+    */
+    StartPte = Pte = MiAddressToPte(StartingVa);
+    StartPfn = Pfn = MiGetPfnEntry(Pte->u.Hard.PageFrameNumber);
+
+    if ((Pfn->u3.e1.EndOfAllocation == 1) &&
+        (ExQueryDepthSList(&MiNonPagedPoolSListHead) < MiNonPagedPoolSListMaximum))
+    {
+        InterlockedPushEntrySList(&MiNonPagedPoolSListHead, StartingVa);
+        return 1;
+    }
+
+    /* Loop until we find the last PTE */
+    while (Pfn->u3.e1.EndOfAllocation == 0)
+    {
+        /* Keep going */
+        Pte++;
+        Pfn = MiGetPfnEntry(Pte->u.Hard.PageFrameNumber);
+    }
+
+    /* Now we know how many pages we have */
+    NumberOfPages = (PFN_COUNT)(Pte - StartPte + 1);
+
+    /* Acquire the nonpaged pool lock */
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMmNonPagedPoolLock);
+
+    /* Mark the first and last PTEs as not part of an allocation anymore */
+    StartPfn->u3.e1.StartOfAllocation = 0;
+    Pfn->u3.e1.EndOfAllocation = 0;
+
+    /* Assume we will free as many pages as the allocation was */
+    FreePages = NumberOfPages;
+
+    /* Peek one page past the end of the allocation */
+    Pte++;
+
+    /* Guard against going past initial nonpaged pool */
+    if (MiGetPfnEntryIndex(Pfn) == MiEndOfInitialPoolFrame)
+    {
+        /* This page is on the outskirts of initial nonpaged pool, so ignore it */
+        Pfn = NULL;
+    }
+    else
+    {
+        /* Sanity check */
+        ASSERT(((ULONG_PTR)StartingVa + NumberOfPages) <= (ULONG_PTR)MmNonPagedPoolEnd);
+
+        /* Check if protected pool is enabled */
+        if (MmProtectFreedNonPagedPool)
+            /* The freed block will be merged, it must be made accessible */
+            MiUnProtectFreeNonPagedPool(MiPteToAddress(Pte), 0);
+
+        /* Otherwise, our entire allocation must've fit within the initial non paged pool,
+           or the expansion nonpaged pool, so get the PFN entry of the next allocation.
+        */
+        if (Pte->u.Hard.Valid)
+            /* It's either expansion or initial: get the PFN entry */
+            Pfn = MiGetPfnEntry(Pte->u.Hard.PageFrameNumber);
+        else
+            /* This means we've reached the guard page that protects the end of the expansion nonpaged pool */
+            Pfn = NULL;
+    }
+
+    /* Check if this allocation actually exists */
+    if (Pfn && !Pfn->u3.e1.StartOfAllocation)
+    {
+        /* It doesn't, so we should actually locate a free entry descriptor */
+        FreeEntry = (PMMFREE_POOL_ENTRY)((ULONG_PTR)StartingVa + (NumberOfPages << PAGE_SHIFT));
+
+        ASSERT(FreeEntry->Signature == MM_FREE_POOL_SIGNATURE);
+        ASSERT(FreeEntry->Owner == FreeEntry);
+
+        /* Consume this entry's pages */
+        FreePages += FreeEntry->Size;
+
+        /* Remove the item from the list, depending if pool is protected */
+        if (MmProtectFreedNonPagedPool)
+            MiProtectedPoolRemoveEntryList(&FreeEntry->List);
+        else
+            RemoveEntryList(&FreeEntry->List);
+    }
+
+    /* Now get the official free entry we'll create for the caller's allocation */
+    FreeEntry = StartingVa;
+
+    /* Check if the our allocation is the very first page */
+    if (MiGetPfnEntryIndex(StartPfn) == MiStartOfInitialPoolFrame)
+    {
+        /* Then we can't do anything or we'll risk underflowing */
+        Pfn = NULL;
+    }
+    else
+    {
+        /* Otherwise, get the PTE for the page right before our allocation */
+        Pte -= (NumberOfPages + 1);
+
+        /* Check if protected pool is enabled */
+        if (MmProtectFreedNonPagedPool)
+            /* The freed block will be merged, it must be made accessible */
+            MiUnProtectFreeNonPagedPool(MiPteToAddress(Pte), 0);
+
+        /* Check if this is valid pool, or a guard page */
+        if (Pte->u.Hard.Valid)
+            /* It's either expansion or initial nonpaged pool, get the PFN entry */
+            Pfn = MiGetPfnEntry(Pte->u.Hard.PageFrameNumber);
+        else
+            /* We must've reached the guard page, so don't risk touching it */
+            Pfn = NULL;
+    }
+
+    /* Check if there is a valid PFN entry for the page before the allocation
+       and then check if this page was actually the end f an allocation.
+       If it wasn't, then we know for sure it's a free page.
+    */
+    if (Pfn && !Pfn->u3.e1.EndOfAllocation)
+    {
+        /* Get the free entry descriptor for that given page range */
+        FreeEntry = (PMMFREE_POOL_ENTRY)((ULONG_PTR)StartingVa - PAGE_SIZE);
+        ASSERT(FreeEntry->Signature == MM_FREE_POOL_SIGNATURE);
+        FreeEntry = FreeEntry->Owner;
+
+        /* Check if protected pool is enabled */
+        if (MmProtectFreedNonPagedPool)
+            /* The freed block will be merged, it must be made accessible */
+            MiUnProtectFreeNonPagedPool(FreeEntry, 0);
+
+        /* Check if the entry is small enough to be indexed on a free list.
+           If it is, we'll want to re-insert it, since we're about to
+           collapse our pages on top of it, which will change its count.
+        */
+        if (FreeEntry->Size < (MI_MAX_FREE_PAGE_LISTS - 1))
+        {
+            /* Remove the item from the list, depending if pool is protected */
+            if (MmProtectFreedNonPagedPool)
+                MiProtectedPoolRemoveEntryList(&FreeEntry->List);
+            else
+                RemoveEntryList(&FreeEntry->List);
+
+            /* Update its size */
+            FreeEntry->Size += FreePages;
+
+            /* And now find the new appropriate list to place it in */
+            ix = (ULONG)(FreeEntry->Size - 1);
+
+            if (ix >= MI_MAX_FREE_PAGE_LISTS)
+                ix = (MI_MAX_FREE_PAGE_LISTS - 1);
+
+            /* Insert the entry into the free list head, check for prot. pool */
+            if (MmProtectFreedNonPagedPool)
+                MiProtectedPoolInsertList(&MmNonPagedPoolFreeListHead[ix], &FreeEntry->List, TRUE);
+            else
+                InsertTailList(&MmNonPagedPoolFreeListHead[ix], &FreeEntry->List);
+        }
+        else
+        {
+            /* Otherwise, just combine our free pages into this entry */
+            FreeEntry->Size += FreePages;
+        }
+    }
+
+    /* Check if we were unable to do any compaction, and we'll stick with this */
+    if (FreeEntry == StartingVa)
+    {
+        /* Well, now we are a free entry. At worse we just have our newly freed pages,
+           at best we have our pages plus whatever entry came after us.
+        */
+        FreeEntry->Size = FreePages;
+
+        /* Find the appropriate list we should be on */
+        ix = (FreeEntry->Size - 1);
+
+        if (ix >= MI_MAX_FREE_PAGE_LISTS)
+            ix = (MI_MAX_FREE_PAGE_LISTS - 1);
+
+        /* Insert the entry into the free list head, check for prot. pool */
+        if (MmProtectFreedNonPagedPool)
+            MiProtectedPoolInsertList(&MmNonPagedPoolFreeListHead[ix], &FreeEntry->List, TRUE);
+        else
+            InsertTailList(&MmNonPagedPoolFreeListHead[ix], &FreeEntry->List);
+    }
+
+    /* Just a sanity check */
+    ASSERT(FreePages != 0);
+
+    /* Get all the pages between our allocation and its end. These will all now become free page chunks. */
+    NextEntry = StartingVa;
+    LastEntry = (PMMFREE_POOL_ENTRY)((ULONG_PTR)NextEntry + (FreePages << PAGE_SHIFT));
+    do
+    {
+        /* Link back to the parent free entry, and keep going */
+        NextEntry->Owner = FreeEntry;
+        NextEntry->Signature = MM_FREE_POOL_SIGNATURE;
+        NextEntry = (PMMFREE_POOL_ENTRY)((ULONG_PTR)NextEntry + PAGE_SIZE);
+    }
+    while (NextEntry != LastEntry);
+
+    /* Is freed non paged pool protected? */
+    if (MmProtectFreedNonPagedPool)
+        /* Protect the freed pool! */
+        MiProtectFreeNonPagedPool(FreeEntry, FreeEntry->Size);
+
+    /* We're done, release the lock and let the caller know how much we freed */
+    KeReleaseQueuedSpinLock(LockQueueMmNonPagedPoolLock, OldIrql);
+
+    return NumberOfPages;
 }
 
 POOL_TYPE
@@ -575,7 +834,7 @@ NTAPI
 MmDeterminePoolType(
     _In_ PVOID PoolAddress)
 {
-    // Use a simple bounds check
+    /* Use a simple bounds check */
     if (PoolAddress >= MmPagedPoolStart && PoolAddress <= MmPagedPoolEnd)
         return PagedPool;
 
