@@ -424,6 +424,14 @@ extern ULONG MmSystemPageColor;
 extern PMMPDE MiHighestUserPde;
 extern PMMPTE MiHighestUserPte;
 extern MMPTE ValidKernelPte;
+extern MMSUPPORT MmSystemCacheWs;
+
+#if (_MI_PAGING_LEVELS <= 3)
+  extern PFN_NUMBER MmSystemPageDirectory[PD_COUNT];
+  extern PMMPDE MmSystemPagePtes;
+#else
+  #error FIXME
+#endif
 
 /* FUNCTIONS *****************************************************************/
 
@@ -694,6 +702,20 @@ MiIsUserPte(PVOID Address)
 }
 #endif
 
+/* Returns if the page is physically resident (ie: a large page). FIXFIX: CISC/x86 only? */
+FORCEINLINE
+BOOLEAN
+MI_IS_PHYSICAL_ADDRESS(
+    _In_ PVOID Address)
+{
+    PMMPDE Pde;
+
+    /* Large pages are never paged out, always physically resident */
+    Pde = MiAddressToPde(Address);
+
+    return (Pde->u.Hard.LargePage && Pde->u.Hard.Valid);
+}
+
 /* Figures out the hardware bits for a PTE */
 FORCEINLINE
 ULONG_PTR
@@ -764,6 +786,43 @@ MI_MAKE_HARDWARE_PTE_KERNEL(
     NewPte->u.Long |= MmProtectToPteMask[ProtectionMask];
 }
 
+/* Creates a valid user PTE with the given protection */
+FORCEINLINE
+VOID
+MI_MAKE_HARDWARE_PTE_USER(
+    _In_ PMMPTE NewPte,
+    _In_ PMMPTE MappingPte,
+    _In_ ULONG_PTR ProtectionMask,
+    _In_ PFN_NUMBER PageFrameNumber)
+{
+    /* Only valid for kernel, non-session PTEs */
+    ASSERT(MappingPte <= MiHighestUserPte);
+
+    /* Start fresh */
+    NewPte->u.Long = 0;
+
+    /* Set the protection and page */
+    NewPte->u.Hard.Valid = TRUE;
+    NewPte->u.Hard.Owner = TRUE;
+    NewPte->u.Hard.PageFrameNumber = PageFrameNumber;
+    NewPte->u.Long |= MmProtectToPteMask[ProtectionMask];
+}
+
+/* Updates a valid PTE */
+FORCEINLINE
+VOID
+MI_UPDATE_VALID_PTE(
+    _In_ PMMPTE Pte,
+    _In_ MMPTE TempPte)
+{
+    /* Write the valid PTE */
+    ASSERT(Pte->u.Hard.Valid == 1);
+    ASSERT(TempPte.u.Hard.Valid == 1);
+    ASSERT(Pte->u.Hard.PageFrameNumber == TempPte.u.Hard.PageFrameNumber);
+
+    *Pte = TempPte;
+}
+
 /* Writes a valid PTE */
 FORCEINLINE
 VOID
@@ -814,6 +873,121 @@ MI_WRITE_VALID_PDE(
     ASSERT(TempPde.u.Hard.Valid == 1);
 
     *Pde = TempPde;
+}
+
+#if (_MI_PAGING_LEVELS <= 3)
+FORCEINLINE
+BOOLEAN
+MiSynchronizeSystemPde(
+    _Inout_ PMMPDE Pde)
+{
+    /* Copy the PDE from the double-mapped system page directory */
+    *Pde = MmSystemPagePtes[MiGetPdeOffset(Pde)];
+
+    /* Make sure we re-read the PDE and PTE */
+    KeMemoryBarrierWithoutFence();
+
+    /* Return, if we had success */
+    return (Pde->u.Hard.Valid != 0);
+}
+#endif
+
+/* Checks if the thread already owns a working set */
+FORCEINLINE
+BOOLEAN
+MM_ANY_WS_LOCK_HELD(
+    _In_ PETHREAD Thread)
+{
+    /* If any of these are held, return TRUE */
+    return ((Thread->OwnsProcessWorkingSetExclusive) ||
+            (Thread->OwnsProcessWorkingSetShared) ||
+            (Thread->OwnsSystemWorkingSetExclusive) ||
+            (Thread->OwnsSystemWorkingSetShared) ||
+            (Thread->OwnsSessionWorkingSetExclusive) ||
+            (Thread->OwnsSessionWorkingSetShared));
+}
+
+/* Locks the working set */
+FORCEINLINE
+VOID
+MiLockWorkingSet(
+    _In_ PETHREAD Thread,
+    _In_ PMMSUPPORT WorkingSet)
+{
+    /* Block APCs */
+    KeEnterGuardedRegion();
+
+    /* Working set should be in global memory */
+    ASSERT(MI_IS_SESSION_ADDRESS((PVOID)WorkingSet) == FALSE);
+
+    /* Thread shouldn't already be owning something */
+    ASSERT(!MM_ANY_WS_LOCK_HELD(Thread));
+
+    /* Lock this working set */
+    ExAcquirePushLockExclusive(&WorkingSet->WorkingSetMutex);
+
+    /* Which working set is this? */
+    if (WorkingSet == &MmSystemCacheWs)
+    {
+        /* Own the system working set */
+        ASSERT((Thread->OwnsSystemWorkingSetExclusive == FALSE) &&
+               (Thread->OwnsSystemWorkingSetShared == FALSE));
+        Thread->OwnsSystemWorkingSetExclusive = TRUE;
+    }
+    else if (WorkingSet->Flags.SessionSpace)
+    {
+        /* Own the session working set */
+        ASSERT((Thread->OwnsSessionWorkingSetExclusive == FALSE) &&
+               (Thread->OwnsSessionWorkingSetShared == FALSE));
+        Thread->OwnsSessionWorkingSetExclusive = TRUE;
+    }
+    else
+    {
+        /* Own the process working set */
+        ASSERT((Thread->OwnsProcessWorkingSetExclusive == FALSE) &&
+               (Thread->OwnsProcessWorkingSetShared == FALSE));
+        Thread->OwnsProcessWorkingSetExclusive = TRUE;
+    }
+}
+
+/* Unlocks the working set */
+FORCEINLINE
+VOID
+MiUnlockWorkingSet(
+    _In_ PETHREAD Thread,
+    _In_ PMMSUPPORT WorkingSet)
+{
+    /* Working set should be in global memory */
+    ASSERT(MI_IS_SESSION_ADDRESS((PVOID)WorkingSet) == FALSE);
+
+    /* Which working set is this? */
+    if (WorkingSet == &MmSystemCacheWs)
+    {
+        /* Release the system working set */
+        ASSERT((Thread->OwnsSystemWorkingSetExclusive == TRUE) ||
+               (Thread->OwnsSystemWorkingSetShared == TRUE));
+        Thread->OwnsSystemWorkingSetExclusive = FALSE;
+    }
+    else if (WorkingSet->Flags.SessionSpace)
+    {
+        /* Release the session working set */
+        ASSERT((Thread->OwnsSessionWorkingSetExclusive == TRUE) ||
+               (Thread->OwnsSessionWorkingSetShared == TRUE));
+        Thread->OwnsSessionWorkingSetExclusive = 0;
+    }
+    else
+    {
+        /* Release the process working set */
+        ASSERT((Thread->OwnsProcessWorkingSetExclusive) ||
+               (Thread->OwnsProcessWorkingSetShared));
+        Thread->OwnsProcessWorkingSetExclusive = FALSE;
+    }
+
+    /* Release the working set lock */
+    ExReleasePushLockExclusive(&WorkingSet->WorkingSetMutex);
+
+    /* Unblock APCs */
+    KeLeaveGuardedRegion();
 }
 
 /* ARM3\i386\init.c */
@@ -958,6 +1132,12 @@ MiRemoveZeroPage(
     _In_ ULONG Color
 );
 
+VOID
+NTAPI
+MiUnlinkFreeOrZeroedPage(
+    _In_ PMMPFN Entry
+);
+
 /* ARM3\pool.c */
 INIT_FUNCTION
 VOID
@@ -1073,7 +1253,7 @@ MiReserveAlignedSystemPtes(
 PFN_COUNT
 NTAPI
 MiDeleteSystemPageableVm(
-    _In_ PMMPTE PointerPte,
+    _In_ PMMPTE Pte,
     _In_ PFN_NUMBER PageCount,
     _In_ ULONG Flags,
     _Out_ PPFN_NUMBER ValidPages
@@ -1097,6 +1277,13 @@ VOID
 NTAPI
 MmRebalanceMemoryConsumers(
     VOID
+);
+
+/* freelist.c */
+BOOLEAN
+NTAPI
+MiIsPfnInUse(
+    _In_ PMMPFN Pfn
 );
 
 /* EOF */

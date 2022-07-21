@@ -144,21 +144,21 @@ typedef struct _MM_PAGED_POOL_INFO
 FORCEINLINE
 PMMPFN
 MiGetPfnEntry(
-    _In_ PFN_NUMBER Pfn)
+    _In_ PFN_NUMBER PageFrameIndex)
 {
     PMMPFN Page;
     extern RTL_BITMAP MiPfnBitMap;
 
     /* Make sure the PFN number is valid */
-    if (Pfn > MmHighestPhysicalPage)
+    if (PageFrameIndex > MmHighestPhysicalPage)
         return NULL;
 
     /* Make sure this page actually has a PFN entry */
-    if (MiPfnBitMap.Buffer && !(RtlTestBit(&MiPfnBitMap, (ULONG)Pfn)))
+    if (MiPfnBitMap.Buffer && !RtlTestBit(&MiPfnBitMap, (ULONG)PageFrameIndex))
         return NULL;
 
     /* Get the entry */
-    Page = &MmPfnDatabase[Pfn];
+    Page = &MmPfnDatabase[PageFrameIndex];
 
     /* Return it */
     return Page;
@@ -539,8 +539,6 @@ MmSetPageProtect(
     PVOID Address,
     ULONG flProtect
 );
-
-/* freelist.c */
 
 /* mminit.c */
 INIT_FUNCTION

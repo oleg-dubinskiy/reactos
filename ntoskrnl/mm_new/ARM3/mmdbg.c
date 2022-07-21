@@ -19,7 +19,7 @@ MiDbgTranslatePhysicalAddress(
     _In_ ULONG64 PhysicalAddress,
     _In_ ULONG Flags)
 {
-    PFN_NUMBER Pfn;
+    PFN_NUMBER PageFrameIndex;
     MMPTE TempPte;
     PVOID MappingBaseAddress;
 
@@ -47,19 +47,19 @@ MiDbgTranslatePhysicalAddress(
     TempPte = ValidKernelPte;
 
     /* Convert physical address to PFN */
-    Pfn = (PFN_NUMBER)(PhysicalAddress >> PAGE_SHIFT);
+    PageFrameIndex = (PFN_NUMBER)(PhysicalAddress >> PAGE_SHIFT);
 
     /* Check if this could be an I/O mapping */
-    if (!MiGetPfnEntry(Pfn))
+    if (!MiGetPfnEntry(PageFrameIndex))
     {
         /* FIXME: We don't support this yet */
-        KdpDprintf("MiDbgTranslatePhysicalAddress: I/O Space not yet supported. PFN: 0x%I64x\n", (ULONG64)Pfn);
+        KdpDprintf("MiDbgTranslatePhysicalAddress: I/O Space not yet supported. PFN: 0x%I64x\n", (ULONG64)PageFrameIndex);
         return NULL;
     }
     else
     {
         /* Set the PFN in the PTE */
-        TempPte.u.Hard.PageFrameNumber = Pfn;
+        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
     }
 
     /* Map the PTE and invalidate its TLB entry */
