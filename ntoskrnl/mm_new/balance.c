@@ -131,4 +131,40 @@ MmRebalanceMemoryConsumers(VOID)
     UNIMPLEMENTED_DBGBREAK();
 }
 
+NTSTATUS
+MmTrimUserMemory(
+    ULONG Target,
+    ULONG Priority,
+    PULONG NrFreedPages)
+{
+    PFN_NUMBER CurrentPage;
+    PFN_NUMBER NextPage;
+    NTSTATUS Status;
+
+    (*NrFreedPages) = 0;
+
+    CurrentPage = MmGetLRUFirstUserPage();
+
+    while (CurrentPage && Target > 0)
+    {
+        ASSERT(FALSE);
+        Status = 0;//MmPageOutPhysicalAddress(CurrentPage);
+        if (NT_SUCCESS(Status))
+        {
+            DPRINT("Succeeded\n");
+            Target--;
+            (*NrFreedPages)++;
+        }
+
+        NextPage = MmGetLRUNextUserPage(CurrentPage);
+        if (NextPage <= CurrentPage)
+            /* We wrapped around, so we're done */
+            break;
+
+        CurrentPage = NextPage;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 /* EOF */
