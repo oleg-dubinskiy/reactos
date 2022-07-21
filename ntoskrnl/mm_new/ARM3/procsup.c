@@ -13,6 +13,10 @@ PMMWSL MmWorkingSetList;
 ULONG MmMaximumDeadKernelStacks = 5;
 
 extern MMPTE DemandZeroPte;
+extern ULONG MmVirtualBias;
+extern MM_SYSTEMSIZE MmSystemSize;
+extern ULONG MmLargeStackSize;
+extern ULONG MmSecondaryColorMask;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -48,8 +52,22 @@ MmSetMemoryPriorityProcess(
     _In_ PEPROCESS Process,
     _In_ UCHAR MemoryPriority)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    UCHAR OldPriority;
+
+    /* Check if we have less then 16MB of Physical Memory */
+    if (MmSystemSize == MmSmallSystem &&
+        MmNumberOfPhysicalPages < ((15 * _1MB) / PAGE_SIZE))
+    {
+        /* Always use background priority */
+        MemoryPriority = MEMORY_PRIORITY_BACKGROUND;
+    }
+
+    /* Save the old priority and update it */
+    OldPriority = (UCHAR)Process->Vm.Flags.MemoryPriority;
+    Process->Vm.Flags.MemoryPriority = MemoryPriority;
+
+    /* Return the old priority */
+    return OldPriority;
 }
 
 BOOLEAN
