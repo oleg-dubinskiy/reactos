@@ -116,8 +116,16 @@ NTAPI
 MmInitializeHandBuiltProcess2(
     _In_ PEPROCESS Process)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    // ? MmInitializeProcessAddressSpace()
+
+    if (MmVirtualBias)
+    {
+        /* Lock the VAD, ARM3-owned ranges away */
+        UNIMPLEMENTED_DBGBREAK();
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 VOID
