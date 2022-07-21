@@ -32,9 +32,41 @@ NTAPI
 MmGetPhysicalAddress(
     PVOID Address)
 {
-    PHYSICAL_ADDRESS Result = {{0}};
-    UNIMPLEMENTED_DBGBREAK();
-    return Result;
+    PHYSICAL_ADDRESS PhysicalAddress;
+    MMPDE TempPde;
+    MMPTE TempPte;
+
+    TempPde = *MiAddressToPde(Address);
+
+    /* Check if the PXE/PPE/PDE is valid */
+    if (!TempPde.u.Hard.Valid)
+    {
+        //KeRosDumpStackFrames(NULL, 20);
+        DPRINT1("MM:MmGetPhysicalAddress: Failed base address was %p\n", Address);
+        ASSERT(FALSE);
+
+        PhysicalAddress.QuadPart = 0;
+    }
+    /* Check for large pages */
+    else if (TempPde.u.Hard.LargePage)
+    {
+        /* Physical address is base page + large page offset */
+        PhysicalAddress.QuadPart = ((ULONG64)TempPde.u.Hard.PageFrameNumber << PAGE_SHIFT);
+        PhysicalAddress.QuadPart += ((ULONG_PTR)Address & (PAGE_SIZE * PTE_PER_PAGE - 1));
+    }
+    else
+    {
+        /* Check if the PTE is valid */
+        TempPte = *MiAddressToPte(Address);
+        if (TempPte.u.Hard.Valid)
+        {
+            /* Physical address is base page + page offset */
+            PhysicalAddress.QuadPart = ((ULONG64)TempPte.u.Hard.PageFrameNumber << PAGE_SHIFT);
+            PhysicalAddress.QuadPart += ((ULONG_PTR)Address & (PAGE_SIZE - 1));
+        }
+    }
+
+    return PhysicalAddress;
 }
 
 PVOID
@@ -68,7 +100,7 @@ MmUnsecureVirtualMemory(
 PFN_COUNT
 NTAPI
 MiDeleteSystemPageableVm(
-    _In_ PMMPTE PointerPte,
+    _In_ PMMPTE Pte,
     _In_ PFN_NUMBER PageCount,
     _In_ ULONG Flags,
     _Out_ PPFN_NUMBER ValidPages)
