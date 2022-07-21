@@ -137,6 +137,101 @@ MmpCloseSection(
 }
 
 INIT_FUNCTION
+NTSTATUS
+NTAPI
+MmCreatePhysicalMemorySection(VOID)
+{
+    UNICODE_STRING PhysicalMemoryName = RTL_CONSTANT_STRING(L"\\Device\\PhysicalMemory");
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    PCONTROL_AREA ControlArea;
+    PSECTION PhysSection;
+    PSEGMENT Segment;
+    HANDLE Handle;
+    NTSTATUS Status;
+
+    DPRINT("MmCreatePhysicalMemorySection()\n");
+
+    /* Create the section mapping physical memory */
+    Segment = ExAllocatePoolWithTag(PagedPool, sizeof(*Segment), 'gSmM');
+    if (!Segment)
+    {
+        DPRINT1("MmCreatePhysicalMemorySection: allocate failed!\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    ControlArea = ExAllocatePoolWithTag(NonPagedPool, sizeof(*ControlArea), 'aCmM');
+    if (!ControlArea)
+    {
+        DPRINT1("MmCreatePhysicalMemorySection: allocate failed!\n");
+        ExFreePoolWithTag(Segment, 'gSmM');
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(Segment, sizeof(*Segment));
+    RtlZeroMemory(ControlArea, sizeof(*ControlArea));
+
+    ControlArea->Segment = Segment;
+    ControlArea->NumberOfSectionReferences = 1;
+    ControlArea->u.Flags.PhysicalMemory = 1;
+
+    Segment->ControlArea = ControlArea;
+    Segment->SegmentPteTemplate.u.Long = 0;
+
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &PhysicalMemoryName,
+                               (OBJ_KERNEL_EXCLUSIVE | OBJ_PERMANENT),
+                               NULL,
+                               NULL);
+
+    Status = ObCreateObject(KernelMode,
+                            MmSectionObjectType,
+                            &ObjectAttributes,
+                            KernelMode,
+                            NULL,
+                            sizeof(*PhysSection),
+                            sizeof(*PhysSection),
+                            0,
+                            (PVOID *)&PhysSection);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmCreatePhysicalMemorySection: Status %X\n", Status);
+        ExFreePoolWithTag(ControlArea, 'aCmM');
+        ExFreePoolWithTag(Segment, 'gSmM');
+        return Status;
+    }
+
+  #ifdef _WIN64
+    #error FIXME
+  #else
+    PhysSection->SizeOfSection.QuadPart = 0xFFFFFFFF;
+  #endif
+
+    PhysSection->Segment = Segment;
+    PhysSection->u.LongFlags = 0;
+    PhysSection->InitialPageProtection = PAGE_EXECUTE_READWRITE;
+
+    Status = ObInsertObject(PhysSection,
+                            NULL,
+                            SECTION_MAP_READ,
+                            0,
+                            NULL,
+                            &Handle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmCreatePhysicalMemorySection: Status %X\n", Status);
+        return Status;
+    }
+
+    Status = NtClose(Handle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmCreatePhysicalMemorySection: Status %X\n", Status);
+    }
+
+    return Status;
+}
+
+INIT_FUNCTION
 BOOLEAN
 NTAPI
 MmInitSystem(_In_ ULONG Phase,
