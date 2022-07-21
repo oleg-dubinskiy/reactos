@@ -7,6 +7,8 @@
 
 /* GLOBALS ********************************************************************/
 
+extern MM_SYSTEMSIZE MmSystemSize;
+extern ULONG MmProductType;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -77,8 +79,8 @@ BOOLEAN
 NTAPI
 MmIsThisAnNtAsSystem(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    /* Return if this is a server system */
+    return (MmProductType & 0xFF);
 }
 
 NTSTATUS
@@ -96,8 +98,8 @@ MM_SYSTEMSIZE
 NTAPI
 MmQuerySystemSize(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    /* Return the low, medium or high memory system type */
+    return MmSystemSize;
 }
 
 BOOLEAN
