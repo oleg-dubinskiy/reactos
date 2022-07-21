@@ -377,6 +377,96 @@ MiAllocateContiguousMemory(
     return BaseAddress;
 }
 
+VOID
+NTAPI
+MiFreeContiguousMemory(
+    _In_ PVOID BaseAddress)
+{
+    PMMPFN Pfn;
+    PMMPFN StartPfn;
+    PMMPTE Pte;
+    PFN_NUMBER PageFrameIndex;
+    PFN_NUMBER LastPage;
+    PFN_NUMBER PageCount;
+    PVOID EndAddress;
+    KIRQL OldIrql;
+
+    PAGED_CODE();
+
+    /* First, check if the memory came from initial nonpaged pool, or expansion */
+    EndAddress = (PVOID)((ULONG_PTR)MmNonPagedPoolStart + MmSizeOfNonPagedPoolInBytes);
+
+    if ((BaseAddress >= MmNonPagedPoolStart && BaseAddress < EndAddress) ||
+        (BaseAddress >= MmNonPagedPoolExpansionStart && BaseAddress < MmNonPagedPoolEnd))
+    {
+        /* It did, so just use the pool to free this */
+        ExFreePoolWithTag(BaseAddress, 'mCmM');
+        return;
+    }
+
+    /* Get the PTE and frame number for the allocation*/
+    Pte = MiAddressToPte(BaseAddress);
+    PageFrameIndex = PFN_FROM_PTE(Pte);
+
+    /* Now get the PFN entry for this, and make sure it's the correct one */
+    Pfn = MiGetPfnEntry(PageFrameIndex);
+
+    if (!Pfn || !Pfn->u3.e1.StartOfAllocation)
+    {
+        /* This probably means you did a free on an address that was in between */
+        KeBugCheckEx(BAD_POOL_CALLER, 0x60, (ULONG_PTR)BaseAddress, 0, 0);
+    }
+
+    /* Now this PFN isn't the start of any allocation anymore, it's going out */
+    StartPfn = Pfn;
+    Pfn->u3.e1.StartOfAllocation = 0;
+
+    /* Loop the PFNs until we find the one that marks the end of the allocation */
+    do
+    {
+        /* Make sure these are the pages we setup in the allocation routine */
+        ASSERT(Pfn->u3.e2.ReferenceCount == 1);
+        ASSERT(Pfn->u2.ShareCount == 1);
+        ASSERT(Pfn->PteAddress == Pte);
+        ASSERT(Pfn->u3.e1.PageLocation == ActiveAndValid);
+        ASSERT(Pfn->u4.VerifierAllocation == 0);
+        ASSERT(Pfn->u3.e1.PrototypePte == 0);
+
+        /* Set the special pending delete marker */
+        MI_SET_PFN_DELETED(Pfn);
+
+        /* Keep going for assertions */
+        Pte++;
+    }
+    while (Pfn++->u3.e1.EndOfAllocation == 0);
+
+    /* Found it, unmark it */
+    Pfn--;
+    Pfn->u3.e1.EndOfAllocation = 0;
+
+    /* Now compute how many pages this represents */
+    PageCount = (ULONG)(Pfn - StartPfn + 1);
+
+    /* So we can know how much to unmap (recall we piggyback on I/O mappings) */
+    MmUnmapIoSpace(BaseAddress, (PageCount << PAGE_SHIFT));
+
+    /* Lock the PFN database */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    /* Loop all the pages */
+    LastPage = (PageFrameIndex + PageCount);
+    Pfn = MiGetPfnEntry(PageFrameIndex);
+    do
+    {
+        /* Decrement the share count and move on */
+        MiDecrementShareCount(Pfn++, PageFrameIndex++);
+    }
+    while (PageFrameIndex < LastPage);
+
+    /* Release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PVOID
