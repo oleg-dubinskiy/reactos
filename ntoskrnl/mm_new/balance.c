@@ -201,4 +201,58 @@ MiInitBalancerThread(VOID)
     NtSetInformationThread(MiBalancerThreadHandle, ThreadPriority, &Priority, sizeof(Priority));
 }
 
+ULONG
+NTAPI
+MiTrimMemoryConsumer(
+    ULONG Consumer,
+    ULONG InitialTarget)
+{
+    ULONG Target = InitialTarget;
+    ULONG NrFreedPages = 0;
+    NTSTATUS Status;
+
+    /* Make sure we can trim this consumer */
+    if (!MiMemoryConsumers[Consumer].Trim)
+        /* Return the unmodified initial target */
+        return InitialTarget;
+
+    if (MiMemoryConsumers[Consumer].PagesUsed > MiMemoryConsumers[Consumer].PagesTarget)
+        /* Consumer page limit exceeded */
+        Target = max(Target, (MiMemoryConsumers[Consumer].PagesUsed - MiMemoryConsumers[Consumer].PagesTarget));
+
+    if (MmAvailablePages < MiMinimumAvailablePages)
+        /* Global page limit exceeded */
+        Target = (ULONG)max(Target, (MiMinimumAvailablePages - MmAvailablePages));
+
+    if (!Target)
+    {
+        /* Initial target is zero and we don't have anything else to add */
+        return 0;
+    }
+
+    if (!InitialTarget)
+        /* If there was no initial target, swap at least MiMinimumPagesPerRun */
+        Target = max(Target, MiMinimumPagesPerRun);
+
+    /* Now swap the pages out */
+    Status = MiMemoryConsumers[Consumer].Trim(Target, 0, &NrFreedPages);
+
+    DPRINT("Trimming consumer %lu: Freed %lu pages with a target of %lu pages\n", Consumer, NrFreedPages, Target);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MiTrimMemoryConsumer: Status %X\n", Status);
+        KeBugCheck(MEMORY_MANAGEMENT);
+    }
+
+    /* Update the target */
+    if (NrFreedPages < Target)
+        Target -= NrFreedPages;
+    else
+        Target = 0;
+
+    /* Return the remaining pages needed to meet the target */
+    return Target;
+}
+
 /* EOF */
