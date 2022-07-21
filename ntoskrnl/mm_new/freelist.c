@@ -50,6 +50,51 @@ MiInitializeUserPfnBitmap(VOID)
     RtlClearAllBits(&MiUserPfnBitMap);
 }
 
+PFN_NUMBER
+NTAPI
+MmGetLRUFirstUserPage(VOID)
+{
+    ULONG Position;
+    KIRQL OldIrql;
+
+    /* Find the first user page */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+    Position = RtlFindSetBits(&MiUserPfnBitMap, 1, 0);
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    if (Position == 0xFFFFFFFF)
+        return 0;
+
+    /* Return it */
+    ASSERT(Position != 0);
+    ASSERT_IS_ROS_PFN(MiGetPfnEntry(Position));
+
+    return Position;
+}
+
+PFN_NUMBER
+NTAPI
+MmGetLRUNextUserPage(
+    PFN_NUMBER PreviousPfn)
+{
+    ULONG Position;
+    KIRQL OldIrql;
+
+    /* Find the next user page */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+    Position = RtlFindSetBits(&MiUserPfnBitMap, 1, ((ULONG)PreviousPfn + 1));
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    if (Position == 0xFFFFFFFF)
+        return 0;
+
+    /* Return it */
+    ASSERT(Position != 0);
+    ASSERT_IS_ROS_PFN(MiGetPfnEntry(Position));
+
+    return Position;
+}
+
 BOOLEAN
 NTAPI
 MiIsPfnFree(
