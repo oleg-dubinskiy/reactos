@@ -113,4 +113,12 @@ MmSetPageProtect(PEPROCESS Process, PVOID Address, ULONG flProtect)
     UNIMPLEMENTED_DBGBREAK();
 }
 
+INIT_FUNCTION
+VOID
+NTAPI
+MmInitGlobalKernelPageDirectory(VOID)
+{
+    ;/* Nothing to do here */
+}
+
 /* EOF */
