@@ -263,6 +263,53 @@ MiFindContiguousPages(
     return 0;
 }
 
+PVOID
+NTAPI
+MiFindContiguousMemory(
+    _In_ PFN_NUMBER LowestPfn,
+    _In_ PFN_NUMBER HighestPfn,
+    _In_ PFN_NUMBER BoundaryPfn,
+    _In_ PFN_NUMBER SizeInPages,
+    _In_ MEMORY_CACHING_TYPE CacheType)
+{
+    PHYSICAL_ADDRESS PhysicalAddress;
+    PVOID BaseAddress;
+    PMMPFN Pfn;
+    PMMPFN EndPfn;
+    PMMPTE Pte;
+    PFN_NUMBER Page;
+
+    PAGED_CODE();
+    ASSERT(SizeInPages != 0);
+
+    /* Our last hope is to scan the free page list for contiguous pages */
+    Page = MiFindContiguousPages(LowestPfn, HighestPfn, BoundaryPfn, SizeInPages, CacheType);
+    if (!Page)
+        return NULL;
+
+    /* We'll just piggyback on the I/O memory mapper */
+    PhysicalAddress.QuadPart = (Page << PAGE_SHIFT);
+
+    BaseAddress = MmMapIoSpace(PhysicalAddress, (SizeInPages << PAGE_SHIFT), CacheType);
+    ASSERT(BaseAddress);
+
+    /* Loop the PFN entries */
+    Pfn = MiGetPfnEntry(Page);
+    EndPfn = (Pfn + SizeInPages);
+
+    Pte = MiAddressToPte(BaseAddress);
+    do
+    {
+        /* Write the PTE address */
+        Pfn->PteAddress = Pte;
+        Pfn->u4.PteFrame = PFN_FROM_PTE(MiAddressToPte(Pte++));
+    }
+    while (++Pfn < EndPfn);
+
+    /* Return the address */
+    return BaseAddress;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PVOID
