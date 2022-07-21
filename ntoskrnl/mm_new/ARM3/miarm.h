@@ -17,6 +17,8 @@
 /* Number of pages in one unit of the system cache */
 #define MM_PAGES_PER_VACB  (VACB_MAPPING_GRANULARITY / PAGE_SIZE)
 
+#define MI_LOWEST_VAD_ADDRESS (PVOID)MM_LOWEST_USER_ADDRESS
+
 /* Protection Bits part of the internal memory manager Protection Mask, from:
    http://reactos.org/wiki/Techwiki:Memory_management_in_the_Windows_XP_kernel
    https://www.reactos.org/wiki/Techwiki:Memory_Protection_constants
@@ -425,6 +427,7 @@ extern PMMPDE MiHighestUserPde;
 extern PMMPTE MiHighestUserPte;
 extern MMPTE ValidKernelPte;
 extern MMSUPPORT MmSystemCacheWs;
+extern PMMWSL MmWorkingSetList;
 
 #if (_MI_PAGING_LEVELS <= 3)
   extern PFN_NUMBER MmSystemPageDirectory[PD_COUNT];
@@ -990,6 +993,15 @@ MiUnlockWorkingSet(
     KeLeaveGuardedRegion();
 }
 
+FORCEINLINE
+USHORT
+MiQueryPageTableReferences(
+    _In_ PVOID Address)
+{
+    PUSHORT RefCount = &MmWorkingSetList->UsedPageTableEntries[MiAddressToPdeOffset(Address)];
+    return (*RefCount);
+}
+
 /* ARM3\i386\init.c */
 INIT_FUNCTION
 VOID
@@ -1067,6 +1079,13 @@ PFN_NUMBER
 NTAPI
 MxGetNextPage(
     _In_ PFN_NUMBER PageCount
+);
+
+INIT_FUNCTION
+BOOLEAN
+NTAPI
+MiInitializeMemoryEvents(
+    VOID
 );
 
 /* ARM3\pagfault.c */
@@ -1172,11 +1191,37 @@ MmDeterminePoolType(
     _In_ PVOID PoolAddress
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+MiInitializePoolEvents(
+    VOID
+);
+
 /* ARM3\section.c */
 BOOLEAN
 NTAPI
 MiInitializeSystemSpaceMap(
     _In_ PMMSESSION InputSession OPTIONAL
+);
+
+/* ARM3\session.c */
+VOID
+NTAPI
+MiInitializeSessionWideAddresses(
+    VOID
+);
+
+VOID
+NTAPI
+MiInitializeSessionWsSupport(
+    VOID
+);
+
+VOID
+NTAPI
+MiInitializeSessionIds(
+    VOID
 );
 
 /* ARM3\special.c */
@@ -1224,6 +1269,12 @@ MiInitializeLoadedModuleList(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock
 );
 
+VOID
+NTAPI
+MiWriteProtectSystemImage(
+    _In_ PVOID ImageBase
+);
+
 /* ARM3\syspte.c */
 INIT_FUNCTION
 VOID
@@ -1259,6 +1310,15 @@ MiDeleteSystemPageableVm(
     _Out_ PPFN_NUMBER ValidPages
 );
 
+/* i386\page.c */
+/* i386\pagepae.c */
+INIT_FUNCTION
+VOID
+NTAPI
+MmInitGlobalKernelPageDirectory(
+    VOID
+);
+
 /* balance.c */
 INIT_FUNCTION
 VOID
@@ -1279,11 +1339,65 @@ MmRebalanceMemoryConsumers(
     VOID
 );
 
+NTSTATUS
+MmTrimUserMemory(
+    ULONG Target,
+    ULONG Priority,
+    PULONG NrFreedPages
+);
+
+INIT_FUNCTION
+VOID
+NTAPI
+MmInitializeMemoryConsumer(
+    ULONG Consumer,
+    PMM_MEMORY_CONSUMER_TRIM Trim
+);
+
+VOID
+INIT_FUNCTION
+NTAPI
+MiInitBalancerThread(
+    VOID
+);
+
+VOID
+NTAPI
+MiBalancerThread(
+    PVOID Unused
+);
+
 /* freelist.c */
 BOOLEAN
 NTAPI
 MiIsPfnInUse(
     _In_ PMMPFN Pfn
+);
+
+VOID
+NTAPI
+MiInitializeUserPfnBitmap(
+    VOID
+);
+
+PFN_NUMBER
+NTAPI
+MmGetLRUFirstUserPage(
+    VOID
+);
+
+PFN_NUMBER
+NTAPI
+MmGetLRUNextUserPage(
+    PFN_NUMBER PreviousPfn
+);
+
+/* pagefile.c */
+INIT_FUNCTION
+VOID
+NTAPI
+MmInitPagingFile(
+    VOID
 );
 
 /* EOF */

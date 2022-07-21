@@ -304,11 +304,91 @@ MmInitBsmThread(VOID)
 INIT_FUNCTION
 BOOLEAN
 NTAPI
-MmInitSystem(_In_ ULONG Phase,
-             _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
+MmInitSystem(
+    _In_ ULONG Phase,
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PLDR_DATA_TABLE_ENTRY DataTableEntry;
+    PLIST_ENTRY ListEntry;
+    MMPTE TempPte = ValidKernelPte;
+    PMMPTE Pte;
+    PFN_NUMBER PageFrameNumber;
+    NTSTATUS Status;
+
+    DPRINT1("MmInitSystem: Phase %X, LoaderBlock %X\n", Phase, LoaderBlock);
+
+    /* Initialize the kernel address space */
+    ASSERT(Phase == 1);
+
+    MmKernelAddressSpace = &PsIdleProcess->Vm;
+
+    /* Dump the address space */
+    MiDbgDumpAddressSpace();
+
+    MmInitGlobalKernelPageDirectory();
+
+    MiInitializeUserPfnBitmap();
+    MmInitializeMemoryConsumer(MC_USER, MmTrimUserMemory);
+
+    Status = MmInitSectionImplementation();
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmInitSystem: Status %X\n", Status);
+        return FALSE;
+    }
+
+    MmInitPagingFile();
+
+    /* Create a PTE to double-map the shared data section.
+       We allocate it from paged pool so that we can't fault when trying to touch the PTE itself (to map it),
+       since paged pool addresses will already be mapped by the fault handler.
+    */
+    MmSharedUserDataPte = ExAllocatePoolWithTag(PagedPool, sizeof(MMPTE), TAG_MM);
+    if (!MmSharedUserDataPte)
+        return FALSE;
+
+    /* Now get the PTE for shared data, and read the PFN that holds it */
+    Pte = MiAddressToPte((PVOID)KI_USER_SHARED_DATA);
+    ASSERT(Pte->u.Hard.Valid == 1);
+    PageFrameNumber = PFN_FROM_PTE(Pte);
+
+    /* Build the PTE and write it */
+    MI_MAKE_HARDWARE_PTE_KERNEL(&TempPte, Pte, MM_READONLY, PageFrameNumber);
+
+    *MmSharedUserDataPte = TempPte;
+
+    /* Initialize wide addresses of session  */
+    MiInitializeSessionWideAddresses();
+
+    /* Initialize session working set support */
+    MiInitializeSessionWsSupport();
+
+    /* Setup session IDs */
+    MiInitializeSessionIds();
+
+    /* Setup the memory threshold events */
+    if (!MiInitializeMemoryEvents())
+        return FALSE;
+
+    /* Unmap low memory */
+    MiInitBalancerThread();
+
+    /* Initialize the balance set manager */
+    MmInitBsmThread();
+
+    /* Loop the boot loaded images */
+    for (ListEntry = PsLoadedModuleList.Flink;
+         ListEntry != &PsLoadedModuleList;
+         ListEntry = ListEntry->Flink)
+    {
+        /* Get the data table entry */
+        DataTableEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+        /* Set up the image protection */
+        MiWriteProtectSystemImage(DataTableEntry->DllBase);
+    }
+
+    return TRUE;
 }
 
 /* EOF */

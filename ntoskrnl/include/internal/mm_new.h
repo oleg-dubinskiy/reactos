@@ -119,11 +119,18 @@ typedef struct _MMPFNLIST
     PFN_NUMBER Blink;
 } MMPFNLIST, *PMMPFNLIST;
 
+typedef NTSTATUS
+(* PMM_MEMORY_CONSUMER_TRIM)(
+    ULONG Target,
+    ULONG Priority,
+    PULONG NrFreed
+);
+
 typedef struct _MM_MEMORY_CONSUMER
 {
     ULONG PagesUsed;
     ULONG PagesTarget;
-    NTSTATUS (*Trim)(ULONG Target, ULONG Priority, PULONG NrFreed);
+    PMM_MEMORY_CONSUMER_TRIM Trim;
 } MM_MEMORY_CONSUMER, *PMM_MEMORY_CONSUMER;
 
 /* Paged pool information */

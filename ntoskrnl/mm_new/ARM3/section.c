@@ -14,6 +14,7 @@ KEVENT MmCollidedFlushEvent;
 PVOID MmHighSectionBase;
 LIST_ENTRY MmUnusedSubsectionList;
 MMSESSION MmSession;
+MM_AVL_TABLE MmSectionBasedRoot;
 
 extern PVOID MiSessionViewStart;   // 0xBE000000
 extern SIZE_T MmSessionViewSize;
