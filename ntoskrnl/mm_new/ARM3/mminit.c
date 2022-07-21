@@ -526,6 +526,97 @@ CleanUp:
     return Status;
 }
 
+INIT_FUNCTION
+BOOLEAN
+NTAPI
+MiInitializeMemoryEvents(VOID)
+{
+    UNICODE_STRING LowString = RTL_CONSTANT_STRING(L"\\KernelObjects\\LowMemoryCondition");
+    UNICODE_STRING HighString = RTL_CONSTANT_STRING(L"\\KernelObjects\\HighMemoryCondition");
+    UNICODE_STRING LowPagedPoolString = RTL_CONSTANT_STRING(L"\\KernelObjects\\LowPagedPoolCondition");
+    UNICODE_STRING HighPagedPoolString = RTL_CONSTANT_STRING(L"\\KernelObjects\\HighPagedPoolCondition");
+    UNICODE_STRING LowNonPagedPoolString = RTL_CONSTANT_STRING(L"\\KernelObjects\\LowNonPagedPoolCondition");
+    UNICODE_STRING HighNonPagedPoolString = RTL_CONSTANT_STRING(L"\\KernelObjects\\HighNonPagedPoolCondition");
+    NTSTATUS Status;
+
+    /* Check if we have a registry setting */
+    if (MmLowMemoryThreshold)
+    {
+        /* Convert it to pages */
+        MmLowMemoryThreshold *= (_1MB / PAGE_SIZE);
+    }
+    else
+    {
+        /* The low memory threshold is hit when we don't consider that we have "plenty" of free pages anymore */
+        MmLowMemoryThreshold = MmPlentyFreePages;
+
+        /* More than one GB of memory? */
+        if (MmNumberOfPhysicalPages > 0x40000)
+        {
+            /* Start at 32MB, and add another 16MB for each GB */
+            MmLowMemoryThreshold = ((32 * _1MB) / PAGE_SIZE);
+            MmLowMemoryThreshold += ((MmNumberOfPhysicalPages - 0x40000) >> 7);
+        }
+        else if (MmNumberOfPhysicalPages > 0x8000)
+        {
+            /* For systems with > 128MB RAM, add another 4MB for each 128MB */
+            MmLowMemoryThreshold += ((MmNumberOfPhysicalPages - 0x8000) >> 5);
+        }
+
+        /* Don't let the minimum threshold go past 64MB */
+        MmLowMemoryThreshold = min(MmLowMemoryThreshold, ((64 * _1MB) / PAGE_SIZE));
+    }
+
+    /* Check if we have a registry setting */
+    if (MmHighMemoryThreshold)
+    {
+        /* Convert it into pages */
+        MmHighMemoryThreshold *= (_1MB / PAGE_SIZE);
+    }
+    else
+    {
+        /* Otherwise, the default is three times the low memory threshold */
+        MmHighMemoryThreshold = (3 * MmLowMemoryThreshold);
+        ASSERT(MmHighMemoryThreshold > MmLowMemoryThreshold);
+    }
+
+    /* Make sure high threshold is actually higher than the low */
+    MmHighMemoryThreshold = max(MmHighMemoryThreshold, MmLowMemoryThreshold);
+
+    /* Create the memory events for all the thresholds */
+    Status = MiCreateMemoryEvent(&LowString, &MiLowMemoryEvent);
+    if (!NT_SUCCESS(Status))
+        return FALSE;
+
+    Status = MiCreateMemoryEvent(&HighString, &MiHighMemoryEvent);
+    if (!NT_SUCCESS(Status))
+        return FALSE;
+
+    Status = MiCreateMemoryEvent(&LowPagedPoolString, &MiLowPagedPoolEvent);
+    if (!NT_SUCCESS(Status))
+        return FALSE;
+
+    Status = MiCreateMemoryEvent(&HighPagedPoolString, &MiHighPagedPoolEvent);
+    if (!NT_SUCCESS(Status))
+        return FALSE;
+
+    Status = MiCreateMemoryEvent(&LowNonPagedPoolString, &MiLowNonPagedPoolEvent);
+    if (!NT_SUCCESS(Status))
+        return FALSE;
+
+    Status = MiCreateMemoryEvent(&HighNonPagedPoolString, &MiHighNonPagedPoolEvent);
+    if (!NT_SUCCESS(Status))
+        return FALSE;
+
+    /* Now setup the pool events */
+    MiInitializePoolEvents();
+
+    /* Set the initial event state */
+    MiNotifyMemoryEvents();
+
+    return TRUE;
+}
+
 VOID
 NTAPI
 MmDumpArmPfnDatabase(
