@@ -148,4 +148,15 @@ MiInitializeSessionWideAddresses(VOID)
     RtlClearAllBits(&MiSessionWideVaBitMap);
 }
 
+VOID
+NTAPI
+MiInitializeSessionWsSupport(VOID)
+{
+    DPRINT("MiInitializeSessionWsSupport()\n");
+
+    /* Initialize the list heads */
+    InitializeListHead(&MiSessionWsList);
+    InitializeListHead(&MmWorkingSetExpansionHead);
+}
+
 /* EOF */
