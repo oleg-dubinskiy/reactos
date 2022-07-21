@@ -1825,7 +1825,8 @@ NTAPI
 ExFreePool(
     PVOID P)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    /* Just free without checking for the tag */
+    ExFreePoolWithTag(P, 0);
 }
 
 VOID
