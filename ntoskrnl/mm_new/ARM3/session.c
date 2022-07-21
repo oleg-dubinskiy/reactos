@@ -159,4 +159,55 @@ MiInitializeSessionWsSupport(VOID)
     InitializeListHead(&MmWorkingSetExpansionHead);
 }
 
+VOID
+NTAPI
+MiInitializeSessionIds(VOID)
+{
+    PFN_NUMBER TotalPages;
+    ULONG BitmapSize;
+    ULONG Size;
+
+    DPRINT("MiInitializeSessionIds()\n");
+
+    /* Setup the total number of data pages needed for the structure */
+    MiSessionDataPages = (ROUND_TO_PAGES(sizeof(MM_SESSION_SPACE)) >> PAGE_SHIFT);
+    ASSERT(MiSessionDataPages <= (MI_SESSION_DATA_PAGES_MAXIMUM - 3));
+
+    TotalPages = (MI_SESSION_DATA_PAGES_MAXIMUM - MiSessionDataPages);
+
+    /* Setup the number of pages needed for session pool tags */
+    MiSessionTagSizePages = 2;
+    MiSessionBigPoolPages = 1;
+    MiSessionTagPages = (MiSessionTagSizePages + MiSessionBigPoolPages);
+
+    ASSERT(MiSessionTagPages <= TotalPages);
+    ASSERT(MiSessionTagPages < MI_SESSION_TAG_PAGES_MAXIMUM);
+
+    /* Total pages needed for a session (FIXME: Probably different on PAE/x64) */
+    MiSessionCreateCharge = (1 + MiSessionDataPages + MiSessionTagPages);
+
+    /* Initialize the lock */
+    KeInitializeGuardedMutex(&MiSessionIdMutex);
+
+    /* Allocate the bitmap */
+    BitmapSize = (((MI_INITIAL_SESSION_IDS + 0x1F) / 0x20) * sizeof(ULONG));
+    Size = sizeof(RTL_BITMAP) + BitmapSize;
+
+    MiSessionIdBitmap = ExAllocatePoolWithTag(PagedPool, Size, TAG_MM);
+    if (!MiSessionIdBitmap)
+    {
+        /* Die if we couldn't allocate the bitmap */
+        KeBugCheckEx(INSTALL_MORE_MEMORY,
+                     MmNumberOfPhysicalPages,
+                     MmLowestPhysicalPage,
+                     MmHighestPhysicalPage,
+                     0x200);
+        return;
+    }
+
+    /* Free all the bits */
+    RtlInitializeBitMap(MiSessionIdBitmap, (PVOID)(MiSessionIdBitmap + 1), MI_INITIAL_SESSION_IDS);
+    RtlClearAllBits(MiSessionIdBitmap);
+}
+
 /* EOF */
