@@ -36,6 +36,13 @@ extern MMPDE ValidKernelPde;
 extern MMPDE ValidKernelPte;
 extern ULONG MmSecondaryColorMask;
 extern ULONG MmSystemPageColor;
+extern PFN_NUMBER MmSizeOfPagedPoolInPages;
+extern PFN_NUMBER MiLowPagedPoolThreshold;
+extern PFN_NUMBER MiHighPagedPoolThreshold;
+extern PKEVENT MiLowPagedPoolEvent;
+extern PKEVENT MiHighPagedPoolEvent;
+extern PKEVENT MiLowNonPagedPoolEvent;
+extern PKEVENT MiHighNonPagedPoolEvent;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -842,6 +849,65 @@ MmDeterminePoolType(
         return NonPagedPool;
 
     KeBugCheckEx(BAD_POOL_CALLER, 0x42, (ULONG_PTR)PoolAddress, 0, 0);
+}
+
+INIT_FUNCTION
+VOID
+NTAPI
+MiInitializePoolEvents(VOID)
+{
+    PFN_NUMBER FreePoolInPages;
+    KIRQL OldIrql;
+
+    /* Lock paged pool */
+    KeAcquireGuardedMutex(&MmPagedPoolMutex);
+
+    /* Total size of the paged pool minus the allocated size, is free */
+    FreePoolInPages = (MmSizeOfPagedPoolInPages - MmPagedPoolInfo.AllocatedPagedPool);
+
+    /* Check the initial state high state */
+    if (FreePoolInPages >= MiHighPagedPoolThreshold)
+        /* We have plenty of pool */
+        KeSetEvent(MiHighPagedPoolEvent, 0, FALSE);
+    else
+        /* We don't */
+        KeClearEvent(MiHighPagedPoolEvent);
+
+    /* Check the initial low state */
+    if (FreePoolInPages <= MiLowPagedPoolThreshold)
+        /* We're very low in free pool memory */
+        KeSetEvent(MiLowPagedPoolEvent, 0, FALSE);
+    else
+        /* We're not */
+        KeClearEvent(MiLowPagedPoolEvent);
+
+    /* Release the paged pool lock */
+    KeReleaseGuardedMutex(&MmPagedPoolMutex);
+
+    /* Now it's time for the nonpaged pool lock */
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMmNonPagedPoolLock);
+
+    /* Free pages are the maximum minus what's been allocated */
+    FreePoolInPages = (MmMaximumNonPagedPoolInPages - MmAllocatedNonPagedPool);
+
+    /* Check if we have plenty */
+    if (FreePoolInPages >= MiHighNonPagedPoolThreshold)
+        /* We do, set the event */
+        KeSetEvent(MiHighNonPagedPoolEvent, 0, FALSE);
+    else
+        /* We don't, clear the event */
+        KeClearEvent(MiHighNonPagedPoolEvent);
+
+    /* Check if we have very little */
+    if (FreePoolInPages <= MiLowNonPagedPoolThreshold)
+        /* We do, set the event */
+        KeSetEvent(MiLowNonPagedPoolEvent, 0, FALSE);
+    else
+        /* We don't, clear it */
+        KeClearEvent(MiLowNonPagedPoolEvent);
+
+    /* We're done, release the nonpaged pool lock */
+    KeReleaseQueuedSpinLock(LockQueueMmNonPagedPoolLock, OldIrql);
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
