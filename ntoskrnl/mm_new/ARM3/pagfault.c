@@ -111,7 +111,7 @@ MiResolveDemandZeroFault(
     ASSERT (Pte->u.Hard.Valid == 0);
 
     /* Assert we have enough pages */
-    if (MmAvailablePages < 0x80) // FIMXE MiEnsureAvailablePageOrWait()
+    if (MmAvailablePages < 0x80) // FIXME MiEnsureAvailablePageOrWait()
     {
         if (HaveLock)
             MiUnlockPfnDb(OldIrql, APC_LEVEL);
@@ -314,8 +314,323 @@ MmAccessFault(
     _In_ KPROCESSOR_MODE Mode,
     _In_ PVOID TrapInformation)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMMPDE Pde = MiAddressToPde(Address);
+    PMMPTE Pte = MiAddressToPte(Address);
+    PMMPTE SectionProto = NULL;
+    PETHREAD CurrentThread;
+    PEPROCESS Process;
+    PMMSUPPORT WorkingSet;
+    PMMPFN Pfn;
+    MMPTE TempPte;
+    BOOLEAN IsSessionAddress;
+    KIRQL OldIrql;
+    KIRQL PfnLockIrql;
+    KIRQL WsLockIrql = MM_NOIRQL;
+    NTSTATUS Status;
+
+    DPRINT1("MmAccessFault: %X, %p, Pde %p [%p], Pte %p [%p], %X, %p\n",
+            FaultCode, Address, Pde, Pde->u.Long, Pte, Pte->u.Long, Mode, TrapInformation);
+
+    OldIrql = KeGetCurrentIrql();
+
+    /* Check for page fault on high IRQL */
+    if (OldIrql > APC_LEVEL)
+    {
+      #if (_MI_PAGING_LEVELS < 3)
+        /* Could be a page table for paged pool, which we'll allow */
+        if (MI_IS_SYSTEM_PAGE_TABLE_ADDRESS(Address))
+            MiSynchronizeSystemPde((PMMPDE)Pte);
+
+        DPRINT("MiCheckPdeForPagedPool(Address %p)\n", Address);
+        MiCheckPdeForPagedPool(Address);
+      #endif
+
+        /* Check if any of the top-level pages are invalid */
+        if (!Pde->u.Hard.Valid || !Pte->u.Hard.Valid)
+        {
+            /* This fault is not valid, print out some debugging help */
+            DbgPrint("MM:***PAGE FAULT AT IRQL > 1  Va %p, IRQL %lx\n", Address, OldIrql);
+
+            if (TrapInformation)
+            {
+                PKTRAP_FRAME TrapFrame = TrapInformation;
+                DbgPrint("MM:***EIP %p, EFL %p\n", TrapFrame->Eip, TrapFrame->EFlags);
+                DbgPrint("MM:***EAX %p, ECX %p EDX %p\n", TrapFrame->Eax, TrapFrame->Ecx, TrapFrame->Edx);
+                DbgPrint("MM:***EBX %p, ESI %p EDI %p\n", TrapFrame->Ebx, TrapFrame->Esi, TrapFrame->Edi);
+            }
+
+            /* Tell the trap handler to fail */
+            DPRINT1("MmAccessFault: return %X\n", (STATUS_IN_PAGE_ERROR | 0x10000000));
+            ASSERT(FALSE);//DbgBreakPoint();
+            return (STATUS_IN_PAGE_ERROR | 0x10000000);
+        }
+
+        /* Not yet implemented in ReactOS */
+        ASSERT(MI_IS_PAGE_LARGE(Pde) == FALSE);
+        ASSERT((!MI_IS_NOT_PRESENT_FAULT(FaultCode) && MI_IS_PAGE_COPY_ON_WRITE(Pte)) == FALSE);
+
+        /* Check if this was a write */
+        if (MI_IS_WRITE_ACCESS(FaultCode))
+        {
+            /* Was it to a read-only page? */
+            Pfn = MI_PFN_ELEMENT(Pte->u.Hard.PageFrameNumber);
+
+            if (!(Pte->u.Long & PTE_READWRITE) &&
+                !(Pfn->OriginalPte.u.Soft.Protection & MM_READWRITE))
+            {
+                /* Crash with distinguished bugcheck code */
+                KeBugCheckEx(ATTEMPTED_WRITE_TO_READONLY_MEMORY,
+                             (ULONG_PTR)Address,
+                             Pte->u.Long,
+                             (ULONG_PTR)TrapInformation,
+                             10);
+            }
+        }
+
+        /* Nothing is actually wrong */
+        DPRINT("Fault at IRQL %u is ok (%p)\n", OldIrql, Address);
+        return STATUS_SUCCESS;
+    }
+
+    /* Check for kernel fault address */
+    if (Address >= MmSystemRangeStart)
+    {
+        /* Bail out, if the fault came from user mode */
+        if (Mode == UserMode)
+        {
+            DPRINT1("MmAccessFault: return STATUS_ACCESS_VIOLATION\n");
+            return STATUS_ACCESS_VIOLATION;
+        }
+
+        /* Check if the higher page table entries are invalid */
+        if (!Pde->u.Hard.Valid)
+        {
+            DPRINT("MiCheckPdeForPagedPool(Address %p)\n", Address);
+            MiCheckPdeForPagedPool(Address);
+
+            if (!Pde->u.Hard.Valid)
+            {
+                if (KeInvalidAccessAllowed(TrapInformation))
+                {
+                    DPRINT1("MmAccessFault: return STATUS_ACCESS_VIOLATION\n");
+                    return STATUS_ACCESS_VIOLATION;
+                }
+
+                /* PDE (still) not valid, kill the system */
+                KeBugCheckEx(PAGE_FAULT_IN_NONPAGED_AREA,
+                             (ULONG_PTR)Address,
+                             FaultCode,
+                             (ULONG_PTR)TrapInformation,
+                             2);
+            }
+        }
+        else
+        {
+            if (MI_IS_PAGE_LARGE(Pde))
+            {
+                DPRINT1("MmAccessFault: FIXME! MI_IS_PAGE_LARGE(Pde) %p\n", Pde);
+                ASSERT(FALSE);//DbgBreakPoint();
+                return STATUS_SUCCESS;
+            }
+        }
+
+        /* Session faults? */
+        IsSessionAddress = MI_IS_SESSION_ADDRESS(Address);
+
+        /* The PDE is valid, so read the PTE */
+        TempPte = *Pte;
+        if (TempPte.u.Hard.Valid)
+        {
+            /* Check if this was system space or session space */
+            if (!IsSessionAddress)
+            {
+                /* Check if the PTE is still valid under PFN lock */
+                PfnLockIrql = MiLockPfnDb(APC_LEVEL);
+                TempPte = *Pte;
+
+                if (TempPte.u.Hard.Valid)
+                {
+                    /* Check if this was a write */
+                    if (MI_IS_WRITE_ACCESS(FaultCode))
+                    {
+                        /* Was it to a read-only page? */
+                        Pfn = MI_PFN_ELEMENT(TempPte.u.Hard.PageFrameNumber);
+
+                        if (!(TempPte.u.Long & PTE_READWRITE) &&
+                            !(Pfn->OriginalPte.u.Soft.Protection & MM_READWRITE))
+                        {
+                            /* Crash with distinguished bugcheck code */
+                            KeBugCheckEx(ATTEMPTED_WRITE_TO_READONLY_MEMORY,
+                                         (ULONG_PTR)Address,
+                                         (ULONG_PTR)TempPte.u.Long,
+                                         (ULONG_PTR)TrapInformation,
+                                         11);
+                        }
+                    }
+
+                    if (MI_IS_WRITE_ACCESS(FaultCode) && !Pte->u.Hard.Dirty)
+                        MiSetDirtyBit(Address, Pte, TRUE);
+                }
+
+                /* Release PFN lock and return all good */
+                MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
+                DPRINT("MmAccessFault: return STATUS_SUCCESS\n");
+                return STATUS_SUCCESS;
+            }
+        }
+
+        /* Check if this was a session PTE that needs to remap the session PDE */
+        if (MI_IS_SESSION_PTE(Address))
+        {
+            /* Do the remapping */
+            DPRINT1("MmAccessFault: FIXME! MI_IS_SESSION_PTE(%p) is TRUE\n", Address);
+            ASSERT(FALSE);//DbgBreakPoint(); 
+            Status = STATUS_NOT_IMPLEMENTED;
+        }
+
+        /* Check for a fault on the page table or hyperspace */
+        if (MI_IS_PAGE_TABLE_OR_HYPER_ADDRESS(Address))
+        {
+            DPRINT("MmAccessFault: call MiCheckPdeForPagedPool(%p)\n", Address);
+
+            if (MiCheckPdeForPagedPool(Address) == STATUS_WAIT_1)
+            {
+                DPRINT("MmAccessFault: return STATUS_SUCCESS\n");
+                return STATUS_SUCCESS;
+            }
+
+            goto UserFault;
+        }
+
+        /* Get the current thread */
+        CurrentThread = PsGetCurrentThread();
+
+        /* What kind of address is this */
+        if (!IsSessionAddress)
+        {
+            /* Use the system working set */
+            WorkingSet = &MmSystemCacheWs;
+            Process = NULL;
+        }
+        else
+        {
+            /* Use the session process and working set */
+            WorkingSet = &MmSessionSpace->GlobalVirtualAddress->Vm;
+            Process = HYDRA_PROCESS;
+        }
+
+        /* Acquire the working set lock */
+        KeRaiseIrql(APC_LEVEL, &WsLockIrql);
+        MiLockWorkingSet(CurrentThread, WorkingSet);
+
+        /* Re-read PTE now that we own the lock */
+        TempPte = *Pte;
+        if (TempPte.u.Hard.Valid)
+        {
+            DPRINT1("MmAccessFault: FIXME! TempPte.u.Hard.Valid\n");
+            ASSERT(FALSE);//DbgBreakPoint();
+        }
+
+        /* Check one kind of prototype PTE */
+        if (TempPte.u.Soft.Prototype)
+        {
+            DPRINT1("MmAccessFault: FIXME! TempPte.u.Soft.Prototype\n");
+            ASSERT(FALSE);//DbgBreakPoint();
+        }
+        else if (!TempPte.u.Soft.Transition && !TempPte.u.Soft.Protection)
+        {
+            DPRINT1("MmAccessFault: FIXME! !Transition and !Protection\n");
+            ASSERT(FALSE);//DbgBreakPoint();
+        }
+        else if (TempPte.u.Soft.Protection == MM_NOACCESS)
+        {
+            DPRINT1("MmAccessFault: FIXME! Protection == MM_NOACCESS\n");
+            ASSERT(FALSE);//DbgBreakPoint();
+        }
+
+        if (MI_IS_WRITE_ACCESS(FaultCode) &&
+            !SectionProto &&
+            !IsSessionAddress &&
+            !TempPte.u.Hard.Valid)
+        {
+            ULONG protectionCode;
+
+            /* Get the protection code */
+            if (TempPte.u.Soft.Transition)
+                protectionCode = (ULONG)TempPte.u.Trans.Protection;
+            else
+                protectionCode = (ULONG)TempPte.u.Soft.Protection;
+                
+            if (!(protectionCode & MM_READWRITE))
+            {
+                /* Bugcheck the system! */
+                KeBugCheckEx(ATTEMPTED_WRITE_TO_READONLY_MEMORY,
+                             (ULONG_PTR)Address,
+                             TempPte.u.Long,
+                             (ULONG_PTR)TrapInformation,
+                             14);
+            }
+        }
+
+        /* Now do the real fault handling */
+        Status = MiDispatchFault(FaultCode,
+                                 Address,
+                                 Pte,
+                                 SectionProto,
+                                 FALSE,
+                                 Process,
+                                 TrapInformation,
+                                 NULL);
+
+        /* Release the working set */
+        ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+        if (WorkingSet->Flags.GrowWsleHash)
+        {
+            DPRINT1("MmAccessFault: FIXME! WorkingSet->Flags.GrowWsleHash\n");
+            ASSERT(FALSE);
+        }
+
+        MiUnlockWorkingSet(CurrentThread, WorkingSet);
+        ASSERT(WsLockIrql != MM_NOIRQL);
+        KeLowerIrql(WsLockIrql);
+
+        if (!(WorkingSet->PageFaultCount & 0xFFF) && (MmAvailablePages < 1024))
+        {
+            DPRINT1("MmAccessFault: FIXME! MmAvailablePages %X\n", MmAvailablePages);
+            ASSERT(FALSE);//DbgBreakPoint();
+        }
+
+        /* We are done! */
+        goto Exit1;
+    }
+
+    /* This is a user fault */
+UserFault:
+    DPRINT1("MmAccessFault: FIXME! UserFault\n");
+    ASSERT(FALSE);//DbgBreakPoint();
     return STATUS_NOT_IMPLEMENTED;
+
+Exit1:
+
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT("MmAccessFault: Status %X\n", Status);
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MmAccessFault: FIXME MmIsRetryIoStatus(). Status %X\n", Status);
+            ASSERT(FALSE);//DbgBreakPoint();
+        }
+
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT("MmAccessFault: fixeme NotifyRoutine. Status %X\n", Status);
+        }
+    }
+
+    DPRINT("MmAccessFault: return Status %X\n", Status);
+    return Status;
 }
 
 #if (_MI_PAGING_LEVELS == 2)
