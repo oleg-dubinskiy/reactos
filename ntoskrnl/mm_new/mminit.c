@@ -84,6 +84,58 @@ DPRINT1("%p - %p (%X) %s\n", MmNonPagedPoolExpansionStart, MmNonPagedPoolEnd, _N
 
 }
 
+VOID
+NTAPI
+MmpDeleteSection(
+    _In_ PVOID ObjectBody)
+{
+    PSECTION Section = ObjectBody;
+    //PCONTROL_AREA ControlArea;
+
+    DPRINT("MmpDeleteSection: Section %p\n", Section);
+
+    if (!Section->Segment)
+    {
+        DPRINT("MmpDeleteSection: Segment is NULL\n");
+        return;
+    }
+
+    DPRINT1("MmpDeleteSection: FIXME! Section %p\n", Section);
+    ASSERT(FALSE);
+#if 0
+    ControlArea = Section->Segment->ControlArea;
+
+    if (Section->Address.StartingVpn)
+    {
+        KeAcquireGuardedMutex(&MmSectionBasedMutex);
+        MiRemoveNode(&Section->Address, &MmSectionBasedRoot);
+        KeReleaseGuardedMutex(&MmSectionBasedMutex);
+    }
+
+    if (Section->u.Flags.UserWritable &&
+        !ControlArea->u.Flags.Image &&
+        ControlArea->FilePointer)
+    {
+        ASSERT(Section->InitialPageProtection & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE));
+        InterlockedDecrement((PLONG)&ControlArea->WritableUserReferences);
+    }
+
+    MiDereferenceControlAreaBySection(ControlArea, Section->u.Flags.UserReference);
+#endif
+}
+
+VOID
+NTAPI
+MmpCloseSection(
+    _In_ PEPROCESS Process OPTIONAL,
+    _In_ PVOID Object,
+    _In_ ACCESS_MASK GrantedAccess,
+    _In_ ULONG ProcessHandleCount,
+    _In_ ULONG SystemHandleCount)
+{
+    DPRINT("MmpCloseSection(OB %p, HC %lu)\n", Object, ProcessHandleCount);
+}
+
 INIT_FUNCTION
 BOOLEAN
 NTAPI
