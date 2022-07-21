@@ -310,6 +310,73 @@ MiFindContiguousMemory(
     return BaseAddress;
 }
 
+PVOID
+NTAPI
+MiAllocateContiguousMemory(
+    _In_ SIZE_T NumberOfBytes,
+    _In_ PFN_NUMBER LowestAcceptablePfn,
+    _In_ PFN_NUMBER HighestAcceptablePfn,
+    _In_ PFN_NUMBER BoundaryPfn,
+    _In_ MEMORY_CACHING_TYPE CacheType)
+{
+    PVOID BaseAddress;
+    PFN_NUMBER SizeInPages;
+    MI_PFN_CACHE_ATTRIBUTE CacheAttribute;
+
+    /* Verify count and cache type */
+    ASSERT(NumberOfBytes != 0);
+    ASSERT(CacheType <= MmWriteCombined);
+
+    /* Compute size requested */
+    SizeInPages = BYTES_TO_PAGES(NumberOfBytes);
+
+    /* Convert the cache attribute and check for cached requests */
+    CacheAttribute = MiPlatformCacheAttributes[FALSE][CacheType];
+    if (CacheAttribute == MiCached)
+    {
+        /* Because initial nonpaged pool is supposed to be contiguous,
+           go ahead and try making a nonpaged pool allocation first.
+        */
+        BaseAddress = ExAllocatePoolWithTag(NonPagedPoolCacheAligned, NumberOfBytes, 'mCmM');
+        if (BaseAddress)
+        {
+            /* Now make sure it's actually contiguous (if it came from expansion it might not be). */
+            if (MiCheckForContiguousMemory(BaseAddress,
+                                           SizeInPages,
+                                           SizeInPages,
+                                           LowestAcceptablePfn,
+                                           HighestAcceptablePfn,
+                                           BoundaryPfn,
+                                           CacheAttribute))
+            {
+                /* Sweet, we're in business! */
+                return BaseAddress;
+            }
+
+            /* No such luck */
+            ExFreePoolWithTag(BaseAddress, 'mCmM');
+        }
+    }
+
+    /* According to MSDN, the system won't try anything else if you're higher than APC level. */
+    if (KeGetCurrentIrql() > APC_LEVEL)
+        return NULL;
+
+    /* Otherwise, we'll go try to find some */
+    BaseAddress = MiFindContiguousMemory(LowestAcceptablePfn,
+                                         HighestAcceptablePfn,
+                                         BoundaryPfn,
+                                         SizeInPages,
+                                         CacheType);
+    if (!BaseAddress)
+    {
+        DPRINT1("Unable to allocate contiguous memory for %d bytes (%d pages), out of memory!\n",
+                NumberOfBytes, SizeInPages);
+    }
+
+    return BaseAddress;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PVOID
