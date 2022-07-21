@@ -8,6 +8,9 @@
 
 /* GLOBALS ********************************************************************/
 
+/* Mask for image section page protection */
+#define IMAGE_SCN_PROTECTION_MASK (IMAGE_SCN_MEM_WRITE | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_EXECUTE)
+
 LIST_ENTRY PsLoadedModuleList;
 LIST_ENTRY MmLoadedUserImageList;
 ERESOURCE PsLoadedModuleResource;
@@ -801,6 +804,133 @@ MiInitializeLoadedModuleList(
 
     /* We're done */
     return TRUE;
+}
+
+VOID
+NTAPI
+MiSetSystemCodeProtection(
+    _In_ PMMPTE FirstPte,
+    _In_ PMMPTE LastPte,
+    _In_ ULONG Protection)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+MiWriteProtectSystemImage(
+    _In_ PVOID ImageBase)
+{
+    PIMAGE_SECTION_HEADER SectionHeaders;
+    PIMAGE_SECTION_HEADER Section;
+    PIMAGE_NT_HEADERS NtHeaders;
+    PVOID SectionBase;
+    PVOID SectionEnd;
+    PMMPTE FirstPte;
+    PMMPTE LastPte;
+    ULONG SectionSize;
+    ULONG Protection;
+    ULONG ix;
+
+    /* Check if the registry setting is on or not */
+    if (!MmEnforceWriteProtection)
+    {
+        /* Ignore section protection */
+        DPRINT1("MiWriteProtectSystemImage: Ignore section protection %p. FIXME\n", ImageBase);
+        return;
+    }
+
+    /* Large page mapped images are not supported */
+    NT_ASSERT(!MI_IS_PHYSICAL_ADDRESS(ImageBase));
+
+    /* Session images are not yet supported */
+    NT_ASSERT(!MI_IS_SESSION_ADDRESS(ImageBase));
+
+    /* Get the NT headers */
+    NtHeaders = RtlImageNtHeader(ImageBase);
+    if (!NtHeaders)
+    {
+        DPRINT1("Failed to get NT headers for image @ %p\n", ImageBase);
+        return;
+    }
+
+    /* Don't touch NT4 drivers */
+    if ((NtHeaders->OptionalHeader.MajorOperatingSystemVersion < 5) ||
+        (NtHeaders->OptionalHeader.MajorSubsystemVersion < 5))
+    {
+        DPRINT1("Skipping NT 4 driver @ %p\n", ImageBase);
+        return;
+    }
+
+    /* Get the section headers */
+    SectionHeaders = IMAGE_FIRST_SECTION(NtHeaders);
+
+    /* Get the base address of the first section */
+    SectionBase = Add2Ptr(ImageBase, SectionHeaders[0].VirtualAddress);
+
+    /* Start protecting the image header as R/O */
+    FirstPte = MiAddressToPte(ImageBase);
+    LastPte = (MiAddressToPte(SectionBase) - 1);
+    Protection = IMAGE_SCN_MEM_READ;
+
+    if (LastPte >= FirstPte)
+        MiSetSystemCodeProtection(FirstPte, LastPte, IMAGE_SCN_MEM_READ);
+
+    /* Loop the sections */
+    for (ix = 0; ix < NtHeaders->FileHeader.NumberOfSections; ix++)
+    {
+        /* Get the section base address and size */
+        Section = &SectionHeaders[ix];
+        SectionBase = Add2Ptr(ImageBase, Section->VirtualAddress);
+        SectionSize = max(Section->SizeOfRawData, Section->Misc.VirtualSize);
+
+        /* Get the first PTE of this section */
+        FirstPte = MiAddressToPte(SectionBase);
+
+        /* Check for overlap with the previous range */
+        if (FirstPte == LastPte)
+        {
+            /* Combine the old and new protection by ORing them */
+            Protection |= (Section->Characteristics & IMAGE_SCN_PROTECTION_MASK);
+
+            /* Update the protection for this PTE */
+            MiSetSystemCodeProtection(FirstPte, FirstPte, Protection);
+
+            /* Skip this PTE */
+            FirstPte++;
+        }
+
+        /* There can not be gaps! */
+        NT_ASSERT(FirstPte == (LastPte + 1));
+
+        /* Get the end of the section and the last PTE */
+        SectionEnd = Add2Ptr(SectionBase, (SectionSize - 1));
+
+        NT_ASSERT(SectionEnd < Add2Ptr(ImageBase, NtHeaders->OptionalHeader.SizeOfImage));
+
+        LastPte = MiAddressToPte(SectionEnd);
+
+        /* If there are no more pages (after an overlap), skip this section */
+        if (LastPte < FirstPte)
+        {
+            NT_ASSERT(FirstPte == (LastPte + 1));
+            continue;
+        }
+
+        /* Get the section protection */
+        Protection = (Section->Characteristics & IMAGE_SCN_PROTECTION_MASK);
+
+        /* Update the protection for this section */
+        MiSetSystemCodeProtection(FirstPte, LastPte, Protection);
+    }
+
+    /* Image should end with the last section */
+    if (ALIGN_UP_POINTER_BY(SectionEnd, PAGE_SIZE) != Add2Ptr(ImageBase, NtHeaders->OptionalHeader.SizeOfImage))
+    {
+        DPRINT1("ImageBase 0x%p ImageSize 0x%lx Section %u VA 0x%lx Raw 0x%lx virt 0x%lx\n",
+                ImageBase, NtHeaders->OptionalHeader.SizeOfImage, ix,
+                Section->VirtualAddress, Section->SizeOfRawData, Section->Misc.VirtualSize);
+    }
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
