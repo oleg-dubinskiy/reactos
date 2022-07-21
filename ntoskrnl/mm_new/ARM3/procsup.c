@@ -467,8 +467,90 @@ MmCreateKernelStack(
     _In_ BOOLEAN GuiStack,
     _In_ UCHAR Node)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PSLIST_ENTRY SListEntry;
+    PVOID BaseAddress;
+    PMMPTE Pte;
+    PMMPTE StackPte;
+    MMPTE TempPte;
+    MMPTE InvalidPte;
+    PFN_NUMBER PageFrameIndex;
+    PFN_COUNT StackPtes;
+    PFN_COUNT StackPages;
+    ULONG ix;
+    KIRQL OldIrql;
+
+    /* Calculate pages needed */
+    if (GuiStack)
+    {
+        /* We'll allocate 64KB stack, but only commit 12K */
+        StackPtes = BYTES_TO_PAGES(MmLargeStackSize);
+        StackPages = BYTES_TO_PAGES(KERNEL_LARGE_STACK_COMMIT);
+    }
+    else
+    {
+        /* If the dead stack S-LIST has a stack on it, use it instead of allocating new system PTEs for this stack */
+        if (ExQueryDepthSList(&MmDeadStackSListHead))
+        {
+            SListEntry = InterlockedPopEntrySList(&MmDeadStackSListHead);
+            if (SListEntry)
+            {
+                BaseAddress = (SListEntry + 1);
+                return BaseAddress;
+            }
+        }
+
+        /* We'll allocate 12K and that's it */
+        StackPtes = BYTES_TO_PAGES(KERNEL_STACK_SIZE);
+        StackPages = StackPtes;
+    }
+
+    /* Reserve stack pages, plus a guard page */
+    StackPte = MiReserveSystemPtes((StackPtes + 1), SystemPteSpace);
+    if (!StackPte)
+        return NULL;
+
+    /* Get the stack address */
+    BaseAddress = MiPteToAddress(StackPte + StackPtes + 1);
+
+    /* Select the right PTE address where we actually start committing pages */
+    Pte = StackPte;
+    if (GuiStack)
+        Pte += BYTES_TO_PAGES(MmLargeStackSize - KERNEL_LARGE_STACK_COMMIT);
+
+
+    /* Setup the temporary invalid PTE */
+    MI_MAKE_SOFTWARE_PTE(&InvalidPte, MM_NOACCESS);
+
+    /* Setup the template stack PTE */
+    MI_MAKE_HARDWARE_PTE_KERNEL(&TempPte, (Pte + 1), MM_READWRITE, 0);
+
+    /* Acquire the PFN DB lock */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    /* Loop each stack page */
+    for (ix = 0; ix < StackPages; ix++)
+    {
+        Pte++;
+
+        /* Get a page and write the current invalid PTE */
+        MI_SET_USAGE(MI_USAGE_KERNEL_STACK);
+        MI_SET_PROCESS2(PsGetCurrentProcess()->ImageFileName);
+        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        MI_WRITE_INVALID_PTE(Pte, InvalidPte);
+
+        /* Initialize the PFN entry for this page */
+        MiInitializePfn(PageFrameIndex, Pte, 1);
+
+        /* Write the valid PTE */
+        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
+        MI_WRITE_VALID_PTE(Pte, TempPte);
+    }
+
+    /* Release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    /* Return the stack address */
+    return BaseAddress;
 }
 
 VOID
