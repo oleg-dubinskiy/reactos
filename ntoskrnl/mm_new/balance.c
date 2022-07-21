@@ -255,4 +255,87 @@ MiTrimMemoryConsumer(
     return Target;
 }
 
+static
+BOOLEAN
+MiIsBalancerThread(VOID)
+{
+    return (MiBalancerThreadHandle != NULL) && (PsGetCurrentThreadId() == MiBalancerThreadId.UniqueThread);
+}
+
+VOID
+NTAPI
+MiBalancerThread(
+    PVOID Unused)
+{
+    PVOID WaitObjects[2];
+    ULONG InitialTarget = 0;
+    ULONG ix;
+    NTSTATUS Status;
+
+    WaitObjects[0] = &MiBalancerEvent;
+    WaitObjects[1] = &MiBalancerTimer;
+
+    while (TRUE)
+    {
+        Status = KeWaitForMultipleObjects(2, WaitObjects, WaitAny, Executive, KernelMode, FALSE, NULL, NULL);
+
+        if (Status != STATUS_WAIT_0 && Status != STATUS_WAIT_1)
+        {
+            DPRINT1("MiBalancerThread: Status %X\n", Status);
+            KeBugCheck(MEMORY_MANAGEMENT);
+            return;
+        }
+
+      #if (_MI_PAGING_LEVELS == 2)
+        if (!MiIsBalancerThread())
+        {
+            KIRQL OldIrql = MiLockPfnDb(APC_LEVEL); /* Acquire PFN lock */
+            //PEPROCESS Process = PsGetCurrentProcess();
+            ULONG_PTR Address;
+            PMMPDE pointerPde;
+
+            /* Clean up the unused PDEs */
+            for (Address = (ULONG_PTR)MI_LOWEST_VAD_ADDRESS;
+                 Address < (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS;
+                 Address += (PTE_PER_PAGE * PAGE_SIZE))
+            {
+                if (MiQueryPageTableReferences((PVOID)Address))
+                    continue;
+
+                pointerPde = MiAddressToPde(Address);
+                if (pointerPde->u.Hard.Valid)
+                {
+                    DPRINT1("MiBalancerThread: FIXME! pointerPde %p\n", pointerPde);
+                    ASSERT(FALSE);
+                    //MiDeletePte(..);
+                }
+
+                ASSERT(pointerPde->u.Hard.Valid == 0);
+            }
+
+            /* Release lock */
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        }
+      #endif
+
+        do
+        {
+            ULONG OldTarget = InitialTarget;
+
+            /* Trim each consumer */
+            for (ix = 0; ix < MC_MAXIMUM; ix++)
+                InitialTarget = MiTrimMemoryConsumer(ix, InitialTarget);
+
+            /* No pages left to swap! */
+            if (InitialTarget && InitialTarget == OldTarget)
+            {
+                /* Game over */
+                DPRINT1("MiBalancerThread: InitialTarget %X\n", InitialTarget);
+                KeBugCheck(NO_PAGES_AVAILABLE);
+            }
+        }
+        while (InitialTarget != 0);
+    }
+}
+
 /* EOF */
