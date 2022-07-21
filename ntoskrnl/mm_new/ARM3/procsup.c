@@ -88,8 +88,26 @@ MmInitializeHandBuiltProcess(
     _In_ PEPROCESS Process,
     _In_ PULONG_PTR DirectoryTableBase)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    /* Share the directory base with the idle process */
+    DirectoryTableBase[0] = PsGetCurrentProcess()->Pcb.DirectoryTableBase[0];
+    DirectoryTableBase[1] = PsGetCurrentProcess()->Pcb.DirectoryTableBase[1];
+
+    /* Initialize the Addresss Space */
+    KeInitializeGuardedMutex(&Process->AddressCreationLock);
+    KeInitializeSpinLock(&Process->HyperSpaceLock);
+
+    Process->Vm.WorkingSetExpansionLinks.Flink = NULL;
+
+    ASSERT(Process->VadRoot.NumberGenericTableElements == 0);
+    Process->VadRoot.BalancedRoot.u1.Parent = &Process->VadRoot.BalancedRoot;
+
+    /* Use idle process Working set */
+    Process->Vm.VmWorkingSetList = PsGetCurrentProcess()->Vm.VmWorkingSetList;
+
+    /* Done */
+    Process->HasAddressSpace = TRUE;//??
+
+    return STATUS_SUCCESS;
 }
 
 INIT_FUNCTION
