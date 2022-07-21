@@ -407,6 +407,125 @@ MiNotifyMemoryEvents(VOID)
     }
 }
 
+INIT_FUNCTION
+NTSTATUS
+NTAPI
+MiCreateMemoryEvent(
+    _In_ PUNICODE_STRING Name,
+    _Out_ PKEVENT* Event)
+{
+    SECURITY_DESCRIPTOR SecurityDescriptor;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    HANDLE EventHandle;
+    PACL Dacl;
+    ULONG DaclLength;
+    NTSTATUS Status;
+
+    /* Create the SD */
+    Status = RtlCreateSecurityDescriptor(&SecurityDescriptor, SECURITY_DESCRIPTOR_REVISION);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MiCreateMemoryEvent: Status %X\n", Status);
+        return Status;
+    }
+
+    /* One ACL with 3 ACEs, containing each one SID */
+    DaclLength = sizeof(ACL) + (3 * sizeof(ACCESS_ALLOWED_ACE)) +
+                 RtlLengthSid(SeLocalSystemSid) +
+                 RtlLengthSid(SeAliasAdminsSid) +
+                 RtlLengthSid(SeWorldSid);
+
+    /* Allocate space for the DACL */
+    Dacl = ExAllocatePoolWithTag(PagedPool, DaclLength, 'lcaD');
+    if (!Dacl)
+    {
+        DPRINT1("MiCreateMemoryEvent: Allocate failed\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Setup the ACL inside it */
+    Status = RtlCreateAcl(Dacl, DaclLength, ACL_REVISION);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MiCreateMemoryEvent: Status %X\n", Status);
+        goto CleanUp;
+    }
+
+    /* Add query rights for everyone */
+    Status = RtlAddAccessAllowedAce(Dacl,
+                                    ACL_REVISION,
+                                    (SYNCHRONIZE | EVENT_QUERY_STATE | READ_CONTROL),
+                                    SeWorldSid);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MiCreateMemoryEvent: Status %X\n", Status);
+        goto CleanUp;
+    }
+
+    /* Full rights for the admin */
+    Status = RtlAddAccessAllowedAce(Dacl, ACL_REVISION, EVENT_ALL_ACCESS, SeAliasAdminsSid);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MiCreateMemoryEvent: Status %X\n", Status);
+        goto CleanUp;
+    }
+
+    /* As well as full rights for the system */
+    Status = RtlAddAccessAllowedAce(Dacl, ACL_REVISION, EVENT_ALL_ACCESS, SeLocalSystemSid);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MiCreateMemoryEvent: Status %X\n", Status);
+        goto CleanUp;
+    }
+
+    /* Set this DACL inside the SD */
+    Status = RtlSetDaclSecurityDescriptor(&SecurityDescriptor, TRUE, Dacl, FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MiCreateMemoryEvent: Status %X\n", Status);
+        goto CleanUp;
+    }
+
+    /* Setup the event attributes, making sure it's a permanent one */
+    InitializeObjectAttributes(&ObjectAttributes,
+                               Name,
+                               OBJ_KERNEL_HANDLE | OBJ_PERMANENT,
+                               NULL,
+                               &SecurityDescriptor);
+
+    /* Create the event */
+    Status = ZwCreateEvent(&EventHandle,
+                           EVENT_ALL_ACCESS,
+                           &ObjectAttributes,
+                           NotificationEvent,
+                           FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MiCreateMemoryEvent: Status %X\n", Status);
+    }
+
+CleanUp:
+
+    /* Free the DACL */
+    ExFreePoolWithTag(Dacl, 'lcaD');
+
+    /* Check if this is the success path */
+    if (NT_SUCCESS(Status))
+    {
+        /* Add a reference to the object, then close the handle we had */
+        Status = ObReferenceObjectByHandle(EventHandle,
+                                           EVENT_MODIFY_STATE,
+                                           ExEventObjectType,
+                                           KernelMode,
+                                           (PVOID*)Event,
+                                           NULL);
+        ZwClose (EventHandle);
+    }
+
+    /* Return status */
+    return Status;
+}
+
 VOID
 NTAPI
 MmDumpArmPfnDatabase(
