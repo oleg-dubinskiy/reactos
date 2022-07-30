@@ -429,6 +429,18 @@ MiCreatePagingFileMap(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+MiMapViewInSystemSpace(
+    _In_ PVOID SectionObject,
+    _In_ PMMSESSION Session,
+    _Out_ PVOID* MappedBase,
+    _Out_ PSIZE_T ViewSize)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 BOOLEAN
@@ -797,8 +809,11 @@ MmMapViewInSystemSpace(
     _Out_ PVOID* MappedBase,
     _Out_ PSIZE_T ViewSize)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAGED_CODE();
+    DPRINT("MmMapViewInSystemSpace: Section %p, MappedBase %p, ViewSize %I64X\n",
+           Section, (MappedBase ? *MappedBase : 0), (ViewSize ? (ULONGLONG)(*ViewSize) : 0ull));
+
+    return MiMapViewInSystemSpace((PSECTION)Section, &MmSession, MappedBase, ViewSize);
 }
 
 NTSTATUS
