@@ -61,6 +61,7 @@ extern SIZE_T MmSessionViewSize;
 extern PVOID MiSystemViewStart;
 extern SIZE_T MmSystemViewSize;
 extern LARGE_INTEGER MmHalfSecond;
+extern SIZE_T MmSharedCommit;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -257,6 +258,166 @@ MiInitializeSystemSpaceMap(
     RtlZeroMemory(Session->SystemSpaceViewTable, AllocSize);
 
     return TRUE;
+}
+
+NTSTATUS
+NTAPI
+MiCreatePagingFileMap(
+    _Out_ PSEGMENT* Segment,
+    _In_ PULONGLONG MaximumSize,
+    _In_ ULONG ProtectionMask,
+    _In_ ULONG AllocationAttributes)
+{
+    PCONTROL_AREA ControlArea;
+    PSEGMENT NewSegment;
+    PSUBSECTION Subsection;
+    PMMPTE SectionProto;
+    MMPTE TempPte;
+    ULONGLONG SizeLimit;
+    PFN_COUNT ProtoCount;
+
+    PAGED_CODE();
+    DPRINT("MiCreatePagingFileMap: MaximumSize %I64X, Protection %X, AllocAttributes %X\n",
+           (!MaximumSize ? 0ull : (*MaximumSize)), ProtectionMask, AllocationAttributes);
+
+    /* Pagefile-backed sections need a known size */
+    if (!(*MaximumSize))
+    {
+        DPRINT1("MiCreatePagingFileMap: STATUS_INVALID_PARAMETER_4 \n");
+        return STATUS_INVALID_PARAMETER_4;
+    }
+
+    /* Calculate the maximum size possible, given the section protos we'll need */
+    SizeLimit = (((MAXULONG_PTR - sizeof(SEGMENT)) / sizeof(MMPTE)) * PAGE_SIZE);
+
+    /* Fail if this size is too big */
+    if (*MaximumSize > SizeLimit)
+    {
+        DPRINT1("MiCreatePagingFileMap: SizeLimit %I64X, STATUS_SECTION_TOO_BIG\n", SizeLimit);
+        return STATUS_SECTION_TOO_BIG;
+    }
+
+    /* Calculate how many section protos will be needed */
+    ProtoCount = (PFN_COUNT)((*MaximumSize + (PAGE_SIZE - 1)) / PAGE_SIZE);
+
+    if (AllocationAttributes & SEC_COMMIT)
+    {
+        /* For commited memory, we must have a valid protection mask */
+        ASSERT(ProtectionMask != 0);
+
+        DPRINT("MiCreatePagingFileMap: FIXME MiChargeCommitment \n");
+
+        /* No large pages in ARM3 yet */
+        if (AllocationAttributes & SEC_LARGE_PAGES)
+        {
+            if (!(KeFeatureBits & KF_LARGE_PAGE))
+            {
+                DPRINT1("MiCreatePagingFileMap: STATUS_NOT_SUPPORTED \n");
+                return STATUS_NOT_SUPPORTED;
+            }
+
+            DPRINT1("MiCreatePagingFileMap: AllocationAttributes & SEC_LARGE_PAGES\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    /* The segment contains all the section protos, allocate it in paged pool */
+    NewSegment = ExAllocatePoolWithTag(PagedPool, (sizeof(SEGMENT) + (ProtoCount - 1) * sizeof(MMPTE)), 'tSmM');
+    if (!NewSegment)
+    {
+        DPRINT1("MiCreatePagingFileMap: STATUS_INSUFFICIENT_RESOURCES \n");
+        ASSERT(FALSE);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    *Segment = NewSegment;
+
+    /* Now allocate the control area, which has the subsection structure */
+    ControlArea = ExAllocatePoolWithTag(NonPagedPool, (sizeof(CONTROL_AREA) + sizeof(SUBSECTION)), 'aCmM');
+    if (!ControlArea)
+    {
+        DPRINT1("MiCreatePagingFileMap: STATUS_INSUFFICIENT_RESOURCES \n");
+        ExFreePoolWithTag(NewSegment, 'tSmM');
+        ASSERT(FALSE);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* And zero it out, filling the basic segmnet pointer and reference fields */
+    RtlZeroMemory(ControlArea, (sizeof(CONTROL_AREA) + sizeof(SUBSECTION)));
+
+    ControlArea->Segment = NewSegment;
+    ControlArea->NumberOfSectionReferences = 1;
+    ControlArea->NumberOfUserReferences = 1;
+
+    /* Convert allocation attributes to control area flags */
+    if (AllocationAttributes & SEC_BASED)
+        ControlArea->u.Flags.Based = 1;
+
+    if (AllocationAttributes & SEC_RESERVE)
+        ControlArea->u.Flags.Reserve = 1;
+
+    if (AllocationAttributes & SEC_COMMIT)
+        ControlArea->u.Flags.Commit = 1;
+
+    /* The subsection follows, write the mask, PTE count and point back to the CA */
+    Subsection = (PSUBSECTION)(ControlArea + 1);
+    Subsection->ControlArea = ControlArea;
+    Subsection->PtesInSubsection = ProtoCount;
+    Subsection->u.SubsectionFlags.Protection = ProtectionMask;
+
+    /* Zero out the segment's section protos, and link it with the control area */
+    SectionProto = &NewSegment->ThePtes[0];
+
+    RtlZeroMemory(NewSegment, sizeof(SEGMENT));
+
+    NewSegment->PrototypePte = SectionProto;
+    NewSegment->ControlArea = ControlArea;
+
+    /* Save some extra accounting data for the segment as well */
+    NewSegment->u1.CreatingProcess = PsGetCurrentProcess();
+    NewSegment->SizeOfSegment = (ProtoCount * PAGE_SIZE);
+    NewSegment->TotalNumberOfPtes = ProtoCount;
+    NewSegment->NonExtendedPtes = ProtoCount;
+
+    /* The subsection's base address is the first section proto in the segment */
+    Subsection->SubsectionBase = SectionProto;
+
+    /* Start with an empty PTE, unless this is a commit operation */
+    TempPte.u.Long = 0;
+
+    if (AllocationAttributes & SEC_COMMIT)
+    {
+        /* In which case, write down the protection mask in the section protos */
+        TempPte.u.Soft.Protection = ProtectionMask;
+
+        /* For accounting, also mark these pages as being committed */
+        NewSegment->NumberOfCommittedPages = ProtoCount;
+
+        InterlockedExchangeAdd((volatile PLONG)&MmSharedCommit, ProtoCount);
+
+        if (AllocationAttributes & SEC_LARGE_PAGES)
+        {
+            /* No large pages in ARM3 yet */
+            DPRINT1("MiCreatePagingFileMap: AllocationAttributes & SEC_LARGE_PAGES\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    /* The template PTE itself for the segment should also have the mask set */
+    NewSegment->SegmentPteTemplate.u.Soft.Protection = ProtectionMask;
+
+    /* Write out the section protos, for now they're simply demand zero */
+    if (AllocationAttributes & SEC_LARGE_PAGES)
+        return STATUS_SUCCESS;
+
+    /* Write out the section protos, for now they're simply demand zero */
+  #if defined (_WIN64) || defined (_X86PAE_)
+    RtlFillMemoryUlonglong(SectionProto, (ProtoCount * sizeof(MMPTE)), TempPte.u.Long);
+  #else
+    RtlFillMemoryUlong(SectionProto, (ProtoCount * sizeof(MMPTE)), TempPte.u.Long);
+  #endif
+
+    return STATUS_SUCCESS;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
