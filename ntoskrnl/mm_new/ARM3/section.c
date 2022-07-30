@@ -16,6 +16,46 @@ LIST_ENTRY MmUnusedSubsectionList;
 MMSESSION MmSession;
 MM_AVL_TABLE MmSectionBasedRoot;
 
+CHAR MmUserProtectionToMask1[16] =
+{
+    0,
+    MM_NOACCESS,
+    MM_READONLY,
+    (CHAR)MM_INVALID_PROTECTION,
+    MM_READWRITE,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    MM_WRITECOPY,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION
+};
+
+CHAR MmUserProtectionToMask2[16] =
+{
+    0,
+    MM_EXECUTE,
+    MM_EXECUTE_READ,
+    (CHAR)MM_INVALID_PROTECTION,
+    MM_EXECUTE_READWRITE,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    MM_EXECUTE_WRITECOPY,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION,
+    (CHAR)MM_INVALID_PROTECTION
+};
+
 extern PVOID MiSessionViewStart;   // 0xBE000000
 extern SIZE_T MmSessionViewSize;
 extern PVOID MiSystemViewStart;
@@ -23,6 +63,93 @@ extern SIZE_T MmSystemViewSize;
 extern LARGE_INTEGER MmHalfSecond;
 
 /* FUNCTIONS ******************************************************************/
+
+ULONG
+NTAPI
+MiMakeProtectionMask(IN ULONG Protect)
+{
+    ULONG Mask1;
+    ULONG Mask2;
+    ULONG ProtectMask;
+
+    DPRINT("MiMakeProtectionMask: Protect %X\n", Protect);
+
+    /* PAGE_EXECUTE_WRITECOMBINE is theoretically the maximum */
+    if (Protect >= (PAGE_WRITECOMBINE * 2))
+        return MM_INVALID_PROTECTION;
+
+    /* Windows API protection mask can be understood as two bitfields,
+       differing by whether or not execute rights are being requested
+    */
+    Mask1 = Protect & 0xF;
+    Mask2 = (Protect >> 4) & 0xF;
+
+    /* Check which field is there */
+    if (!Mask1)
+    {
+        /* Mask2 must be there, use it to determine the PTE protection */
+        if (!Mask2)
+            return MM_INVALID_PROTECTION;
+
+        ProtectMask = MmUserProtectionToMask2[Mask2];
+    }
+    else
+    {
+        /* Mask2 should not be there, use Mask1 to determine the PTE mask */
+        if (Mask2)
+            return MM_INVALID_PROTECTION;
+
+        ProtectMask = MmUserProtectionToMask1[Mask1];
+    }
+
+    /* Make sure the final mask is a valid one */
+    if (ProtectMask == MM_INVALID_PROTECTION)
+        return MM_INVALID_PROTECTION;
+
+    /* Check for PAGE_GUARD option */
+    if (Protect & PAGE_GUARD)
+    {
+        /* It's not valid on no-access, nocache, or writecombine pages */
+        if (ProtectMask == MM_NOACCESS || (Protect & (PAGE_NOCACHE | PAGE_WRITECOMBINE)))
+            /* Fail such requests */
+            return MM_INVALID_PROTECTION;
+
+        /* This actually turns on guard page in this scenario! */
+        ProtectMask |= MM_GUARDPAGE;
+    }
+
+    /* Check for nocache option */
+    if (Protect & PAGE_NOCACHE)
+    {
+        /* The earlier check should've eliminated this possibility */
+        ASSERT((Protect & PAGE_GUARD) == 0);
+
+        /* Check for no-access page or write combine page */
+        if (ProtectMask == MM_NOACCESS || (Protect & PAGE_WRITECOMBINE))
+            /* Such a request is invalid */
+            return MM_INVALID_PROTECTION;
+
+        /* Add the PTE flag */
+        ProtectMask |= MM_NOCACHE;
+    }
+
+    /* Check for write combine option */
+    if (Protect & PAGE_WRITECOMBINE)
+    {
+        /* The two earlier scenarios should've caught this */
+        ASSERT((Protect & (PAGE_GUARD | PAGE_NOACCESS)) == 0);
+
+        /* Don't allow on no-access pages */
+        if (ProtectMask == MM_NOACCESS)
+            return MM_INVALID_PROTECTION;
+
+        /* This actually turns on write-combine in this scenario! */
+        ProtectMask |= MM_NOACCESS;
+    }
+
+    /* Return the final MM PTE protection mask */
+    return ProtectMask;
+}
 
 NTSTATUS
 NTAPI
