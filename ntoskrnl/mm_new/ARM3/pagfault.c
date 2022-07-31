@@ -30,6 +30,49 @@ extern PVOID MmNonPagedPoolExpansionStart;
 
 /* FUNCTIONS ******************************************************************/
 
+FORCEINLINE
+BOOLEAN
+MiIsAccessAllowed(
+    _In_ ULONG ProtectionMask,
+    _In_ BOOLEAN Write,
+    _In_ BOOLEAN Execute)
+{
+    #define _BYTE_MASK(Bit0, Bit1, Bit2, Bit3, Bit4, Bit5, Bit6, Bit7) \
+        (Bit0)|(Bit1 << 1)|(Bit2 << 2)|(Bit3 << 3)|(Bit4 << 4)|(Bit5 << 5)|(Bit6 << 6)|(Bit7 << 7)
+
+    static const UCHAR AccessAllowedMask[2][2] =
+    {
+        {   // Protect 0  1  2  3  4  5  6  7
+            _BYTE_MASK(0, 1, 1, 1, 1, 1, 1, 1), // READ
+            _BYTE_MASK(0, 0, 1, 1, 0, 0, 1, 1), // EXECUTE READ
+        },
+        {
+            _BYTE_MASK(0, 0, 0, 0, 1, 1, 1, 1), // WRITE
+            _BYTE_MASK(0, 0, 0, 0, 0, 0, 1, 1), // EXECUTE WRITE
+        }
+    };
+
+    /* We want only the lower access bits */
+    ProtectionMask &= MM_PROTECT_ACCESS;
+
+    /* Look it up in the table */
+    return (((AccessAllowedMask[Write != 0][Execute != 0] >> ProtectionMask) & 1) == 1);
+}
+
+NTSTATUS
+NTAPI
+MiAccessCheck(
+    _In_ PMMPTE Pte,
+    _In_ BOOLEAN StoreInstruction,
+    _In_ KPROCESSOR_MODE PreviousMode,
+    _In_ ULONG_PTR ProtectionMask,
+    _In_ PVOID TrapFrame,
+    _In_ BOOLEAN LockHeld)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 NTAPI
 MmGetExecuteOptions(
@@ -211,6 +254,20 @@ MiResolveDemandZeroFault(
     /* It's all good now */
     DPRINT("MiResolveDemandZeroFault: Demand zero page has now been paged in\n");
     return STATUS_PAGE_FAULT_DEMAND_ZERO;
+}
+
+NTSTATUS
+NTAPI
+MiCompleteProtoPteFault(
+    _In_ BOOLEAN StoreInstruction,
+    _In_ PVOID Address,
+    _In_ PMMPTE Pte,
+    _In_ PMMPTE SectionProto,
+    _In_ KIRQL OldIrql,
+    _In_ PMMPFN* LockedProtoPfn)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 NTSTATUS
