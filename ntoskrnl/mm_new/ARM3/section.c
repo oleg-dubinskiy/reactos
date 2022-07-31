@@ -56,6 +56,18 @@ CHAR MmUserProtectionToMask2[16] =
     (CHAR)MM_INVALID_PROTECTION
 };
 
+ULONG MmCompatibleProtectionMask[8] =
+{
+    PAGE_NOACCESS,
+    PAGE_NOACCESS | PAGE_READONLY | PAGE_WRITECOPY,
+    PAGE_NOACCESS | PAGE_EXECUTE,
+    PAGE_NOACCESS | PAGE_READONLY | PAGE_WRITECOPY | PAGE_EXECUTE | PAGE_EXECUTE_READ,
+    PAGE_NOACCESS | PAGE_READONLY | PAGE_WRITECOPY | PAGE_READWRITE,
+    PAGE_NOACCESS | PAGE_READONLY | PAGE_WRITECOPY,
+    PAGE_NOACCESS | PAGE_READONLY | PAGE_WRITECOPY | PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_WRITECOPY | PAGE_READWRITE | PAGE_EXECUTE_READWRITE,
+    PAGE_NOACCESS | PAGE_READONLY | PAGE_WRITECOPY | PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_WRITECOPY
+};
+
 extern PVOID MiSessionViewStart;   // 0xBE000000
 extern SIZE_T MmSessionViewSize;
 extern PVOID MiSystemViewStart;
@@ -1289,6 +1301,33 @@ MmMapViewInSystemSpace(
            Section, (MappedBase ? *MappedBase : 0), (ViewSize ? (ULONGLONG)(*ViewSize) : 0ull));
 
     return MiMapViewInSystemSpace((PSECTION)Section, &MmSession, MappedBase, ViewSize);
+}
+
+BOOLEAN
+NTAPI
+MiIsProtectionCompatible(
+    _In_ ULONG SectionPageProtection,
+    _In_ ULONG NewSectionPageProtection)
+{
+    ULONG ProtectionMask;
+    ULONG CompatibleMask;
+
+    DPRINT("MiIsProtectionCompatible: %X, %X\n", SectionPageProtection, NewSectionPageProtection);
+
+    /* Calculate the protection mask and make sure it's valid */
+    ProtectionMask = MiMakeProtectionMask(SectionPageProtection);
+    if (ProtectionMask == MM_INVALID_PROTECTION)
+    {
+        DPRINT1("MiIsProtectionCompatible: ProtectionMask == MM_INVALID_PROTECTION\n");
+        return FALSE;
+    }
+
+    /* Calculate the compatible mask */
+    CompatibleMask = MmCompatibleProtectionMask[ProtectionMask & 0x7] |
+                     PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE;
+
+    /* See if the mapping protection is compatible with the create protection */
+    return ((CompatibleMask | NewSectionPageProtection) == CompatibleMask);
 }
 
 NTSTATUS
