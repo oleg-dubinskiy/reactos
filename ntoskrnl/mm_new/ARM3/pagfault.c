@@ -13,6 +13,7 @@
 ULONG MmDataClusterSize;
 ULONG MmCodeClusterSize;
 ULONG MmInPageSupportMinimum = 4;
+SIZE_T MmSystemLockPagesCount;
 
 extern PMMPTE MiSessionLastPte;
 extern PMM_SESSION_SPACE MmSessionSpace;
@@ -314,8 +315,138 @@ MiCompleteProtoPteFault(
     _In_ KIRQL OldIrql,
     _In_ PMMPFN* LockedProtoPfn)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PMMPTE OriginalPte;
+    PMMPDE Pde;
+    PMMPFN Pfn;
+    MMPTE TempPte;
+    ULONG_PTR Protection;
+    PFN_NUMBER PageFrameIndex;
+    BOOLEAN OriginalProtection;
+    BOOLEAN DirtyPage;
+
+    DPRINT("MiCompleteProtoPteFault: %X, %p, %p [%I64X], %p [%I64X], %X\n",
+           StoreInstruction, Address, Pte, MiGetPteContents(Pte), SectionProto, MiGetPteContents(SectionProto), OldIrql);
+
+    /* Must be called with an valid prototype PTE, with the PFN lock held */
+    MI_ASSERT_PFN_LOCK_HELD();
+    ASSERT(SectionProto->u.Hard.Valid == 1);
+
+    /* Increment the share count for the page table */
+    Pde = MiAddressToPte(Pte);
+    Pfn = MiGetPfnEntry(Pde->u.Hard.PageFrameNumber);
+    Pfn->u2.ShareCount++;
+
+    /* Get the page */
+    PageFrameIndex = PFN_FROM_PTE(SectionProto);
+
+    /* Get the PFN entry and set it as a prototype PTE */
+    Pfn = MiGetPfnEntry(PageFrameIndex);
+    Pfn->u3.e1.PrototypePte = 1;
+
+    OriginalPte = &Pfn->OriginalPte;
+
+    /* Check where we should be getting the protection information from */
+    if (Pte->u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)
+    {
+        /* Get the protection from the PTE, there's no real Proto PTE data */
+        Protection = Pte->u.Soft.Protection;
+
+        /* Remember that we did not use the proto protection */
+        OriginalProtection = FALSE;
+    }
+    else
+    {
+        /* Get the protection from the original PTE link */
+        Protection = OriginalPte->u.Soft.Protection;
+
+        /* Remember that we used the original protection */
+        OriginalProtection = TRUE;
+
+        /* Check if this was a write on a read only proto */
+        if (StoreInstruction && !(Protection & MM_READWRITE))
+            /* Clear the flag */
+            StoreInstruction = 0;
+    }
+
+    /* Check if this was a write on a non-COW page */
+    DirtyPage = FALSE;
+
+    if (StoreInstruction && ((Protection & MM_WRITECOPY) != MM_WRITECOPY))
+    {
+        /* Then the page should be marked dirty */
+        DirtyPage = TRUE;
+
+        ASSERT(Pfn->u3.e1.Rom == 0);
+        Pfn->u3.e1.Modified = 1;
+
+        DPRINT("MiCompleteProtoPteFault: OriginalPte %X\n", OriginalPte->u.Long);
+
+        if (!OriginalPte->u.Soft.Prototype && !Pfn->u3.e1.WriteInProgress)
+        {
+            ULONG PageFileHigh = OriginalPte->u.Soft.PageFileHigh;
+
+            if (PageFileHigh && PageFileHigh != MI_PTE_LOOKUP_NEEDED)
+            {
+                DPRINT1("MiCompleteProtoPteFault: FIXME. PageFileHigh %X\n", PageFileHigh);
+                ASSERT(FALSE);
+            }
+
+            OriginalPte->u.Soft.PageFileHigh = 0;
+        }
+    }
+
+    /* Did we get a locked incoming PFN? */
+    if (*LockedProtoPfn)
+    {
+        /* Drop a reference */
+        ASSERT((*LockedProtoPfn)->u3.e2.ReferenceCount >= 1);
+        MiDereferencePfnAndDropLockCount(*LockedProtoPfn);
+        *LockedProtoPfn = NULL;
+    }
+
+    /* Release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    /* Remove special/caching bits */
+    Protection &= ~MM_PROTECT_SPECIAL;
+
+    /* Setup caching */
+    if (Pfn->u3.e1.CacheAttribute == MiWriteCombined)
+    {
+        /* Write combining, no caching */
+        MI_PAGE_DISABLE_CACHE(&TempPte);
+        MI_PAGE_WRITE_COMBINED(&TempPte);
+    }
+    else if (Pfn->u3.e1.CacheAttribute == MiNonCached)
+    {
+        /* Write through, no caching */
+        MI_PAGE_DISABLE_CACHE(&TempPte);
+        MI_PAGE_WRITE_THROUGH(&TempPte);
+    }
+
+    /* Check if this is a kernel or user address */
+    if (Address < MmSystemRangeStart)
+        /* Build the user PTE */
+        MI_MAKE_HARDWARE_PTE_USER(&TempPte, Pte, Protection, PageFrameIndex);
+    else
+        /* Build the kernel PTE */
+        MI_MAKE_HARDWARE_PTE(&TempPte, Pte, Protection, PageFrameIndex);
+
+    /* Set the dirty flag if needed */
+    if (DirtyPage)
+        MI_MAKE_DIRTY_PAGE(&TempPte);
+
+    /* Write the PTE */
+    MI_WRITE_VALID_PTE(Pte, TempPte);
+
+    /* Reset the protection if needed */
+    if (OriginalProtection)
+        Protection = MM_ZERO_ACCESS;
+
+    /* Return success */
+    ASSERT(Pte == MiAddressToPte(Address));
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
