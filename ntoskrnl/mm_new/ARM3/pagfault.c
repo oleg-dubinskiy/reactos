@@ -69,8 +69,56 @@ MiAccessCheck(
     _In_ PVOID TrapFrame,
     _In_ BOOLEAN LockHeld)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    MMPTE TempPte;
+
+    /* Check for invalid user-mode access */
+    if (PreviousMode == UserMode && Pte > MiHighestUserPte)
+    {
+        DPRINT1("MiAccessCheck: STATUS_ACCESS_VIOLATION\n");
+        return STATUS_ACCESS_VIOLATION;
+    }
+
+    /* Capture the PTE -- is it valid? */
+    TempPte = *Pte;
+
+    if (TempPte.u.Hard.Valid)
+    {
+        /* Was someone trying to write to it? */
+        if (StoreInstruction)
+        {
+            /* Is it writable?*/
+            if (MI_IS_PAGE_WRITEABLE(&TempPte) ||
+                MI_IS_PAGE_COPY_ON_WRITE(&TempPte))
+            {
+                /* Then there's nothing to worry about */
+                return STATUS_SUCCESS;
+            }
+
+            /* Oops! This isn't allowed */
+            DPRINT1("MiAccessCheck: STATUS_ACCESS_VIOLATION\n");
+            return STATUS_ACCESS_VIOLATION;
+        }
+
+        /* Someone was trying to read from a valid PTE, that's fine too */
+        return STATUS_SUCCESS;
+    }
+
+    /* Check if the protection on the page allows what is being attempted */
+    if (!MiIsAccessAllowed(ProtectionMask, StoreInstruction, FALSE))
+    {
+        DPRINT1("MiAccessCheck: STATUS_ACCESS_VIOLATION\n");
+        return STATUS_ACCESS_VIOLATION;
+    }
+
+    /* Check if this is a guard page */
+    if ((ProtectionMask & MM_PROTECT_SPECIAL) != MM_GUARDPAGE)
+        /* Nothing to do */
+        return STATUS_SUCCESS;
+
+    DPRINT1("MiAccessCheck: FIXME\n");
+    ASSERT(FALSE);
+
+    return STATUS_GUARD_PAGE_VIOLATION;
 }
 
 NTSTATUS
