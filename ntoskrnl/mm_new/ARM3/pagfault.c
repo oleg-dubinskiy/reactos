@@ -244,8 +244,67 @@ MiDispatchFault(
     /* Do we have a prototype PTE? */
     if (SectionProto)
     {
-        DPRINT1("MiDispatchFault: FIXME! SectionProto %X\n", SectionProto);
-        ASSERT(FALSE);
+        /* This should never happen */
+        ASSERT(!MI_IS_PHYSICAL_ADDRESS(SectionProto));
+
+        /* Check if this is a kernel-mode address */
+        SectionProtoPte = MiAddressToPte(SectionProto);
+
+        if (Address >= MmSystemRangeStart)
+        {
+            /* Lock the PFN database */
+            LockIrql = MiLockPfnDb(APC_LEVEL);
+
+            /* Has the PTE been made valid yet? */
+            if (!SectionProtoPte->u.Hard.Valid)
+            {
+                ASSERT((Process == NULL) || (Process == HYDRA_PROCESS));
+
+                /* Unlock the PFN database */
+                MiUnlockPfnDb(LockIrql, APC_LEVEL);
+
+                Address = SectionProto;
+                Pte = SectionProtoPte;
+                SectionProto = NULL;
+
+                if (Process == HYDRA_PROCESS)
+                {
+                    DPRINT1("MiDispatchFault: FIXME! Process == HYDRA_PROCESS. SectionProto %X\n", SectionProto);
+                    ASSERT(FALSE);
+                }
+
+                goto OtherPteTypes;
+            }
+            else
+            {
+                if (Pte->u.Hard.Valid)
+                {
+                    /* Release the lock and leave*/
+                    MiUnlockPfnDb(LockIrql, APC_LEVEL);
+                    return STATUS_SUCCESS;
+                }
+            }
+        }
+        else
+        {
+            DPRINT1("MiDispatchFault: FIXME! Address < MmSystemRangeStart\n");
+            ASSERT(FALSE);
+        }
+
+        /* Resolve the fault -- this will release the PFN lock */
+        Status = MiResolveProtoPteFault(!MI_IS_NOT_PRESENT_FAULT(FaultCode),
+                                        Address,
+                                        Pte,
+                                        SectionProto,
+                                        &LockedProtoPfn,
+                                        &PageBlock,
+                                        &OriginalPte,
+                                        Process,
+                                        LockIrql,
+                                        TrapInformation);
+
+        ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+        goto Finish;
     }
 
     TempPte = *Pte;
@@ -268,6 +327,8 @@ MiDispatchFault(
     {
         Status = MiResolveDemandZeroFault(Address, Pte, Pte->u.Soft.Protection, Process, MM_NOIRQL);
     }
+
+Finish:
 
     ASSERT(KeAreAllApcsDisabled() == TRUE);
 
