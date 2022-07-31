@@ -1591,6 +1591,24 @@ MiFindEmptyAddressRange(
     _Out_ PULONG_PTR OutBaseAddress
 );
 
+TABLE_SEARCH_RESULT
+NTAPI
+MiFindEmptyAddressRangeDownTree(
+    _In_ SIZE_T Length,
+    _In_ ULONG_PTR BoundaryAddress,
+    _In_ ULONG_PTR Alignment,
+    _In_ PMM_AVL_TABLE Table,
+    _Out_ PULONG_PTR Base,
+    _Out_ PMMADDRESS_NODE* Parent
+);
+
+NTSTATUS
+NTAPI
+MiInsertVadCharges(
+    _In_ PMMVAD Vad,
+    _In_ PEPROCESS Process
+);
+
 /* ARM3\virtual.c */
 PFN_COUNT
 NTAPI
