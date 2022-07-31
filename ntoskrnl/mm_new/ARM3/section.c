@@ -501,8 +501,117 @@ MiInsertInSystemSpace(
     _In_ ULONG Buckets,
     _In_ PCONTROL_AREA ControlArea)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PMMVIEW OldTable;
+    PVOID Base;
+    POOL_TYPE PoolType;
+    ULONG Entry;
+    ULONG Hash;
+    ULONG HashSize;
+    ULONG ix;
+
+    PAGED_CODE();
+    DPRINT("MiInsertInSystemSpace: Session %p, Buckets %X, ControlArea %p\n", Session, Buckets, ControlArea);
+
+    /* Stay within 4GB */
+    ASSERT(Buckets < MI_SYSTEM_VIEW_BUCKET_SIZE);
+
+    /* Lock system space */
+    KeAcquireGuardedMutex(Session->SystemSpaceViewLockPointer);
+
+    /* Check if we're going to exhaust hash entries */
+    if ((Session->SystemSpaceHashEntries + 8) > Session->SystemSpaceHashSize)
+    {
+        /* Double the hash size */
+        HashSize = (Session->SystemSpaceHashSize * 2);
+
+        /* Save the old table and allocate a new one */
+        OldTable = Session->SystemSpaceViewTable;
+        PoolType = (Session == &MmSession ? NonPagedPool : PagedPool);
+
+        Session->SystemSpaceViewTable = ExAllocatePoolWithTag(PoolType, (HashSize * sizeof(MMVIEW)), TAG_MM);
+
+        if (!Session->SystemSpaceViewTable)
+        {
+            /* Failed to allocate a new table, keep the old one for now */
+            Session->SystemSpaceViewTable = OldTable;
+        }
+        else
+        {
+            /* Clear the new table and set the new ahsh and key */
+            RtlZeroMemory(Session->SystemSpaceViewTable, (HashSize * sizeof(MMVIEW)));
+
+            Session->SystemSpaceHashSize = HashSize;
+            Session->SystemSpaceHashKey = (Session->SystemSpaceHashSize - 1);
+
+            /* Loop the old table */
+            for (ix = 0; ix < (Session->SystemSpaceHashSize / 2); ix++)
+            {
+                /* Check if the entry was valid */
+                if (OldTable[ix].Entry)
+                {
+                    /* Re-hash the old entry and search for space in the new table */
+                    Hash = ((OldTable[ix].Entry >> 16) % Session->SystemSpaceHashKey);
+
+                    while (Session->SystemSpaceViewTable[Hash].Entry)
+                    {
+                        /* Loop back at the beginning if we had an overflow */
+                        if (++Hash >= Session->SystemSpaceHashSize)
+                            Hash = 0;
+                    }
+
+                    /* Write the old entry in the new table */
+                    Session->SystemSpaceViewTable[Hash] = OldTable[ix];
+                }
+            }
+
+            /* Free the old table */
+            ExFreePool(OldTable);
+        }
+    }
+
+    /* Check if we ran out */
+    if (Session->SystemSpaceHashEntries == Session->SystemSpaceHashSize)
+    {
+        DPRINT1("MiInsertInSystemSpace: Ran out of system view hash entries\n");
+        KeReleaseGuardedMutex(Session->SystemSpaceViewLockPointer);
+        return NULL;
+    }
+
+    /* Find space where to map this view */
+    ix = RtlFindClearBitsAndSet(Session->SystemSpaceBitMap, Buckets, 0);
+    if (ix == 0xFFFFFFFF)
+    {
+        /* Out of space, fail */
+        DPRINT1("MiInsertInSystemSpace: Out of system view space\n");
+        Session->BitmapFailures++;
+        KeReleaseGuardedMutex(Session->SystemSpaceViewLockPointer);
+        return NULL;
+    }
+
+    /* Compute the base address */
+    Base = (PVOID)((ULONG_PTR)Session->SystemSpaceViewStart + (ix * MI_SYSTEM_VIEW_BUCKET_SIZE));
+
+    /* Get the hash entry for this allocation */
+    Entry = (((ULONG_PTR)Base & ~(MI_SYSTEM_VIEW_BUCKET_SIZE - 1)) + Buckets);
+    Hash = ((Entry >> 16) % Session->SystemSpaceHashKey);
+
+    /* Loop hash entries until a free one is found */
+    while (Session->SystemSpaceViewTable[Hash].Entry)
+    {
+        /* Unless we overflow, in which case loop back at hash o */
+        if (++Hash >= Session->SystemSpaceHashSize)
+            Hash = 0;
+    }
+
+    /* Add this entry into the hash table */
+    Session->SystemSpaceViewTable[Hash].Entry = Entry;
+    Session->SystemSpaceViewTable[Hash].ControlArea = ControlArea;
+
+    /* Hash entry found, increment total and return the base address */
+    Session->SystemSpaceHashEntries++;
+
+    KeReleaseGuardedMutex(Session->SystemSpaceViewLockPointer);
+    return Base;
 }
 
 VOID
