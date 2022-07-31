@@ -1573,6 +1573,15 @@ MiReserveAlignedSystemPtes(
     _In_ ULONG Alignment
 );
 
+/* ARM3\vadnode.c */
+BOOLEAN
+NTAPI
+MiCheckForConflictingVadExistence(
+    _In_ PEPROCESS Process,
+    _In_ ULONG_PTR StartingAddress,
+    _In_ ULONG_PTR EndingAddress
+);
+
 /* ARM3\virtual.c */
 PFN_COUNT
 NTAPI

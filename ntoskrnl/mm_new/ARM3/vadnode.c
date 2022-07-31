@@ -6,6 +6,10 @@
 #include <debug.h>
 #include "miarm.h"
 
+/* Include Mm version of AVL support */
+#include "miavl.h"
+#include <sdk/lib/rtl/avlsupp.c>
+
 /* GLOBALS ********************************************************************/
 
 
@@ -65,6 +69,44 @@ MiCheckForConflictingVadExistence(
 
     /* There is no more child */
     return FALSE;
+}
+
+PMMADDRESS_NODE
+NTAPI
+MiGetNextNode(
+    _In_ PMMADDRESS_NODE Node)
+{
+    PMMADDRESS_NODE Parent;
+
+    /* Get the right child */
+    if (RtlRightChildAvl(Node))
+    {
+        /* Get left-most child */
+        Node = RtlRightChildAvl(Node);
+
+        while (RtlLeftChildAvl(Node))
+            Node = RtlLeftChildAvl(Node);
+
+        return Node;
+    }
+
+    Parent = RtlParentAvl(Node);
+    ASSERT(Parent != NULL);
+
+    while (Parent != Node)
+    {
+        /* The parent should be a left child, return the real predecessor */
+        if (RtlIsLeftChildAvl(Node))
+            /* Return it */
+            return Parent;
+
+        /* Keep lopping until we find our parent */
+        Node = Parent;
+        Parent = RtlParentAvl(Node);
+    }
+
+    /* Nothing found */
+    return NULL;
 }
 
 
