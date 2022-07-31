@@ -23,6 +23,10 @@ extern PVOID MiSessionImageEnd;
 extern PVOID MiSessionViewStart;   // 0xBE000000
 extern PVOID MiSessionSpaceWs;
 extern ULONG MmSecondaryColorMask;
+extern BOOLEAN MmProtectFreedNonPagedPool;
+extern PVOID MmNonPagedPoolStart;
+extern SIZE_T MmSizeOfNonPagedPoolInBytes;
+extern PVOID MmNonPagedPoolExpansionStart;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -53,6 +57,17 @@ MiSetDirtyBit(
 {
     UNIMPLEMENTED_DBGBREAK();
     return FALSE;
+}
+
+PMMPTE
+NTAPI
+MiCheckVirtualAddress(
+    _In_ PVOID VirtualAddress,
+    _Out_ PULONG ProtectCode,
+    _Out_ PMMVAD* ProtoVad)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
 }
 
 NTSTATUS
@@ -320,8 +335,10 @@ MmAccessFault(
     PETHREAD CurrentThread;
     PEPROCESS Process;
     PMMSUPPORT WorkingSet;
+    PMMVAD Vad = NULL;
     PMMPFN Pfn;
     MMPTE TempPte;
+    ULONG ProtectionCode;
     BOOLEAN IsSessionAddress;
     KIRQL OldIrql;
     KIRQL PfnLockIrql;
@@ -534,8 +551,38 @@ MmAccessFault(
         /* Check one kind of prototype PTE */
         if (TempPte.u.Soft.Prototype)
         {
-            DPRINT1("MmAccessFault: FIXME! TempPte.u.Soft.Prototype\n");
-            ASSERT(FALSE);//DbgBreakPoint();
+            /* Make sure protected pool is on, and that this is a pool address */
+            if (MmProtectFreedNonPagedPool &&
+                ((Address >= MmNonPagedPoolStart && Address < (PVOID)((ULONG_PTR)MmNonPagedPoolStart + MmSizeOfNonPagedPoolInBytes)) ||
+                 (Address >= MmNonPagedPoolExpansionStart && Address < MmNonPagedPoolEnd)))
+            {
+                if (KeInvalidAccessAllowed(TrapInformation))
+                {
+                    DPRINT1("MmAccessFault: return STATUS_ACCESS_VIOLATION\n");
+                    ASSERT(FALSE); // DbgBreakPoint();
+                    return STATUS_ACCESS_VIOLATION;
+                }
+
+                /* Bad boy, bad boy, whatcha gonna do, whatcha gonna do when ARM3 comes for you! */
+                DPRINT1("KeBugCheckEx()\n");ASSERT(FALSE);//DbgBreakPoint();
+                KeBugCheckEx(DRIVER_CAUGHT_MODIFYING_FREED_POOL, (ULONG_PTR) Address, FaultCode, Mode, 4);
+            }
+
+            /* Get the prototype PTE! */
+            SectionProto = MiGetProtoPtr(&TempPte);
+
+            /* Do we need to locate the prototype PTE in session space? */
+            if (IsSessionAddress &&
+                TempPte.u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)
+            {
+                /* Yep, go find it as well as the VAD for it */
+                SectionProto = MiCheckVirtualAddress(Address, &ProtectionCode, &Vad);
+                if (!SectionProto)
+                {
+                    DPRINT1("MmAccessFault: FIXME!\n"); ASSERT(FALSE);//DbgBreakPoint();
+                    return (STATUS_IN_PAGE_ERROR | 0x10000000);
+                }
+            }
         }
         else if (!TempPte.u.Soft.Transition && !TempPte.u.Soft.Protection)
         {
