@@ -474,6 +474,7 @@ extern PMMPTE MiHighestUserPte;
 extern MMPTE ValidKernelPte;
 extern MMSUPPORT MmSystemCacheWs;
 extern PMMWSL MmWorkingSetList;
+extern SIZE_T MmSystemLockPagesCount;
 
 #if (_MI_PAGING_LEVELS <= 3)
   extern PFN_NUMBER MmSystemPageDirectory[PD_COUNT];
@@ -730,6 +731,84 @@ MiGetPfnEntryIndex(
 {
     /* This will return the Page Frame Number (PFN) from the MMPFN */
     return (Pfn1 - MmPfnDatabase);
+}
+
+VOID
+NTAPI
+MiDecrementReferenceCount(
+    _In_ PMMPFN Pfn,
+    _In_ PFN_NUMBER PageFrameIndex
+);
+
+/* Drops a locked page and dereferences it */
+FORCEINLINE
+VOID
+MiDereferencePfnAndDropLockCount(
+    _In_ PMMPFN Pfn)
+{
+    PFN_NUMBER PageFrameIndex;
+    USHORT RefCount;
+    USHORT OldRefCount;
+
+    /* Loop while we decrement the page successfully */
+    do
+    {
+        /* There should be at least one reference */
+        OldRefCount = Pfn->u3.e2.ReferenceCount;
+        ASSERT(OldRefCount != 0);
+
+        /* Are we the last one */
+        if (OldRefCount == 1)
+        {
+            /* The page shoudln't be shared not active at this point */
+            ASSERT(Pfn->u3.e2.ReferenceCount == 1);
+            ASSERT(Pfn->u3.e1.PageLocation != ActiveAndValid);
+            ASSERT(Pfn->u2.ShareCount == 0);
+
+            /* Is it a prototype PTE? */
+            if (Pfn->u3.e1.PrototypePte && Pfn->OriginalPte.u.Soft.Prototype)
+            {
+                /* FIXME: We should return commit */
+                DPRINT1("Not returning commit for prototype PTE\n");
+                //DbgPrint("Not returning commit for prototype PTE\n");
+            }
+
+            /* Update the counter, and drop a reference the long way */
+            InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+            PageFrameIndex = MiGetPfnEntryIndex(Pfn);
+            MiDecrementReferenceCount(Pfn, PageFrameIndex);
+
+            return;
+        }
+
+        /* Drop a reference the short way, and that's it */
+        RefCount = InterlockedCompareExchange16((PSHORT)&Pfn->u3.e2.ReferenceCount, (OldRefCount - 1), OldRefCount);
+        ASSERT(RefCount != 0);
+    }
+    while (OldRefCount != RefCount);
+
+    /* If we got here, there should be more than one reference */
+    ASSERT(RefCount > 1);
+
+    if (RefCount != 2)
+        return;
+
+    /* Is it still being shared? */
+    if (Pfn->u2.ShareCount < 1)
+        return;
+
+    /* Then it should be valid */
+    ASSERT(Pfn->u3.e1.PageLocation == ActiveAndValid);
+
+    /* Is it a prototype PTE? */
+    if (Pfn->u3.e1.PrototypePte && Pfn->OriginalPte.u.Soft.Prototype)
+    {
+        /* We don't handle ethis */
+        ASSERT(FALSE);
+    }
+
+    /* Update the counter */
+    InterlockedDecrementSizeT(&MmSystemLockPagesCount);
 }
 
 #ifdef _M_AMD64
