@@ -485,4 +485,47 @@ ErrorExit:
     return STATUS_COMMITMENT_LIMIT;
 }
 
+VOID
+NTAPI
+MiInsertNode(
+    _In_ PMM_AVL_TABLE Table,
+    _In_ PMMADDRESS_NODE NewNode,
+    _In_ PMMADDRESS_NODE Parent,
+    _In_ TABLE_SEARCH_RESULT Result)
+{
+    DPRINT1("MiInsertNode: NewNode %p, Table %p, StartingVpn %p, EndingVpn %p\n",
+            NewNode, Table, NewNode->StartingVpn, NewNode->EndingVpn);
+
+    /* Insert it into the tree */
+    RtlpInsertAvlTreeNode(Table, NewNode, Parent, Result);
+
+    DPRINT1("MiInsertNode: Result %X\n", Result);
+}
+
+VOID
+NTAPI
+MiInsertVad(
+    _In_ PMMVAD Vad,
+    _In_ PMM_AVL_TABLE VadRoot)
+{
+    TABLE_SEARCH_RESULT Result;
+    PMMADDRESS_NODE Parent = NULL;
+
+    DPRINT("MiInsertVad: Vad %p, VadRoot %p\n", Vad, VadRoot);
+
+    /* Validate the VAD and set it as the current hint */
+    ASSERT(Vad->EndingVpn >= Vad->StartingVpn);
+
+    VadRoot->NodeHint = Vad;
+
+    /* Find the parent VAD and where this child should be inserted */
+    Result = RtlpFindAvlTableNodeOrParent(VadRoot, (PVOID)Vad->StartingVpn, &Parent);
+
+    ASSERT(Result != TableFoundNode);
+    ASSERT((Parent != NULL) || (Result == TableEmptyTree));
+
+    /* Do the actual insert operation */
+    MiInsertNode(VadRoot, (PVOID)Vad, Parent, Result);
+}
+
 /* EOF */

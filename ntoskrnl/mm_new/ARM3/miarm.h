@@ -1609,6 +1609,13 @@ MiInsertVadCharges(
     _In_ PEPROCESS Process
 );
 
+VOID
+NTAPI
+MiInsertVad(
+    _In_ PMMVAD Vad,
+    _In_ PMM_AVL_TABLE VadRoot
+);
+
 /* ARM3\virtual.c */
 PFN_COUNT
 NTAPI
