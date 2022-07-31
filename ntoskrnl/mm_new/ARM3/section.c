@@ -719,13 +719,86 @@ MiSessionCommitPageTables(
 
 NTSTATUS
 NTAPI
+MiAddViewsForSectionWithPfn(
+    _In_ PMSUBSECTION StartMappedSubsection,
+    _In_ ULONGLONG LastPteOffset)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 MiAddMappedPtes(
     _In_ PMMPTE FirstPte,
     _In_ PFN_NUMBER PteCount,
     _In_ PCONTROL_AREA ControlArea)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PSUBSECTION Subsection;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    PMMPTE SectionProto;
+    PMMPTE LastProto;
+    MMPTE TempPte;
+    NTSTATUS Status;
+
+    DPRINT("MiAddMappedPtes: FirstPte %X, PteCount %X\n", FirstPte, PteCount);
+
+    if (!ControlArea->u.Flags.GlobalOnlyPerSession && !ControlArea->u.Flags.Rom)
+        Subsection = (PSUBSECTION)&ControlArea[1];
+    else
+        Subsection = (PSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+
+    /* Sanity checks */
+    ASSERT(PteCount != 0);
+    ASSERT(ControlArea->NumberOfMappedViews >= 1);
+    ASSERT(ControlArea->NumberOfUserReferences >= 1);
+    ASSERT(ControlArea->NumberOfSectionReferences != 0);
+    ASSERT(ControlArea->u.Flags.BeingCreated == 0);
+    ASSERT(ControlArea->u.Flags.BeingDeleted == 0);
+    ASSERT(ControlArea->u.Flags.BeingPurged == 0);
+
+    if (ControlArea->FilePointer &&
+        !ControlArea->u.Flags.Image &&
+        !ControlArea->u.Flags.PhysicalMemory)
+    {
+        Status = MiAddViewsForSectionWithPfn((PMSUBSECTION)Subsection, PteCount);
+        if (!NT_SUCCESS (Status))
+        {
+            DPRINT1("MiAddMappedPtes: Status %X\n", Status);
+            return Status;
+        }
+    }
+
+    /* Get the PTEs for the actual mapping */
+    Pte = FirstPte;
+    LastPte = (FirstPte + PteCount);
+
+    /* Get the section protos that desribe the section mapping in the subsection */
+    SectionProto = Subsection->SubsectionBase;
+    LastProto = &Subsection->SubsectionBase[Subsection->PtesInSubsection];
+
+    /* Loop the PTEs for the mapping */
+    for (; Pte < LastPte; Pte++, SectionProto++)
+    {
+        /* We may have run out of section protos in this subsection */
+        if (SectionProto >= LastProto)
+        {
+            Subsection = Subsection->NextSubsection;
+            SectionProto = Subsection->SubsectionBase;
+            LastProto = &Subsection->SubsectionBase[Subsection->PtesInSubsection];
+        }
+
+        /* The PTE should be completely clear */
+        ASSERT(Pte->u.Long == 0);
+
+        /* Build the section proto and write it */
+        MI_MAKE_PROTOTYPE_PTE(&TempPte, SectionProto);
+        MI_WRITE_INVALID_PTE(Pte, TempPte);
+    }
+
+    /* No failure path */
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
