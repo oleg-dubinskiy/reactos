@@ -1582,6 +1582,15 @@ MiCheckForConflictingVadExistence(
     _In_ ULONG_PTR EndingAddress
 );
 
+NTSTATUS
+NTAPI
+MiFindEmptyAddressRange(
+    _In_ SIZE_T Size,
+    _In_ ULONG_PTR Alignment,
+    _In_ ULONG ZeroBits,
+    _Out_ PULONG_PTR OutBaseAddress
+);
+
 /* ARM3\virtual.c */
 PFN_COUNT
 NTAPI
