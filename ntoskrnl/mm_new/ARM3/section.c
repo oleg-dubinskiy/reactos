@@ -1332,6 +1332,59 @@ MiIsProtectionCompatible(
 
 NTSTATUS
 NTAPI
+MiMapViewOfPhysicalSection(
+    _In_ PCONTROL_AREA ControlArea,
+    _In_ PEPROCESS Process,
+    _Inout_ PVOID* BaseAddress,
+    _In_ PLARGE_INTEGER SectionOffset,
+    _Inout_ PSIZE_T ViewSize,
+    _In_ ULONG ProtectionMask,
+    _In_ ULONG_PTR ZeroBits,
+    _In_ ULONG AllocationType)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+MiMapViewOfImageSection(
+    _In_ PCONTROL_AREA ControlArea,
+    _In_ PEPROCESS Process,
+    _Inout_ PVOID* OutBaseAddress,
+    _Inout_ LARGE_INTEGER* OutSectionOffset,
+    _Inout_ SIZE_T* OutViewSize,
+    _In_ PSECTION Section,
+    _In_ SECTION_INHERIT InheritDisposition,
+    _In_ ULONG ZeroBits,
+    _In_ ULONG AllocationType,
+    _In_ SIZE_T ImageCommitment)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+MiMapViewOfDataSection(
+    _In_ PCONTROL_AREA ControlArea,
+    _In_ PEPROCESS Process,
+    _Inout_ PVOID* BaseAddress,
+    _Inout_ PLARGE_INTEGER SectionOffset,
+    _Inout_ PSIZE_T ViewSize,
+    _In_ PSECTION Section,
+    _In_ SECTION_INHERIT InheritDisposition,
+    _In_ ULONG ProtectionMask,
+    _In_ SIZE_T CommitSize,
+    _In_ ULONG_PTR ZeroBits,
+    _In_ ULONG AllocationType)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 MmMapViewOfSection(
     _In_ PVOID SectionObject,
     _In_ PEPROCESS Process,
@@ -1344,8 +1397,195 @@ MmMapViewOfSection(
     _In_ ULONG AllocationType,
     _In_ ULONG Protect)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG64 CalculatedViewSize;
+    PCONTROL_AREA ControlArea;
+    PSECTION Section;
+    ULONG ProtectionMask;
+    KAPC_STATE ApcState;
+    BOOLEAN Attached = FALSE;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("MmMapViewOfSection: %p, %p, %X, %X, %X, %X\n",
+           SectionObject, Process, ZeroBits, CommitSize, AllocationType, Protect);
+
+    /* Get Section */
+    Section = (PSECTION)SectionObject;
+
+    if (!Section->u.Flags.Image)
+    {
+        if (!MiIsProtectionCompatible(Section->InitialPageProtection, Protect))
+        {
+            DPRINT1("MmMapViewOfSection: return STATUS_SECTION_PROTECTION\n");
+            ASSERT(FALSE); // MiDbgBreakPointEx();
+            return STATUS_SECTION_PROTECTION;
+        }
+    }
+
+
+    /* Check if the offset and size would cause an overflow */
+    if (((ULONG64)SectionOffset->QuadPart + *ViewSize) < (ULONG64)SectionOffset->QuadPart)
+    {
+        DPRINT1("MmMapViewOfSection: Section offset overflows\n");
+        return STATUS_INVALID_VIEW_SIZE;
+    }
+
+    /* Check if the offset and size are bigger than the section itself */
+    if (((ULONG64)SectionOffset->QuadPart + *ViewSize) > (ULONG64)Section->SizeOfSection.QuadPart &&
+        !(AllocationType & MEM_RESERVE))
+    {
+        DPRINT1("MmMapViewOfSection: Section offset is larger than section\n");
+        return STATUS_INVALID_VIEW_SIZE;
+    }
+
+    /* Check if the caller did not specify a view size */
+    if (!(*ViewSize))
+    {
+        /* Compute it for the caller */
+        CalculatedViewSize = (Section->SizeOfSection.QuadPart - SectionOffset->QuadPart);
+
+        /* Check if it's larger than 4GB or overflows into kernel-mode */
+        if (!NT_SUCCESS(RtlULongLongToSIZET(CalculatedViewSize, ViewSize)) ||
+            (((ULONG_PTR)MM_HIGHEST_VAD_ADDRESS - (ULONG_PTR)*BaseAddress) < CalculatedViewSize))
+        {
+            DPRINT1("MmMapViewOfSection: Section view won't fit\n");
+            return STATUS_INVALID_VIEW_SIZE;
+        }
+    }
+
+    /* Check if the commit size is larger than the view size */
+    if (CommitSize > *ViewSize && !(AllocationType & MEM_RESERVE))
+    {
+        DPRINT1("MmMapViewOfSection: Attempting to commit more than the view itself\n");
+        return STATUS_INVALID_PARAMETER_5;
+    }
+
+    /* Check if the view size is larger than the section */
+    if (*ViewSize > (ULONG64)Section->SizeOfSection.QuadPart && !(AllocationType & MEM_RESERVE))
+    {
+        DPRINT1("MmMapViewOfSection: The view is larger than the section\n");
+        return STATUS_INVALID_VIEW_SIZE;
+    }
+
+    /* Compute and validate the protection */
+    if (AllocationType & MEM_RESERVE &&
+        (!(Section->InitialPageProtection & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE))))
+    {
+        DPRINT1("MmMapViewOfSection: STATUS_SECTION_PROTECTION\n");
+        return STATUS_SECTION_PROTECTION;
+    }
+
+    if (Section->u.Flags.NoCache)
+        Protect = ((Protect & ~PAGE_WRITECOMBINE) | PAGE_NOCACHE);
+
+    if (Section->u.Flags.WriteCombined)
+        Protect = ((Protect & ~PAGE_NOCACHE) | PAGE_WRITECOMBINE);
+
+    /* Compute and validate the protection mask */
+    ProtectionMask = MiMakeProtectionMask(Protect);
+    if (ProtectionMask == MM_INVALID_PROTECTION)
+    {
+        DPRINT1("MmMapViewOfSection: The protection is invalid\n");
+        return STATUS_INVALID_PAGE_PROTECTION;
+    }
+
+    /* Get the control area */
+    ControlArea = Section->Segment->ControlArea;
+
+    /* Start by attaching to the current process if needed */
+    if (PsGetCurrentProcess() != Process)
+    {
+        KeStackAttachProcess(&Process->Pcb, &ApcState);
+        Attached = TRUE;
+    }
+
+    /* Lock the process address space */
+    KeAcquireGuardedMutex(&Process->AddressCreationLock);
+
+    if (Process->VmDeleted)
+    {
+        DPRINT1("MmMapViewOfSection: STATUS_PROCESS_IS_TERMINATING\n");
+        Status = STATUS_PROCESS_IS_TERMINATING;
+        goto Exit;
+    }
+
+    /* Do the actual mapping */
+
+    if (ControlArea->u.Flags.PhysicalMemory)
+    {
+        Status = MiMapViewOfPhysicalSection(ControlArea,
+                                            Process,
+                                            BaseAddress,
+                                            SectionOffset,
+                                            ViewSize,
+                                            ProtectionMask,
+                                            ZeroBits,
+                                            AllocationType);
+        goto Exit;
+    }
+
+    if (ControlArea->u.Flags.Image)
+    {
+        if (AllocationType & MEM_RESERVE)
+        {
+            DPRINT1("MmMapViewOfSection: STATUS_INVALID_PARAMETER_9\n");
+            Status = STATUS_INVALID_PARAMETER_9;
+            goto Exit;
+        }
+
+        if (Protect & PAGE_WRITECOMBINE)
+        {
+            DPRINT1("MmMapViewOfSection: STATUS_INVALID_PARAMETER_10\n");
+            Status = STATUS_INVALID_PARAMETER_10;
+            goto Exit;
+        }
+
+        Status = MiMapViewOfImageSection(ControlArea,
+                                         Process,
+                                         BaseAddress,
+                                         SectionOffset,
+                                         ViewSize,
+                                         Section,
+                                         InheritDisposition,
+                                         ZeroBits,
+                                         AllocationType,
+                                         Section->Segment->u1.ImageCommitment);
+        goto Exit;
+    }
+
+    if (Protect & PAGE_WRITECOMBINE)
+    {
+        DPRINT1("MmMapViewOfSection: STATUS_INVALID_PARAMETER_10\n");
+        Status = STATUS_INVALID_PARAMETER_10;
+        goto Exit;
+    }
+
+    Status = MiMapViewOfDataSection(ControlArea,
+                                    Process,
+                                    BaseAddress,
+                                    SectionOffset,
+                                    ViewSize,
+                                    Section,
+                                    InheritDisposition,
+                                    ProtectionMask,
+                                    CommitSize,
+                                    ZeroBits,
+                                    AllocationType);
+Exit:
+
+    /* Release the address space lock */
+    KeReleaseGuardedMutex(&Process->AddressCreationLock);
+
+    /* Detach if needed, then return status */
+    if (Attached)
+        KeUnstackDetachProcess(&ApcState);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmMapViewOfSection: Status %X\n", Status);
+    }
+
+    return Status;
 }
 
 NTSTATUS
