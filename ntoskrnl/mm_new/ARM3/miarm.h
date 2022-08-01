@@ -1275,6 +1275,33 @@ MiQueryPageTableReferences(
     return (*RefCount);
 }
 
+FORCEINLINE
+VOID
+MiIncrementPageTableReferences(
+    _In_ PVOID Address)
+{
+    PUSHORT RefCount;
+
+    RefCount = &MmWorkingSetList->UsedPageTableEntries[MiAddressToPdeOffset(Address)];
+
+    *RefCount += 1;
+    ASSERT(*RefCount <= PTE_PER_PAGE);
+}
+
+FORCEINLINE
+VOID
+MiAddPageTableReferences(
+    _In_ PVOID Address,
+    _In_ ULONG AddCount)
+{
+    PUSHORT RefCount;
+
+    RefCount = &MmWorkingSetList->UsedPageTableEntries[MiAddressToPdeOffset(Address)];
+
+    *RefCount += AddCount;
+    ASSERT(*RefCount <= PTE_PER_PAGE);
+}
+
 /* ARM3\i386\init.c */
 INIT_FUNCTION
 VOID
