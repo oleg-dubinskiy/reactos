@@ -28,6 +28,8 @@ extern BOOLEAN MmProtectFreedNonPagedPool;
 extern PVOID MmNonPagedPoolStart;
 extern SIZE_T MmSizeOfNonPagedPoolInBytes;
 extern PVOID MmNonPagedPoolExpansionStart;
+extern MMPTE PrototypePte;
+extern MMPDE DemandZeroPde;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1009,13 +1011,18 @@ MmAccessFault(
     PMMPTE Pte = MiAddressToPte(Address);
     PMMPTE SectionProto = NULL;
     PETHREAD CurrentThread;
+    PEPROCESS CurrentProcess;
     PEPROCESS Process;
     PMMSUPPORT WorkingSet;
     PMMVAD Vad = NULL;
     PMMPFN Pfn;
     MMPTE TempPte;
+    PFN_NUMBER PageFrameIndex;
     ULONG ProtectionCode;
+    ULONG PagesCount;
+    ULONG Color;
     BOOLEAN IsSessionAddress;
+    BOOLEAN IsForceIrpComplete = FALSE;
     KIRQL OldIrql;
     KIRQL PfnLockIrql;
     KIRQL WsLockIrql = MM_NOIRQL;
@@ -1330,9 +1337,352 @@ MmAccessFault(
 
     /* This is a user fault */
 UserFault:
-    DPRINT1("MmAccessFault: FIXME! UserFault\n");
-    ASSERT(FALSE);//DbgBreakPoint();
-    return STATUS_NOT_IMPLEMENTED;
+
+    CurrentThread = PsGetCurrentThread();
+    CurrentProcess = (PEPROCESS)CurrentThread->Tcb.ApcState.Process;
+
+    if (MmAvailablePages < 0x100)
+    {
+        DPRINT1("MmAccessFault: FIXME. MmAvailablePages %X\n", MmAvailablePages);
+        ASSERT(FALSE);
+    }
+
+    /* Lock the working set */
+    MiLockProcessWorkingSet(CurrentProcess, CurrentThread);
+
+    /* Check if the PDE is invalid */
+    if (!Pde->u.Hard.Valid)
+    {
+        /* Right now, we only handle scenarios where the PDE is totally empty */
+        if (!Pde->u.Long)
+        {
+            ULONG protectionCode;
+
+            MiCheckVirtualAddress(Address, &protectionCode, &Vad);
+
+            if (protectionCode == MM_NOACCESS)
+            {
+                DPRINT1("MmAccessFault: FIXME\n");
+                ASSERT(FALSE);
+                goto Exit2;
+            }
+
+            MI_WRITE_INVALID_PTE(Pde, DemandZeroPde);
+        }
+
+        /* Dispatch the fault */
+        Status = MiDispatchFault(1,
+                                 Pte,
+                                 Pde,
+                                 NULL,
+                                 FALSE,
+                                 CurrentProcess,
+                                 TrapInformation,
+                                 NULL);
+
+        ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+        if (!Pde->u.Hard.Valid)
+            goto Exit3;
+
+        if (Pde->u.Hard.Dirty)
+            MiSetDirtyBit(Pte, Pde, FALSE);
+    }
+    else if (MI_IS_PAGE_LARGE(Pde))
+    {
+        DPRINT1("MmAccessFault: FIXME\n");
+        ASSERT(FALSE);
+        Status = STATUS_SUCCESS;
+        goto Exit3;
+    }
+
+    TempPte = *Pte;
+
+    if (TempPte.u.Hard.Valid)
+    {
+        DPRINT1("MmAccessFault: FIXME\n");
+        ASSERT(FALSE);
+        goto Exit2;
+    }
+
+    if (TempPte.u.Long == (MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS))
+    {
+        DPRINT1("MmAccessFault: FIXME\n");
+        ASSERT(FALSE);
+        goto Exit3;
+    }
+
+    if (!TempPte.u.Long)
+    {
+        /* Check if this address range belongs to a valid allocation (VAD) */
+        SectionProto = MiCheckVirtualAddress(Address, &ProtectionCode, &Vad);
+
+        if (ProtectionCode == MM_NOACCESS)
+        {
+            Status = STATUS_ACCESS_VIOLATION;
+
+            /* Could be a page table for paged pool */
+            MiCheckPdeForPagedPool(Address);
+
+            /* Has the code above changed anything -- is this now a valid PTE? */
+            if (Pte->u.Hard.Valid)
+                Status = STATUS_SUCCESS;
+
+            if (Status == STATUS_ACCESS_VIOLATION)
+            {
+                DPRINT1("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
+            }
+
+            goto Exit2;
+        }
+
+        if ((ProtectionCode & MM_PROTECT_SPECIAL) == MM_GUARDPAGE)
+        {
+            if (KeInvalidAccessAllowed(TrapInformation))
+            {
+                DPRINT("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
+                Status = STATUS_ACCESS_VIOLATION;
+                goto Exit2;
+            }
+        }
+
+        /* Check if this is a real user-mode address or actually a kernel-mode page table for a user mode address */
+        if (Address <= MM_HIGHEST_USER_ADDRESS)
+            /* Add an additional page table reference */
+            MiIncrementPageTableReferences(Address);
+
+        /* Is this a guard page? */
+        if ((ProtectionCode & MM_PROTECT_SPECIAL) == MM_GUARDPAGE)
+        {
+            /* Remove the bit */
+            Pte->u.Soft.Protection = (ProtectionCode & ~0x10);
+
+            if (SectionProto)
+            {
+                Pte->u.Soft.PageFileHigh = MI_PTE_LOOKUP_NEEDED;
+                Pte->u.Soft.Prototype = 1;
+            }
+
+            if (CurrentThread->ApcNeeded && !CurrentThread->ActiveFaultCount)
+            {
+                CurrentThread->ApcNeeded = 0;
+                IsForceIrpComplete = TRUE;
+            }
+
+            /* Drop the working set lock */
+            MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
+            ASSERT(KeGetCurrentIrql() == OldIrql);
+
+            if (IsForceIrpComplete)
+            {
+                ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
+                DPRINT1("MmAccessFault: FIXME IoRetryIrpCompletions()\n");
+                ASSERT(FALSE);
+            }
+
+            /* Handle stack expansion */
+            Status = MiCheckForUserStackOverflow(Address, TrapInformation);
+            return Status;
+        }
+
+        /* Did we get a prototype PTE back? */
+        if (!SectionProto)
+        {
+            /* Is this PTE actually part of the PDE-PTE self-mapping directory? */
+            if (Pde == MiAddressToPde(PTE_BASE))
+            {
+                /* Then it's really a demand-zero PDE (on behalf of user-mode) */
+                MI_WRITE_INVALID_PTE(Pte, DemandZeroPde);
+                DPRINT1("MmAccessFault: Pte->u.Long %X\n", Pte->u.Long);
+            }
+            else
+            {
+                /* No, create a new PTE. First, write the protection */
+                TempPte.u.Soft.Protection = ProtectionCode;
+                MI_WRITE_INVALID_PTE(Pte, TempPte);
+                DPRINT1("MmAccessFault: Pte->u.Long %X\n", Pte->u.Long);
+            }
+
+            /* Lock the PFN database since we're going to grab a page */
+            PfnLockIrql = MiLockPfnDb(APC_LEVEL);
+
+            if (MmAvailablePages < 0x80)
+            {
+                DPRINT1("MmAccessFault: FIXME MiEnsureAvailablePageOrWait()\n");
+                ASSERT(FALSE);
+            }
+
+            /* Make sure we have enough pages */
+            if (MmAvailablePages >= 0x80)
+            {
+                /* Try to get a zero page */
+                MI_SET_USAGE(MI_USAGE_PEB_TEB);
+                MI_SET_PROCESS2(CurrentProcess->ImageFileName);
+
+                Color = MI_GET_NEXT_PROCESS_COLOR(CurrentProcess);
+
+                PageFrameIndex = MiRemoveZeroPageSafe(Color);
+                if (!PageFrameIndex)
+                {
+                    /* Grab a page out of there. Later we should grab a colored zero page */
+                    PageFrameIndex = MiRemoveAnyPage(Color);
+                    ASSERT(PageFrameIndex);
+
+                    /* Release the lock since we need to do some zeroing */
+                    MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
+
+                    /* Zero out the page, since it's for user-mode */
+                    MiZeroPfn(PageFrameIndex);
+
+                    /* Grab the lock again so we can initialize the PFN entry */
+                    PfnLockIrql = MiLockPfnDb(APC_LEVEL);
+                }
+
+                /* Initialize the PFN entry now */
+                MiInitializePfn(PageFrameIndex, Pte, 1);
+
+                /* Increment the count of pages in the process */
+                CurrentProcess->NumberOfPrivatePages++;
+
+                /* One more demand-zero fault */
+                InterlockedIncrement(&KeGetCurrentPrcb()->MmDemandZeroCount);
+
+                /* And we're done with the lock */
+                MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
+
+                /* Fault on user PDE, or fault on user PTE? */
+                if (Pte <= MiHighestUserPte)
+                    /* User fault, build a user PTE */
+                    MI_MAKE_HARDWARE_PTE_USER(&TempPte, Pte, Pte->u.Soft.Protection, PageFrameIndex);
+                else
+                    /* This is a user-mode PDE, create a kernel PTE for it */
+                    MI_MAKE_HARDWARE_PTE(&TempPte, Pte, Pte->u.Soft.Protection, PageFrameIndex);
+
+                /* Write the dirty bit for writeable pages */
+                if (MI_IS_PAGE_WRITEABLE(&TempPte))
+                    MI_MAKE_DIRTY_PAGE(&TempPte);
+
+                /* And now write down the PTE, making the address valid */
+                MI_WRITE_VALID_PTE(Pte, TempPte);
+                Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+                ASSERT(Pfn->u1.Event == NULL);
+
+                DPRINT1("MmAccessFault: FIXME MiAllocateWsle()\n");
+            }
+            else
+            {
+                MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
+            }
+
+            DPRINT("MmAccessFault: return STATUS_PAGE_FAULT_DEMAND_ZERO\n");
+            Status = STATUS_PAGE_FAULT_DEMAND_ZERO;
+            goto Exit3;
+        }
+
+        if (ProtectionCode == 0x100)
+        {
+            MI_MAKE_PROTOTYPE_PTE(&TempPte, SectionProto);
+        }
+        else
+        {
+            /* Write the prototype PTE */
+            TempPte = PrototypePte;
+            TempPte.u.Soft.Protection = ProtectionCode;
+        }
+
+        /* Write the prototype PTE */
+        ASSERT(TempPte.u.Long != 0);
+        MI_WRITE_INVALID_PTE(Pte, TempPte);
+    }
+    else
+    {
+        DPRINT1("MmAccessFault: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    /* Do we have a valid protection code? */
+    if (ProtectionCode != 0x100)
+    {
+        /* Run a software access check first, including to detect guard pages */
+        Status = MiAccessCheck(Pte,
+                               MI_IS_WRITE_ACCESS(FaultCode),
+                               Mode,
+                               ProtectionCode,
+                               TrapInformation,
+                               FALSE);
+
+        if (Status != STATUS_SUCCESS)
+        {
+            if (Status == STATUS_ACCESS_VIOLATION)
+            {
+                DPRINT1("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
+                ASSERT(FALSE);
+            }
+
+            /* Not supported */
+            if (CurrentThread->ApcNeeded && !CurrentThread->ActiveFaultCount)
+            {
+                DPRINT1("MmAccessFault: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            /* Drop the working set lock */
+            MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
+            ASSERT(KeGetCurrentIrql() == OldIrql);
+
+            /* Did we hit a guard page? */
+            if (Status == STATUS_GUARD_PAGE_VIOLATION)
+            {
+                /* Handle stack expansion */
+                Status = MiCheckForUserStackOverflow(Address, TrapInformation);
+                DPRINT("MmAccessFault: return %X\n", Status);
+                return Status;
+            }
+
+            /* Otherwise, fail back to the caller directly */
+            DPRINT("MmAccessFault: return %X\n", Status);
+            return Status;
+        }
+    }
+
+    Status = MiDispatchFault(FaultCode,
+                             Address,
+                             Pte,
+                             SectionProto,
+                             FALSE,
+                             CurrentProcess,
+                             TrapInformation,
+                             Vad);
+Exit3:
+
+    ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+
+    if (CurrentProcess->Vm.Flags.GrowWsleHash)
+    {
+        DPRINT1("MmAccessFault: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+Exit2:
+
+    PagesCount = (CurrentProcess->Vm.WorkingSetSize - CurrentProcess->Vm.MinimumWorkingSetSize);
+
+    if (CurrentThread->ApcNeeded)
+    {
+        ASSERT(CurrentThread->ApcNeeded == 0);
+    }
+
+    MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
+
+    ASSERT(KeGetCurrentIrql() == OldIrql);
+
+    if (MmAvailablePages < 0x400 &&
+        PagesCount > 0x64 &&
+        KeGetCurrentThread()->Priority >= 0x10)
+    {
+        DPRINT1("MmAccessFault: FIXME\n");
+        ASSERT(FALSE);
+    }
 
 Exit1:
 
@@ -1343,7 +1693,7 @@ Exit1:
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("MmAccessFault: FIXME MmIsRetryIoStatus(). Status %X\n", Status);
-            ASSERT(FALSE);//DbgBreakPoint();
+            ASSERT(FALSE);
         }
 
         if (Status != STATUS_SUCCESS)
