@@ -465,6 +465,7 @@ typedef struct _MI_PAGE_SUPPORT_BLOCK
     SINGLE_LIST_ENTRY ListEntry;
 } MI_PAGE_SUPPORT_BLOCK, *PMI_PAGE_SUPPORT_BLOCK;
 
+extern PMMCOLOR_TABLES MmFreePagesByColor[FreePageList + 1];
 extern PVOID MmPagedPoolStart;
 extern PVOID MmNonPagedPoolEnd;
 extern ULONG_PTR MmSubsectionBase;
@@ -1750,5 +1751,21 @@ NTAPI
 MmInitPagingFile(
     VOID
 );
+
+/* MiRemoveZeroPage will use inline code to zero out the page manually if only free pages are available.
+   In some scenarios, we don't/can't run that piece of code and would rather only have a real zero page.
+   If we can't have a zero page, then we'd like to have our own code to grab a free page and zero it out,
+   by using MiRemoveAnyPage. This macro implements this.
+*/
+FORCEINLINE
+PFN_NUMBER
+MiRemoveZeroPageSafe(
+    _In_ ULONG Color)
+{
+    if (MmFreePagesByColor[ZeroedPageList][Color].Flink == LIST_HEAD)
+        return 0;
+
+    return MiRemoveZeroPage(Color);
+}
 
 /* EOF */
