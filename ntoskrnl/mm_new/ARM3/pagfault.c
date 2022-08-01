@@ -30,6 +30,8 @@ extern SIZE_T MmSizeOfNonPagedPoolInBytes;
 extern PVOID MmNonPagedPoolExpansionStart;
 extern MMPTE PrototypePte;
 extern MMPDE DemandZeroPde;
+extern PMMPTE MmSharedUserDataPte;
+extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -320,7 +322,114 @@ MiCheckVirtualAddress(
     _Out_ PULONG ProtectCode,
     _Out_ PMMVAD* ProtoVad)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMMVAD Vad;
+    PMMVAD_LONG VadLong;
+    PMMPTE SectionProto;
+    UINT64 CommittedSize;
+    ULONG_PTR Vpn;
+    ULONG_PTR Count;
+
+    /* No prototype/section support for now */
+    *ProtoVad = NULL;
+
+    /* User or kernel fault? */
+    if (VirtualAddress <= MM_HIGHEST_USER_ADDRESS)
+    {
+        /* Special case for shared data */
+        if (PAGE_ALIGN(VirtualAddress) == (PVOID)MM_SHARED_USER_DATA_VA)
+        {
+            /* It's a read-only page */
+            *ProtectCode = MM_READONLY;
+            return MmSharedUserDataPte;
+        }
+
+        /* Find the VAD, it might not exist if the address is bogus */
+        Vad = MiLocateAddress(VirtualAddress);
+        if (!Vad)
+        {
+            /* Bogus virtual address */
+            *ProtectCode = MM_NOACCESS;
+            return NULL;
+        }
+
+        /* ReactOS does not handle physical memory VADs yet */
+        ASSERT(Vad->u.VadFlags.VadType != VadDevicePhysicalMemory);
+
+        /* Check if it's a section, or just an allocation */
+        if (Vad->u.VadFlags.PrivateMemory)
+        {
+            /* ReactOS does not handle AWE VADs yet */
+            ASSERT(Vad->u.VadFlags.VadType != VadAwe);
+
+            /* This must be a TEB/PEB VAD */
+            if (Vad->u.VadFlags.MemCommit)
+                /* It's committed, so return the VAD protection */
+                *ProtectCode = (ULONG)Vad->u.VadFlags.Protection;
+            else
+                /* It has not yet been committed, so return no access */
+                *ProtectCode = MM_NOACCESS;
+
+            /* In both cases, return no PTE */
+            return NULL;
+        }
+
+        Vpn = ((ULONG_PTR)VirtualAddress / PAGE_SIZE);
+
+        if (Vad->u.VadFlags.VadType == VadImageMap)
+        {
+            *ProtectCode = 0x100;
+        }
+        else
+        {
+            /* Return the Prototype PTE and the protection for the page mapping */
+            *ProtectCode = Vad->u.VadFlags.Protection;
+
+            if (!Vad->u2.VadFlags2.ExtendableFile)
+                /* Return the proto VAD */
+                *ProtoVad = Vad;
+        }
+
+        /* Get the section proto for this page */
+        SectionProto = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, Vpn);
+        if (!SectionProto)
+            *ProtectCode = MM_NOACCESS;
+
+        if (!Vad->u2.VadFlags2.ExtendableFile)
+            return SectionProto;
+
+        Count = (Vpn - Vad->StartingVpn);
+        VadLong = (PMMVAD_LONG)Vad;
+        CommittedSize = (VadLong->u4.ExtendedInfo->CommittedSize - 1);
+
+        if (Count > (ULONG_PTR)(CommittedSize / PAGE_SIZE))
+            *ProtectCode = MM_NOACCESS;
+
+        return SectionProto;
+    }
+
+    if (MI_IS_PAGE_TABLE_ADDRESS(VirtualAddress))
+    {
+        /* This should never happen, as these addresses are handled by the double-maping */
+        if ((PMMPTE)VirtualAddress >= MiAddressToPte(MmPagedPoolStart) &&
+            (PMMPTE)VirtualAddress <= MmPagedPoolInfo.LastPteForPagedPool)
+        {
+            /* Fail such access */
+            *ProtectCode = MM_NOACCESS;
+            return NULL;
+        }
+
+        /* Return full access rights */
+        *ProtectCode = MM_READWRITE;
+        return NULL;
+    }
+
+    if (MI_IS_SESSION_ADDRESS(VirtualAddress))
+        /* ReactOS does not have an image list yet, so bail out to failure case */
+        ASSERT(IsListEmpty(&MmSessionSpace->ImageList));
+
+    /* Default case -- failure */
+    *ProtectCode = MM_NOACCESS;
+
     return NULL;
 }
 

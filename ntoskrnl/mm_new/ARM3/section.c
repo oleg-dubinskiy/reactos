@@ -285,6 +285,16 @@ MiCheckControlArea(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+PMMPTE
+NTAPI
+MiGetProtoPteAddressExtended(
+    _In_ PMMVAD Vad,
+    _In_ ULONG_PTR Vpn)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
 NTSTATUS
 NTAPI
 MiCreatePagingFileMap(

@@ -1267,6 +1267,31 @@ MiUnlockWorkingSet(
     KeLeaveGuardedRegion();
 }
 
+PMMPTE
+NTAPI
+MiGetProtoPteAddressExtended(
+    _In_ PMMVAD Vad,
+    _In_ ULONG_PTR Vpn
+);
+
+/* Returns the ProtoPTE inside a VAD for the given VPN */
+FORCEINLINE
+PMMPTE
+MI_GET_PROTOTYPE_PTE_FOR_VPN(
+    _In_ PMMVAD Vad,
+    _In_ ULONG_PTR Vpn)
+{
+    PMMPTE PrototypePte;
+
+    /* Find the offset within the VAD's prototype PTEs */
+    PrototypePte = (Vad->FirstPrototypePte + (Vpn - Vad->StartingVpn));
+
+    if (PrototypePte <= Vad->LastContiguousPte)
+        return PrototypePte;
+
+    return MiGetProtoPteAddressExtended(Vad, Vpn);
+}
+
 FORCEINLINE
 USHORT
 MiQueryPageTableReferences(
