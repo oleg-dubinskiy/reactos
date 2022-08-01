@@ -264,6 +264,53 @@ MiCheckForUserStackOverflow(
     return STATUS_STACK_OVERFLOW;
 }
 
+VOID
+NTAPI
+MiZeroPfn(
+    _In_ PFN_NUMBER PageFrameNumber)
+{
+    PMMPTE ZeroPte;
+    MMPTE TempPte;
+    PMMPFN Pfn;
+    PVOID ZeroAddress;
+
+    /* Get the PFN for this page */
+    Pfn = MiGetPfnEntry(PageFrameNumber);
+    ASSERT(Pfn);
+
+    /* Grab a system PTE we can use to zero the page */
+    ZeroPte = MiReserveSystemPtes(1, SystemPteSpace);
+    ASSERT(ZeroPte);
+
+    /* Initialize the PTE for it */
+    TempPte = ValidKernelPte;
+    TempPte.u.Hard.PageFrameNumber = PageFrameNumber;
+
+    /* Setup caching */
+    if (Pfn->u3.e1.CacheAttribute == MiWriteCombined)
+    {
+        /* Write combining, no caching */
+        MI_PAGE_DISABLE_CACHE(&TempPte);
+        MI_PAGE_WRITE_COMBINED(&TempPte);
+    }
+    else if (Pfn->u3.e1.CacheAttribute == MiNonCached)
+    {
+        /* Write through, no caching */
+        MI_PAGE_DISABLE_CACHE(&TempPte);
+        MI_PAGE_WRITE_THROUGH(&TempPte);
+    }
+
+    /* Make the system PTE valid with our PFN */
+    MI_WRITE_VALID_PTE(ZeroPte, TempPte);
+
+    /* Get the address it maps to, and zero it out */
+    ZeroAddress = MiPteToAddress(ZeroPte);
+    KeZeroPages(ZeroAddress, PAGE_SIZE);
+
+    /* Now get rid of it */
+    MiReleaseSystemPtes(ZeroPte, 1, SystemPteSpace);
+}
+
 PMMPTE
 NTAPI
 MiCheckVirtualAddress(
