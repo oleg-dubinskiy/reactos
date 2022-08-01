@@ -1652,6 +1652,12 @@ MiInsertVad(
     _In_ PMM_AVL_TABLE VadRoot
 );
 
+PMMVAD
+NTAPI
+MiLocateAddress(
+    _In_ PVOID VirtualAddress
+);
+
 /* ARM3\virtual.c */
 PFN_COUNT
 NTAPI

@@ -528,4 +528,39 @@ MiInsertVad(
     MiInsertNode(VadRoot, (PVOID)Vad, Parent, Result);
 }
 
+PMMVAD
+NTAPI
+MiLocateAddress(
+    _In_ PVOID VirtualAddress)
+{
+    PMM_AVL_TABLE Table = &PsGetCurrentProcess()->VadRoot;
+    PMMVAD FoundVad;
+    TABLE_SEARCH_RESULT SearchResult;
+    ULONG_PTR Vpn;
+
+    /* Start with the the hint */
+    FoundVad = (PMMVAD)Table->NodeHint;
+    if (!FoundVad)
+        return NULL;
+
+    /* Check if this VPN is in the hint, if so, use it */
+    Vpn = ((ULONG_PTR)VirtualAddress / PAGE_SIZE);
+
+    if (Vpn >= FoundVad->StartingVpn && Vpn <= FoundVad->EndingVpn)
+        return FoundVad;
+
+    /* VAD hint didn't work, go look for it */
+    SearchResult = RtlpFindAvlTableNodeOrParent(Table, (PVOID)Vpn, (PMMADDRESS_NODE *)&FoundVad);
+    if (SearchResult != TableFoundNode)
+        return NULL;
+
+    /* We found it, update the hint */
+    ASSERT(FoundVad != NULL);
+    ASSERT((Vpn >= FoundVad->StartingVpn) && (Vpn <= FoundVad->EndingVpn));
+
+    Table->NodeHint = FoundVad;
+
+    return FoundVad;
+}
+
 /* EOF */
