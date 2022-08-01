@@ -975,6 +975,48 @@ MiDereferencePfnAndDropLockCount(
     InterlockedDecrementSizeT(&MmSystemLockPagesCount);
 }
 
+/* References a locked page and updates the counter.
+   Used in all other cases except MmProbeAndLockPages.
+*/
+FORCEINLINE
+VOID
+MiReferenceUsedPageAndBumpLockCount(
+    _In_ PMMPFN Pfn)
+{
+    USHORT NewRefCount;
+
+    /* Is it a prototype PTE? */
+    if (Pfn->u3.e1.PrototypePte &&
+        Pfn->OriginalPte.u.Soft.Prototype)
+    {
+        /* FIXME: We should charge commit */
+        DbgPrint("MiReferenceUsedPageAndBumpLockCount: Not charging commit for prototype PTE\n");
+    }
+
+    /* More locked pages! */
+    InterlockedIncrementSizeT(&MmSystemLockPagesCount);
+
+    /* Update the reference count */
+    NewRefCount = InterlockedIncrement16((PSHORT)&Pfn->u3.e2.ReferenceCount);
+
+    if (NewRefCount == 2)
+    {
+        /* Is it locked or shared? */
+        if (Pfn->u2.ShareCount)
+            /* It's shared, so make sure it's active */
+            ASSERT(Pfn->u3.e1.PageLocation == ActiveAndValid);
+        else
+            /* It's locked, so we shouldn't lock again */
+            InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+    }
+    else
+    {
+        /* Someone had already locked the page, so undo our bump */
+        ASSERT(NewRefCount < 2500);
+        InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+    }
+}
+
 #ifdef _M_AMD64
   #error FIXME
 #else
@@ -1096,6 +1138,7 @@ MI_MAKE_HARDWARE_PTE_USER(
     /* Set the protection and page */
     NewPte->u.Hard.Valid = TRUE;
     NewPte->u.Hard.Owner = TRUE;
+    NewPte->u.Hard.Accessed = TRUE;
     NewPte->u.Hard.PageFrameNumber = PageFrameNumber;
     NewPte->u.Long |= MmProtectToPteMask[ProtectionMask];
 }
