@@ -151,6 +151,119 @@ MiSetDirtyBit(
     return FALSE;
 }
 
+NTSTATUS
+NTAPI
+MiCheckForUserStackOverflow(
+    _In_ PVOID Address,
+    _In_ PVOID TrapInformation)
+{
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    PTEB Teb = CurrentThread->Tcb.Teb;
+    PVOID StackBase;
+    PVOID DeallocationStack;
+    PVOID NextStackAddress;
+    SIZE_T GuaranteedSize;
+    NTSTATUS Status;
+
+    /* Do we own the address space lock? */
+    if (CurrentThread->AddressSpaceOwner)
+    {
+        /* This isn't valid */
+        DPRINT1("MiCheckForUserStackOverflow: Process owns address space lock\n");
+        ASSERT(KeAreAllApcsDisabled() == TRUE);
+        return STATUS_GUARD_PAGE_VIOLATION;
+    }
+
+    /* Are we attached? */
+    if (KeIsAttachedProcess())
+    {
+        /* This isn't valid */
+        DPRINT1("MiCheckForUserStackOverflow: Process is attached\n");
+        return STATUS_GUARD_PAGE_VIOLATION;
+    }
+
+    /* Read the current settings */
+    StackBase = Teb->NtTib.StackBase;
+    DeallocationStack = Teb->DeallocationStack;
+    GuaranteedSize = Teb->GuaranteedStackBytes;
+
+    DPRINT("MiCheckForUserStackOverflow: StackBase %p, DeallocationStack %p, GuaranteedSize %X\n",
+            StackBase, DeallocationStack, GuaranteedSize);
+
+    /* Guarantees make this code harder, for now, assume there aren't any */
+    ASSERT(GuaranteedSize == 0);
+
+    /* So allocate only the minimum guard page size */
+    GuaranteedSize = PAGE_SIZE;
+
+    /* Does this faulting stack address actually exist in the stack? */
+    if (Address >= StackBase || Address < DeallocationStack)
+    {
+        /* That's odd... */
+        DPRINT1("Faulting address outside of stack bounds. Address %p, StackBase %p, DeallocationStack %p\n",
+                Address, StackBase, DeallocationStack);
+
+        return STATUS_GUARD_PAGE_VIOLATION;
+    }
+
+    /* This is where the stack will start now */
+    NextStackAddress = (PVOID)((ULONG_PTR)PAGE_ALIGN(Address) - GuaranteedSize);
+
+    /* Do we have at least one page between here and the end of the stack? */
+    if (((ULONG_PTR)NextStackAddress - PAGE_SIZE) <= (ULONG_PTR)DeallocationStack)
+    {
+        /* We don't -- Trying to make this guard page valid now */
+        DPRINT1("MiCheckForUserStackOverflow: Close to our death...\n");
+
+        /* Calculate the next memory address */
+        NextStackAddress = (PVOID)((ULONG_PTR)PAGE_ALIGN(DeallocationStack) + GuaranteedSize);
+
+        /* Allocate the memory */
+        Status = ZwAllocateVirtualMemory(NtCurrentProcess(),
+                                         &NextStackAddress,
+                                         0,
+                                         &GuaranteedSize,
+                                         MEM_COMMIT,
+                                         PAGE_READWRITE);
+        if (NT_SUCCESS(Status))
+        {
+            /* Success! */
+            Teb->NtTib.StackLimit = NextStackAddress;
+            return STATUS_STACK_OVERFLOW;
+        }
+
+        DPRINT1("MiCheckForUserStackOverflow: Failed to allocate memory\n");
+        return STATUS_STACK_OVERFLOW;
+    }
+
+    /* Don't handle this flag yet */
+    ASSERT((PsGetCurrentProcess()->Peb->NtGlobalFlag & FLG_DISABLE_STACK_EXTENSION) == 0);
+
+    /* Update the stack limit */
+    Teb->NtTib.StackLimit = (PVOID)((ULONG_PTR)NextStackAddress + GuaranteedSize);
+
+    /* Now move the guard page to the next page */
+    Status = ZwAllocateVirtualMemory(NtCurrentProcess(),
+                                     &NextStackAddress,
+                                     0,
+                                     &GuaranteedSize,
+                                     MEM_COMMIT,
+                                     (PAGE_READWRITE | PAGE_GUARD));
+
+    if (NT_SUCCESS(Status) || Status == STATUS_ALREADY_COMMITTED)
+    {
+        /* We did it! */
+        DPRINT("MiCheckForUserStackOverflow: Guard page handled successfully for %p\n", Address);
+        return STATUS_PAGE_FAULT_GUARD_PAGE;
+    }
+
+    /* Fail, we couldn't move the guard page */
+    DPRINT1("MiCheckForUserStackOverflow: Guard page failure: %X\n", Status);
+    ASSERT(FALSE);
+
+    return STATUS_STACK_OVERFLOW;
+}
+
 PMMPTE
 NTAPI
 MiCheckVirtualAddress(
