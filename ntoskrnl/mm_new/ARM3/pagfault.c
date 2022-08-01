@@ -948,10 +948,23 @@ MiDispatchFault(
 {
     PMI_PAGE_SUPPORT_BLOCK PageBlock;
     PMMPFN LockedProtoPfn = NULL;
+    PMMPFN PfnForPde;
+    PMMPFN Pfn;
     PMMSUPPORT SessionWs = NULL;
     PMMPTE SectionProtoPte;
     MMPTE TempPte;
+    MMPTE TempProto;
     MMPTE OriginalPte;
+    MMPTE PteContents;
+    MMPTE NewPteContents;
+    MMWSLE ProtoProtect;
+    PFN_NUMBER PageFrameIndex;
+    PFN_COUNT ProcessedPtes;
+    PFN_COUNT PteCount;
+    ULONG Flags = 0;
+    ULONG Index;
+    ULONG ix;
+    ULONG jx;
     KIRQL OldIrql;
     KIRQL LockIrql = MM_NOIRQL;
     NTSTATUS Status;
@@ -964,6 +977,9 @@ MiDispatchFault(
     OldIrql = KeGetCurrentIrql();
     ASSERT(OldIrql <= APC_LEVEL);
     ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+    OriginalPte.u.Long = -1;
+    ProtoProtect.u1.Long = 0;
 
     /* Do we have a prototype PTE? */
     if (SectionProto)
@@ -1011,8 +1027,276 @@ MiDispatchFault(
         }
         else
         {
-            DPRINT1("MiDispatchFault: FIXME! Address < MmSystemRangeStart\n");
-            ASSERT(FALSE);
+            /* This is a user fault */
+
+            PteCount = 1;
+
+            if (Pte->u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED || Pte->u.Proto.ReadOnly)
+            {
+                /* Is there a non-image VAD? */
+                if (Vad &&
+                    Vad->u.VadFlags.VadType != VadImageMap &&
+                    !Vad->u2.VadFlags2.ExtendableFile)
+                {
+                    PteCount = 8;
+
+                    if (SectionProto >= Vad->FirstPrototypePte &&
+                        SectionProto <= Vad->LastContiguousPte)
+                    {
+                        ix = (Vad->LastContiguousPte - SectionProto + 1);
+                    }
+                    else
+                    {
+                        DPRINT1("MiDispatchFault: FIXME! (%X:%X)\n", Vad->FirstPrototypePte, Vad->LastContiguousPte);
+                        ASSERT(FALSE);
+                        ix = 0;//FIXME
+                    }
+
+                    if (ix < 8)
+                        PteCount = ix;
+
+                    if (PteCount > (PAGE_SIZE - ((ULONG_PTR)Pte & (PAGE_SIZE - 1))) / 4)
+                        PteCount = (PAGE_SIZE - ((ULONG_PTR)Pte & (PAGE_SIZE - 1))) / 4;
+
+                    if (PteCount > (PAGE_SIZE - ((ULONG_PTR)SectionProto & (PAGE_SIZE - 1))) / 4)
+                        PteCount = (PAGE_SIZE - ((ULONG_PTR)SectionProto & (PAGE_SIZE - 1))) / 4;
+
+                    if (PteCount > (Vad->EndingVpn - ((ULONG_PTR)Address / PAGE_SIZE) + 1))
+                        PteCount = (Vad->EndingVpn - ((ULONG_PTR)Address / PAGE_SIZE) + 1);
+
+                    ix = 1;
+                    Index = MmWorkingSetList->FirstFree;
+
+                    if (PteCount > 1 && Index != 0x0FFFFFFF)
+                    {
+                        PMMWSLE MmWsle = (PMMWSLE)(MmWorkingSetList + 1);
+
+                        do
+                        {
+                            if (MmWsle[Index].u1.Long == 0xFFFFFFF0)
+                                break;
+
+                            Index = (MmWsle[Index].u1.Long >> 4);
+
+                            ix++;
+                        }
+                        while (ix < PteCount);
+                    }
+
+                    if (PteCount > ix)
+                        PteCount = ix;
+
+                    ASSERT(Address <= MM_HIGHEST_USER_ADDRESS);
+
+                    for (jx = 1; jx < PteCount && !Pte[jx].u.Long; jx++)
+                        MI_WRITE_INVALID_PTE(&Pte[jx], *Pte);
+
+                    PteCount = jx;
+
+                    if (PteCount > 1)
+                    {
+                        MiAddPageTableReferences(Address, (PteCount - 1));
+                        ProtoProtect.u1.e1.Protection = Pte->u.Soft.Protection;
+    
+                        MI_MAKE_HARDWARE_PTE_USER(&PteContents, Pte, ProtoProtect.u1.e1.Protection, 0);
+
+                        if (MI_IS_WRITE_ACCESS(FaultCode) && ((ProtoProtect.u1.e1.Protection & 5) != 5))
+                        {
+                            MI_MAKE_DIRTY_PAGE(&PteContents);
+                            Flags |= 0x01;
+                        }
+
+                        PfnForPde = MI_PFN_ELEMENT((MiAddressToPte(Pte))->u.Hard.PageFrameNumber);
+                    }
+                }
+            }
+            else
+            {
+                Flags = 0x04; // FIXME
+            }
+
+            ProcessedPtes = 0;
+            Flags |= 0x02;
+
+            /* Lock the PFN database */
+            LockIrql = MiLockPfnDb(APC_LEVEL);
+
+            /* We only handle the valid path */
+            if (!SectionProtoPte->u.Hard.Valid)
+            {
+                DPRINT1("MiDispatchFault: FIXME! SectionProtoPte %X\n", SectionProtoPte);
+                ASSERT(FALSE);
+            }
+
+            /* Capture the PTE */
+            TempProto = *SectionProto;
+
+            if (Recursive)
+            {
+                DPRINT1("MiDispatchFault: FIXME!\n");
+                ASSERT(FALSE);
+            }
+
+            if (!(Flags & 0x04))
+            {
+                while (TRUE)
+                {
+                    ULONG Protection;
+
+                    if (TempProto.u.Hard.Valid == 1)
+                    {
+                        /* Bump the share count on the PTE */
+                        PageFrameIndex = PFN_FROM_PTE(&TempProto);
+                        Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+                        Pfn->u2.ShareCount++;
+                    }
+                    else if (!TempProto.u.Soft.Prototype && TempProto.u.Soft.Transition)
+                    {
+                        DPRINT1("MiDispatchFault: FIXME!\n");
+                        ASSERT(FALSE);
+                    }
+                    else
+                    {
+                        DPRINT1("MiDispatchFault: FIXME!\n");
+                        ASSERT(FALSE);
+                    }
+
+                    /* One more done, was it the last? */
+                    ProcessedPtes++;
+                    if (ProcessedPtes == PteCount)
+                    {
+                        /* Complete the fault */
+                        MiCompleteProtoPteFault(MI_IS_WRITE_ACCESS(FaultCode),
+                                                Address,
+                                                Pte,
+                                                SectionProto,
+                                                LockIrql,
+                                                &LockedProtoPfn);
+                        Flags &= ~0x02;
+                        break;
+                    }
+
+                    ASSERT(SectionProto->u.Hard.Valid == 1);
+
+                    Pfn->u3.e1.PrototypePte = 1;
+                    PfnForPde->u2.ShareCount++;
+
+                    NewPteContents.u.Long = PteContents.u.Long;
+                    ASSERT(NewPteContents.u.Long != 0);
+
+                    if (Pfn->u3.e1.CacheAttribute == MiNonCached)
+                    {
+                        Protection = ProtoProtect.u1.e1.Protection;
+                        Protection &= ~(MM_NOCACHE | MM_WRITECOMBINE);
+                        Protection |= MM_NOCACHE;
+                        NewPteContents.u.Long = 0;
+                    }
+                    else if (Pfn->u3.e1.CacheAttribute == MiWriteCombined)
+                    {
+                        Protection = ProtoProtect.u1.e1.Protection;
+                        Protection &= ~(MM_NOCACHE | MM_WRITECOMBINE);
+                        Protection |= MM_WRITECOMBINE;
+                        NewPteContents.u.Long = 0;
+                    }
+
+                    if (!NewPteContents.u.Long)
+                    {
+                        MI_MAKE_HARDWARE_PTE_USER(&NewPteContents, Pte, Protection, 0);//u.Hard.Accessed = 1
+
+                        if (MI_IS_WRITE_ACCESS(FaultCode) && ((Protection & 5) != 5))
+                            MI_MAKE_DIRTY_PAGE(&NewPteContents);
+                    }
+
+                    NewPteContents.u.Hard.PageFrameNumber = PageFrameIndex;
+
+                    if (Flags & 0x01)
+                    {
+                        OriginalPte = Pfn->OriginalPte;
+
+                        ASSERT(Pfn->u3.e1.Rom == 0);
+                        Pfn->u3.e1.Modified = 1;
+
+                        if (!OriginalPte.u.Soft.Prototype && !Pfn->u3.e1.WriteInProgress)
+                        {
+                            ULONG PageFileHigh = OriginalPte.u.Soft.PageFileHigh;
+
+                            if (PageFileHigh && PageFileHigh != MI_PTE_LOOKUP_NEEDED)
+                            {
+                                DPRINT1("MiCompleteProtoPteFault: FIXME. PageFileHigh %X\n", PageFileHigh);
+                                ASSERT(FALSE);
+                            }
+
+                            Pfn->OriginalPte.u.Soft.PageFileHigh = 0;
+                        }
+                    }
+
+                    ASSERT(Pte == MiAddressToPte(Address));
+
+                    MI_WRITE_VALID_PTE(Pte, NewPteContents);
+
+                    SectionProto++;
+                    TempProto = *SectionProto;
+
+                    Pte++;
+                    Address = (PVOID)((ULONG_PTR)Address + PAGE_SIZE);
+                }
+            }
+
+            /* Did we resolve the fault? */
+            if (ProcessedPtes)
+            {
+                if (Flags & 0x02)
+                {
+                    MiUnlockPfnDb(LockIrql, APC_LEVEL);
+                    InterlockedExchangeAddSizeT(&KeGetCurrentPrcb()->MmTransitionCount, ProcessedPtes);
+                }
+                else
+                {
+                    /* Bump the transition count */
+                    InterlockedExchangeAddSizeT(&KeGetCurrentPrcb()->MmTransitionCount, ProcessedPtes);
+                    ProcessedPtes--;
+
+                }
+
+                while (ProcessedPtes)
+                {
+                    SectionProto--;
+                    Pte--;
+                    Address = (PVOID)((ULONG_PTR)Address - PAGE_SIZE);
+                    ProcessedPtes--;
+
+                    PageFrameIndex = PFN_FROM_PTE(Pte);
+                    Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+
+                    ASSERT(ProtoProtect.u1.e1.Protection != MM_ZERO_ACCESS);
+                    ASSERT(MI_IS_PAGE_TABLE_ADDRESS(Pte));
+                    ASSERT(Pte->u.Hard.Valid == 1);
+
+                    DPRINT("MiDispatchFault: FIXME MiAllocateWsle(). ProcessedPtes %X\n", ProcessedPtes);
+
+                    if (Pfn->OriginalPte.u.Soft.Prototype)
+                    {
+                        DPRINT("MiDispatchFault: FIXME CcPfNumActiveTraces\n");
+                        //ASSERT(FALSE);
+                    }
+                }
+
+                ASSERT(OldIrql == KeGetCurrentIrql());
+                ASSERT(OldIrql <= APC_LEVEL);
+                ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+                DPRINT("MiDispatchFault: return STATUS_PAGE_FAULT_TRANSITION\n");
+                return STATUS_PAGE_FAULT_TRANSITION;
+            }
+
+            ASSERT(Flags & 0x02);
+
+            /* We did not -- PFN lock is still held, prepare to resolve prototype PTE fault */
+            LockedProtoPfn = MI_PFN_ELEMENT(SectionProtoPte->u.Hard.PageFrameNumber);
+            MiReferenceUsedPageAndBumpLockCount(LockedProtoPfn);
+
+            ASSERT(LockedProtoPfn->u3.e2.ReferenceCount > 1);
+            ASSERT(Pte->u.Hard.Valid == 0);
         }
 
         /* Resolve the fault -- this will release the PFN lock */
