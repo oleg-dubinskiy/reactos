@@ -1592,6 +1592,14 @@ MiReserveSystemPtes(
     _In_ MMSYSTEM_PTE_POOL_TYPE SystemPtePoolType
 );
 
+VOID
+NTAPI
+MiReleaseSystemPtes(
+    _In_ PMMPTE StartingPte,
+    _In_ ULONG NumberOfPtes,
+    _In_ MMSYSTEM_PTE_POOL_TYPE SystemPtePoolType
+);
+
 PMMPTE
 NTAPI
 MiReserveAlignedSystemPtes(

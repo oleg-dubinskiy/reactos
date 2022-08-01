@@ -165,6 +165,102 @@ MiReserveSystemPtes(
     return NULL;
 }
 
+VOID
+NTAPI
+MiReleaseSystemPtes(
+    _In_ PMMPTE StartingPte,
+    _In_ ULONG NumberOfPtes,
+    _In_ MMSYSTEM_PTE_POOL_TYPE SystemPtePoolType)
+{
+    KIRQL OldIrql;
+    ULONG ClusterSize;
+    PMMPTE PreviousPte;
+    PMMPTE NextPte;
+    PMMPTE InsertPte;
+
+    /* Check to make sure the PTE address is within bounds */
+    ASSERT(NumberOfPtes != 0);
+    ASSERT(StartingPte >= MmSystemPtesStart[SystemPtePoolType]);
+    ASSERT((StartingPte + NumberOfPtes - 1) <= MmSystemPtesEnd[SystemPtePoolType]);
+
+    /* Zero PTEs */
+    RtlZeroMemory(StartingPte, (NumberOfPtes * sizeof(MMPTE)));
+
+    /* Acquire the System PTE lock */
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueSystemSpaceLock);
+
+    /* Increase availability */
+    MmTotalFreeSystemPtes[SystemPtePoolType] += NumberOfPtes;
+
+    /* Step through the cluster list to find where to insert the PTEs */
+    PreviousPte = &MmFirstFreeSystemPte[SystemPtePoolType];
+    InsertPte = NULL;
+
+    while (PreviousPte->u.List.NextEntry != MM_EMPTY_PTE_LIST)
+    {
+        /* Get the next cluster and its size */
+        NextPte = (MmSystemPteBase + PreviousPte->u.List.NextEntry);
+        ClusterSize = MI_GET_CLUSTER_SIZE(NextPte);
+
+        /* Check if this cluster is adjacent to the PTEs being released */
+        if (((NextPte + ClusterSize) == StartingPte) || ((StartingPte + NumberOfPtes) == NextPte))
+        {
+            /* Add the PTEs in the cluster to the PTEs being released */
+            NumberOfPtes += ClusterSize;
+
+            if (NextPte < StartingPte)
+                StartingPte = NextPte;
+
+            /* Unlink this cluster and zero it */
+            PreviousPte->u.List.NextEntry = NextPte->u.List.NextEntry;
+
+            if (!NextPte->u.List.OneEntry)
+            {
+                NextPte->u.Long = 0;
+                NextPte++;
+            }
+
+            NextPte->u.Long = 0;
+
+            /* Invalidate the previously found insertion location, if any */
+            InsertPte = NULL;
+        }
+        else
+        {
+            /* Check if the insertion location is right before this cluster */
+            if (!InsertPte && NumberOfPtes <= ClusterSize)
+                InsertPte = PreviousPte;
+
+            /* On to the next cluster */
+            PreviousPte = NextPte;
+        }
+    }
+
+    /* If no insertion location was found, use the tail of the list */
+    if (!InsertPte)
+        InsertPte = PreviousPte;
+
+    /* Create a new cluster using the PTEs being released */
+    if (NumberOfPtes != 1)
+    {
+        StartingPte->u.List.OneEntry = 0;
+
+        NextPte = (StartingPte + 1);
+        NextPte->u.List.NextEntry = NumberOfPtes;
+    }
+    else
+    {
+        StartingPte->u.List.OneEntry = 1;
+    }
+
+    /* Link the new cluster into the cluster list at the insertion location */
+    StartingPte->u.List.NextEntry = InsertPte->u.List.NextEntry;
+    InsertPte->u.List.NextEntry = (StartingPte - MmSystemPteBase);
+
+    /* Release the System PTE lock */
+    KeReleaseQueuedSpinLock(LockQueueSystemSpaceLock, OldIrql);
+}
+
 INIT_FUNCTION
 VOID
 NTAPI
