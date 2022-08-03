@@ -2292,8 +2292,53 @@ NtOpenSection(
     _In_ ACCESS_MASK DesiredAccess,
     _In_ POBJECT_ATTRIBUTES ObjectAttributes)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
+    HANDLE Handle;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("NtOpenSection: Access %X, ObjectName '%wZ'\n", DesiredAccess, ObjectAttributes->ObjectName);
+
+    /* Check for user-mode caller */
+    if (PreviousMode != KernelMode)
+    {
+        /* Enter SEH */
+        _SEH2_TRY
+        {
+            /* Safely check user-mode parameters */
+            ProbeForWriteHandle(SectionHandle);
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Return the exception code */
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+    }
+
+    /* Try opening the object */
+    Status = ObOpenObjectByName(ObjectAttributes,
+                                MmSectionObjectType,
+                                PreviousMode,
+                                NULL,
+                                DesiredAccess,
+                                NULL,
+                                &Handle);
+
+    /* Enter SEH */
+    _SEH2_TRY
+    {
+        /* Return the handle safely */
+        *SectionHandle = Handle;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        /* Nothing here */
+    }
+    _SEH2_END;
+
+    /* Return the status */
+    return Status;
 }
 
 NTSTATUS
