@@ -105,8 +105,93 @@ MiDeleteSystemPageableVm(
     _In_ ULONG Flags,
     _Out_ PPFN_NUMBER ValidPages)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    PFN_COUNT ActualPages = 0;
+    PMMPFN Pfn1;
+    PMMPFN Pfn2;
+    PFN_NUMBER PageFrameIndex;
+    PFN_NUMBER PageTableIndex;
+    KIRQL OldIrql;
+
+    ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+
+    /* Lock the system working set */
+    MiLockWorkingSet(CurrentThread, &MmSystemCacheWs);
+
+    /* Loop all pages */
+    for (; PageCount; Pte++, PageCount--)
+    {
+        /* Make sure there's some data about the page */
+        if (!Pte->u.Long)
+            continue;
+
+        /* As always, only handle current ARM3 scenarios */
+        ASSERT(Pte->u.Soft.Prototype == 0);
+        ASSERT(Pte->u.Soft.Transition == 0);
+
+        /* Normally this is one possibility -- freeing a valid page */
+        if (!Pte->u.Hard.Valid)
+        {
+            /* The only other ARM3 possibility is a demand zero page,
+               which would mean freeing some of the paged pool pages that haven't even been touched yet,
+               as part of a larger allocation.
+
+               Right now, we shouldn't expect any page file information in the PTE
+            */
+            ASSERT(Pte->u.Soft.PageFileHigh == 0);
+
+            /* Destroy the PTE */
+            MI_ERASE_PTE(Pte);
+
+            /* Actual legitimate pages */
+            ActualPages++;
+
+            continue;
+        }
+
+        /* Get the page PFN */
+        PageFrameIndex = PFN_FROM_PTE(Pte);
+        Pfn1 = MiGetPfnEntry(PageFrameIndex);
+
+        /* Should not have any working set data yet */
+        ASSERT(Pfn1->u1.WsIndex == 0);
+
+        /* Actual valid, legitimate, pages */
+        if (ValidPages)
+            (*ValidPages)++;
+
+        /* Get the page table entry */
+        PageTableIndex = Pfn1->u4.PteFrame;
+        Pfn2 = MiGetPfnEntry(PageTableIndex);
+
+        /* Lock the PFN database */
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        /* Delete it the page */
+        MI_SET_PFN_DELETED(Pfn1);
+        MiDecrementShareCount(Pfn1, PageFrameIndex);
+
+        /* Decrement the page table too */
+        MiDecrementShareCount(Pfn2, PageTableIndex);
+
+        /* Release the PFN database */
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        /* Destroy the PTE */
+        MI_ERASE_PTE(Pte);
+
+        /* Actual legitimate pages */
+        ActualPages++;
+    }
+
+    /* Release the working set */
+    MiUnlockWorkingSet(CurrentThread, &MmSystemCacheWs);
+
+    /* Flush the entire TLB */
+    KeFlushEntireTb(TRUE, TRUE);
+
+    /* Done */
+    return ActualPages;
 }
 
 /* SYSTEM CALLS ***************************************************************/
