@@ -2355,8 +2355,238 @@ NtMapViewOfSection(
     _In_ ULONG AllocationType,
     _In_ ULONG Protect)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PEPROCESS CurrentProcess;
+    PEPROCESS Process;
+    PSECTION Section;
+    PVOID SafeBaseAddress;
+    LARGE_INTEGER SafeSectionOffset;
+    SIZE_T SafeViewSize;
+    ACCESS_MASK DesiredAccess;
+    ULONG ProtectionMask;
+    KPROCESSOR_MODE PreviousMode;
+    NTSTATUS Status;
+#if defined(_M_IX86) || defined(_M_AMD64)
+    static const ULONG ValidAllocationType = (MEM_TOP_DOWN | MEM_LARGE_PAGES | MEM_DOS_LIM | SEC_NO_CHANGE | MEM_RESERVE);
+#else
+    static const ULONG ValidAllocationType = (MEM_TOP_DOWN | MEM_LARGE_PAGES | SEC_NO_CHANGE | MEM_RESERVE);
+#endif
+
+    DPRINT("NtMapViewOfSection: SectionHandle %p, ProcessHandle %p, ZeroBits %X, CommitSize %X, AllocationType %X, Protect %X\n",
+           SectionHandle, ProcessHandle, ZeroBits, CommitSize, AllocationType, Protect);
+
+    if (ZeroBits > MI_MAX_ZERO_BITS)
+    {
+        DPRINT1("NtMapViewOfSection: Invalid zero bits\n");
+        return STATUS_INVALID_PARAMETER_4;
+    }
+
+    /* Check for invalid inherit disposition */
+    if (InheritDisposition > ViewUnmap || InheritDisposition < ViewShare)
+    {
+        DPRINT1("NtMapViewOfSection: Invalid inherit disposition\n");
+        return STATUS_INVALID_PARAMETER_8;
+    }
+
+    /* Allow only valid allocation types */
+    if (AllocationType & ~ValidAllocationType)
+    {
+        DPRINT1("NtMapViewOfSection: Invalid allocation type\n");
+        return STATUS_INVALID_PARAMETER_9;
+    }
+
+    /* Convert the protection mask, and validate it */
+    ProtectionMask = MiMakeProtectionMask(Protect);
+    if (ProtectionMask == MM_INVALID_PROTECTION)
+    {
+        DPRINT1("NtMapViewOfSection: Invalid page protection\n");
+        return STATUS_INVALID_PAGE_PROTECTION;
+    }
+
+    /* Now convert the protection mask into desired section access mask */
+    DesiredAccess = MmMakeSectionAccess[ProtectionMask & 0x7];
+
+    CurrentProcess = (PEPROCESS)PsGetCurrentThread()->Tcb.ApcState.Process;
+    PreviousMode = PsGetCurrentThread()->Tcb.PreviousMode;
+
+    /* Enter SEH */
+    _SEH2_TRY
+    {
+        /* Check for unsafe parameters */
+        if (PreviousMode != KernelMode)
+        {
+            /* Probe the parameters */
+            ProbeForWritePointer(BaseAddress);
+            ProbeForWriteSize_t(ViewSize);
+        }
+
+        /* Check if a section offset was given */
+        if (SectionOffset)
+        {
+            /* Check for unsafe parameters and capture section offset */
+            if (PreviousMode != KernelMode)
+                ProbeForWriteLargeInteger(SectionOffset);
+
+            SafeSectionOffset = *SectionOffset;
+        }
+        else
+        {
+            SafeSectionOffset.QuadPart = 0;
+        }
+
+        /* Capture the other parameters */
+        SafeBaseAddress = *BaseAddress;
+        SafeViewSize = *ViewSize;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        /* Return the exception code */
+        _SEH2_YIELD(return _SEH2_GetExceptionCode());
+    }
+    _SEH2_END;
+
+    /* Check for kernel-mode address */
+    if (SafeBaseAddress > MM_HIGHEST_VAD_ADDRESS)
+    {
+        DPRINT1("NtMapViewOfSection: Kernel base not allowed\n");
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    /* Check for range entering kernel-mode */
+    if (((ULONG_PTR)MM_HIGHEST_VAD_ADDRESS - (ULONG_PTR)SafeBaseAddress) < SafeViewSize)
+    {
+        DPRINT1("NtMapViewOfSection: Overflowing into kernel base not allowed\n");
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    /* Check for invalid zero bits */
+    if (((ULONG_PTR)SafeBaseAddress + SafeViewSize) > (0xFFFFFFFF >> ZeroBits)) // FIXME
+    {
+        DPRINT1("NtMapViewOfSection: Invalid zero bits\n");
+        return STATUS_INVALID_PARAMETER_4;
+    }
+
+    /* Reference the process */
+    Status = ObReferenceObjectByHandle(ProcessHandle,
+                                       PROCESS_VM_OPERATION,
+                                       PsProcessType,
+                                       PreviousMode,
+                                       (PVOID *)&Process,
+                                       NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("NtMapViewOfSection: Status %X\n", Status);
+        return Status;
+    }
+
+    /* Reference the section */
+    Status = ObReferenceObjectByHandle(SectionHandle,
+                                       DesiredAccess,
+                                       MmSectionObjectType,
+                                       PreviousMode,
+                                       (PVOID *)&Section,
+                                       NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("NtMapViewOfSection: Status %X\n", Status);
+        ObDereferenceObject(Process);
+        return Status;
+    }
+
+    if (Section->Segment->ControlArea->u.Flags.PhysicalMemory)
+    {
+        SafeSectionOffset.LowPart = (ULONG)PAGE_ALIGN(SafeSectionOffset.LowPart);
+
+        if (PreviousMode == UserMode &&
+            (SafeSectionOffset.QuadPart + SafeViewSize) > ((ULONGLONG)MmHighestPhysicalPage * PAGE_SIZE))
+        {
+            DPRINT1("NtMapViewOfSection: Denying map past highest physical page.\n");
+            Status = STATUS_INVALID_PARAMETER_6;
+            goto Exit;
+        }
+    }
+    else if (!(AllocationType & MEM_DOS_LIM))
+    {
+        /* Check for non-allocation-granularity-aligned BaseAddress */
+        if ((ULONG_PTR)SafeBaseAddress & (MM_ALLOCATION_GRANULARITY - 1))
+        {
+            DPRINT1("NtMapViewOfSection: BaseAddress is not at 64-kilobyte address boundary.\n");
+            Status = STATUS_MAPPED_ALIGNMENT;
+            goto Exit;
+        }
+
+        /* Do the same for the section offset */
+        if (SectionOffset && (SafeSectionOffset.LowPart & (MM_ALLOCATION_GRANULARITY - 1)))
+        {
+            DPRINT1("NtMapViewOfSection: SectionOffset is not at 64-kilobyte address boundary.\n");
+            Status = STATUS_MAPPED_ALIGNMENT;
+            goto Exit;
+        }
+    }
+
+    /* Now do the actual mapping */
+    Status = MmMapViewOfSection(Section,
+                                Process,
+                                &SafeBaseAddress,
+                                ZeroBits,
+                                CommitSize,
+                                &SafeSectionOffset,
+                                &SafeViewSize,
+                                InheritDisposition,
+                                AllocationType,
+                                Protect);
+
+    /* Return data only on success */
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("NtMapViewOfSection: Status %X\n", Status);
+
+        if (Status == STATUS_CONFLICTING_ADDRESSES &&
+            Section->Segment->ControlArea->u.Flags.Image &&
+            Process == CurrentProcess)
+        {
+            DbgkMapViewOfSection(Section,
+                                 SafeBaseAddress,
+                                 SafeSectionOffset.LowPart,
+                                 SafeViewSize);
+        }
+        goto Exit;
+    }
+
+    /* Check if this is an image for the current process */
+    if (Section->Segment->ControlArea->u.Flags.Image &&
+        Process == CurrentProcess &&
+        Status != STATUS_IMAGE_NOT_AT_BASE)
+    {
+        /* Notify the debugger */
+        DbgkMapViewOfSection(Section,
+                             SafeBaseAddress,
+                             SafeSectionOffset.LowPart,
+                             SafeViewSize);
+    }
+
+    /* Enter SEH */
+    _SEH2_TRY
+    {
+        /* Return parameters to user */
+        *BaseAddress = SafeBaseAddress;
+        *ViewSize = SafeViewSize;
+
+        if (SectionOffset)
+            *SectionOffset = SafeSectionOffset;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        /* Nothing to do */
+    }
+    _SEH2_END;
+
+Exit:
+
+    /* Dereference all objects and return status */
+    ObDereferenceObject(Section);
+    ObDereferenceObject(Process);
+
+    return Status;
 }
 
 NTSTATUS
