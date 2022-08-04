@@ -1825,6 +1825,17 @@ ErrorExit:
     return Status;
 }
 
+NTSTATUS
+NTAPI
+MiUnmapViewOfSection(
+    _In_ PEPROCESS Process,
+    _In_ PVOID BaseAddress,
+    _In_ ULONG Flags)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 BOOLEAN
@@ -2915,8 +2926,44 @@ NtUnmapViewOfSection(
     _In_ HANDLE ProcessHandle,
     _In_ PVOID BaseAddress)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
+    PEPROCESS Process;
+    NTSTATUS Status;
+
+    DPRINT("NtUnmapViewOfSection: BaseAddress %p\n", BaseAddress);
+
+    /* Don't allowing mapping kernel views */
+    if (PreviousMode == UserMode && BaseAddress > MM_HIGHEST_USER_ADDRESS)
+    {
+        DPRINT1("Trying to unmap a kernel view\n");
+        return STATUS_NOT_MAPPED_VIEW;
+    }
+
+    /* Reference the process */
+    Status = ObReferenceObjectByHandle(ProcessHandle,
+                                       PROCESS_VM_OPERATION,
+                                       PsProcessType,
+                                       PreviousMode,
+                                       (PVOID *)&Process,
+                                       NULL);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("NtUnmapViewOfSection: Status %X\n", Status);
+        return Status;
+    }
+
+    /* Unmap the view */
+    Status = MiUnmapViewOfSection(Process, BaseAddress, 0);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("NtUnmapViewOfSection: Status %X\n", Status);
+    }
+
+    /* Dereference the process and return status */
+    ObDereferenceObject(Process);
+
+    return Status;
 }
 
 NTSTATUS
