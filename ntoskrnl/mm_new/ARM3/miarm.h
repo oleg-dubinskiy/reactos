@@ -851,6 +851,28 @@ MiUnlockProcessWorkingSet(
     KeLeaveGuardedRegion();
 }
 
+/* Unlocks the working set for the given process */
+FORCEINLINE
+VOID
+MiUnlockProcessWorkingSetShared(
+    _In_ PEPROCESS Process,
+    _In_ PETHREAD Thread)
+{
+    /* Make sure we are the owner of a safe acquisition (because shared) */
+    ASSERT(MI_WS_OWNER(Process));
+    ASSERT(!MI_IS_WS_UNSAFE(Process));
+
+    /* Ensure we are in a shared acquisition */
+    ASSERT(Thread->OwnsProcessWorkingSetShared == TRUE);
+    ASSERT(Thread->OwnsProcessWorkingSetExclusive == FALSE);
+
+    /* Don't claim the lock anylonger */
+    Thread->OwnsProcessWorkingSetShared = FALSE;
+
+    /* Release the lock and re-enable APCs */
+    ExReleasePushLockShared(&Process->Vm.WorkingSetMutex);
+    KeLeaveGuardedRegion();
+}
 
 FORCEINLINE
 VOID
@@ -874,6 +896,89 @@ MiUnlockProcessWorkingSetUnsafe(
     /* Release the lock but don't touch APC state */
     ExReleasePushLockExclusive(&Process->Vm.WorkingSetMutex);
     ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+}
+
+/* Locks the working set */
+FORCEINLINE
+VOID
+MiLockWorkingSet(
+    _In_ PETHREAD Thread,
+    _In_ PMMSUPPORT WorkingSet)
+{
+    /* Block APCs */
+    KeEnterGuardedRegion();
+
+    /* Working set should be in global memory */
+    ASSERT(MI_IS_SESSION_ADDRESS((PVOID)WorkingSet) == FALSE);
+
+    /* Thread shouldn't already be owning something */
+    ASSERT(!MM_ANY_WS_LOCK_HELD(Thread));
+
+    /* Lock this working set */
+    ExAcquirePushLockExclusive(&WorkingSet->WorkingSetMutex);
+
+    /* Which working set is this? */
+    if (WorkingSet == &MmSystemCacheWs)
+    {
+        /* Own the system working set */
+        ASSERT((Thread->OwnsSystemWorkingSetExclusive == FALSE) &&
+               (Thread->OwnsSystemWorkingSetShared == FALSE));
+        Thread->OwnsSystemWorkingSetExclusive = TRUE;
+    }
+    else if (WorkingSet->Flags.SessionSpace)
+    {
+        /* Own the session working set */
+        ASSERT((Thread->OwnsSessionWorkingSetExclusive == FALSE) &&
+               (Thread->OwnsSessionWorkingSetShared == FALSE));
+        Thread->OwnsSessionWorkingSetExclusive = TRUE;
+    }
+    else
+    {
+        /* Own the process working set */
+        ASSERT((Thread->OwnsProcessWorkingSetExclusive == FALSE) &&
+               (Thread->OwnsProcessWorkingSetShared == FALSE));
+        Thread->OwnsProcessWorkingSetExclusive = TRUE;
+    }
+}
+
+/* Unlocks the working set */
+FORCEINLINE
+VOID
+MiUnlockWorkingSet(
+    _In_ PETHREAD Thread,
+    _In_ PMMSUPPORT WorkingSet)
+{
+    /* Working set should be in global memory */
+    ASSERT(MI_IS_SESSION_ADDRESS((PVOID)WorkingSet) == FALSE);
+
+    /* Which working set is this? */
+    if (WorkingSet == &MmSystemCacheWs)
+    {
+        /* Release the system working set */
+        ASSERT((Thread->OwnsSystemWorkingSetExclusive == TRUE) ||
+               (Thread->OwnsSystemWorkingSetShared == TRUE));
+        Thread->OwnsSystemWorkingSetExclusive = FALSE;
+    }
+    else if (WorkingSet->Flags.SessionSpace)
+    {
+        /* Release the session working set */
+        ASSERT((Thread->OwnsSessionWorkingSetExclusive == TRUE) ||
+               (Thread->OwnsSessionWorkingSetShared == TRUE));
+        Thread->OwnsSessionWorkingSetExclusive = 0;
+    }
+    else
+    {
+        /* Release the process working set */
+        ASSERT((Thread->OwnsProcessWorkingSetExclusive) ||
+               (Thread->OwnsProcessWorkingSetShared));
+        Thread->OwnsProcessWorkingSetExclusive = FALSE;
+    }
+
+    /* Release the working set lock */
+    ExReleasePushLockExclusive(&WorkingSet->WorkingSetMutex);
+
+    /* Unblock APCs */
+    KeLeaveGuardedRegion();
 }
 
 /* Returns the PFN Database entry for the given page number.
@@ -1226,89 +1331,6 @@ MiSynchronizeSystemPde(
     return (Pde->u.Hard.Valid != 0);
 }
 #endif
-
-/* Locks the working set */
-FORCEINLINE
-VOID
-MiLockWorkingSet(
-    _In_ PETHREAD Thread,
-    _In_ PMMSUPPORT WorkingSet)
-{
-    /* Block APCs */
-    KeEnterGuardedRegion();
-
-    /* Working set should be in global memory */
-    ASSERT(MI_IS_SESSION_ADDRESS((PVOID)WorkingSet) == FALSE);
-
-    /* Thread shouldn't already be owning something */
-    ASSERT(!MM_ANY_WS_LOCK_HELD(Thread));
-
-    /* Lock this working set */
-    ExAcquirePushLockExclusive(&WorkingSet->WorkingSetMutex);
-
-    /* Which working set is this? */
-    if (WorkingSet == &MmSystemCacheWs)
-    {
-        /* Own the system working set */
-        ASSERT((Thread->OwnsSystemWorkingSetExclusive == FALSE) &&
-               (Thread->OwnsSystemWorkingSetShared == FALSE));
-        Thread->OwnsSystemWorkingSetExclusive = TRUE;
-    }
-    else if (WorkingSet->Flags.SessionSpace)
-    {
-        /* Own the session working set */
-        ASSERT((Thread->OwnsSessionWorkingSetExclusive == FALSE) &&
-               (Thread->OwnsSessionWorkingSetShared == FALSE));
-        Thread->OwnsSessionWorkingSetExclusive = TRUE;
-    }
-    else
-    {
-        /* Own the process working set */
-        ASSERT((Thread->OwnsProcessWorkingSetExclusive == FALSE) &&
-               (Thread->OwnsProcessWorkingSetShared == FALSE));
-        Thread->OwnsProcessWorkingSetExclusive = TRUE;
-    }
-}
-
-/* Unlocks the working set */
-FORCEINLINE
-VOID
-MiUnlockWorkingSet(
-    _In_ PETHREAD Thread,
-    _In_ PMMSUPPORT WorkingSet)
-{
-    /* Working set should be in global memory */
-    ASSERT(MI_IS_SESSION_ADDRESS((PVOID)WorkingSet) == FALSE);
-
-    /* Which working set is this? */
-    if (WorkingSet == &MmSystemCacheWs)
-    {
-        /* Release the system working set */
-        ASSERT((Thread->OwnsSystemWorkingSetExclusive == TRUE) ||
-               (Thread->OwnsSystemWorkingSetShared == TRUE));
-        Thread->OwnsSystemWorkingSetExclusive = FALSE;
-    }
-    else if (WorkingSet->Flags.SessionSpace)
-    {
-        /* Release the session working set */
-        ASSERT((Thread->OwnsSessionWorkingSetExclusive == TRUE) ||
-               (Thread->OwnsSessionWorkingSetShared == TRUE));
-        Thread->OwnsSessionWorkingSetExclusive = 0;
-    }
-    else
-    {
-        /* Release the process working set */
-        ASSERT((Thread->OwnsProcessWorkingSetExclusive) ||
-               (Thread->OwnsProcessWorkingSetShared));
-        Thread->OwnsProcessWorkingSetExclusive = FALSE;
-    }
-
-    /* Release the working set lock */
-    ExReleasePushLockExclusive(&WorkingSet->WorkingSetMutex);
-
-    /* Unblock APCs */
-    KeLeaveGuardedRegion();
-}
 
 PMMPTE
 NTAPI
