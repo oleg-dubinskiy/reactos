@@ -506,8 +506,6 @@ MmCallDllInitialize(
     _In_ PLIST_ENTRY ListHead
 );
 
-/* ARM3\vadnode.c */
-
 /* ARM3\virtual.c */
 NTSTATUS
 NTAPI

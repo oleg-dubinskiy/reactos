@@ -465,6 +465,23 @@ typedef struct _MI_PAGE_SUPPORT_BLOCK
     SINGLE_LIST_ENTRY ListEntry;
 } MI_PAGE_SUPPORT_BLOCK, *PMI_PAGE_SUPPORT_BLOCK;
 
+typedef struct _MM_PHYSICAL_VIEW
+{
+    union
+    {
+        LONG_PTR Balance:2;
+        PMMVAD Parent;
+    } u1;
+    PMMVAD LeftChild;
+    PMMVAD RightChild;
+    ULONG_PTR StartingVpn;
+    ULONG_PTR EndingVpn;
+    PMMVAD Vad;
+    MI_VAD_TYPE VadType;
+    PVOID Reserved1;
+    PVOID Reserved2;
+} MM_PHYSICAL_VIEW, *PMM_PHYSICAL_VIEW;
+
 extern PMMCOLOR_TABLES MmFreePagesByColor[FreePageList + 1];
 extern PVOID MmPagedPoolStart;
 extern PVOID MmNonPagedPoolEnd;
@@ -1057,10 +1074,10 @@ MI_PFN_ELEMENT(
 FORCEINLINE
 PFN_NUMBER
 MiGetPfnEntryIndex(
-    _In_ PMMPFN Pfn1)
+    _In_ PMMPFN Pfn)
 {
     /* This will return the Page Frame Number (PFN) from the MMPFN */
-    return (Pfn1 - MmPfnDatabase);
+    return (Pfn - MmPfnDatabase);
 }
 
 VOID
@@ -1807,6 +1824,13 @@ PMMVAD
 NTAPI
 MiLocateAddress(
     _In_ PVOID VirtualAddress
+);
+
+PMM_AVL_TABLE
+NTAPI
+MiCreatePhysicalVadRoot(
+    _In_ PEPROCESS Process,
+    _In_ BOOLEAN IsLocked
 );
 
 /* ARM3\virtual.c */
