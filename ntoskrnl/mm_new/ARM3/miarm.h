@@ -1843,6 +1843,14 @@ MiDeleteSystemPageableVm(
     _Out_ PPFN_NUMBER ValidPages
 );
 
+VOID
+NTAPI
+MiMakePdeExistAndMakeValid(
+    _In_ PMMPDE Pde,
+    _In_ PEPROCESS TargetProcess,
+    _In_ KIRQL OldIrql
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION

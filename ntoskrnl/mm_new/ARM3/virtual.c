@@ -4,9 +4,11 @@
 #include <ntoskrnl.h>
 //#define NDEBUG
 #include <debug.h>
+#include "miarm.h"
 
 /* GLOBALS ********************************************************************/
 
+extern PVOID MmPagedPoolEnd;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -23,78 +25,6 @@ MmCopyVirtualMemory(
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
-}
-
-/* PUBLIC FUNCTIONS ***********************************************************/
-
-PHYSICAL_ADDRESS
-NTAPI
-MmGetPhysicalAddress(
-    PVOID Address)
-{
-    PHYSICAL_ADDRESS PhysicalAddress;
-    MMPDE TempPde;
-    MMPTE TempPte;
-
-    TempPde = *MiAddressToPde(Address);
-
-    /* Check if the PXE/PPE/PDE is valid */
-    if (!TempPde.u.Hard.Valid)
-    {
-        //KeRosDumpStackFrames(NULL, 20);
-        DPRINT1("MM:MmGetPhysicalAddress: Failed base address was %p\n", Address);
-        ASSERT(FALSE);
-
-        PhysicalAddress.QuadPart = 0;
-    }
-    /* Check for large pages */
-    else if (TempPde.u.Hard.LargePage)
-    {
-        /* Physical address is base page + large page offset */
-        PhysicalAddress.QuadPart = ((ULONG64)TempPde.u.Hard.PageFrameNumber << PAGE_SHIFT);
-        PhysicalAddress.QuadPart += ((ULONG_PTR)Address & (PAGE_SIZE * PTE_PER_PAGE - 1));
-    }
-    else
-    {
-        /* Check if the PTE is valid */
-        TempPte = *MiAddressToPte(Address);
-        if (TempPte.u.Hard.Valid)
-        {
-            /* Physical address is base page + page offset */
-            PhysicalAddress.QuadPart = ((ULONG64)TempPte.u.Hard.PageFrameNumber << PAGE_SHIFT);
-            PhysicalAddress.QuadPart += ((ULONG_PTR)Address & (PAGE_SIZE - 1));
-        }
-    }
-
-    return PhysicalAddress;
-}
-
-PVOID
-NTAPI
-MmGetVirtualForPhysical(
-    _In_ PHYSICAL_ADDRESS PhysicalAddress)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
-}
-
-PVOID
-NTAPI
-MmSecureVirtualMemory(
-    _In_ PVOID Address,
-    _In_ SIZE_T Length,
-    _In_ ULONG Mode)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
-}
-
-VOID
-NTAPI
-MmUnsecureVirtualMemory(
-    _In_ PVOID SecureMem)
-{
-    UNIMPLEMENTED_DBGBREAK();
 }
 
 PFN_COUNT
@@ -192,6 +122,197 @@ MiDeleteSystemPageableVm(
 
     /* Done */
     return ActualPages;
+}
+
+ULONG
+NTAPI
+MiMakeSystemAddressValid(
+    _In_ PVOID PageTableVirtualAddress,
+    _In_ PEPROCESS CurrentProcess)
+{
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    BOOLEAN WsShared = FALSE;
+    BOOLEAN WsSafe = FALSE;
+    BOOLEAN LockChange = FALSE;
+    NTSTATUS Status;
+
+    /* Must be a non-pool page table, since those are double-mapped already */
+    ASSERT(PageTableVirtualAddress > MM_HIGHEST_USER_ADDRESS);
+    ASSERT(PageTableVirtualAddress < MmPagedPoolStart || PageTableVirtualAddress > MmPagedPoolEnd);
+
+    /* Working set lock or PFN lock should be held */
+    ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+    /* Check if the page table is valid */
+    while (!MmIsAddressValid(PageTableVirtualAddress))
+    {
+        /* Release the working set lock */
+        MiUnlockProcessWorkingSetForFault(CurrentProcess, CurrentThread, &WsSafe, &WsShared);
+
+        /* Fault it in */
+        Status = MmAccessFault(FALSE, PageTableVirtualAddress, KernelMode, NULL);
+        if (!NT_SUCCESS(Status))
+        {
+            /* This should not fail */
+            ASSERT(FALSE);
+            KeBugCheckEx(KERNEL_DATA_INPAGE_ERROR,
+                         1,
+                         Status,
+                         (ULONG_PTR)CurrentProcess,
+                         (ULONG_PTR)PageTableVirtualAddress);
+        }
+
+        /* Lock the working set again */
+        MiLockProcessWorkingSetForFault(CurrentProcess, CurrentThread, WsSafe, WsShared);
+
+        /* This flag will be useful later when we do better locking */
+        LockChange = TRUE;
+    }
+
+    /* Let caller know what the lock state is */
+    return LockChange;
+}
+
+VOID
+NTAPI
+MiMakePdeExistAndMakeValid(
+    _In_ PMMPDE Pde,
+    _In_ PEPROCESS TargetProcess,
+    _In_ KIRQL OldIrql)
+{
+   PMMPTE Pte;
+   PMMPTE Ppe;
+   PMMPTE Pxe;
+
+   /* Sanity checks.
+      The latter is because we only use this function with the PFN lock not held, so it may go away in the future.
+   */
+   ASSERT(KeAreAllApcsDisabled() == TRUE);
+   ASSERT(OldIrql == MM_NOIRQL);
+
+   /* Also get the PPE and PXE.
+     This is okay not to #ifdef because they will return the same address as the PDE on 2-level page table systems.
+
+      If everything is already valid, there is nothing to do.
+   */
+   Ppe = MiAddressToPte(Pde);
+   Pxe = MiAddressToPde(Pde);
+
+   if (Pxe->u.Hard.Valid &&
+       Ppe->u.Hard.Valid &&
+       Pde->u.Hard.Valid)
+   {
+       return;
+   }
+
+   /* At least something is invalid, so begin by getting the PTE for the PDE itself and then lookup each additional level.
+      We must do it in this precise order because the pagfault.c code (as well as in Windows)
+      depends that the next level up (higher) must be valid when faulting a lower level
+   */
+   Pte = MiPteToAddress(Pde);
+
+   do
+   {
+       /* Make sure APCs continued to be disabled */
+       ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+       /* First, make the PXE valid if needed */
+       if (!Pxe->u.Hard.Valid)
+       {
+           MiMakeSystemAddressValid(Ppe, TargetProcess);
+           ASSERT(Pxe->u.Hard.Valid == 1);
+       }
+
+       /* Next, the PPE */
+       if (!Ppe->u.Hard.Valid)
+       {
+           MiMakeSystemAddressValid(Pde, TargetProcess);
+           ASSERT(Ppe->u.Hard.Valid == 1);
+       }
+
+       /* And finally, make the PDE itself valid. */
+       MiMakeSystemAddressValid(Pte, TargetProcess);
+
+       /* This should've worked the first time so the loop is really just for show -- ASSERT
+          that we're actually NOT going to be looping.
+       */
+       ASSERT(Pxe->u.Hard.Valid == 1);
+       ASSERT(Ppe->u.Hard.Valid == 1);
+       ASSERT(Pde->u.Hard.Valid == 1);
+   }
+   while (!Pxe->u.Hard.Valid || !Ppe->u.Hard.Valid || !Pde->u.Hard.Valid);
+}
+
+/* PUBLIC FUNCTIONS ***********************************************************/
+
+PHYSICAL_ADDRESS
+NTAPI
+MmGetPhysicalAddress(
+    PVOID Address)
+{
+    PHYSICAL_ADDRESS PhysicalAddress;
+    MMPDE TempPde;
+    MMPTE TempPte;
+
+    TempPde = *MiAddressToPde(Address);
+
+    /* Check if the PXE/PPE/PDE is valid */
+    if (!TempPde.u.Hard.Valid)
+    {
+        //KeRosDumpStackFrames(NULL, 20);
+        DPRINT1("MM:MmGetPhysicalAddress: Failed base address was %p\n", Address);
+        ASSERT(FALSE);
+
+        PhysicalAddress.QuadPart = 0;
+    }
+    /* Check for large pages */
+    else if (TempPde.u.Hard.LargePage)
+    {
+        /* Physical address is base page + large page offset */
+        PhysicalAddress.QuadPart = ((ULONG64)TempPde.u.Hard.PageFrameNumber << PAGE_SHIFT);
+        PhysicalAddress.QuadPart += ((ULONG_PTR)Address & (PAGE_SIZE * PTE_PER_PAGE - 1));
+    }
+    else
+    {
+        /* Check if the PTE is valid */
+        TempPte = *MiAddressToPte(Address);
+        if (TempPte.u.Hard.Valid)
+        {
+            /* Physical address is base page + page offset */
+            PhysicalAddress.QuadPart = ((ULONG64)TempPte.u.Hard.PageFrameNumber << PAGE_SHIFT);
+            PhysicalAddress.QuadPart += ((ULONG_PTR)Address & (PAGE_SIZE - 1));
+        }
+    }
+
+    return PhysicalAddress;
+}
+
+PVOID
+NTAPI
+MmGetVirtualForPhysical(
+    _In_ PHYSICAL_ADDRESS PhysicalAddress)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
+PVOID
+NTAPI
+MmSecureVirtualMemory(
+    _In_ PVOID Address,
+    _In_ SIZE_T Length,
+    _In_ ULONG Mode)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
+VOID
+NTAPI
+MmUnsecureVirtualMemory(
+    _In_ PVOID SecureMem)
+{
+    UNIMPLEMENTED_DBGBREAK();
 }
 
 /* SYSTEM CALLS ***************************************************************/
