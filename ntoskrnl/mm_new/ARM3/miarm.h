@@ -981,6 +981,67 @@ MiUnlockWorkingSet(
     KeLeaveGuardedRegion();
 }
 
+FORCEINLINE
+VOID
+MiUnlockProcessWorkingSetForFault(
+    _In_ PEPROCESS Process,
+    _In_ PETHREAD Thread,
+    _Out_ PBOOLEAN Safe,
+    _Out_ PBOOLEAN Shared)
+{
+    ASSERT(MI_WS_OWNER(Process));
+
+    /* Check if the current owner is unsafe */
+    if (MI_IS_WS_UNSAFE(Process))
+    {
+        /* Release unsafely */
+        MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+        *Safe = FALSE;
+        *Shared = FALSE;
+    }
+    else if (Thread->OwnsProcessWorkingSetExclusive == 1)
+    {
+        /* Owner is safe and exclusive, release normally */
+        MiUnlockProcessWorkingSet(Process, Thread);
+        *Safe = TRUE;
+        *Shared = FALSE;
+    }
+    else
+    {
+        /* Owner is shared (implies safe), release normally */
+        MiUnlockProcessWorkingSetShared(Process, Thread);
+        *Safe = TRUE;
+        *Shared = TRUE;
+    }
+}
+
+FORCEINLINE
+VOID
+MiLockProcessWorkingSetForFault(
+    _In_ PEPROCESS Process,
+    _In_ PETHREAD Thread,
+    _In_ BOOLEAN Safe,
+    _In_ BOOLEAN Shared)
+{
+    /* Check if this was a safe lock or not */
+    if (!Safe)
+    {
+        /* Unsafe lock cannot be shared */
+        ASSERT(Shared == FALSE);
+
+        /* Reacquire unsafely */
+        MiLockProcessWorkingSetUnsafe(Process, Thread);
+        return;
+    }
+
+    if (Shared)
+        /* Reacquire safely & shared */
+        MiLockProcessWorkingSetShared(Process, Thread);
+    else
+        /* Reacquire safely */
+        MiLockProcessWorkingSet(Process, Thread);
+}
+
 /* Returns the PFN Database entry for the given page number.
    Warning: This is not necessarily a valid PFN database entry!
 */
