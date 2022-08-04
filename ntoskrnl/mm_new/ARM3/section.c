@@ -966,6 +966,31 @@ MiIsProtectionCompatible(
     return ((CompatibleMask | NewSectionPageProtection) == CompatibleMask);
 }
 
+VOID
+NTAPI
+MiInsertPhysicalViewAndRefControlArea(
+    _In_ PEPROCESS Process,
+    _In_ PCONTROL_AREA ControlArea,
+    _In_ PMM_PHYSICAL_VIEW PhysicalView)
+{
+    KIRQL OldIrql;
+
+    DPRINT("MiInsertPhysicalViewAndRefControlArea: %p, %p, %p\n", Process, ControlArea, PhysicalView);
+
+    ASSERT(PhysicalView->Vad->u.VadFlags.VadType == VadDevicePhysicalMemory);
+    ASSERT(Process->PhysicalVadRoot != NULL);
+
+    MiInsertVad((PMMVAD)PhysicalView, Process->PhysicalVadRoot);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    ControlArea->NumberOfMappedViews++;
+    ControlArea->NumberOfUserReferences++;
+    ASSERT(ControlArea->NumberOfSectionReferences != 0);
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+}
+
 NTSTATUS
 NTAPI
 MiMapViewOfPhysicalSection(
