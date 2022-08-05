@@ -159,7 +159,32 @@ MmUnmapIoSpace(
     _In_ PVOID BaseAddress,
     _In_ SIZE_T NumberOfBytes)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMMPTE Pte;
+    PFN_NUMBER Pfn;
+    PFN_COUNT PageCount;
+
+    /* Sanity check */
+    ASSERT(NumberOfBytes != 0);
+
+    /* Get the page count */
+    PageCount = ADDRESS_AND_SIZE_TO_SPAN_PAGES(BaseAddress, NumberOfBytes);
+
+    /* Get the PTE and PFN */
+    Pte = MiAddressToPte(BaseAddress);
+    Pfn = PFN_FROM_PTE(Pte);
+
+    /* Is this an I/O mapping? */
+    if (!MiGetPfnEntry(Pfn))
+    {
+        /* Destroy the PTE */
+        RtlZeroMemory(Pte, (PageCount * sizeof(MMPTE)));
+
+        /* Blow the TLB */
+        KeFlushEntireTb(TRUE, TRUE);
+    }
+
+    /* Release the PTEs */
+    MiReleaseSystemPtes(Pte, PageCount, 0);
 }
 
 VOID
