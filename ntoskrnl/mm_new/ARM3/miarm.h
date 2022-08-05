@@ -1891,6 +1891,13 @@ MiRemoveNode(
     _In_ PMM_AVL_TABLE Table
 );
 
+VOID
+NTAPI
+MiPhysicalViewRemover(
+    _In_ PEPROCESS Process,
+    _In_ PMMVAD Vad
+);
+
 /* ARM3\virtual.c */
 PFN_COUNT
 NTAPI

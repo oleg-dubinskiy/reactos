@@ -880,4 +880,41 @@ MiFindNodeOrParent(
     return SearchResult;
 }
 
+VOID
+NTAPI
+MiPhysicalViewRemover(
+    _In_ PEPROCESS Process,
+    _In_ PMMVAD Vad)
+{
+    PMM_PHYSICAL_VIEW PhysicalView;
+    TABLE_SEARCH_RESULT SearchResult;
+
+    DPRINT("MiPhysicalViewRemover: Process %p, Vad %p\n", Process, Vad);
+
+    ASSERT(Process->PhysicalVadRoot != NULL);
+
+    SearchResult = MiFindNodeOrParent(Process->PhysicalVadRoot,
+                                      Vad->StartingVpn,
+                                      (PMMADDRESS_NODE *)&PhysicalView);
+
+    ASSERT(SearchResult == TableFoundNode);
+    ASSERT(PhysicalView->Vad == Vad);
+
+    MiRemoveNode((PMMADDRESS_NODE)PhysicalView, Process->PhysicalVadRoot);
+
+    if (Vad->u.VadFlags.VadType == VadWriteWatch)
+    {
+        DPRINT1("MiPhysicalViewRemover: VadType - VadWriteWatch\n");
+        ASSERT(FALSE);
+    }
+
+    if (Vad->u.VadFlags.VadType == VadRotatePhysical)
+    {
+        DPRINT1("MiPhysicalViewRemover: VadType - VadRotatePhysical\n");
+        ASSERT(FALSE);
+    }
+
+    ExFreePoolWithTag(PhysicalView, 'vpmM');
+}
+
 /* EOF */
