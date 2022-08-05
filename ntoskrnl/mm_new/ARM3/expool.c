@@ -1361,8 +1361,8 @@ ExAllocatePool(
     POOL_TYPE PoolType,
     SIZE_T NumberOfBytes)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    ULONG Tag = TAG_NONE;
+    return ExAllocatePoolWithTag(PoolType, NumberOfBytes, Tag);
 }
 
 PVOID
