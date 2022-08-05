@@ -736,6 +736,22 @@ MiReleasePfnLockFromDpcLevel(VOID)
     ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
 }
 
+FORCEINLINE
+VOID
+MmLockAddressSpace(
+    _In_ PMMSUPPORT AddressSpace)
+{
+    KeAcquireGuardedMutex(&CONTAINING_RECORD(AddressSpace, EPROCESS, Vm)->AddressCreationLock);
+}
+
+FORCEINLINE
+VOID
+MmUnlockAddressSpace(
+    _In_ PMMSUPPORT AddressSpace)
+{
+    KeReleaseGuardedMutex(&CONTAINING_RECORD(AddressSpace, EPROCESS, Vm)->AddressCreationLock);
+}
+
 /* Checks if the thread already owns a working set */
 FORCEINLINE
 BOOLEAN
