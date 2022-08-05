@@ -828,4 +828,56 @@ MiRemoveNode(
         Table->NodeHint = Table->BalancedRoot.RightChild;
 }
 
+TABLE_SEARCH_RESULT
+NTAPI
+MiFindNodeOrParent(
+    _In_ PMM_AVL_TABLE Table,
+    _In_ ULONG_PTR StartingVpn,
+    _Out_ PMMADDRESS_NODE* OutNodeOrParent)
+{
+    PMMADDRESS_NODE Node;
+    PMMADDRESS_NODE ChildNode;
+    TABLE_SEARCH_RESULT SearchResult;
+    ULONG NumberCompares = 0;
+
+    if (!Table->NumberGenericTableElements)
+        return TableEmptyTree;
+
+    for (Node = Table->BalancedRoot.RightChild;
+         ;
+         Node = ChildNode)
+    {
+        NumberCompares++;
+        ASSERT(NumberCompares <= Table->DepthOfTree);
+
+        if (StartingVpn >= Node->StartingVpn)
+        {
+            if (StartingVpn <= Node->EndingVpn)
+            {
+                SearchResult = TableFoundNode;
+                break;
+            }
+
+            ChildNode = Node->RightChild;
+            if (ChildNode)
+                continue;
+
+            SearchResult = TableInsertAsRight;
+            break;
+        }
+
+        ChildNode = Node->LeftChild;
+
+        if (!ChildNode)
+        {
+            SearchResult = TableInsertAsLeft;
+            break;
+        }
+    }
+
+    *OutNodeOrParent = Node;
+
+    return SearchResult;
+}
+
 /* EOF */
