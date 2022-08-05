@@ -193,8 +193,53 @@ MmCallDllInitialize(
     _In_ PLDR_DATA_TABLE_ENTRY LdrEntry,
     _In_ PLIST_ENTRY ListHead)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    UNICODE_STRING ServicesKeyName = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\");
+    PMM_DLL_INITIALIZE DllInit;
+    UNICODE_STRING RegPath;
+    UNICODE_STRING ImportName;
+    NTSTATUS Status;
+
+    /* Try to see if the image exports a DllInitialize routine */
+    DllInit = (PMM_DLL_INITIALIZE)MiLocateExportName(LdrEntry->DllBase, "DllInitialize");
+    if (!DllInit)
+        return STATUS_SUCCESS;
+
+    /* Do a temporary copy of BaseDllName called ImportName because we'll alter the length of the string. */
+    ImportName.Length = LdrEntry->BaseDllName.Length;
+    ImportName.MaximumLength = LdrEntry->BaseDllName.MaximumLength;
+    ImportName.Buffer = LdrEntry->BaseDllName.Buffer;
+
+    /* Obtain the path to this dll's service in the registry */
+    RegPath.MaximumLength = ServicesKeyName.Length + ImportName.Length + sizeof(UNICODE_NULL);
+    RegPath.Buffer = ExAllocatePoolWithTag(NonPagedPool, RegPath.MaximumLength, TAG_LDR_WSTR);
+
+    /* Check if this allocation was unsuccessful */
+    if (!RegPath.Buffer)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    /* Build and append the service name itself */
+    RegPath.Length = ServicesKeyName.Length;
+    RtlCopyMemory(RegPath.Buffer, ServicesKeyName.Buffer, ServicesKeyName.Length);
+
+    /* Check if there is a dot in the filename */
+    if (wcschr(ImportName.Buffer, L'.'))
+    {
+        /* Remove the extension */
+        ImportName.Length = (USHORT)(wcschr(ImportName.Buffer, L'.') - ImportName.Buffer) * sizeof(WCHAR);
+    }
+
+    /* Append service name (the basename without extension) */
+    RtlAppendUnicodeStringToString(&RegPath, &ImportName);
+
+    /* Now call the DllInit func */
+    DPRINT("MmCallDllInitialize: Calling '%wZ'\n", &RegPath);
+    Status = DllInit(&RegPath);
+
+    /* Clean up */
+    ExFreePoolWithTag(RegPath.Buffer, TAG_LDR_WSTR);
+
+    /* Return status value which DllInitialize returned */
+    return Status;
 }
 
 VOID
