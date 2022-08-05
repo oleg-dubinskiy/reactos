@@ -803,4 +803,29 @@ MiRemoveVadCharges(
     }
 }
 
+VOID
+NTAPI
+MiRemoveNode(
+    _In_ PMMADDRESS_NODE Node,
+    _In_ PMM_AVL_TABLE Table)
+{
+    DPRINT("MiRemoveNode: Node %p, Table %p\n", Node, Table);
+
+    /* Call the AVL code */
+    RtlpDeleteAvlTreeNode(Table, Node);
+
+    /* Decrease element count */
+    Table->NumberGenericTableElements--;
+
+    /* Check if this node was the hint */
+    if (Table->NodeHint != Node)
+        return;
+
+    /* Get a new hint, unless we're empty now, in which case nothing */
+    if (!Table->NumberGenericTableElements)
+        Table->NodeHint = NULL;
+    else
+        Table->NodeHint = Table->BalancedRoot.RightChild;
+}
+
 /* EOF */

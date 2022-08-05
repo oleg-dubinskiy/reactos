@@ -1884,6 +1884,13 @@ MiRemoveVadCharges(
     _In_ PEPROCESS Process
 );
 
+VOID
+NTAPI
+MiRemoveNode(
+    _In_ PMMADDRESS_NODE Node,
+    _In_ PMM_AVL_TABLE Table
+);
+
 /* ARM3\virtual.c */
 PFN_COUNT
 NTAPI
