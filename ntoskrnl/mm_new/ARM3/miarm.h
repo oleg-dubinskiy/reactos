@@ -1715,6 +1715,13 @@ MiInitializeSystemSpaceMap(
     _In_ PMMSESSION InputSession OPTIONAL
 );
 
+PSUBSECTION
+NTAPI
+MiLocateSubsection(
+    _In_ PMMVAD Vad,
+    _In_ ULONG_PTR Vpn
+);
+
 /* ARM3\session.c */
 VOID
 NTAPI

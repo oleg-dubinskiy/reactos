@@ -1986,6 +1986,271 @@ ErrorExit:
     return Status;
 }
 
+PSUBSECTION
+NTAPI
+MiLocateSubsection(
+    _In_ PMMVAD Vad,
+    _In_ ULONG_PTR Vpn)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
+VOID
+NTAPI
+MiDecrementSubsections(
+    _In_ PSUBSECTION FirstSubsection,
+    _In_ PSUBSECTION LastSubsection)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+MiRemoveMappedView(
+    _In_ PEPROCESS Process,
+    _In_ PMMVAD Vad)
+{
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    PCONTROL_AREA ControlArea;
+    PMMEXTEND_INFO ExtendedInfo;
+    PSUBSECTION LastSubsection;
+    PSUBSECTION FirstSubsection;
+    PVOID UsedAddress;
+    PMMPTE Pde;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    PMMPFN Pfn;
+    PFN_NUMBER PdePage;
+    KIRQL OldIrql;
+
+    DPRINT("MiRemoveMappedView: Process %p, Vad %p\n", Process, Vad);
+
+    /* Get the control area */
+    ControlArea = Vad->ControlArea;
+
+    /* If view of the physical section */
+    if (Vad->u.VadFlags.VadType == VadDevicePhysicalMemory)
+    {
+        if (((PMMVAD_LONG)Vad)->u4.Banked)
+        {
+            DPRINT1("MiRemoveMappedView: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        /* Remove Physical View */
+        MiPhysicalViewRemover(Process, Vad);
+
+        Pde = MiAddressToPde(Vad->StartingVpn * PAGE_SIZE);
+        ASSERT(Pde->u.Hard.Valid == 1);
+
+        Pte = MiAddressToPte(Vad->StartingVpn * PAGE_SIZE);
+        LastPte = MiAddressToPte(Vad->EndingVpn * PAGE_SIZE);
+
+        if (!Pde->u.Hard.LargePage)
+        {
+            PdePage = Pde->u.Hard.PageFrameNumber;
+            UsedAddress = (PVOID)(Vad->StartingVpn * PAGE_SIZE);
+
+            /* Lock the PFN database */
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+
+            while (Pte <= LastPte)
+            {
+                /* Check if we're on a PDE boundary */
+                if (MiIsPteOnPdeBoundary(Pte))
+                {
+                    Pde = MiAddressToPte(Pte);
+                    PdePage = Pde->u.Hard.PageFrameNumber;
+                    UsedAddress = MiPteToAddress(Pte);
+                }
+
+                /* Add an additional page table reference */
+                MiDecrementPageTableReferences(UsedAddress);
+
+                Pte->u.Long = 0;
+                Pfn = &MmPfnDatabase[PdePage];
+
+                if (Pfn->u2.ShareCount != 1)
+                {
+                    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+                    ASSERT(MmPfnOwner == KeGetCurrentThread());
+                    ASSERT(PdePage > 0);
+                    ASSERT(MiGetPfnEntry(PdePage) != NULL);
+                    ASSERT(&MmPfnDatabase[PdePage] == Pfn);
+                    ASSERT(Pfn->u2.ShareCount != 0);
+
+                    if (Pfn->u3.e1.PageLocation != ActiveAndValid &&
+                        Pfn->u3.e1.PageLocation != StandbyPageList)
+                    {
+                        DPRINT1("MiRemoveMappedView: FIXME\n");
+                        ASSERT(FALSE);
+                    }
+
+                    /* Just decrease share count */
+                    Pfn->u2.ShareCount--;
+                    ASSERT(Pfn->u2.ShareCount < 0xF000000);
+                }
+                else
+                {
+                    /* Decrement the share count on the page */
+                    MiDecrementShareCount(Pfn, PdePage);
+                }
+
+                /* See if we should delete it */
+                if (!MiQueryPageTableReferences(UsedAddress))
+                {
+                    DPRINT1("MiRemoveMappedView: FIXME\n");
+                    ASSERT(FALSE);
+                }
+
+                Pte++;
+            }
+
+            KeFlushProcessTb();
+
+            /* Release the PFN lock */
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+            /* Release the working set */
+            MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+            /* Lock the PFN database */
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+        }
+        else
+        {
+            /* Not supported yet */
+            DPRINT1("MiRemoveMappedView: FIXME\n");
+            ASSERT(FALSE);
+
+            /* Release the working set */
+            MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+            /* Lock the PFN database */
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+        }
+    }
+    else
+    {
+        if (Vad->u2.VadFlags2.ExtendableFile)
+        {
+            PMMVAD_LONG VadLong = (PMMVAD_LONG)Vad;
+
+            /* Release the working set */
+            MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+            ExtendedInfo = NULL;
+
+            /* Acquire the lock */
+            KeAcquireGuardedMutexUnsafe(&MmSectionBasedMutex);
+
+            ASSERT(VadLong->ControlArea->Segment->ExtendInfo == VadLong->u4.ExtendedInfo);
+            VadLong->u4.ExtendedInfo->ReferenceCount--;
+
+            if (!VadLong->u4.ExtendedInfo->ReferenceCount)
+            {
+                ExtendedInfo = VadLong->u4.ExtendedInfo;
+                VadLong->ControlArea->Segment->ExtendInfo = NULL;
+            }
+
+            /* Now that we're done, release the lock */
+            KeReleaseGuardedMutexUnsafe (&MmSectionBasedMutex);
+
+            if (ExtendedInfo)
+                ExFreePoolWithTag(ExtendedInfo, 'xCmM');
+
+            /* Lock the working set */
+            MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+        }
+
+        FirstSubsection = 0;
+        LastSubsection = 0;
+
+        if (Vad->u.VadFlags.VadType == VadImageMap)
+        {
+            Pde = MiAddressToPde(Vad->StartingVpn * PAGE_SIZE);
+
+            if (Pde->u.Hard.Valid && Pde->u.Hard.LargePage)
+            {
+                DPRINT1("MiRemoveMappedView: FIXME\n");
+                ASSERT(FALSE);
+
+                /* Lock the PFN database */
+                OldIrql = MiLockPfnDb(APC_LEVEL);
+    
+                /* Increase the reference counts */
+                ControlArea->NumberOfMappedViews--;
+                ControlArea->NumberOfUserReferences--;
+
+                /* Check if it should be destroyed and return*/
+                MiCheckControlArea(ControlArea, OldIrql);
+                return;
+            }
+        }
+        else
+        {
+            if (ControlArea->FilePointer)
+            {
+                if (Vad->u.VadFlags.Protection == MM_READWRITE ||
+                    Vad->u.VadFlags.Protection == MM_EXECUTE_READWRITE)
+                {
+                    /* Add a reference */
+                    InterlockedDecrement ((volatile PLONG)&ControlArea->WritableUserReferences);
+                }
+
+                FirstSubsection = MiLocateSubsection(Vad, Vad->StartingVpn);
+                LastSubsection = MiLocateSubsection(Vad, Vad->EndingVpn);
+
+                ASSERT(FirstSubsection != NULL);
+
+                DPRINT("MiRemoveMappedView: FirstSubsection %p, LastSubsection %p\n", FirstSubsection, LastSubsection);
+            }
+        }
+
+        if (Vad->u.VadFlags.VadType == VadLargePageSection)
+        {
+            DPRINT1("MiRemoveMappedView: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else
+        {
+            /* Delete the actual virtual memory pages */
+            MiDeleteVirtualAddresses((Vad->StartingVpn * PAGE_SIZE),
+                                     ((Vad->EndingVpn * PAGE_SIZE) | (PAGE_SIZE - 1)),
+                                     Vad);
+        }
+
+        /* Release the working set */
+        MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+        /* Lock the PFN database */
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        if (FirstSubsection)
+            MiDecrementSubsections(FirstSubsection, LastSubsection);
+    }
+
+    if (ControlArea)
+    {
+        /* Decrease the reference counts */
+        ControlArea->NumberOfMappedViews--;
+        ControlArea->NumberOfUserReferences--;
+
+        /* Check if it should be destroyed and return */
+        MiCheckControlArea(ControlArea, OldIrql);
+        return;
+    }
+
+    /* Release the PFN lock and return */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    ASSERT(Vad->u.VadFlags.VadType == VadDevicePhysicalMemory);
+    ASSERT(((PMMVAD_LONG)Vad)->u4.Banked == NULL);
+    ASSERT(Vad->ControlArea == NULL);
+    ASSERT(Vad->FirstPrototypePte == NULL);
+}
+
 NTSTATUS
 NTAPI
 MiUnmapViewOfSection(
