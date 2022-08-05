@@ -110,6 +110,83 @@ MiResolveImageReferences(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+PVOID
+NTAPI
+MiLocateExportName(
+    _In_ PVOID DllBase,
+    _In_ PCHAR ExportName)
+{
+    PIMAGE_EXPORT_DIRECTORY ExportDirectory;
+    PULONG NameTable;
+    PULONG ExportTable;
+    PUSHORT OrdinalTable;
+    PVOID Function;
+    LONG Low = 0;
+    LONG Mid = 0;
+    LONG High;
+    LONG Ret;
+    ULONG ExportSize;
+    USHORT Ordinal;
+
+    PAGED_CODE();
+
+    /* Get the export directory */
+    ExportDirectory = RtlImageDirectoryEntryToData(DllBase,
+                                                   TRUE,
+                                                   IMAGE_DIRECTORY_ENTRY_EXPORT,
+                                                   &ExportSize);
+    if (!ExportDirectory)
+        return NULL;
+
+    /* Setup name tables */
+    NameTable = (PULONG)((ULONG_PTR)DllBase + ExportDirectory->AddressOfNames);
+    OrdinalTable = (PUSHORT)((ULONG_PTR)DllBase + ExportDirectory->AddressOfNameOrdinals);
+
+    /* Do a binary search */
+    High = (ExportDirectory->NumberOfNames - 1);
+
+    while (High >= Low)
+    {
+        /* Get new middle value */
+        Mid = ((Low + High) >> 1);
+
+        /* Compare name */
+        Ret = strcmp(ExportName, ((PCHAR)DllBase + NameTable[Mid]));
+
+        if (Ret < 0)
+            /* Update high */
+            High = (Mid - 1);
+        else if (Ret > 0)
+            /* Update low */
+            Low = (Mid + 1);
+        else
+            /* We got it */
+            break;
+    }
+
+    /* Check if we couldn't find it */
+    if (High < Low)
+        return NULL;
+
+    /* Otherwise, this is the ordinal */
+    Ordinal = OrdinalTable[Mid];
+
+    /* Resolve the address and write it */
+    ExportTable = (PULONG)((ULONG_PTR)DllBase + ExportDirectory->AddressOfFunctions);
+    Function = (PVOID)((ULONG_PTR)DllBase + ExportTable[Ordinal]);
+
+    /* Check if the function is actually a forwarder */
+    if ((ULONG_PTR)Function > (ULONG_PTR)ExportDirectory &&
+        (ULONG_PTR)Function < ((ULONG_PTR)ExportDirectory + ExportSize))
+    {
+        /* It is, fail */
+        return NULL;
+    }
+
+    /* We found it */
+    return Function;
+}
+
 NTSTATUS
 NTAPI
 MmCallDllInitialize(
