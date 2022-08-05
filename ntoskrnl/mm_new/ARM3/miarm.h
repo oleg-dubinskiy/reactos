@@ -488,6 +488,12 @@ typedef struct _MM_PHYSICAL_VIEW
     PVOID Reserved2;
 } MM_PHYSICAL_VIEW, *PMM_PHYSICAL_VIEW;
 
+typedef struct _MMPTE_FLUSH_LIST
+{
+    ULONG Count;
+    PVOID FlushVa[0x21];
+} MMPTE_FLUSH_LIST, *PMMPTE_FLUSH_LIST;
+
 extern PMMCOLOR_TABLES MmFreePagesByColor[FreePageList + 1];
 extern PVOID MmPagedPoolStart;
 extern PVOID MmNonPagedPoolEnd;
