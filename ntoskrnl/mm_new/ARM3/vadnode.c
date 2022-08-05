@@ -112,6 +112,49 @@ MiGetNextNode(
     return NULL;
 }
 
+PMMADDRESS_NODE
+NTAPI
+MiGetPreviousNode(
+    _In_ PMMADDRESS_NODE Node)
+{
+    PMMADDRESS_NODE Parent;
+
+    /* Get the left child */
+    if (RtlLeftChildAvl(Node))
+    {
+        /* Get right-most child */
+        Node = RtlLeftChildAvl(Node);
+
+        while (RtlRightChildAvl(Node))
+            Node = RtlRightChildAvl(Node);
+
+        return Node;
+    }
+
+    Parent = RtlParentAvl(Node);
+    ASSERT(Parent != NULL);
+
+    while (Parent != Node)
+    {
+        /* The parent should be a right child, return the real predecessor */
+        if (RtlIsRightChildAvl(Node))
+        {
+            /* Return it unless it's the root */
+            if (Parent == RtlParentAvl(Parent))
+                Parent = NULL;
+
+            return Parent;
+        }
+
+        /* Keep lopping until we find our parent */
+        Node = Parent;
+        Parent = RtlParentAvl(Node);
+    }
+
+    /* Nothing found */
+    return NULL;
+}
+
 TABLE_SEARCH_RESULT
 NTAPI
 MiFindEmptyAddressRangeInTree(
