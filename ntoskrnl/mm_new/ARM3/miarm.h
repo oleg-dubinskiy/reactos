@@ -167,6 +167,12 @@ extern PVOID MiSessionSpaceEnd;
   #define MI_PTE_LOOKUP_NEEDED 0xFFFFF
 #endif
 
+/* Used by MiCheckSecuredVad */
+#define MM_READ_WRITE_ALLOWED   11
+#define MM_READ_ONLY_ALLOWED    10
+#define MM_NO_ACCESS_ALLOWED    01
+#define MM_DELETE_CHECK         85
+
 /* These two mappings are actually used by Windows itself, based on the ASSERTS */
 #define StartOfAllocation ReadInProgress
 #define EndOfAllocation WriteInProgress
@@ -1831,6 +1837,15 @@ NTAPI
 MiCreatePhysicalVadRoot(
     _In_ PEPROCESS Process,
     _In_ BOOLEAN IsLocked
+);
+
+NTSTATUS
+NTAPI
+MiCheckSecuredVad(
+    _In_ PMMVAD Vad,
+    _In_ PVOID Base,
+    _In_ SIZE_T Size,
+    _In_ ULONG ProtectionMask
 );
 
 /* ARM3\virtual.c */

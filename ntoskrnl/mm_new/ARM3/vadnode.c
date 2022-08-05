@@ -14,7 +14,23 @@
 
 #define MAXINDEX 0xFFFFFFFF
 
+CHAR MmReadWrite[32] =
+{
+    MM_NO_ACCESS_ALLOWED, MM_READ_ONLY_ALLOWED, MM_READ_ONLY_ALLOWED, MM_READ_ONLY_ALLOWED,
+    MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED,
+
+    MM_NO_ACCESS_ALLOWED, MM_READ_ONLY_ALLOWED, MM_READ_ONLY_ALLOWED, MM_READ_ONLY_ALLOWED,
+    MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED,
+
+    MM_NO_ACCESS_ALLOWED, MM_READ_ONLY_ALLOWED, MM_READ_ONLY_ALLOWED, MM_READ_ONLY_ALLOWED,
+    MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED,
+
+    MM_NO_ACCESS_ALLOWED, MM_READ_ONLY_ALLOWED, MM_READ_ONLY_ALLOWED, MM_READ_ONLY_ALLOWED,
+    MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED, MM_READ_WRITE_ALLOWED,
+};
+
 extern ULONG MiLastVadBit;
+extern SIZE_T MmTotalCommittedPages;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -657,6 +673,72 @@ MiCreatePhysicalVadRoot(
     }
 
     return Process->PhysicalVadRoot;
+}
+
+NTSTATUS
+NTAPI
+MiCheckSecuredVad(
+    _In_ PMMVAD Vad,
+    _In_ PVOID Base,
+    _In_ SIZE_T Size,
+    _In_ ULONG ProtectionMask)
+{
+    ULONG_PTR StartAddress, EndAddress;
+
+    /* Compute start and end address */
+    StartAddress = (ULONG_PTR)Base;
+    EndAddress = (StartAddress + Size - 1);
+
+    /* Are we deleting/unmapping, or changing? */
+    if (ProtectionMask < MM_DELETE_CHECK)
+    {
+        /* Changing... are we allowed to do so? */
+        if (Vad->u.VadFlags.NoChange &&
+            Vad->u2.VadFlags2.SecNoChange &&
+            Vad->u.VadFlags.Protection != ProtectionMask)
+        {
+            /* Nope, bail out */
+            DPRINT1("Trying to mess with a no-change VAD!\n");
+            return STATUS_INVALID_PAGE_PROTECTION;
+        }
+    }
+    else
+    {
+        /* This is allowed */
+        ProtectionMask = 0;
+    }
+
+    /* ARM3 doesn't support this yet */
+    ASSERT(Vad->u2.VadFlags2.MultipleSecured == 0);
+
+    /* Is this a one-secured VAD, like a TEB or PEB? */
+    if (!Vad->u2.VadFlags2.OneSecured)
+        return STATUS_SUCCESS;
+
+    /* Is this allocation being described by the VAD? */
+    if (StartAddress <= ((PMMVAD_LONG)Vad)->u3.Secured.EndVpn &&
+        EndAddress >= ((PMMVAD_LONG)Vad)->u3.Secured.StartVpn)
+    {
+        /* Guard page? */
+        if (ProtectionMask & MM_DECOMMIT)
+        {
+            DPRINT1("Not allowed to change protection on guard page!\n");
+            return STATUS_INVALID_PAGE_PROTECTION;
+        }
+
+        /* ARM3 doesn't have read-only VADs yet */
+        ASSERT(Vad->u2.VadFlags2.ReadOnly == 0);
+
+        /* Check if read-write protections are allowed */
+        if (MmReadWrite[ProtectionMask] < MM_READ_WRITE_ALLOWED)
+        {
+            DPRINT1("Invalid protection mask for RW access!\n");
+            return STATUS_INVALID_PAGE_PROTECTION;
+        }
+    }
+
+    /* All good, allow the change */
+    return STATUS_SUCCESS;
 }
 
 /* EOF */
