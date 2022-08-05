@@ -1877,6 +1877,13 @@ MiCheckSecuredVad(
     _In_ ULONG ProtectionMask
 );
 
+VOID
+NTAPI
+MiRemoveVadCharges(
+    _In_ PMMVAD Vad,
+    _In_ PEPROCESS Process
+);
+
 /* ARM3\virtual.c */
 PFN_COUNT
 NTAPI
