@@ -243,6 +243,202 @@ MiMakePdeExistAndMakeValid(
    while (!Pxe->u.Hard.Valid || !Ppe->u.Hard.Valid || !Pde->u.Hard.Valid);
 }
 
+ULONG
+NTAPI
+MiDeletePte(IN PMMPTE PointerPte,
+            IN PVOID VirtualAddress,
+            IN PEPROCESS CurrentProcess,
+            IN PMMPTE PrototypePte,
+            IN PMMPTE_FLUSH_LIST PteFlushList,
+            IN KIRQL OldIrql)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+VOID
+NTAPI
+MiDeleteVirtualAddresses(
+    _In_ ULONG_PTR Va,
+    _In_ ULONG_PTR EndingAddress,
+    _In_ PMMVAD Vad)
+{
+    PMMPDE Pde;
+    PMMPTE Pte;
+    PMMPTE Proto;
+    PMMPTE LastProto;
+    MMPTE TempPte;
+    PEPROCESS CurrentProcess;
+    KIRQL OldIrql;
+    BOOLEAN AddressGap = FALSE;
+    PSUBSECTION Subsection;
+
+    DPRINT("MiDeleteVirtualAddresses: Va %p, EndingAddress %p, Vad %p\n", Va, EndingAddress, Vad);
+
+    /* Get out if this is a fake VAD, RosMm will free the marea pages */
+    if (Vad && Vad->u.VadFlags.Spare)
+        return;
+
+    /* Grab the process and PTE/PDE for the address being deleted */
+    CurrentProcess = PsGetCurrentProcess();
+
+    Pde = MiAddressToPde(Va);
+    Pte = MiAddressToPte(Va);
+
+    DPRINT("MiDeleteVirtualAddresses: Pde %p, Pte %p\n", Pde, Pte);
+
+    /* Check if this is a section VAD or a VM VAD */
+    if (!Vad || Vad->u.VadFlags.PrivateMemory || !Vad->FirstPrototypePte)
+    {
+        /* Don't worry about prototypes */
+        Proto = LastProto = NULL;
+    }
+    else
+    {
+        /* Get the prototype PTE */
+        Proto = Vad->FirstPrototypePte;
+        LastProto = (Vad->FirstPrototypePte + 1);
+    }
+
+    /* In all cases, we don't support fork() yet */
+    ASSERT(CurrentProcess->CloneRoot == NULL);
+
+    /* Loop the PTE for each VA */
+    while (TRUE)
+    {
+        /* First keep going until we find a valid PDE */
+        while (!Pde->u.Long)
+        {
+            /* There are gaps in the address space */
+            AddressGap = TRUE;
+
+            /* Still no valid PDE, try the next 4MB (or whatever) */
+            Pde++;
+
+            /* Update the PTE on this new boundary */
+            Pte = MiPteToAddress(Pde);
+
+            /* Check if all the PDEs are invalid, so there's nothing to free */
+            Va = (ULONG_PTR)MiPteToAddress(Pte);
+            if (Va > EndingAddress)
+            {
+                DPRINT1("MiDeleteVirtualAddresses: Va %p, EndingAddress %p, Vad %p\n", Va, EndingAddress, Vad);
+                return;
+            }
+        }
+
+        /* Now check if the PDE is mapped in */
+        if (!Pde->u.Hard.Valid)
+        {
+            /* It isn't, so map it in */
+            Pte = MiPteToAddress(Pde);
+            MiMakeSystemAddressValid(Pte, CurrentProcess);
+        }
+
+        /* Now we should have a valid PDE, mapped in, and still have some VA */
+        ASSERT(Pde->u.Hard.Valid == 1);
+        ASSERT(Va <= EndingAddress);
+
+        /* Check if this is a section VAD with gaps in it */
+        if (AddressGap && LastProto)
+        {
+            /* We need to skip to the next correct prototype PTE */
+            Proto = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, (Va / PAGE_SIZE));
+
+            /* And we need the subsection to skip to the next last prototype PTE */
+            Subsection = MiLocateSubsection(Vad, (Va / PAGE_SIZE));
+
+            if (Subsection)
+                /* Found it! */
+                LastProto = &Subsection->SubsectionBase[Subsection->PtesInSubsection];
+            else
+                /* No more subsections, we are done with prototype PTEs */
+                Proto = NULL;
+        }
+
+        /* Lock the PFN Database while we delete the PTEs */
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+        do
+        {
+            /* Capture the PDE and make sure it exists */
+            TempPte = *Pte;
+
+            if (TempPte.u.Long)
+            {
+                MiDecrementPageTableReferences((PVOID)Va);
+
+                /* Check if the PTE is actually mapped in */
+                if (MI_IS_MAPPED_PTE(&TempPte))
+                {
+                    /* Are we dealing with section VAD? */
+                    if (LastProto && Proto > LastProto)
+                    {
+                        /* We need to skip to the next correct prototype PTE */
+                        Proto = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, (Va / PAGE_SIZE));
+
+                        /* And we need the subsection to skip to the next last prototype PTE */
+                        Subsection = MiLocateSubsection(Vad, (Va / PAGE_SIZE));
+
+                        if (Subsection)
+                        {
+                            /* Found it! */
+                            LastProto = &Subsection->SubsectionBase[Subsection->PtesInSubsection];
+                        }
+                        else
+                        {
+                            /* No more subsections, we are done with prototype PTEs */
+                            Proto = NULL;
+                        }
+                    }
+
+                    /* Check for prototype PTE */
+                    if (!TempPte.u.Hard.Valid && TempPte.u.Soft.Prototype)
+                        /* Just nuke it */
+                        MI_ERASE_PTE(Pte);
+                    else
+                        /* Delete the PTE proper */
+                        MiDeletePte(Pte, (PVOID)Va, CurrentProcess, Proto, NULL, OldIrql);
+                }
+                else
+                {
+                    /* The PTE was never mapped, just nuke it here */
+                    MI_ERASE_PTE(Pte);
+                }
+            }
+
+            /* Update the address and PTE for it */
+            Va += PAGE_SIZE;
+            Pte++;
+            Proto++;
+
+            /* Making sure the PDE is still valid */
+            ASSERT(Pde->u.Hard.Valid == 1);
+        }
+        while ((Va & (PDE_MAPPED_VA - 1)) && Va <= EndingAddress);
+
+        /* The PDE should still be valid at this point */
+        ASSERT(Pde->u.Hard.Valid == 1);
+
+        /* Check remaining PTE count (go back 1 page due to above loop) */
+        if (!MiQueryPageTableReferences((PVOID)(Va - PAGE_SIZE)))
+        {
+            if (Pde->u.Long)
+                 /* Delete the PTE proper */
+                MiDeletePte(Pde, MiPteToAddress(Pde), CurrentProcess, NULL, NULL, OldIrql);
+        }
+
+        /* Release the lock and get out if we're done */
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        if (Va > EndingAddress)
+            return;
+
+        /* Otherwise, we exited because we hit a new PDE boundary, so start over */
+        Pde = MiAddressToPde(Va);
+        AddressGap = FALSE;
+    }
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS

@@ -1922,6 +1922,14 @@ MiMakePdeExistAndMakeValid(
     _In_ KIRQL OldIrql
 );
 
+VOID
+NTAPI
+MiDeleteVirtualAddresses(
+    _In_ ULONG_PTR Va,
+    _In_ ULONG_PTR EndingAddress,
+    _In_ PMMVAD Vad
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION
