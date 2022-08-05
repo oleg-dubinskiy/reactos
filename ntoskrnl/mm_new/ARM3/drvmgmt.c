@@ -53,8 +53,15 @@ NTAPI
 MmLockPageableDataSection(
     _In_ PVOID AddressWithinSection)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    /* We should just find the section and call MmLockPageableSectionByHandle */
+    static ULONG Warn;
+
+    if (!Warn++)
+    {
+        UNIMPLEMENTED;
+    }
+
+    return AddressWithinSection;
 }
 
 VOID
@@ -79,7 +86,12 @@ NTAPI
 MmUnlockPageableImageSection(
     _In_ PVOID ImageSectionHandle)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    static ULONG Warn;
+
+    if (!Warn++)
+    {
+        UNIMPLEMENTED;
+    }
 }
 
 /* EOF */
