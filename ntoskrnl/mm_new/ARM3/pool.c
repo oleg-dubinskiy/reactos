@@ -918,8 +918,49 @@ MmAllocateMappingAddress(
     _In_ SIZE_T NumberOfBytes,
     _In_ ULONG PoolTag)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PMMPTE Pte;
+    PVOID Va;
+    PVOID CallersCaller;
+    PVOID CallersAddress;
+    ULONG NumberOfPtes;
+    SIZE_T Pages;
+
+    DPRINT("MmAllocateMappingAddress: NumberOfBytes %X, PoolTag %X\n", NumberOfBytes, PoolTag);
+
+    ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
+
+    if (!NumberOfBytes)
+    {
+        RtlGetCallersAddress(&CallersAddress, &CallersCaller);
+
+        DPRINT1("KeBugCheckEx()\n");ASSERT(FALSE);
+        KeBugCheckEx(0xDA, 0x100, 0, PoolTag, (ULONG_PTR)CallersAddress);
+    }
+
+    if (!PoolTag)
+    {
+        DPRINT1("MmAllocateMappingAddress: NumberOfBytes %X, PoolTag %X\n", NumberOfBytes, PoolTag);
+        return NULL;
+    }
+
+    Pages = ((NumberOfBytes + (PAGE_SIZE - 1)) / PAGE_SIZE);
+    NumberOfPtes = (Pages + 2);
+
+    Pte = MiReserveSystemPtes(NumberOfPtes, 0);
+    if (!Pte)
+    {
+        DPRINT1("MmAllocateMappingAddress: NumberOfBytes %X, PoolTag %X\n", NumberOfBytes, PoolTag);
+        return NULL;
+    }
+
+    Pte[0].u.Long = (NumberOfPtes * 2);
+    Pte[1].u.Long = (PoolTag & ~1);
+
+    RtlZeroMemory(&Pte[2], (Pages * 4));
+
+    Va = MiPteToAddress(&Pte[2]);
+
+    return Va;
 }
 
 VOID
