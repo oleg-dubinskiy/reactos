@@ -1001,7 +1001,135 @@ NTAPI
 MmUnlockPages(
     _In_ PMDL Mdl)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PPFN_NUMBER MdlPages;
+    PPFN_NUMBER LastPage;
+    PEPROCESS Process;
+    PMMPFN Pfn;
+    PVOID Base;
+    ULONG Flags;
+    ULONG PageCount;
+    KIRQL OldIrql;
+
+    DPRINT("MmUnlockPages: Mdl %p\n", Mdl);
+
+    /* Sanity checks */
+    ASSERT((Mdl->MdlFlags & MDL_PAGES_LOCKED) != 0);
+    ASSERT((Mdl->MdlFlags & MDL_SOURCE_IS_NONPAGED_POOL) == 0);
+    ASSERT((Mdl->MdlFlags & MDL_PARTIAL) == 0);
+    ASSERT(Mdl->ByteCount != 0);
+
+    /* Get the process associated and capture the flags which are volatile */
+    Process = Mdl->Process;
+    Flags = Mdl->MdlFlags;
+
+    /* Automagically undo any calls to MmGetSystemAddressForMdl's for this MDL */
+    if (Mdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA)
+        /* Unmap the pages from system space */
+        MmUnmapLockedPages(Mdl->MappedSystemVa, Mdl);
+
+    /* Get the page count */
+    MdlPages = (PPFN_NUMBER)(Mdl + 1);
+    Base = (PVOID)((ULONG_PTR)Mdl->StartVa + Mdl->ByteOffset);
+
+    PageCount = ADDRESS_AND_SIZE_TO_SPAN_PAGES(Base, Mdl->ByteCount);
+    ASSERT(PageCount != 0);
+
+    /* We don't support AWE */
+    if (Flags & MDL_DESCRIBES_AWE)
+        ASSERT(FALSE);
+
+    /* Check if the buffer is mapped I/O space */
+    if (Flags & MDL_IO_SPACE)
+    {
+        /* Acquire PFN lock */
+        OldIrql = MiLockPfnDb(DISPATCH_LEVEL);
+
+        /* Loop every page */
+        LastPage = MdlPages + PageCount;
+        do
+        {
+            /* Last page, break out */
+            if (*MdlPages == LIST_HEAD)
+                break;
+
+            /* Check if this page is in the PFN database */
+            Pfn = MiGetPfnEntry(*MdlPages);
+            if (Pfn)
+                MiDereferencePfnAndDropLockCount(Pfn);
+        }
+        while (++MdlPages < LastPage);
+
+        /* Release the lock */
+        MiUnlockPfnDb(OldIrql, DISPATCH_LEVEL);
+
+        /* Check if we have a process */
+        if (Process)
+        {
+            /* Handle the accounting of locked pages */
+            ASSERT(Process->NumberOfLockedPages > 0);
+            InterlockedExchangeAddSizeT(&Process->NumberOfLockedPages, -(LONG_PTR)PageCount);
+        }
+
+        /* We're done */
+        Mdl->MdlFlags &= ~MDL_IO_SPACE;
+        Mdl->MdlFlags &= ~MDL_PAGES_LOCKED;
+
+        return;
+    }
+
+    /* Check if we have a process */
+    if (Process)
+    {
+        /* Handle the accounting of locked pages */
+        ASSERT(Process->NumberOfLockedPages > 0);
+        InterlockedExchangeAddSizeT(&Process->NumberOfLockedPages, -(LONG_PTR)PageCount);
+    }
+
+    /* Loop every page */
+    LastPage = MdlPages + PageCount;
+    do
+    {
+        /* Last page reached */
+        if (*MdlPages == LIST_HEAD)
+        {
+            /* Were there no pages at all? */
+            if (MdlPages == (PPFN_NUMBER)(Mdl + 1))
+            {
+                /* We're already done */
+                Mdl->MdlFlags &= ~MDL_PAGES_LOCKED;
+                return;
+            }
+
+            /* Otherwise, stop here */
+            LastPage = MdlPages;
+            break;
+        }
+
+        /* Save the PFN entry instead for the secondary loop */
+        *MdlPages = (PFN_NUMBER)MiGetPfnEntry(*MdlPages);
+        ASSERT(*MdlPages != 0);
+    }
+    while (++MdlPages < LastPage);
+
+    /* Reset pointer */
+    MdlPages = (PPFN_NUMBER)(Mdl + 1);
+
+    /* Now grab the PFN lock for the actual unlock and dereference */
+    OldIrql = MiLockPfnDb(DISPATCH_LEVEL);
+
+    do
+    {
+        /* Get the current entry and reference count */
+        Pfn = (PMMPFN)*MdlPages;
+        MiDereferencePfnAndDropLockCount(Pfn);
+    }
+    while (++MdlPages < LastPage);
+
+    /* Release the lock */
+    MiUnlockPfnDb(OldIrql, DISPATCH_LEVEL);
+
+    /* We're done */
+    Mdl->MdlFlags &= ~MDL_PAGES_LOCKED;
 }
 
 VOID

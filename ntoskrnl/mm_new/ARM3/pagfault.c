@@ -486,7 +486,7 @@ MiResolveDemandZeroFault(
 
     /* We either manually locked the PFN DB, or already came with it locked */
     MI_ASSERT_PFN_LOCK_HELD();
-    ASSERT (Pte->u.Hard.Valid == 0);
+    ASSERT(Pte->u.Hard.Valid == 0);
 
     /* Assert we have enough pages */
     if (MmAvailablePages < 0x80) // FIXME MiEnsureAvailablePageOrWait()
