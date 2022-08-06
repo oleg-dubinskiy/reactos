@@ -1187,6 +1187,65 @@ MiDereferencePfnAndDropLockCount(
 }
 
 /* References a locked page and updates the counter.
+   Used in MmProbeAndLockPages to handle different edge cases
+*/
+FORCEINLINE
+VOID
+MiReferenceProbedPageAndBumpLockCount(
+    _In_ PMMPFN Pfn)
+{
+    USHORT RefCount;
+    USHORT OldRefCount;
+
+    /* Sanity check */
+    ASSERT(Pfn->u3.e2.ReferenceCount != 0);
+
+    /* Does ARM3 own the page? */
+    if (MI_IS_ROS_PFN(Pfn))
+    {
+        /* ReactOS Mm doesn't track share count */
+        ASSERT(Pfn->u3.e1.PageLocation == ActiveAndValid);
+    }
+    else
+    {
+        /* On ARM3 pages, we should see a valid share count */
+        ASSERT((Pfn->u2.ShareCount != 0) && (Pfn->u3.e1.PageLocation == ActiveAndValid));
+
+        /* Is it a prototype PTE? */
+        if (Pfn->u3.e1.PrototypePte &&
+            Pfn->OriginalPte.u.Soft.Prototype)
+        {
+            /* FIXME: We should charge commit */
+            DbgPrint("MiReferenceProbedPageAndBumpLockCount: Not charging commit for prototype PTE\n");
+        }
+    }
+
+    /* More locked pages! */
+    InterlockedIncrementSizeT(&MmSystemLockPagesCount);
+
+    /* Loop trying to update the reference count */
+    do
+    {
+        /* Get the current reference count, make sure it's valid */
+        OldRefCount = Pfn->u3.e2.ReferenceCount;
+
+        ASSERT(OldRefCount != 0);
+        ASSERT(OldRefCount < 2500);
+
+        /* Bump it up by one */
+        RefCount = InterlockedCompareExchange16((PSHORT)&Pfn->u3.e2.ReferenceCount,
+                                                (OldRefCount + 1),
+                                                OldRefCount);
+        ASSERT(RefCount != 0);
+    }
+    while (OldRefCount != RefCount);
+
+    /* Was this the first lock attempt? If not, undo our bump */
+    if (OldRefCount != 1)
+         InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+}
+
+/* References a locked page and updates the counter.
    Used in all other cases except MmProbeAndLockPages.
 */
 FORCEINLINE
