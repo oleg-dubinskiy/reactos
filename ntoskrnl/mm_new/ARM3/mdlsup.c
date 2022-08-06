@@ -637,7 +637,321 @@ MmProbeAndLockPages(
     _In_ KPROCESSOR_MODE AccessMode,
     _In_ LOCK_OPERATION Operation)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PEPROCESS CurrentProcess;
+    PVOID Base;
+    PVOID Address;
+    PVOID StartAddress;
+    PVOID LastAddress;
+    PMMPDE Pde;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    PMMPFN Pfn;
+    PFN_NUMBER PageFrameIndex;
+    PPFN_NUMBER MdlPages;
+    ULONG LockPages;
+    ULONG TotalPages;
+    BOOLEAN UsePfnLock;
+    KIRQL OldIrql;
+    NTSTATUS ProbeStatus;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("MmProbeAndLockPages: Mdl %p\n", Mdl);
+
+    /* Sanity checks */
+    ASSERT(Mdl->ByteCount != 0);
+    ASSERT(((ULONG)Mdl->ByteOffset & ~(PAGE_SIZE - 1)) == 0);
+    ASSERT(((ULONG_PTR)Mdl->StartVa & (PAGE_SIZE - 1)) == 0);
+
+    ASSERT((Mdl->MdlFlags & (MDL_PAGES_LOCKED | MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL | MDL_PARTIAL | MDL_IO_SPACE)) == 0);
+
+    /* Get page and base information */
+    MdlPages = (PPFN_NUMBER)(Mdl + 1);
+    Base = Mdl->StartVa;
+
+    /* Get the addresses and how many pages we span (and need to lock) */
+    Address = (PVOID)((ULONG_PTR)Base + Mdl->ByteOffset);
+    LastAddress = (PVOID)((ULONG_PTR)Address + Mdl->ByteCount);
+    LockPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(Address, Mdl->ByteCount);
+    ASSERT(LockPages != 0);
+
+    /* Block invalid access */
+    if ((AccessMode != KernelMode) &&
+        (LastAddress > (PVOID)MM_USER_PROBE_ADDRESS || Address >= LastAddress))
+    {
+        /* Caller should be in SEH, raise the error */
+        *MdlPages = LIST_HEAD;
+        ExRaiseStatus(STATUS_ACCESS_VIOLATION);
+    }
+
+    /* Get the process */
+    if (Address <= MM_HIGHEST_USER_ADDRESS)
+        /* Get the process */
+        CurrentProcess = PsGetCurrentProcess();
+    else
+        /* No process */
+        CurrentProcess = NULL;
+
+    /* Save the number of pages we'll have to lock, and the start address */
+    TotalPages = LockPages;
+    StartAddress = Address;
+
+    /* Large pages not supported */
+    ASSERT(!MI_IS_PHYSICAL_ADDRESS(Address));
+
+    /* Now probe them */
+    ProbeStatus = STATUS_SUCCESS;
+
+    _SEH2_TRY
+    {
+        /* Enter probe loop */
+        do
+        {
+            /* Assume failure */
+            *MdlPages = LIST_HEAD;
+
+            /* Read */
+            *(volatile CHAR*)Address;
+
+            /* Check if this is write access (only probe for user-mode) */
+            if (Operation != IoReadAccess && Address <= MM_HIGHEST_USER_ADDRESS)
+                /* Probe for write too */
+                ProbeForWriteChar(Address);
+
+            /* Next address... */
+            Address = PAGE_ALIGN((ULONG_PTR)Address + PAGE_SIZE);
+
+            /* Next page... */
+            LockPages--;
+            MdlPages++;
+        }
+        while (Address < LastAddress);
+
+        /* Reset back to the original page */
+        ASSERT(LockPages == 0);
+        MdlPages = (PPFN_NUMBER)(Mdl + 1);
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        /* Oops :( */
+        ProbeStatus = _SEH2_GetExceptionCode();
+    }
+    _SEH2_END;
+
+    /* So how did that go? */
+    if (ProbeStatus != STATUS_SUCCESS)
+    {
+        /* Fail */
+        DPRINT1("MmProbeAndLockPages: MDL PROBE FAILED!\n");
+        Mdl->Process = NULL;
+        ExRaiseStatus(ProbeStatus);
+    }
+
+    /* Get the PTE and PDE */
+    Pte = MiAddressToPte(StartAddress);
+    Pde = MiAddressToPde(StartAddress);
+
+    /* Sanity check */
+    ASSERT(MdlPages == (PPFN_NUMBER)(Mdl + 1));
+
+    /* Check what kind of operation this is */
+    if (Operation != IoReadAccess)
+        /* Set the write flag */
+        Mdl->MdlFlags |= MDL_WRITE_OPERATION;
+    else
+        /* Remove the write flag */
+        Mdl->MdlFlags &= ~(MDL_WRITE_OPERATION);
+
+    /* Mark the MDL as locked *now* */
+    Mdl->MdlFlags |= MDL_PAGES_LOCKED;
+
+    /* Check if this came from kernel mode */
+    if (Base > MM_HIGHEST_USER_ADDRESS)
+    {
+        /* We should not have a process */
+        ASSERT(CurrentProcess == NULL);
+        Mdl->Process = NULL;
+
+        /* In kernel mode, we don't need to check for write access */
+        Operation = IoReadAccess;
+
+        /* Use the PFN lock */
+        UsePfnLock = TRUE;
+        OldIrql = MiLockPfnDb(DISPATCH_LEVEL);
+    }
+    else
+    {
+        /* Sanity checks */
+        ASSERT(TotalPages != 0);
+        ASSERT(CurrentProcess == PsGetCurrentProcess());
+
+        /* Track locked pages */
+        InterlockedExchangeAddSizeT(&CurrentProcess->NumberOfLockedPages, TotalPages);
+
+        /* Save the process */
+        Mdl->Process = CurrentProcess;
+
+        /* Lock the process working set */
+        MiLockProcessWorkingSet(CurrentProcess, PsGetCurrentThread());
+        UsePfnLock = FALSE;
+        OldIrql = MM_NOIRQL;
+    }
+
+    /* Get the last PTE */
+    LastPte = MiAddressToPte((PVOID)((ULONG_PTR)LastAddress - 1));
+
+    /* Loop the pages */
+    do
+    {
+        /* Assume failure and check for non-mapped pages */
+        *MdlPages = LIST_HEAD;
+
+        while (!Pde->u.Hard.Valid || !Pte->u.Hard.Valid)
+        {
+            /* What kind of lock were we using? */
+            if (UsePfnLock)
+                /* Release PFN lock */
+                MiUnlockPfnDb(OldIrql, DISPATCH_LEVEL);
+            else
+                /* Release process working set */
+                MiUnlockProcessWorkingSet(CurrentProcess, PsGetCurrentThread());
+
+            /* Access the page */
+            Address = MiPteToAddress(Pte);
+
+            /* HACK: Pass a placeholder TrapInformation so the fault handler knows we're unlocked */
+            Status = MmAccessFault(FALSE, Address, KernelMode, (PVOID)(ULONG_PTR)0xBADBADA3BADBADA3ULL);
+            if (!NT_SUCCESS(Status))
+            {
+                /* Fail */
+                DPRINT1("MmProbeAndLockPages: Access fault failed\n");
+                goto Cleanup;
+            }
+
+            /* What lock should we use? */
+            if (UsePfnLock)
+                /* Grab the PFN lock */
+                OldIrql = MiLockPfnDb(DISPATCH_LEVEL);
+            else
+                /* Lock the process working set */
+                MiLockProcessWorkingSet(CurrentProcess, PsGetCurrentThread());
+        }
+
+        /* Check if this was a write or modify */
+        if (Operation != IoReadAccess)
+        {
+            /* Check if the PTE is not writable */
+            if (!MI_IS_PAGE_WRITEABLE(Pte))
+            {
+                /* Check if it's copy on write */
+                if (MI_IS_PAGE_COPY_ON_WRITE(Pte))
+                {
+                    /* Get the base address and allow a change for user-mode */
+                    Address = MiPteToAddress(Pte);
+
+                    if (Address <= MM_HIGHEST_USER_ADDRESS)
+                    {
+                        /* What kind of lock were we using? */
+                        if (UsePfnLock)
+                            /* Release PFN lock */
+                            MiUnlockPfnDb(OldIrql, DISPATCH_LEVEL);
+                        else
+                            /* Release process working set */
+                            MiUnlockProcessWorkingSet(CurrentProcess, PsGetCurrentThread());
+
+                        /* Access the page */
+
+                        /* HACK: Pass a placeholder TrapInformation so the fault handler knows we're unlocked */
+                        Status = MmAccessFault(TRUE, Address, KernelMode, (PVOID)(ULONG_PTR)0xBADBADA3BADBADA3ULL);
+                        if (!NT_SUCCESS(Status))
+                        {
+                            /* Fail */
+                            DPRINT1("MmProbeAndLockPages: Access fault failed\n");
+                            goto Cleanup;
+                        }
+
+                        /* Re-acquire the lock */
+                        if (UsePfnLock)
+                            /* Grab the PFN lock */
+                            OldIrql = MiLockPfnDb(DISPATCH_LEVEL);
+                        else
+                            /* Lock the process working set */
+                            MiLockProcessWorkingSet(CurrentProcess, PsGetCurrentThread());
+
+                        /* Start over */
+                        continue;
+                    }
+                }
+
+                /* Fail, since we won't allow this */
+                Status = STATUS_ACCESS_VIOLATION;
+                goto CleanupWithLock;
+            }
+        }
+
+        /* Grab the PFN */
+        PageFrameIndex = PFN_FROM_PTE(Pte);
+        Pfn = MiGetPfnEntry(PageFrameIndex);
+
+        if (Pfn)
+        {
+            /* Either this is for kernel-mode, or the working set is held */
+            ASSERT((CurrentProcess == NULL) || (UsePfnLock == FALSE));
+
+            /* No Physical VADs supported yet */
+            //if (CurrentProcess) ASSERT(CurrentProcess->PhysicalVadRoot == NULL);
+
+            /* This address should already exist and be fully valid */
+            MiReferenceProbedPageAndBumpLockCount(Pfn);
+        }
+        else
+        {
+            /* For I/O addresses, just remember this */
+            Mdl->MdlFlags |= MDL_IO_SPACE;
+        }
+
+        /* Write the page and move on */
+        *MdlPages++ = PageFrameIndex;
+        Pte++;
+
+        /* Check if we're on a PDE boundary */
+        if (MiIsPteOnPdeBoundary(Pte))
+            Pde++;
+    }
+    while (Pte <= LastPte);
+
+    /* What kind of lock were we using? */
+    if (UsePfnLock)
+        /* Release PFN lock */
+        MiUnlockPfnDb(OldIrql, DISPATCH_LEVEL);
+    else
+        /* Release process working set */
+        MiUnlockProcessWorkingSet(CurrentProcess, PsGetCurrentThread());
+
+    /* Sanity check */
+    ASSERT((Mdl->MdlFlags & MDL_DESCRIBES_AWE) == 0);
+    return;
+
+CleanupWithLock:
+
+    /* This is the failure path */
+    ASSERT(!NT_SUCCESS(Status));
+
+    /* What kind of lock were we using? */
+    if (UsePfnLock)
+        /* Release PFN lock */
+        MiUnlockPfnDb(OldIrql, DISPATCH_LEVEL);
+    else
+        /* Release process working set */
+        MiUnlockProcessWorkingSet(CurrentProcess, PsGetCurrentThread());
+
+Cleanup:
+
+    /* Pages must be locked so MmUnlock can work */
+    ASSERT(Mdl->MdlFlags & MDL_PAGES_LOCKED);
+    MmUnlockPages(Mdl);
+
+    /* Raise the error */
+    ExRaiseStatus(Status);
 }
 
 VOID
