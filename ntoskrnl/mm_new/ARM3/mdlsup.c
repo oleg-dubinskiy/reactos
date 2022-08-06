@@ -494,8 +494,110 @@ MmMapLockedPagesSpecifyCache(
     _In_ ULONG BugCheckOnFailure,
     _In_ MM_PAGE_PRIORITY Priority)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    MI_PFN_CACHE_ATTRIBUTE CacheAttribute;
+    PVOID Base;
+    PMMPTE Pte;
+    MMPTE TempPte;
+    PPFN_NUMBER MdlPages;
+    PPFN_NUMBER LastPage;
+    PFN_COUNT PageCount;
+    BOOLEAN IsIoMapping;
+
+    /* Sanity check */
+    ASSERT(Mdl->ByteCount != 0);
+
+    /* Get the base */
+    Base = (PVOID)((ULONG_PTR)Mdl->StartVa + Mdl->ByteOffset);
+
+    /* Handle kernel case first */
+    if (AccessMode == KernelMode)
+    {
+        /* Get the list of pages and count */
+        MdlPages = (PPFN_NUMBER)(Mdl + 1);
+        PageCount = ADDRESS_AND_SIZE_TO_SPAN_PAGES(Base, Mdl->ByteCount);
+        LastPage = (MdlPages + PageCount);
+
+        /* Sanity checks */
+        ASSERT((Mdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA |
+                                 MDL_SOURCE_IS_NONPAGED_POOL |
+                                 MDL_PARTIAL_HAS_BEEN_MAPPED)) == 0);
+
+        ASSERT((Mdl->MdlFlags & (MDL_PAGES_LOCKED | MDL_PARTIAL)) != 0);
+
+        /* Get the correct cache type */
+        IsIoMapping = ((Mdl->MdlFlags & MDL_IO_SPACE) != 0);
+        CacheAttribute = MiPlatformCacheAttributes[IsIoMapping][CacheType];
+
+        /* Reserve the PTEs */
+        Pte = MiReserveSystemPtes(PageCount, SystemPteSpace);
+        if (!Pte)
+        {
+            /* If it can fail, return NULL */
+            if (Mdl->MdlFlags & MDL_MAPPING_CAN_FAIL)
+                return NULL;
+
+            /* Should we bugcheck? */
+            if (!BugCheckOnFailure)
+                return NULL;
+
+            /* Yes, crash the system */
+            KeBugCheckEx(NO_MORE_SYSTEM_PTES, 0, PageCount, 0, 0);
+        }
+
+        /* Get the mapped address */
+        Base = (PVOID)((ULONG_PTR)MiPteToAddress(Pte) + Mdl->ByteOffset);
+
+        /* Get the template */
+        TempPte = ValidKernelPte;
+
+        switch (CacheAttribute)
+        {
+            case MiNonCached:
+                /* Disable caching */
+                MI_PAGE_DISABLE_CACHE(&TempPte);
+                MI_PAGE_WRITE_THROUGH(&TempPte);
+                break;
+
+            case MiWriteCombined:
+                /* Enable write combining */
+                MI_PAGE_DISABLE_CACHE(&TempPte);
+                MI_PAGE_WRITE_COMBINED(&TempPte);
+                break;
+
+            default:
+                /* Nothing to do */
+                break;
+        }
+
+        /* Loop all PTEs */
+        do
+        {
+            /* We're done here */
+            if (*MdlPages == LIST_HEAD)
+                break;
+
+            /* Write the PTE */
+            TempPte.u.Hard.PageFrameNumber = *MdlPages;
+            MI_WRITE_VALID_PTE(Pte++, TempPte);
+        }
+        while (++MdlPages < LastPage);
+
+        /* Mark it as mapped */
+        ASSERT((Mdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA) == 0);
+
+        Mdl->MappedSystemVa = Base;
+        Mdl->MdlFlags |= MDL_MAPPED_TO_SYSTEM_VA;
+
+        /* Check if it was partial */
+        if (Mdl->MdlFlags & MDL_PARTIAL)
+            /* Write the appropriate flag here too */
+            Mdl->MdlFlags |= MDL_PARTIAL_HAS_BEEN_MAPPED;
+
+        /* Return the mapped address */
+        return Base;
+    }
+
+    return MiMapLockedPagesInUserSpace(Mdl, Base, CacheType, BaseAddress);
 }
 
 PVOID
