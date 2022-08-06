@@ -498,8 +498,38 @@ MmAllocateContiguousMemorySpecifyCache(
     _In_ PHYSICAL_ADDRESS BoundaryAddressMultiple OPTIONAL,
     _In_ MEMORY_CACHING_TYPE CacheType OPTIONAL)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PFN_NUMBER LowestPfn;
+    PFN_NUMBER HighestPfn;
+    PFN_NUMBER BoundaryPfn;
+
+    /* Verify count and cache type */
+    ASSERT(NumberOfBytes != 0);
+    ASSERT(CacheType <= MmWriteCombined);
+
+    /* Convert the lowest address into a PFN */
+    LowestPfn = (PFN_NUMBER)(LowestAcceptableAddress.QuadPart / PAGE_SIZE);
+
+    if (BYTE_OFFSET(LowestAcceptableAddress.LowPart))
+        LowestPfn++;
+
+    /* Convert and validate the boundary address into a PFN */
+    if (BYTE_OFFSET(BoundaryAddressMultiple.LowPart))
+        return NULL;
+
+    BoundaryPfn = (PFN_NUMBER)(BoundaryAddressMultiple.QuadPart / PAGE_SIZE);
+
+    /* Convert the highest address into a PFN */
+    HighestPfn = (PFN_NUMBER)(HighestAcceptableAddress.QuadPart / PAGE_SIZE);
+
+    if (HighestPfn > MmHighestPhysicalPage)
+        HighestPfn = MmHighestPhysicalPage;
+
+    /* Validate the PFN bounds */
+    if (LowestPfn > HighestPfn)
+        return NULL;
+
+    /* Let the contiguous memory allocator handle it */
+    return MiAllocateContiguousMemory(NumberOfBytes, LowestPfn, HighestPfn, BoundaryPfn, CacheType);
 }
 
 VOID
