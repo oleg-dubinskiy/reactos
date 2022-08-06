@@ -267,6 +267,107 @@ Error:
     ExRaiseStatus(Status);
 }
 
+VOID
+NTAPI
+MiUnmapLockedPagesInUserSpace(
+    _In_ PVOID BaseAddress,
+    _In_ PMDL Mdl)
+{
+    PEPROCESS Process = PsGetCurrentProcess();
+    PETHREAD Thread = PsGetCurrentThread();
+    PMMVAD Vad;
+    PMMPTE Pte;
+    PMMPDE Pde;
+    KIRQL OldIrql;
+    ULONG NumberOfPages;
+    PPFN_NUMBER MdlPages;
+    PFN_NUMBER PageTablePage;
+
+    DPRINT("MiUnmapLockedPagesInUserSpace: %p, %p\n", BaseAddress, Mdl);
+
+    NumberOfPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(MmGetMdlVirtualAddress(Mdl), MmGetMdlByteCount(Mdl));
+    ASSERT(NumberOfPages != 0);
+
+    MdlPages = MmGetMdlPfnArray(Mdl);
+
+    /* Find the VAD */
+    MmLockAddressSpace(&Process->Vm);
+
+    Vad = MiLocateAddress(BaseAddress);
+    if (!Vad || Vad->u.VadFlags.VadType != VadDevicePhysicalMemory)
+    {
+        DPRINT1("MiUnmapLockedPagesInUserSpace: invalid for %p\n", BaseAddress);
+        MmUnlockAddressSpace(&Process->Vm);
+        return;
+    }
+
+    MiLockProcessWorkingSetUnsafe(Process, Thread);
+
+    /* Remove it from the process VAD tree */
+    ASSERT(Process->VadRoot.NumberGenericTableElements >= 1);
+    MiRemoveNode((PMMADDRESS_NODE)Vad, &Process->VadRoot);
+
+    /* MiRemoveNode should have removed us if we were the hint */
+    ASSERT(Process->VadRoot.NodeHint != Vad);
+
+    Pte = MiAddressToPte(BaseAddress);
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    while (NumberOfPages && *MdlPages != LIST_HEAD)
+    {
+        ASSERT(MiAddressToPte(Pte)->u.Hard.Valid == 1);
+        ASSERT(Pte->u.Hard.Valid == 1);
+
+        /* Dereference the page */
+        MiDecrementPageTableReferences(BaseAddress);
+
+        DPRINT1("MiUnmapLockedPagesInUserSpace: [%X] Address %p, RefCount %X\n",
+                MiAddressToPdeOffset(BaseAddress), BaseAddress, MiQueryPageTableReferences(BaseAddress));
+
+        /* Invalidate it */
+        MI_ERASE_PTE(Pte);
+
+        /* We invalidated this PTE, so dereference the PDE */
+        Pde = MiAddressToPde(BaseAddress);
+        PageTablePage = Pde->u.Hard.PageFrameNumber;
+
+        MiDecrementShareCount(MiGetPfnEntry(PageTablePage), PageTablePage);
+
+        /* Next page */
+        Pte++;
+        NumberOfPages--;
+        BaseAddress = (PVOID)((ULONG_PTR)BaseAddress + PAGE_SIZE);
+        MdlPages++;
+
+        /* Moving to a new PDE? */
+        if (Pde != MiAddressToPde(BaseAddress))
+        {
+            /* See if we should delete it */
+            KeFlushProcessTb();
+
+            Pde = MiPteToPde(Pte - 1);
+            ASSERT(Pde->u.Hard.Valid == 1);
+
+            if (!MiQueryPageTableReferences(BaseAddress))
+            {
+                ASSERT(Pde->u.Long != 0);
+
+                DPRINT1("MiUnmapLockedPagesInUserSpace: FIXME\n");
+                ASSERT(FALSE);
+                //MiDeletePte(Pde, MiPteToAddress(Pde), Process, NULL);
+            }
+        }
+    }
+
+    KeFlushProcessTb();
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+    MmUnlockAddressSpace(&Process->Vm);
+
+    ExFreePoolWithTag(Vad, 'ldaV');
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 NTSTATUS
