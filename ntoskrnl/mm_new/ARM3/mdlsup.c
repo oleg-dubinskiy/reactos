@@ -1138,7 +1138,64 @@ MmUnmapLockedPages(
     _In_ PVOID BaseAddress,
     _In_ PMDL Mdl)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PPFN_NUMBER MdlPages;
+    PMMPTE Pte;
+    PVOID Base;
+    PFN_COUNT PageCount;
+    PFN_COUNT ExtraPageCount;
+
+    /* Sanity check */
+    ASSERT(Mdl->ByteCount != 0);
+
+    /* Check if this is a kernel request */
+    if (BaseAddress <= MM_HIGHEST_USER_ADDRESS)
+    {
+        MiUnmapLockedPagesInUserSpace(BaseAddress, Mdl);
+        return;
+    }
+
+    /* Get base and count information */
+    Base = (PVOID)((ULONG_PTR)Mdl->StartVa + Mdl->ByteOffset);
+    PageCount = ADDRESS_AND_SIZE_TO_SPAN_PAGES(Base, Mdl->ByteCount);
+
+    /* Sanity checks */
+    ASSERT((Mdl->MdlFlags & MDL_PARENT_MAPPED_SYSTEM_VA) == 0);
+    ASSERT(PageCount != 0);
+    ASSERT(Mdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA);
+
+    /* Get the PTE */
+    Pte = MiAddressToPte(BaseAddress);
+
+    /* This should be a resident system PTE */
+    ASSERT(Pte >= MmSystemPtesStart[SystemPteSpace]);
+    ASSERT(Pte <= MmSystemPtesEnd[SystemPteSpace]);
+    ASSERT(Pte->u.Hard.Valid == 1);
+
+    /* Check if the caller wants us to free advanced pages */
+    if (Mdl->MdlFlags & MDL_FREE_EXTRA_PTES)
+    {
+        /* Get the MDL page array */
+        MdlPages = MmGetMdlPfnArray(Mdl);
+
+        /* Number of extra pages stored after the PFN array */
+        ExtraPageCount = (PFN_COUNT)*(MdlPages + PageCount);
+
+        /* Do the math */
+        PageCount += ExtraPageCount;
+        Pte -= ExtraPageCount;
+
+        ASSERT(Pte >= MmSystemPtesStart[SystemPteSpace]);
+        ASSERT(Pte <= MmSystemPtesEnd[SystemPteSpace]);
+
+        /* Get the new base address */
+        BaseAddress = (PVOID)((ULONG_PTR)BaseAddress - (ExtraPageCount * PAGE_SIZE));
+    }
+
+    /* Remove flags */
+    Mdl->MdlFlags &= ~(MDL_MAPPED_TO_SYSTEM_VA | MDL_PARTIAL_HAS_BEEN_MAPPED | MDL_FREE_EXTRA_PTES);
+
+    /* Release the system PTEs */
+    MiReleaseSystemPtes(Pte, PageCount, SystemPteSpace);
 }
 
 VOID
