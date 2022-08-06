@@ -56,7 +56,48 @@ NTAPI
 MmBuildMdlForNonPagedPool(
     _In_ PMDL Mdl)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PVOID Base;
+    PMMPTE Pte;
+    PPFN_NUMBER MdlPages;
+    PPFN_NUMBER EndPage;
+    PFN_NUMBER Pfn;
+    PFN_NUMBER PageCount;
+
+    /* Sanity checks */
+    ASSERT(Mdl->ByteCount != 0);
+    ASSERT((Mdl->MdlFlags & (MDL_PAGES_LOCKED | MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL | MDL_PARTIAL)) == 0);
+
+    /* We know the MDL isn't associated to a process now */
+    Mdl->Process = NULL;
+
+    /* Get page and VA information */
+    MdlPages = (PPFN_NUMBER)(Mdl + 1);
+    Base = Mdl->StartVa;
+
+    /* Set the system address and now get the page count */
+    Mdl->MappedSystemVa = (PVOID)((ULONG_PTR)Base + Mdl->ByteOffset);
+
+    PageCount = ADDRESS_AND_SIZE_TO_SPAN_PAGES(Mdl->MappedSystemVa, Mdl->ByteCount);
+    ASSERT(PageCount != 0);
+
+    /* Loop the PTEs */
+    Pte = MiAddressToPte(Base);
+    EndPage = (MdlPages + PageCount);
+
+    do
+    {
+        /* Write the PFN */
+        Pfn = PFN_FROM_PTE(Pte++);
+        *MdlPages++ = Pfn;
+    }
+    while (MdlPages < EndPage);
+
+    /* Set the nonpaged pool flag */
+    Mdl->MdlFlags |= MDL_SOURCE_IS_NONPAGED_POOL;
+
+    /* Check if this is an I/O mapping */
+    if (!MiGetPfnEntry(Pfn))
+        Mdl->MdlFlags |= MDL_IO_SPACE;
 }
 
 PMDL
