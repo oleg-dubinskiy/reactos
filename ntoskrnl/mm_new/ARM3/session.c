@@ -111,8 +111,21 @@ NTAPI
 MmGetSessionId(
     _In_ PEPROCESS Process)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    PMM_SESSION_SPACE SessionGlobal;
+
+    DPRINT("MmGetSessionId: Process %X\n", Process);
+
+    /* The session leader is always session zero */
+    if (Process->Vm.Flags.SessionLeader == 1)
+        return 0;
+
+    /* Otherwise, get the session global, and read the session ID from it */
+    SessionGlobal = (PMM_SESSION_SPACE)Process->Session;
+
+    if (!SessionGlobal)
+        return 0;
+
+    return SessionGlobal->SessionId;
 }
 
 BOOLEAN
