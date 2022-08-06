@@ -1138,8 +1138,72 @@ NTAPI
 MmGetSystemRoutineAddress(
     _In_ PUNICODE_STRING SystemRoutineName)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    UNICODE_STRING KernelName = RTL_CONSTANT_STRING(L"ntoskrnl.exe");
+    UNICODE_STRING HalName = RTL_CONSTANT_STRING(L"hal.dll");
+    ANSI_STRING AnsiRoutineName;
+    PLDR_DATA_TABLE_ENTRY LdrEntry;
+    PVOID ProcAddress = NULL;
+    PLIST_ENTRY NextEntry;
+    ULONG Modules = 0;
+    BOOLEAN Found = FALSE;
+    NTSTATUS Status;
+
+    /* Convert routine to ansi name */
+    Status = RtlUnicodeStringToAnsiString(&AnsiRoutineName, SystemRoutineName, TRUE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmGetSystemRoutineAddress: Status %X\n", Status);
+        return NULL;
+    }
+
+    /* Lock the list */
+    KeEnterCriticalRegion();
+    ExAcquireResourceSharedLite(&PsLoadedModuleResource, TRUE);
+
+    /* Loop the loaded module list */
+    for (NextEntry = PsLoadedModuleList.Flink;
+         NextEntry != &PsLoadedModuleList;
+         NextEntry = NextEntry->Flink)
+    {
+        /* Get the entry */
+        LdrEntry = CONTAINING_RECORD(NextEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+        /* Check if it's the kernel or HAL */
+        if (RtlEqualUnicodeString(&KernelName, &LdrEntry->BaseDllName, TRUE))
+        {
+            /* Found it */
+            Found = TRUE;
+            Modules++;
+        }
+        else if (RtlEqualUnicodeString(&HalName, &LdrEntry->BaseDllName, TRUE))
+        {
+            /* Found it */
+            Found = TRUE;
+            Modules++;
+        }
+
+        /* Check if we found a valid binary */
+        if (!Found)
+            continue;
+
+        /* Find the procedure name */
+        ProcAddress = MiFindExportedRoutineByName(LdrEntry->DllBase, &AnsiRoutineName);
+
+        /* Break out if we found it or if we already tried both modules */
+        if (ProcAddress)
+            break;
+
+        if (Modules == 2)
+            break;
+    }
+
+    /* Release the lock */
+    ExReleaseResourceLite(&PsLoadedModuleResource);
+    KeLeaveCriticalRegion();
+
+    /* Free the string and return */
+    RtlFreeAnsiString(&AnsiRoutineName);
+    return ProcAddress;
 }
 
 PVOID
