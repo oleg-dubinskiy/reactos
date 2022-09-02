@@ -812,7 +812,7 @@ KspStartBusDevice(
     DPRINT1("KspStartBusDevice Name %S DeviceName %S Instance %S Started\n", Name, DeviceEntry->DeviceName, DeviceEntry->Instance);
 
     /* enable device classes */
-    //KspEnableBusDeviceInterface(DeviceEntry, TRUE);
+    KspEnableBusDeviceInterface(DeviceEntry, TRUE);
 
     /* done */
     return STATUS_SUCCESS;
@@ -1227,7 +1227,7 @@ KspBusWorkerRoutine(
                         Diff.QuadPart);
 
                      /* deactivate interfaces */
-                     //KspEnableBusDeviceInterface(DeviceEntry, FALSE);
+                     KspEnableBusDeviceInterface(DeviceEntry, FALSE);
 
                      /* re-acquire lock */
                      KeAcquireSpinLock(&BusDeviceExtension->Lock, &OldLevel);

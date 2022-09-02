@@ -2,6 +2,7 @@
 #define _SYSAUDIO_PCH_
 
 #include <portcls.h>
+#include <ks.h>
 
 typedef struct
 {
@@ -107,8 +108,8 @@ NTSTATUS
 ComputeCompatibleFormat(
     IN PKSAUDIO_DEVICE_ENTRY Entry,
     IN ULONG PinId,
-    IN PKSDATAFORMAT_WAVEFORMATEX ClientFormat,
-    OUT PKSDATAFORMAT_WAVEFORMATEX MixerFormat);
+    IN PKSDATAFORMAT_WAVEFORMATEX InputFormat,
+    OUT PKSDATAFORMAT_WAVEFORMATEX OutputFormat);
 
 PVOID
 AllocateItem(

@@ -11,7 +11,7 @@
 
 #include "sysaudio.h"
 
-#define NDEBUG
+#define YDEBUG
 #include <debug.h>
 
 #define TAG_SYSAUDIO 'AsyS'
@@ -194,14 +194,6 @@ SysAudio_AddDevice(
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("Failed to register device notifications\n");
-        goto cleanup;
-    }
-
-    /* Load kmixer */
-    Status = SysAudioOpenKMixer(DeviceExtension);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("SysAudioOpenKMixer failed with %x\n", Status);
         goto cleanup;
     }
 

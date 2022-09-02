@@ -587,11 +587,12 @@ PinWaveCyclicDataFormat(
             PC_ASSERT(IsEqualGUIDAligned(((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->DataFormat.MajorFormat, KSDATAFORMAT_TYPE_AUDIO));
             PC_ASSERT(IsEqualGUIDAligned(((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->DataFormat.SubFormat, KSDATAFORMAT_SUBTYPE_PCM));
             PC_ASSERT(IsEqualGUIDAligned(((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->DataFormat.Specifier, KSDATAFORMAT_SPECIFIER_WAVEFORMATEX));
+#endif
 
             DPRINT("NewDataFormat: Channels %u Bits %u Samples %u\n", ((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->WaveFormatEx.nChannels,
                                                                        ((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->WaveFormatEx.wBitsPerSample,
                                                                        ((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->WaveFormatEx.nSamplesPerSec);
-#endif
+
 
         }
         else
@@ -1184,6 +1185,16 @@ CPortPinWaveCyclic::Init(
     if (!NT_SUCCESS(Status))
         return Status;
 
+    /* HACK for MS sysaudio */
+    /* For some reason it returns wrong PinId (2 instead of 0)
+     * and KSPIN_DATAFLOW_OUT DataFlow (which is used for WaveIn).
+     * While the actual source of problem isn't figured out yet,
+     * force this to correct data here. 
+     */
+    DPRINT("DataFlow %d PinId %d\n", KsPinDescriptor->DataFlow, ConnectDetails->PinId);
+    ConnectDetails->PinId = 0;
+    KsPinDescriptor->DataFlow = KSPIN_DATAFLOW_IN;
+
     if (KsPinDescriptor->Communication == KSPIN_COMMUNICATION_SINK && KsPinDescriptor->DataFlow == KSPIN_DATAFLOW_IN)
     {
         Capture = FALSE;
@@ -1223,7 +1234,7 @@ CPortPinWaveCyclic::Init(
     }
 #endif
 
-    DPRINT1("CPortPinWaveCyclic::Init Status %x PinId %u Capture %u\n", Status, ConnectDetails->PinId, Capture);
+    DPRINT1("CPortPinWaveCyclic::Init Status %x PinId %u Capture %u\n", Status, ConnectDetails->PinId, KsPinDescriptor->DataFlow == KSPIN_DATAFLOW_OUT);
 
     if (!NT_SUCCESS(Status))
         return Status;

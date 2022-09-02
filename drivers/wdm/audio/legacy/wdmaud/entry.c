@@ -9,7 +9,7 @@
 
 #include "wdmaud.h"
 
-#define NDEBUG
+#define YDEBUG
 #include <debug.h>
 
 const GUID KSCATEGORY_SYSAUDIO = {0xA7C7A5B1L, 0x5AF3, 0x11D1, {0x9C, 0xED, 0x00, 0xA0, 0x24, 0xBF, 0x04, 0x07}};
@@ -26,16 +26,15 @@ WdmAudInitWorkerRoutine(
 {
     NTSTATUS Status;
     PWDMAUD_DEVICE_EXTENSION DeviceExtension;
-    ULONG DeviceCount;
+    ULONG DeviceIndex;
 
     /* get device extension */
     DeviceExtension = (PWDMAUD_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
 
-
     if (DeviceExtension->FileObject == NULL)
     {
         /* find available sysaudio devices */
-        Status = WdmAudOpenSysAudioDevices(DeviceObject, DeviceExtension);
+        Status = WdmAudOpenSysAudioDevices(DeviceExtension);
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("WdmAudOpenSysAudioDevices failed with %x\n", Status);
@@ -43,21 +42,25 @@ WdmAudInitWorkerRoutine(
         }
     }
 
-
     /* get device count */
-    DeviceCount = GetSysAudioDeviceCount(DeviceObject);
+    DeviceExtension->SysAudioDeviceCount = GetSysAudioDeviceCount(DeviceObject);
 
-    DPRINT("WdmAudInitWorkerRoutine SysAudioDeviceCount %ld\n", DeviceCount);
+    DPRINT("WdmAudInitWorkerRoutine SysAudioDeviceCount %ld\n", DeviceExtension->SysAudioDeviceCount);
 
-    /* was a device added / removed */
-    if (DeviceCount != DeviceExtension->SysAudioDeviceCount)
+    /* init mmixer library */
+    Status = WdmAudMixerInitialize(DeviceObject);
+    DPRINT("WdmAudMixerInitialize Status %x WaveIn %lu WaveOut %lu Mixer %lu\n", Status, WdmAudGetWaveInDeviceCount(), WdmAudGetWaveOutDeviceCount(), WdmAudGetMixerDeviceCount());
+
+    /* set index for all device instances */
+    for (DeviceIndex = 0; DeviceIndex < DeviceExtension->SysAudioDeviceCount; DeviceIndex++)
     {
-        /* init mmixer library */
-        Status = WdmAudMixerInitialize(DeviceObject);
-        DPRINT("WdmAudMixerInitialize Status %x WaveIn %lu WaveOut %lu Mixer %lu\n", Status, WdmAudGetWaveInDeviceCount(), WdmAudGetWaveOutDeviceCount(), WdmAudGetMixerDeviceCount());
-
-        /* store sysaudio device count */
-        DeviceExtension->SysAudioDeviceCount = DeviceCount;
+        Status = SetSysAudioDeviceInstance(DeviceExtension, DeviceIndex);
+        if (!NT_SUCCESS(Status))
+        {
+            /* failed, move to the next instance */
+            DPRINT1("Failed to set device index, skipping...\n");
+            continue;
+        }
     }
 
     /* signal completion */
@@ -133,9 +136,6 @@ WdmaudAddDevice(
         return Status;
     }
 
-    /* initialize sysaudio device list */
-    InitializeListHead(&DeviceExtension->SysAudioDeviceList);
-
     /* initialize client context device list */
     InitializeListHead(&DeviceExtension->WdmAudClientList);
 
@@ -165,7 +165,7 @@ WdmaudAddDevice(
     /* start the timer */
     IoStartTimer(DeviceObject);
 
-    DeviceObject->Flags |= DO_DIRECT_IO | DO_POWER_PAGABLE;
+    DeviceObject->Flags |= DO_BUFFERED_IO | DO_POWER_PAGABLE;
     DeviceObject->Flags &= ~ DO_DEVICE_INITIALIZING;
 
     return STATUS_SUCCESS;
@@ -191,6 +191,8 @@ WdmAudPnp(
 
     IrpStack = IoGetCurrentIrpStackLocation(Irp);
 
+    DPRINT("MinorFunction 0x%x\n", IrpStack->MinorFunction);
+
     if (IrpStack->MinorFunction == IRP_MN_QUERY_PNP_DEVICE_STATE)
     {
         Irp->IoStatus.Information |= PNP_DEVICE_NOT_DISABLEABLE;
@@ -214,12 +216,26 @@ WdmAudCreate(
     /* get device extension */
     DeviceExtension = (PWDMAUD_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
 
-#if KS_IMPLEMENTED
-    Status = KsReferenceSoftwareBusObject((KSDEVICE_HEADER)DeviceObject->DeviceExtension);
+    Status = KsReferenceSoftwareBusObject(DeviceExtension->DeviceHeader);
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("KsReferenceSoftwareBusObject failed with %x\n", Status);
-        return Status;
+        return SetIrpIoStatus(Irp, Status, 0);
+    }
+
+#if 0
+    /* register pnp notification */
+    Status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange,
+                                            PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
+                                            (PVOID)&KSCATEGORY_SYSAUDIO,
+                                            DeviceObject->DriverObject,
+                                            DeviceInterfaceChangeCallback,
+                                            (PVOID)DeviceExtension,
+                                            &DeviceExtension->SysAudioNotification);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("IoRegisterPlugPlayNotification failed with %x\n", Status);
+        return SetIrpIoStatus(Irp, Status, 0);
     }
 #endif
 
@@ -229,17 +245,12 @@ WdmAudCreate(
         WdmAudInitWorkerRoutine(DeviceObject, NULL);
     }
 
-
-    Status = WdmAudOpenSysaudio(DeviceObject, &pClient);
+    Status = WdmAudAllocateContext(DeviceObject, &pClient);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("Failed to open sysaudio!\n");
-
+        DPRINT1("Failed to allocate context, status 0x%lx!\n", Status);
         /* complete and forget */
-        Irp->IoStatus.Status = STATUS_UNSUCCESSFUL;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
-        /* done */
-        return STATUS_UNSUCCESSFUL;
+        return SetIrpIoStatus(Irp, Status, 0);
     }
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -249,11 +260,7 @@ WdmAudCreate(
     IoStack->FileObject->FsContext = pClient;
     Status = STATUS_SUCCESS;
 
-    Irp->IoStatus.Status = Status;
-    Irp->IoStatus.Information = 0;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
-
-    return Status;
+    return SetIrpIoStatus(Irp, Status, 0);
 }
 
 NTSTATUS
@@ -262,10 +269,14 @@ WdmAudClose(
     IN  PDEVICE_OBJECT DeviceObject,
     IN  PIRP Irp)
 {
-    /* nothing to do complete request */
-#if KS_IMPLEMENTED
-    Status = KsDereferenceSoftwareBusObject(DeviceExtension->DeviceHeader);
+    PWDMAUD_DEVICE_EXTENSION DeviceExtension;
 
+    /* get device extension */
+    DeviceExtension = (PWDMAUD_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+
+    KsDereferenceSoftwareBusObject(DeviceExtension->DeviceHeader);
+
+#if 0
     if (NT_SUCCESS(Status))
     {
         if (DeviceExtension->SysAudioNotification)
@@ -273,12 +284,8 @@ WdmAudClose(
     }
 #endif
 
-    Irp->IoStatus.Status = STATUS_SUCCESS;
-    Irp->IoStatus.Information = 0;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
-
     /* done */
-    return STATUS_SUCCESS;
+    return SetIrpIoStatus(Irp, STATUS_SUCCESS, 0);
 }
 
 NTSTATUS
@@ -324,7 +331,7 @@ WdmAudCleanup(
        if (pClient->hPins[Index].Handle && pClient->hPins[Index].Type != MIXER_DEVICE_TYPE)
        {
            /* found an still open audio pin */
-           ZwClose(pClient->hPins[Index].Handle);
+           ClosePin(pClient, Index);
        }
        WdmAudCloseAllMixers(DeviceObject, pClient, Index);
     }

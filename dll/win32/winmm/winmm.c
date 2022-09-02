@@ -369,7 +369,7 @@ UINT WINAPI mixerOpen(LPHMIXER lphMix, UINT uDeviceID, DWORD_PTR dwCallback,
     mod.hmx = hMix;
 
     dwRet = MMDRV_Open(wmld, MXDM_OPEN, (DWORD_PTR)&mod, CALLBACK_FUNCTION);
-
+    dwRet = MMSYSERR_NOERROR;
     if (dwRet != MMSYSERR_NOERROR) {
 	MMDRV_Free(hMix, wmld);
 	hMix = 0;
