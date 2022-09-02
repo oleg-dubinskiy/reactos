@@ -136,7 +136,7 @@ MIXER_STATUS
 MMixerGetCapabilities(
     IN PMIXER_CONTEXT MixerContext,
     IN ULONG MixerIndex,
-    OUT LPMIXERCAPSW MixerCaps);
+    OUT LPMIXERCAPSW Caps);
 
 MIXER_STATUS
 MMixerOpen(
@@ -206,6 +206,12 @@ MMixerOpenWave(
     IN PIN_CREATE_CALLBACK CreateCallback,
     IN PVOID Context,
     OUT PHANDLE PinHandle);
+
+MIXER_STATUS
+MMixerGetWavePosition(
+    IN PMIXER_CONTEXT MixerContext,
+    IN HANDLE PinHandle,
+    OUT DWORD * Position);
 
 MIXER_STATUS
 MMixerSetWaveStatus(

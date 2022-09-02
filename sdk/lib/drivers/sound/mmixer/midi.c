@@ -75,30 +75,7 @@ MMixerAddMidiPin(
     ASSERT(!DeviceName || (wcslen(DeviceName) < MAXPNAMELEN));
 
     /* copy device name */
-    if (bInput && DeviceName)
-    {
-        wcscpy(MidiInfo->u.InCaps.szPname, DeviceName);
-    }
-    else if (!bInput && DeviceName)
-    {
-        wcscpy(MidiInfo->u.OutCaps.szPname, DeviceName);
-    }
-
-   /* FIXME determine manufacturer / product id */
-    if (bInput)
-    {
-        MidiInfo->u.InCaps.dwSupport = 0;
-        MidiInfo->u.InCaps.wMid = MM_MICROSOFT;
-        MidiInfo->u.InCaps.wPid = MM_PID_UNMAPPED;
-        MidiInfo->u.InCaps.vDriverVersion = 1;
-    }
-    else
-    {
-        MidiInfo->u.OutCaps.dwSupport = 0;
-        MidiInfo->u.OutCaps.wMid = MM_MICROSOFT;
-        MidiInfo->u.OutCaps.wPid = MM_PID_UNMAPPED;
-        MidiInfo->u.OutCaps.vDriverVersion = 1;
-    }
+    MidiInfo->DeviceName = DeviceName;
 
     if (bInput)
     {
@@ -187,7 +164,7 @@ MMixerInitializeMidiForFilter(
     if (MMixerGetDeviceName(MixerContext, szPname, MixerData->hDeviceInterfaceKey) != MM_STATUS_SUCCESS)
     {
         /* clear name */
-        szPname[0] = 0;
+        szPname[0] = L'\0';
     }
 
     /* iterate all pins and check for KSDATARANGE_MUSIC support */
@@ -334,8 +311,29 @@ MMixerMidiOutCapabilities(
         return MM_STATUS_UNSUCCESSFUL;
     }
 
-    /* copy capabilities */
-    MixerContext->Copy(Caps, &MidiInfo->u.OutCaps, sizeof(MIDIOUTCAPSW));
+    /* allocate capabilities */
+    Caps = MixerContext->Alloc(sizeof(MIDIOUTCAPSW));
+    if (!Caps)
+    {
+        /* no memory */
+        return MM_STATUS_NO_MEMORY;
+    }
+
+    /* FIXME determine manufacturer / product id */
+    Caps->wMid = MM_MICROSOFT;
+    Caps->wPid = MM_MSFT_WDMAUDIO_MIDIOUT;
+    Caps->vDriverVersion = 0x050a;
+    Caps->wTechnology = MOD_MIDIPORT; /* FIXME */
+    Caps->wVoices = 0; /* FIXME */
+    Caps->wNotes = 0; /* FIXME */
+    Caps->wChannelMask = 0xFFFF; /* FIXME */
+    Caps->dwSupport = 0; /* FIXME */
+
+    /* copy device name */
+    wcscpy(Caps->szPname, MidiInfo->DeviceName);
+
+    /* make sure it's null terminated */
+    Caps->szPname[MAXPNAMELEN-1] = L'\0';
 
     return MM_STATUS_SUCCESS;
 }
@@ -370,8 +368,25 @@ MMixerMidiInCapabilities(
         return MM_STATUS_UNSUCCESSFUL;
     }
 
-    /* copy capabilities */
-    MixerContext->Copy(Caps, &MidiInfo->u.InCaps, sizeof(MIDIINCAPSW));
+    /* allocate capabilities */
+    Caps = MixerContext->Alloc(sizeof(MIDIINCAPSW));
+    if (!Caps)
+    {
+        /* no memory */
+        return MM_STATUS_NO_MEMORY;
+    }
+
+    /* FIXME determine manufacturer / product id */
+    Caps->wMid = MM_MICROSOFT;
+    Caps->wPid = MM_MSFT_WDMAUDIO_MIDIIN;
+    Caps->vDriverVersion = 0x050a;
+    Caps->dwSupport = 0;
+
+    /* copy device name */
+    wcscpy(Caps->szPname, MidiInfo->DeviceName);
+
+    /* make sure it's null terminated */
+    Caps->szPname[MAXPNAMELEN-1] = L'\0';
 
     return MM_STATUS_SUCCESS;
 }
@@ -425,9 +440,6 @@ MMixerGetMidiDevicePath(
         /* no memory */
         return MM_STATUS_NO_MEMORY;
     }
-
-    /* copy device path */
-    MixerContext->Copy(*DevicePath, MixerData->DeviceName, Length * sizeof(WCHAR));
 
     /* done */
     return MM_STATUS_SUCCESS;
