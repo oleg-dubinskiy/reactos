@@ -507,7 +507,7 @@ static	DWORD	wodGetDevCaps(UINT wDevID, WAVEMAPDATA* wom, LPWAVEOUTCAPSW lpWaveC
         return MMSYSERR_BADDEVICEID;
     }
     /* otherwise, return caps of mapper itself */
-    if (wDevID == (UINT)-1 || wDevID == (UINT16)-1) {
+    //if (wDevID == (UINT)-1 || wDevID == (UINT16)-1) {
 	WAVEOUTCAPSW woc;
 	woc.wMid = 0x00FF;
 	woc.wPid = 0x0001;
@@ -525,7 +525,7 @@ static	DWORD	wodGetDevCaps(UINT wDevID, WAVEMAPDATA* wom, LPWAVEOUTCAPSW lpWaveC
         memcpy(lpWaveCaps, &woc, min(dwParam2, sizeof(woc)));
 
 	return MMSYSERR_NOERROR;
-    }
+    //}
     ERR("This shouldn't happen\n");
     return MMSYSERR_ERROR;
 }

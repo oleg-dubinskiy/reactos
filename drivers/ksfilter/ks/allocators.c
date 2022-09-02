@@ -175,7 +175,7 @@ IKsAllocator_fnDeviceIoControl(
         /* invalid request */
         Irp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
         CompleteRequest(Irp, IO_NO_INCREMENT);
-
+        DPRINT1("1\n");
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
@@ -674,7 +674,10 @@ KsValidateAllocatorFramingEx(
     IN  const KSALLOCATOR_FRAMING_EX* PinFraming)
 {
     if (BufferSize < sizeof(KSALLOCATOR_FRAMING_EX))
-       return  STATUS_INVALID_DEVICE_REQUEST;
+    {
+        DPRINT1("2\n");
+        return  STATUS_INVALID_DEVICE_REQUEST;
+    }
 
     /* verify framing */
     if ((Framing->FramingItem[0].Flags & KSALLOCATOR_FLAG_PARTIAL_READ_SUPPORT) &&

@@ -88,7 +88,6 @@ typedef struct
     ULONG PinId;
     MIXERLINEW Line;
     LIST_ENTRY ControlsList;
-
 }MIXERLINE_EXT, *LPMIXERLINE_EXT;
 
 typedef struct
@@ -120,11 +119,7 @@ typedef struct
     LIST_ENTRY Entry;
     ULONG DeviceId;
     ULONG PinId;
-    union
-    {
-        WAVEOUTCAPSW OutCaps;
-        WAVEINCAPSW  InCaps;
-    }u;
+    WCHAR DeviceName[MAXPNAMELEN];
 }WAVE_INFO, *LPWAVE_INFO;
 
 typedef struct
@@ -132,12 +127,7 @@ typedef struct
     LIST_ENTRY Entry;
     ULONG DeviceId;
     ULONG PinId;
-    union
-    {
-        MIDIOUTCAPSW OutCaps;
-        MIDIINCAPSW InCaps;
-    }u;
-
+    LPWSTR DeviceName;
 }MIDI_INFO, *LPMIDI_INFO;
 
 typedef struct
@@ -264,6 +254,11 @@ MMixerGetSourceMixerLineByComponentType(
     LPMIXER_INFO MixerInfo,
     DWORD dwComponentType);
 
+LPMIXERLINE_EXT
+MMixerGetSourceMixerLineByTargetType(
+    LPMIXER_INFO MixerInfo,
+    DWORD dwTargetType);
+
 MIXER_STATUS
 MMixerGetMixerControlById(
     LPMIXER_INFO MixerInfo,
@@ -341,20 +336,6 @@ MMixerInitializeWaveInfo(
     IN ULONG bWaveIn,
     IN ULONG PinCount,
     IN PULONG Pins);
-
-MIXER_STATUS
-MMixerAddEvent(
-    IN PMIXER_CONTEXT MixerContext,
-    IN OUT LPMIXER_INFO MixerInfo,
-    IN PVOID MixerEvent,
-    IN PMIXER_EVENT MixerEventRoutine);
-
-MIXER_STATUS
-MMixerRemoveEvent(
-    IN PMIXER_CONTEXT MixerContext,
-    IN OUT LPMIXER_INFO MixerInfo,
-    IN PVOID MixerEventContext,
-    IN PMIXER_EVENT MixerEventRoutine);
 
 MIXER_STATUS
 MMixerGetDeviceName(

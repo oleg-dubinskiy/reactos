@@ -18,6 +18,16 @@ KSPIN_INTERFACE StandardPinInterface =
     0
 };
 
+KSPIN_INTERFACE PinInterfaces[2] =
+{
+    {{STATIC_KSINTERFACESETID_Standard},
+    KSINTERFACE_STANDARD_STREAMING,
+    0},
+    {{STATIC_KSINTERFACESETID_Media},
+    KSINTERFACE_MEDIA_WAVE_QUEUED,
+    0}
+};
+
 KSPIN_MEDIUM StandardPinMedium =
 {
     {STATIC_KSMEDIUMSETID_Standard},
@@ -80,7 +90,7 @@ KspValidateConnectRequest(
         return STATUS_INVALID_PARAMETER;
 
     /* set create param  size */
-    Size = sizeof(KSPIN_CONNECT);
+    Size = sizeof(KSPIN_CONNECT) + sizeof(KSDATAFORMAT);
 
     /* fetch create parameters */
     Status = KspCopyCreateRequest(Irp,
@@ -99,17 +109,8 @@ KspValidateConnectRequest(
         return STATUS_INVALID_PARAMETER;
     }
 
-    if (DescriptorSize == sizeof(KSPIN_DESCRIPTOR))
-    {
-        /* standard pin descriptor */
-        Descriptor = (PKSPIN_DESCRIPTOR)((ULONG_PTR)Descriptors + sizeof(KSPIN_DESCRIPTOR) * ConnectDetails->PinId);
-    }
-    else
-    {
-        /* extended / variable pin descriptor */
-        Descriptor = &((PKSPIN_DESCRIPTOR_EX)((ULONG_PTR)Descriptors + DescriptorSize * ConnectDetails->PinId))->PinDescriptor;
-    }
-
+    /* extended / variable pin descriptor */
+    Descriptor = (PKSPIN_DESCRIPTOR)((ULONG_PTR)Descriptors + DescriptorSize * ConnectDetails->PinId);
 
     /* does the pin have interface details filled in */
     if (Descriptor->InterfacesCount && Descriptor->Interfaces)
@@ -270,7 +271,7 @@ KspReadMediaCategory(
     /* open the key */
     Status = ZwOpenKey(&hKey, GENERIC_READ, &ObjectAttributes);
 
-    DPRINT("ZwOpenKey() status 0x%08lx %wZ\n", Status, &Path);
+    DPRINT1("ZwOpenKey() status 0x%08lx %wZ\n", Status, &Path);
 
     /* free path buffer */
     FreeItem(Path.Buffer);
@@ -346,7 +347,7 @@ KspPinPropertyHandler(
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     Buffer = Data;
 
-    //DPRINT("KsPinPropertyHandler Irp %p Property %p Data %p DescriptorsCount %u Descriptor %p OutputLength %u Id %u\n", Irp, Property, Data, DescriptorsCount, Descriptor, IoStack->Parameters.DeviceIoControl.OutputBufferLength, Property->Id);
+    DPRINT("KsPinPropertyHandler Irp %p Property %p Data %p DescriptorsCount %u Descriptor %p OutputLength %u Id %u\n", Irp, Property, Data, DescriptorsCount, Descriptors, IoStack->Parameters.DeviceIoControl.OutputBufferLength, Property->Id);
 
     /* convert to PKSP_PIN */
     Pin = (KSP_PIN*)Property;
@@ -356,6 +357,7 @@ KspPinPropertyHandler(
         if (Pin->PinId >= DescriptorsCount)
         {
             /* invalid parameter */
+            DPRINT1("Pin->PinId %d is our of range, DescriptorsCount %d\n", Pin->PinId, DescriptorsCount);
             return STATUS_INVALID_PARAMETER;
         }
     }
@@ -381,7 +383,6 @@ KspPinPropertyHandler(
     switch(Property->Id)
     {
         case KSPROPERTY_PIN_DATAFLOW:
-
             Size = sizeof(KSPIN_DATAFLOW);
             if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < Size)
             {
@@ -478,11 +479,11 @@ KspPinPropertyHandler(
             Irp->IoStatus.Information = Size;
             break;
         case KSPROPERTY_PIN_INTERFACES:
-
+            return KsHandleSizedListQuery(Irp, 2, sizeof(KSPIN_INTERFACE) * 2, PinInterfaces); //HACK
             if (Descriptor->Interfaces)
             {
                 /* use mediums provided by driver */
-                return KsHandleSizedListQuery(Irp, Descriptor->InterfacesCount, sizeof(KSPIN_MEDIUM), Descriptor->Interfaces);
+                return KsHandleSizedListQuery(Irp, Descriptor->InterfacesCount, sizeof(KSPIN_INTERFACE) * Descriptor->InterfacesCount, Descriptor->Interfaces);
             }
             else
             {
@@ -492,11 +493,10 @@ KspPinPropertyHandler(
             break;
 
         case KSPROPERTY_PIN_MEDIUMS:
-
             if (Descriptor->MediumsCount)
             {
                 /* use mediums provided by driver */
-                return KsHandleSizedListQuery(Irp, Descriptor->MediumsCount, sizeof(KSPIN_MEDIUM), Descriptor->Mediums);
+                return KsHandleSizedListQuery(Irp, Descriptor->MediumsCount, sizeof(KSPIN_MEDIUM) * Descriptor->MediumsCount, Descriptor->Mediums);
             }
             else
             {
@@ -506,7 +506,6 @@ KspPinPropertyHandler(
             break;
 
         case KSPROPERTY_PIN_COMMUNICATION:
-
             Size = sizeof(KSPIN_COMMUNICATION);
             if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < Size)
             {
@@ -522,7 +521,6 @@ KspPinPropertyHandler(
             break;
 
         case KSPROPERTY_PIN_CATEGORY:
-
             if (!Descriptor->Category)
             {
                 /* no pin category */
@@ -548,7 +546,6 @@ KspPinPropertyHandler(
             break;
 
         case KSPROPERTY_PIN_NAME:
-
             if (Descriptor->Name)
             {
                 /* use pin name */
@@ -674,7 +671,7 @@ KsPinPropertyHandler(
 }
 
 /*
-    @unimplemented
+    @implemented
 */
 KSDDKAPI NTSTATUS NTAPI
 KsPinDataIntersectionEx(
@@ -687,28 +684,11 @@ KsPinDataIntersectionEx(
     IN  PFNKSINTERSECTHANDLEREX IntersectHandler OPTIONAL,
     IN  PVOID HandlerContext OPTIONAL)
 {
-    UNIMPLEMENTED;
-    return STATUS_UNSUCCESSFUL;
-}
-
-/*
-    @implemented
-*/
-KSDDKAPI
-NTSTATUS
-NTAPI
-KsPinDataIntersection(
-    IN  PIRP Irp,
-    IN  PKSP_PIN Pin,
-    OUT PVOID Data,
-    IN  ULONG DescriptorsCount,
-    IN  const KSPIN_DESCRIPTOR* Descriptor,
-    IN  PFNKSINTERSECTHANDLER IntersectHandler)
-{
-    KSMULTIPLE_ITEM * Item;
-    KSDATARANGE * DataRange;
+    PKSMULTIPLE_ITEM MultipleItem;
+    PKSDATARANGE DataRange;
     PIO_STACK_LOCATION IoStack;
-    ULONG Size;
+    ULONG OutputBufferLength;
+    ULONG DataSize, Size;
     ULONG Index;
     NTSTATUS Status;
 
@@ -728,40 +708,114 @@ KsPinDataIntersection(
     if (Pin->PinId >= DescriptorsCount)
     {
         /* it is */
+        DPRINT1("PinId %d is out of range, DescriptorsCount %d\n", Pin->PinId, DescriptorsCount);
         Irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
         Irp->IoStatus.Information = 0;
         return STATUS_INVALID_PARAMETER;
     }
 
-    /* get start item */
-    Item = (KSMULTIPLE_ITEM*)(Pin + 1);
-    /* get first data range */
-    DataRange = (KSDATARANGE*)(Item + 1);
-    /* iterate through all data ranges */
-    for(Index = 0; Index < Item->Count; Index++, DataRange++)
-    {
-        /* call intersect handler */
-        Status = IntersectHandler(Irp, Pin, DataRange, Data);
-        if (NT_SUCCESS(Status))
-        {
-            if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < DataRange->FormatSize)
-            {
-                /* buffer is too small */
-                Irp->IoStatus.Information = DataRange->FormatSize;
-                Irp->IoStatus.Status = STATUS_BUFFER_TOO_SMALL;
-                return STATUS_BUFFER_TOO_SMALL;
-            }
-            RtlMoveMemory(Irp->UserBuffer, DataRange, sizeof(KSDATARANGE));
-            Irp->IoStatus.Information = sizeof(KSDATARANGE);
-            Irp->IoStatus.Status = STATUS_SUCCESS;
-            return STATUS_SUCCESS;
-        }
+    /* get output buffer length */
+    OutputBufferLength = IoStack->Parameters.DeviceIoControl.OutputBufferLength;
 
+    /* get start item */
+    MultipleItem = (KSMULTIPLE_ITEM*)(Pin + 1);
+
+    /* get first data range */
+    DataRange = (PKSDATARANGE)(MultipleItem + 1);
+
+    /* FIXME make sure its 64 bit aligned */
+    ASSERT(((ULONG_PTR)DataRange & 0x7) == 0);
+
+    /* iterate through all data ranges */
+    for (Index = 0; Index < Descriptor->DataRangesCount; Index++)
+    {
+        /* check matching of the data range */
+        if (IsEqualGUIDAligned(&Descriptor->DataRanges[0]->MajorFormat, &DataRange->MajorFormat) ||
+            IsEqualGUIDAligned(&Descriptor->DataRanges[0]->SubFormat, &DataRange->SubFormat) ||
+            IsEqualGUIDAligned(&Descriptor->DataRanges[0]->Specifier, &DataRange->Specifier))
+        {
+            /* call intersect handler */
+            Status = IntersectHandler(HandlerContext,
+                                      Irp,
+                                      Pin,
+                                      DataRange,
+                                      Descriptor->DataRanges[0],
+                                      OutputBufferLength,
+                                      Data,
+                                      &DataSize);
+            DPRINT1("IntersectHandler status 0x%lx\n", Status);
+            if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW || Status == STATUS_BUFFER_TOO_SMALL)
+            {
+                Irp->IoStatus.Information = DataSize;
+                if (OutputBufferLength == 0)
+                {
+                    /* buffer overflow */
+                    Irp->IoStatus.Status = STATUS_BUFFER_OVERFLOW;
+                    return STATUS_BUFFER_OVERFLOW;
+                }
+                else if (OutputBufferLength < sizeof(KSDATARANGE))
+                {
+                    /* buffer is too small */
+                    Irp->IoStatus.Status = STATUS_BUFFER_TOO_SMALL;
+                    return STATUS_BUFFER_TOO_SMALL;
+                }
+                RtlMoveMemory(Irp->UserBuffer, DataRange, sizeof(KSDATARANGE));
+                Irp->IoStatus.Status = STATUS_SUCCESS;
+                return STATUS_SUCCESS;
+            }
+	    }
+	    DataRange = (PKSDATARANGE)((PUCHAR)DataRange + DataRange->FormatSize);
+
+        /* FIXME make sure its 64 bit aligned */
+        ASSERT(((ULONG_PTR)DataRange & 0x7) == 0);
     }
 
     Irp->IoStatus.Information = 0;
     Irp->IoStatus.Status = STATUS_NO_MATCH;
     return STATUS_NO_MATCH;
+}
+
+NTSTATUS
+KspPinIntersectHandlerEx(
+    IN PVOID Context,
+    IN PIRP Irp,
+    IN PKSP_PIN Pin,
+    IN PKSDATARANGE DataRange,
+    IN PKSDATARANGE MatchingDataRange,
+    IN ULONG DataBufferSize,
+    OUT PVOID Data,
+    OUT PULONG DataSize)
+{
+    PFNKSINTERSECTHANDLER IntersectHandler = (PFNKSINTERSECTHANDLER)Context;
+    NTSTATUS Status;
+
+    Status = IntersectHandler(Irp, Pin, DataRange, Data);
+    *DataSize = (ULONG)Irp->IoStatus.Information;
+    return Status;
+}
+
+/*
+    @implemented
+*/
+KSDDKAPI
+NTSTATUS
+NTAPI
+KsPinDataIntersection(
+    IN  PIRP Irp,
+    IN  PKSP_PIN Pin,
+    OUT PVOID Data,
+    IN  ULONG DescriptorsCount,
+    IN  const KSPIN_DESCRIPTOR* Descriptor,
+    IN  PFNKSINTERSECTHANDLER IntersectHandler)
+{
+    return KsPinDataIntersectionEx(Irp,
+                                   Pin,
+                                   Data,
+                                   DescriptorsCount,
+                                   Descriptor,
+                                   sizeof(KSPIN_DESCRIPTOR),
+                                   (PFNKSINTERSECTHANDLEREX)KspPinIntersectHandlerEx,
+                                   IntersectHandler);
 }
 
 /*
@@ -815,7 +869,7 @@ KsHandleSizedListQuery(
     }
 
     Item->Count = DataItemsCount;
-    Item->Size = DataItemSize;
+    Item->Size = Size;
 
     if (IoStack->Parameters.DeviceIoControl.OutputBufferLength == sizeof(KSMULTIPLE_ITEM))
     {

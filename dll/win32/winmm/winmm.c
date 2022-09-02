@@ -47,6 +47,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(winmm);
  *                   G L O B A L   S E T T I N G S
  * ========================================================================*/
 
+extern LPWSTR device_interface;
 HINSTANCE hWinMM32Instance;
 HANDLE psLastEvent;
 
@@ -320,7 +321,7 @@ UINT WINAPI mixerGetDevCapsW(UINT_PTR uDeviceID, LPMIXERCAPSW lpCaps, UINT uSize
     if ((wmld = MMDRV_Get((HANDLE)uDeviceID, MMDRV_MIXER, TRUE)) == NULL)
         return MMSYSERR_BADDEVICEID;
 
-    return MMDRV_Message(wmld, MXDM_GETDEVCAPS, (DWORD_PTR)lpCaps, uSize);
+    return MMDRV_Message(wmld, MXDM_GETDEVCAPS, (DWORD_PTR)lpCaps, (DWORD_PTR)device_interface);
 }
 
 static void CALLBACK MIXER_WCallback(HMIXEROBJ hmx, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam, DWORD_PTR param2)
@@ -352,10 +353,8 @@ UINT WINAPI mixerOpen(LPHMIXER lphMix, UINT uDeviceID, DWORD_PTR dwCallback,
         return dwRet;
 
     mod.dwCallback = (DWORD_PTR)MIXER_WCallback;
-    if ((fdwOpen & CALLBACK_TYPEMASK) == CALLBACK_WINDOW)
-        mod.dwInstance = dwCallback;
-    else
-        mod.dwInstance = 0;
+    mod.dwInstance = dwInstance;
+    lstrcpyW((LPWSTR)mod.dnDevNode, device_interface);
 
     /* We're remapping to CALLBACK_FUNCTION because that's what old winmm is
      * documented to do when opening the mixer driver.
@@ -730,7 +729,7 @@ UINT WINAPI auxGetDevCapsW(UINT_PTR uDeviceID, LPAUXCAPSW lpCaps, UINT uSize)
 
     if ((wmld = MMDRV_Get((HANDLE)uDeviceID, MMDRV_AUX, TRUE)) == NULL)
 	return MMSYSERR_INVALHANDLE;
-    return MMDRV_Message(wmld, AUXDM_GETDEVCAPS, (DWORD_PTR)lpCaps, uSize);
+    return MMDRV_Message(wmld, AUXDM_GETDEVCAPS, (DWORD_PTR)lpCaps, (DWORD_PTR)device_interface);
 }
 
 /**************************************************************************
@@ -823,7 +822,7 @@ UINT WINAPI midiOutGetDevCapsW(UINT_PTR uDeviceID, LPMIDIOUTCAPSW lpCaps,
     if ((wmld = MMDRV_Get((HANDLE)uDeviceID, MMDRV_MIDIOUT, TRUE)) == NULL)
 	return MMSYSERR_INVALHANDLE;
 
-    return MMDRV_Message(wmld, MODM_GETDEVCAPS, (DWORD_PTR)lpCaps, uSize);
+    return MMDRV_Message(wmld, MODM_GETDEVCAPS, (DWORD_PTR)lpCaps, (DWORD_PTR)device_interface);
 }
 
 /**************************************************************************
@@ -1200,7 +1199,7 @@ UINT WINAPI midiInGetDevCapsW(UINT_PTR uDeviceID, LPMIDIINCAPSW lpCaps, UINT uSi
     if ((wmld = MMDRV_Get((HANDLE)uDeviceID, MMDRV_MIDIIN, TRUE)) == NULL)
 	return MMSYSERR_INVALHANDLE;
 
-   return MMDRV_Message(wmld, MIDM_GETDEVCAPS, (DWORD_PTR)lpCaps, uSize);
+   return MMDRV_Message(wmld, MIDM_GETDEVCAPS, (DWORD_PTR)lpCaps, (DWORD_PTR)device_interface);
 }
 
 /**************************************************************************
@@ -2093,7 +2092,7 @@ static UINT WAVE_Open(HANDLE* lphndl, UINT uDeviceID, UINT uType,
     wod.lpFormat = (LPWAVEFORMATEX)lpFormat;  /* should the struct be copied iso pointer? */
     wod.dwCallback = dwCallback;
     wod.dwInstance = dwInstance;
-    wod.dnDevNode = 0L;
+    lstrcpyW((LPWSTR)wod.dnDevNode, device_interface);
 
     TRACE("cb=%08lx\n", wod.dwCallback);
 
@@ -2188,7 +2187,7 @@ UINT WINAPI waveOutGetDevCapsW(UINT_PTR uDeviceID, LPWAVEOUTCAPSW lpCaps,
     if ((wmld = MMDRV_Get((HANDLE)uDeviceID, MMDRV_WAVEOUT, TRUE)) == NULL)
         return MMSYSERR_BADDEVICEID;
 
-    return MMDRV_Message(wmld, WODM_GETDEVCAPS, (DWORD_PTR)lpCaps, uSize);
+    return MMDRV_Message(wmld, WODM_GETDEVCAPS, (DWORD_PTR)lpCaps, (DWORD_PTR)device_interface);
 }
 
 /**************************************************************************
@@ -2588,7 +2587,7 @@ UINT WINAPI waveInGetDevCapsW(UINT_PTR uDeviceID, LPWAVEINCAPSW lpCaps, UINT uSi
     if ((wmld = MMDRV_Get((HANDLE)uDeviceID, MMDRV_WAVEIN, TRUE)) == NULL)
 	return MMSYSERR_BADDEVICEID;
 
-    return MMDRV_Message(wmld, WIDM_GETDEVCAPS, (DWORD_PTR)lpCaps, uSize);
+    return MMDRV_Message(wmld, WIDM_GETDEVCAPS, (DWORD_PTR)lpCaps, (DWORD_PTR)device_interface);
 }
 
 /**************************************************************************

@@ -105,7 +105,7 @@ KsValidateTopologyNodeCreateRequest(
     PKSNODE_CREATE NodeCreate;
     ULONG Size;
     NTSTATUS Status;
-
+    DPRINT1("Topology %p\n", Topology);
     /* did the caller miss the topology */
     if (!Topology)
         return STATUS_INVALID_PARAMETER;
@@ -182,6 +182,7 @@ KsTopologyPropertyHandler(
             if (Node->NodeId >= Topology->TopologyNodesCount)
             {
                 /* invalid node id */
+                DPRINT1("Node->NodeId %d is out of range, Topology->TopologyNodesCount %d\n", Node->NodeId, Topology->TopologyNodesCount);
                 Irp->IoStatus.Information = 0;
                 Status = STATUS_INVALID_PARAMETER;
                 break;

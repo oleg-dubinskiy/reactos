@@ -691,6 +691,7 @@ KsAllocateObjectHeader(
     }
     /* store the object in the file object */
     IoStack->FileObject->FsContext2 = ObjectHeader;
+    IoStack->FileObject->FsContext = ObjectHeader;
 
     /* store parent device */
     ObjectHeader->ParentDeviceObject = IoGetRelatedDeviceObject(IoStack->FileObject);
@@ -1159,7 +1160,7 @@ KsSynchronousIoControlDevice(
     }
 
 
-    /* Store Fileobject */
+    /* Prepare stack location */
     IoStack = IoGetNextIrpStackLocation(Irp);
     IoStack->FileObject = FileObject;
 

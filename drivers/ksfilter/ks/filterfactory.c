@@ -721,6 +721,7 @@ KsFilterFactoryUpdateCacheData(
         if (!Found)
         {
             /* filter category is not present */
+            DPRINT1("Failed to find filter category\n");
             Status = STATUS_INVALID_PARAMETER;
             break;
         }

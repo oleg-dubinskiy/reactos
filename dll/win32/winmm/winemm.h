@@ -156,7 +156,8 @@ LPWINE_DRIVER	DRIVER_TryOpenDriver32(LPCWSTR fn, LPARAM lParam2);
 void            DRIVER_UnloadAll(void);
 HDRVR WINAPI OpenDriverA(LPCSTR lpDriverName, LPCSTR lpSectionName, LPARAM lParam);
 BOOL	MMDRV_Install(LPCSTR drvRegName, LPCSTR drvFileName, BOOL bIsMapper);
-BOOL LoadRegistryMMEDrivers(char* key);
+INT LoadRegistryMMEDrivers(char* key);
+BOOL GetDeviceInterfacePath(DWORD Index, LPWSTR* DevicePath);
 BOOL		MMDRV_Init(void);
 void            MMDRV_Exit(void);
 UINT		MMDRV_GetNum(UINT);
@@ -192,7 +193,6 @@ extern HANDLE psStopEvent;
 #define WINE_GDF_EXTERNAL_MASK  0xF0000000
 #define WINE_GDF_SESSION        0x00000001
 
-
 /* Modification to take into account Windows NT's registry format */
 
 #define NT_MME_DRIVERS32_KEY \
@@ -200,8 +200,6 @@ extern HANDLE psStopEvent;
 
 #define NT_MME_DRIVERS_KEY \
     "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Drivers"
-
-INT LoadRegistryMMEDrivers(char* key);
 
 // REACTOS:
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))

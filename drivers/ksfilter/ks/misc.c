@@ -48,32 +48,43 @@ KspCopyCreateRequest(
     OUT PVOID * Result)
 {
     PIO_STACK_LOCATION IoStack;
+    PKSOBJECT_CREATE_ITEM CreateItem;
     SIZE_T ObjectLength, ParametersLength;
-    PVOID Buffer;
+    PWCHAR Buffer;
 
     /* get current irp stack */
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
+    /* get create item */
+    CreateItem = KSCREATE_ITEM_IRP_STORAGE(Irp);
+
     /* get object class length */
-    ObjectLength = (wcslen(ObjectClass) + 1) * sizeof(WCHAR);
+    ObjectLength = CreateItem->ObjectClass.Length + sizeof(WCHAR);
 
     /* check for minium length requirement */
-    if (ObjectLength  + *Size > IoStack->FileObject->FileName.MaximumLength)
+    if (ObjectLength + *Size > IoStack->FileObject->FileName.Length)
         return STATUS_UNSUCCESSFUL;
 
     /* extract parameters length */
-    ParametersLength = IoStack->FileObject->FileName.MaximumLength - ObjectLength;
+    ParametersLength = IoStack->FileObject->FileName.Length - ObjectLength;
+    ASSERT(ParametersLength);
+
+    /* get file name buffer */
+    Buffer = IoStack->FileObject->FileName.Buffer;
+
+    /* move to the parameter at the end */
+    Buffer += ObjectLength;
 
     /* allocate buffer */
-    Buffer = AllocateItem(NonPagedPool, ParametersLength);
-    if (!Buffer)
+    Irp->AssociatedIrp.SystemBuffer = AllocateItem(NonPagedPool, ParametersLength);
+    if (!Irp->AssociatedIrp.SystemBuffer)
         return STATUS_INSUFFICIENT_RESOURCES;
 
     /* copy parameters */
-    RtlMoveMemory(Buffer, &IoStack->FileObject->FileName.Buffer[ObjectLength / sizeof(WCHAR)], ParametersLength);
+    RtlMoveMemory(Irp->AssociatedIrp.SystemBuffer, Buffer, ParametersLength);
 
     /* store result */
-    *Result = Buffer;
+    *Result = Irp->AssociatedIrp.SystemBuffer;
     *Size = (ULONG)ParametersLength;
 
     return STATUS_SUCCESS;

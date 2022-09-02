@@ -5057,6 +5057,21 @@ NTAPI
 KsFilterReleaseProcessingMutex(
   _In_ PKSFILTER Filter);
 
+PVOID
+NTAPI
+KsGetObjectFromFileObject(
+    IN PFILE_OBJECT FileObject);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+static
+__inline
+PKSPIN
+KsGetPinFromFileObject(
+    IN PFILE_OBJECT FileObject)
+{
+    return (PKSPIN)KsGetObjectFromFileObject(FileObject);
+}
+
 /* etc. */
 #endif /* avstream */
 

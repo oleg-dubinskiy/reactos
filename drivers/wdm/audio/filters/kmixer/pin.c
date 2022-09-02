@@ -15,6 +15,7 @@
 
 const GUID KSPROPSETID_Connection              = {0x1D58C920L, 0xAC9B, 0x11CF, {0xA5, 0xD6, 0x28, 0xDB, 0x04, 0xC1, 0x00, 0x00}};
 
+
 NTSTATUS
 PerformSampleRateConversion(
     PUCHAR Buffer,
@@ -130,15 +131,11 @@ PerformSampleRateConversion(
     }
     else if (BytesPerSample == 2)
     {
-        PUSHORT Res = (PUSHORT)ResultOut;
-
-        src_float_to_short_array(FloatOut, (short*)Res, Data.output_frames_gen * NumChannels);
+        src_float_to_short_array(FloatOut, (short*)ResultOut, Data.output_frames_gen * NumChannels);
     }
     else if (BytesPerSample == 4)
     {
-        PULONG Res = (PULONG)ResultOut;
-
-        src_float_to_int_array(FloatOut, (int*)Res, Data.output_frames_gen * NumChannels);
+        src_float_to_int_array(FloatOut, (int*)ResultOut, Data.output_frames_gen * NumChannels);
     }
 
 
@@ -287,7 +284,7 @@ PerformQualityConversion(
     ASSERT(OldWidth != NewWidth);
 
     Samples = BufferLength / (OldWidth / 8);
-    //DPRINT("Samples %u BufferLength %u\n", Samples, BufferLength);
+    DPRINT("PerformQualityConversion Samples %u BufferLength %u\n", Samples, BufferLength);
 
     if (OldWidth == 8 && NewWidth == 16)
     {
@@ -426,11 +423,11 @@ Pin_fnDeviceIoControl(
 {
     PIO_STACK_LOCATION IoStack;
     PKSP_PIN Property;
-    //DPRINT1("Pin_fnDeviceIoControl called DeviceObject %p Irp %p\n", DeviceObject);
+    DPRINT("Pin_fnDeviceIoControl called DeviceObject %p Irp %p\n", DeviceObject, Irp);
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
-    if (IoStack->Parameters.DeviceIoControl.InputBufferLength == sizeof(KSP_PIN) && IoStack->Parameters.DeviceIoControl.OutputBufferLength == sizeof(KSDATAFORMAT_WAVEFORMATEX))
+    if (IoStack->Parameters.DeviceIoControl.InputBufferLength == sizeof(KSP_PIN) && IoStack->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(KSDATAFORMAT_WAVEFORMATEX))
     {
         Property = (PKSP_PIN)IoStack->Parameters.DeviceIoControl.Type3InputBuffer;
 
@@ -451,6 +448,8 @@ Pin_fnDeviceIoControl(
                 Formats[Property->PinId].WaveFormatEx.nChannels = WaveFormat->WaveFormatEx.nChannels;
                 Formats[Property->PinId].WaveFormatEx.wBitsPerSample = WaveFormat->WaveFormatEx.wBitsPerSample;
                 Formats[Property->PinId].WaveFormatEx.nSamplesPerSec = WaveFormat->WaveFormatEx.nSamplesPerSec;
+                Formats[Property->PinId].WaveFormatEx.nBlockAlign = (WaveFormat->WaveFormatEx.nChannels * WaveFormat->WaveFormatEx.wBitsPerSample) / 8;
+                Formats[Property->PinId].WaveFormatEx.nAvgBytesPerSec = WaveFormat->WaveFormatEx.nSamplesPerSec * (WaveFormat->WaveFormatEx.nChannels * WaveFormat->WaveFormatEx.wBitsPerSample / 8);
 
                 Irp->IoStatus.Information = 0;
                 Irp->IoStatus.Status = STATUS_SUCCESS;
@@ -486,12 +485,98 @@ Pin_fnWrite(
     PDEVICE_OBJECT DeviceObject,
     PIRP Irp)
 {
-    UNIMPLEMENTED;
+    PIO_STACK_LOCATION IoStack;
+    PKSSTREAM_HEADER StreamHeader;
+    PVOID BufferOut, BufferOutTemp;
+    ULONG BufferLength, BufferLengthTemp;
+    NTSTATUS Status = STATUS_SUCCESS;
+    PKSDATAFORMAT_WAVEFORMATEX Formats;
+    PKSDATAFORMAT_WAVEFORMATEX InputFormat, OutputFormat;
 
-    Irp->IoStatus.Information = 0;
-    Irp->IoStatus.Status = STATUS_SUCCESS;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
-    return STATUS_SUCCESS;
+    DPRINT("Pin_fnWrite called DeviceObject %p Irp %p\n", DeviceObject, Irp);
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    Formats = (PKSDATAFORMAT_WAVEFORMATEX)IoStack->FileObject->FsContext2;
+
+    InputFormat = Formats;
+    OutputFormat = (Formats + 1);
+
+    Status = KsProbeStreamIrp(Irp, KSPROBE_STREAMWRITE | KSPROBE_ALLOCATEMDL | KSPROBE_PROBEANDLOCK, sizeof(KSSTREAM_HEADER));
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("KsProbeStreamIrp failed with Status 0x%lx Cancel %u\n", Status, Irp->Cancel);
+        return Status;
+    }
+
+    StreamHeader = (PKSSTREAM_HEADER)Irp->AssociatedIrp.SystemBuffer;
+
+    BufferOut = StreamHeader->Data;
+    BufferLength = StreamHeader->DataUsed;
+
+    DPRINT("\n Old Channels %u Num Channels %u\n Old SampleRate %u SampleRate %u\n Old BitsPerSample %u BitsPerSample %u\n",
+               InputFormat->WaveFormatEx.nChannels, OutputFormat->WaveFormatEx.nChannels,
+               InputFormat->WaveFormatEx.nSamplesPerSec, OutputFormat->WaveFormatEx.nSamplesPerSec,
+               InputFormat->WaveFormatEx.wBitsPerSample, OutputFormat->WaveFormatEx.wBitsPerSample);
+
+    if (InputFormat->WaveFormatEx.wBitsPerSample != OutputFormat->WaveFormatEx.wBitsPerSample)
+    {
+        Status = PerformQualityConversion(StreamHeader->Data,
+                                          StreamHeader->DataUsed,
+                                          InputFormat->WaveFormatEx.wBitsPerSample,
+                                          OutputFormat->WaveFormatEx.wBitsPerSample,
+                                          &BufferOut,
+                                          &BufferLength);
+        if (NT_SUCCESS(Status))
+        {
+            StreamHeader->Data = BufferOut;
+            StreamHeader->DataUsed = BufferLength;
+        }
+    }
+
+    if (InputFormat->WaveFormatEx.nChannels != OutputFormat->WaveFormatEx.nChannels)
+    {
+        Status = PerformChannelConversion(BufferOut,
+                                          BufferLength,
+                                          InputFormat->WaveFormatEx.nChannels,
+                                          OutputFormat->WaveFormatEx.nChannels,
+                                          OutputFormat->WaveFormatEx.wBitsPerSample,
+                                          &BufferOutTemp,
+                                          &BufferLengthTemp);
+
+        BufferOut = BufferOutTemp;
+        BufferLength = BufferLengthTemp;
+
+        if (NT_SUCCESS(Status))
+        {
+            StreamHeader->Data = BufferOut;
+            StreamHeader->DataUsed = BufferLength;
+        }
+    }
+
+    if (InputFormat->WaveFormatEx.nSamplesPerSec != OutputFormat->WaveFormatEx.nSamplesPerSec)
+    {
+        Status = PerformSampleRateConversion(BufferOut,
+                                             BufferLength,
+                                             InputFormat->WaveFormatEx.nSamplesPerSec,
+                                             OutputFormat->WaveFormatEx.nSamplesPerSec,
+                                             OutputFormat->WaveFormatEx.wBitsPerSample / 8,
+                                             OutputFormat->WaveFormatEx.nChannels,
+                                             &BufferOutTemp,
+                                             &BufferLengthTemp);
+
+        BufferOut = BufferOutTemp;
+        BufferLength = BufferLengthTemp;
+
+        if (NT_SUCCESS(Status))
+        {
+            StreamHeader->Data = BufferOut;
+            StreamHeader->DataUsed = BufferLength;
+        }
+    }
+
+    Irp->IoStatus.Status = Status;
+    return Status;
 }
 
 NTSTATUS
@@ -565,8 +650,6 @@ Pin_fnFastDeviceIoControl(
     PDEVICE_OBJECT DeviceObject)
 {
     UNIMPLEMENTED;
-
-
     return FALSE;
 }
 
@@ -600,85 +683,8 @@ Pin_fnFastWrite(
     PIO_STATUS_BLOCK IoStatus,
     PDEVICE_OBJECT DeviceObject)
 {
-    PKSSTREAM_HEADER StreamHeader;
-    PVOID BufferOut;
-    ULONG BufferLength;
-    NTSTATUS Status = STATUS_SUCCESS;
-    PKSDATAFORMAT_WAVEFORMATEX Formats;
-    PKSDATAFORMAT_WAVEFORMATEX InputFormat, OutputFormat;
-
-    DPRINT("Pin_fnFastWrite called DeviceObject %p Irp %p\n", DeviceObject);
-
-    Formats = (PKSDATAFORMAT_WAVEFORMATEX)FileObject->FsContext2;
-
-    InputFormat = Formats;
-    OutputFormat = (Formats + 1);
-    StreamHeader = (PKSSTREAM_HEADER)Buffer;
-
-
-    DPRINT("Num Channels %u Old Channels %u\n SampleRate %u Old SampleRate %u\n BitsPerSample %u Old BitsPerSample %u\n",
-               InputFormat->WaveFormatEx.nChannels, OutputFormat->WaveFormatEx.nChannels,
-               InputFormat->WaveFormatEx.nSamplesPerSec, OutputFormat->WaveFormatEx.nSamplesPerSec,
-               InputFormat->WaveFormatEx.wBitsPerSample, OutputFormat->WaveFormatEx.wBitsPerSample);
-
-    if (InputFormat->WaveFormatEx.wBitsPerSample != OutputFormat->WaveFormatEx.wBitsPerSample)
-    {
-        Status = PerformQualityConversion(StreamHeader->Data,
-                                          StreamHeader->DataUsed,
-                                          InputFormat->WaveFormatEx.wBitsPerSample,
-                                          OutputFormat->WaveFormatEx.wBitsPerSample,
-                                          &BufferOut,
-                                          &BufferLength);
-        if (NT_SUCCESS(Status))
-        {
-            ExFreePool(StreamHeader->Data);
-            StreamHeader->Data = BufferOut;
-            StreamHeader->DataUsed = BufferLength;
-        }
-    }
-
-    if (InputFormat->WaveFormatEx.nChannels != OutputFormat->WaveFormatEx.nChannels)
-    {
-        Status = PerformChannelConversion(StreamHeader->Data,
-                                          StreamHeader->DataUsed,
-                                          InputFormat->WaveFormatEx.nChannels,
-                                          OutputFormat->WaveFormatEx.nChannels,
-                                          OutputFormat->WaveFormatEx.wBitsPerSample,
-                                          &BufferOut,
-                                          &BufferLength);
-
-        if (NT_SUCCESS(Status))
-        {
-            ExFreePool(StreamHeader->Data);
-            StreamHeader->Data = BufferOut;
-            StreamHeader->DataUsed = BufferLength;
-        }
-    }
-
-    if (InputFormat->WaveFormatEx.nSamplesPerSec != OutputFormat->WaveFormatEx.nSamplesPerSec)
-    {
-        Status = PerformSampleRateConversion(StreamHeader->Data,
-                                             StreamHeader->DataUsed,
-                                             InputFormat->WaveFormatEx.nSamplesPerSec,
-                                             OutputFormat->WaveFormatEx.nSamplesPerSec,
-                                             OutputFormat->WaveFormatEx.wBitsPerSample / 8,
-                                             OutputFormat->WaveFormatEx.nChannels,
-                                             &BufferOut,
-                                             &BufferLength);
-        if (NT_SUCCESS(Status))
-        {
-            ExFreePool(StreamHeader->Data);
-            StreamHeader->Data = BufferOut;
-            StreamHeader->DataUsed = BufferLength;
-        }
-    }
-
-    IoStatus->Status = Status;
-
-    if (NT_SUCCESS(Status))
-        return TRUE;
-    else
-        return FALSE;
+    UNIMPLEMENTED;
+    return FALSE;
 }
 
 static KSDISPATCH_TABLE PinTable =

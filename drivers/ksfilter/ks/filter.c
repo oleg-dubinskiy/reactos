@@ -774,7 +774,7 @@ KspHandlePropertyInstances(
     Instances->PossibleCount = This->Filter.Descriptor->PinDescriptors[Pin->PinId].InstancesPossible;
     /* current instance count */
     Instances->CurrentCount = This->PinInstanceCount[Pin->PinId];
-
+    DPRINT1("CurrentCount %d, PossibleCount %d\n", Instances->CurrentCount, Instances->PossibleCount);
     IoStatus->Information = sizeof(KSPIN_CINSTANCES);
     IoStatus->Status = STATUS_SUCCESS;
     return STATUS_SUCCESS;

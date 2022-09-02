@@ -396,6 +396,11 @@ typedef JOYDEVMSGPROC *LPJOYDEVMSGPROC;
 #define MAKEMCIRESOURCE(wRet, wRes) MAKELRESULT((wRet), (wRes))
 
 typedef struct {
+    DWORD  cbSize;
+    LPVOID pCaps;
+} MDEVICECAPSEX;
+
+typedef struct {
 	DWORD_PTR		dwCallback;
 	DWORD_PTR		dwInstance;
 	HMIDIOUT		hMidi;

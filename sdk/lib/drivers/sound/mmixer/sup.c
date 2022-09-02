@@ -41,15 +41,24 @@ MMixerVerifyContext(
     IN PMIXER_CONTEXT MixerContext)
 {
     if (MixerContext->SizeOfStruct != sizeof(MIXER_CONTEXT))
+    {
+        DPRINT1("1\n");
         return MM_STATUS_INVALID_PARAMETER;
+    }
 
     if (!MixerContext->Alloc || !MixerContext->Control || !MixerContext->Free || !MixerContext->Open ||
         !MixerContext->AllocEventData || !MixerContext->FreeEventData ||
         !MixerContext->Close || !MixerContext->OpenKey || !MixerContext->QueryKeyValue || !MixerContext->CloseKey)
+    {
+        DPRINT1("2\n");
         return MM_STATUS_INVALID_PARAMETER;
+    }
 
     if (!MixerContext->MixerContext)
+    {
+        DPRINT1("3\n");
         return MM_STATUS_INVALID_PARAMETER;
+    }
 
     return MM_STATUS_SUCCESS;
 }
@@ -266,6 +275,29 @@ MMixerGetSourceMixerLineByComponentType(
     {
         MixerLineSrc = (LPMIXERLINE_EXT)CONTAINING_RECORD(Entry, MIXERLINE_EXT, Entry);
         if (MixerLineSrc->Line.dwComponentType == dwComponentType)
+            return MixerLineSrc;
+
+        Entry = Entry->Flink;
+    }
+
+    return NULL;
+}
+
+LPMIXERLINE_EXT
+MMixerGetSourceMixerLineByTargetType(
+    LPMIXER_INFO MixerInfo,
+    DWORD dwTargetType)
+{
+    PLIST_ENTRY Entry;
+    LPMIXERLINE_EXT MixerLineSrc;
+
+    /* get first entry */
+    Entry = MixerInfo->LineList.Flink;
+
+    while(Entry != &MixerInfo->LineList)
+    {
+        MixerLineSrc = (LPMIXERLINE_EXT)CONTAINING_RECORD(Entry, MIXERLINE_EXT, Entry);
+        if (MixerLineSrc->Line.Target.dwType == dwTargetType)
             return MixerLineSrc;
 
         Entry = Entry->Flink;

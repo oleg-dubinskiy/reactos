@@ -183,7 +183,8 @@ static HRESULT DSPROPERTY_DescriptionW(
     HRESULT err;
     GUID dev_guid;
     ULONG wod, wid, wodn, widn;
-    DSDRIVERDESC desc;
+    WAVEOUTCAPSW out_caps;
+    WAVEINCAPSW in_caps;
 
     TRACE("pPropData=%p,cbPropData=%d,pcbReturned=%p)\n",
           pPropData,cbPropData,pcbReturned);
@@ -229,9 +230,13 @@ static HRESULT DSPROPERTY_DescriptionW(
     }
 
     if (ppd->DataFlow == DIRECTSOUNDDEVICE_DATAFLOW_RENDER)
-        err = waveOutMessage(UlongToHandle(wod),DRV_QUERYDSOUNDDESC,(DWORD_PTR)&desc,ds_hw_accel);
+    {
+        err = waveOutGetDevCapsW(wod, &out_caps, sizeof(WAVEOUTCAPSW));
+    }
     else
-        err = waveInMessage(UlongToHandle(wod),DRV_QUERYDSOUNDDESC,(DWORD_PTR)&desc,ds_hw_accel);
+    {
+        err = waveInGetDevCapsW(wid, &in_caps, sizeof(WAVEINCAPSW));
+    }
 
     if (err != MMSYSERR_NOERROR)
     {
@@ -240,26 +245,12 @@ static HRESULT DSPROPERTY_DescriptionW(
     }
     else
     {
-        /* FIXME: Still a memory leak.. */
-        int desclen, modlen;
+        static WCHAR wDescription[] = { 'D','e','s','c','r','i','p','t','i','o','n',0 };
         static WCHAR wInterface[] = { 'I','n','t','e','r','f','a','c','e',0 };
 
-        modlen = MultiByteToWideChar( CP_ACP, 0, desc.szDrvname, -1, NULL, 0 );
-        desclen = MultiByteToWideChar( CP_ACP, 0, desc.szDesc, -1, NULL, 0 );
-        ppd->Module = HeapAlloc(GetProcessHeap(),0,modlen*sizeof(WCHAR));
-        ppd->Description = HeapAlloc(GetProcessHeap(),0,desclen*sizeof(WCHAR));
+        ppd->Module = ppd->DataFlow == DIRECTSOUNDDEVICE_DATAFLOW_RENDER ? out_caps.szPname : in_caps.szPname;
+        ppd->Description = wDescription;
         ppd->Interface = wInterface;
-        if (!ppd->Description || !ppd->Module)
-        {
-            WARN("Out of memory\n");
-            HeapFree(GetProcessHeap(), 0, ppd->Description);
-            HeapFree(GetProcessHeap(), 0, ppd->Module);
-            ppd->Description = ppd->Module = NULL;
-            return E_OUTOFMEMORY;
-        }
-
-        MultiByteToWideChar( CP_ACP, 0, desc.szDrvname, -1, ppd->Module, modlen );
-        MultiByteToWideChar( CP_ACP, 0, desc.szDesc, -1, ppd->Description, desclen );
     }
 
     ppd->Type = DIRECTSOUNDDEVICE_TYPE_VXD;
@@ -308,8 +299,6 @@ static HRESULT DSPROPERTY_EnumerateW(
             return S_OK;
         }
         ret = ppd->Callback(&data, ppd->Context);
-        HeapFree(GetProcessHeap(), 0, data.Module);
-        HeapFree(GetProcessHeap(), 0, data.Description);
         if (!ret)
             return S_OK;
     }
@@ -326,8 +315,6 @@ static HRESULT DSPROPERTY_EnumerateW(
             return S_OK;
         }
         ret = ppd->Callback(&data, ppd->Context);
-        HeapFree(GetProcessHeap(), 0, data.Module);
-        HeapFree(GetProcessHeap(), 0, data.Description);
         if (!ret)
             return S_OK;
     }
@@ -464,8 +451,6 @@ static HRESULT DSPROPERTY_DescriptionA(
         return hr;
     if (!DSPROPERTY_descWtoA(&data, ppd))
         hr = E_OUTOFMEMORY;
-    HeapFree(GetProcessHeap(), 0, data.Module);
-    HeapFree(GetProcessHeap(), 0, data.Interface);
     return hr;
 }
 
@@ -489,8 +474,6 @@ static HRESULT DSPROPERTY_Description1(
     if (FAILED(hr))
         return hr;
     DSPROPERTY_descWto1(&data, ppd);
-    HeapFree(GetProcessHeap(), 0, data.Module);
-    HeapFree(GetProcessHeap(), 0, data.Interface);
     return hr;
 }
 

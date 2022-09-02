@@ -812,7 +812,7 @@ KspStartBusDevice(
     DPRINT1("KspStartBusDevice Name %S DeviceName %S Instance %S Started\n", Name, DeviceEntry->DeviceName, DeviceEntry->Instance);
 
     /* enable device classes */
-    //KspEnableBusDeviceInterface(DeviceEntry, TRUE);
+    KspEnableBusDeviceInterface(DeviceEntry, TRUE);
 
     /* done */
     return STATUS_SUCCESS;
@@ -1227,7 +1227,7 @@ KspBusWorkerRoutine(
                         Diff.QuadPart);
 
                      /* deactivate interfaces */
-                     //KspEnableBusDeviceInterface(DeviceEntry, FALSE);
+                     KspEnableBusDeviceInterface(DeviceEntry, FALSE);
 
                      /* re-acquire lock */
                      KeAcquireSpinLock(&BusDeviceExtension->Lock, &OldLevel);
@@ -1923,7 +1923,7 @@ KsServiceBusEnumCreateRequest(
     ASSERT(IoStack->FileObject);
     if (IoStack->FileObject->FileName.Buffer == NULL)
     {
-         DPRINT("KsServiceBusEnumCreateRequest PNP Hack\n");
+         DPRINT1("KsServiceBusEnumCreateRequest PNP Hack\n");
          Irp->IoStatus.Status = STATUS_SUCCESS;
          return STATUS_SUCCESS;
     }
@@ -1931,6 +1931,15 @@ KsServiceBusEnumCreateRequest(
     ASSERT(IoStack->FileObject->FileName.Buffer);
 
     DPRINT1("KsServiceBusEnumCreateRequest IRP %p Name %wZ\n", Irp, &IoStack->FileObject->FileName);
+
+    /* scan the bus for new devices */
+    Status = KspScanBus(BusDeviceExtension);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("KsServiceBusEnumCreateRequest failed to scan bus %x\n", Status);
+        Irp->IoStatus.Status = Status;
+        return Status;
+    }
 
     /* scan list and check if it is already present */
     Entry = BusDeviceExtension->Common.Entry.Flink;
@@ -1966,7 +1975,7 @@ KsServiceBusEnumCreateRequest(
         {
             /* issue reparse */
             Status =  KspDoReparseForIrp(Irp, DeviceEntry);
-            DPRINT("REPARSE Irp %p '%wZ'\n", Irp, &IoStack->FileObject->FileName);
+            DPRINT1("REPARSE Irp %p '%wZ'\n", Irp, &IoStack->FileObject->FileName);
 
             Irp->IoStatus.Status = Status;
             Irp->IoStatus.Information = IO_REPARSE;
@@ -1980,7 +1989,7 @@ KsServiceBusEnumCreateRequest(
         InsertTailList(&DeviceEntry->IrpPendingList, &Irp->Tail.Overlay.ListEntry);
 
         Time.QuadPart = Int32x32To64(1500, -10000);
-        DbgPrint("PENDING Irp %p %wZ DeviceState %d\n", Irp, &IoStack->FileObject->FileName, DeviceEntry->DeviceState);
+        DPRINT1("PENDING Irp %p %wZ DeviceState %d\n", Irp, &IoStack->FileObject->FileName, DeviceEntry->DeviceState);
 
 
         /* set timer */
@@ -2001,7 +2010,7 @@ KsServiceBusEnumCreateRequest(
             DPRINT1("KsServiceBusEnumCreateRequest failed to create PDO with %x\n", Status);
             return Status;
         }
-        DPRINT("PENDING CREATE Irp %p %wZ\n", Irp, &IoStack->FileObject->FileName);
+        DPRINT1("PENDING CREATE Irp %p %wZ\n", Irp, &IoStack->FileObject->FileName);
 
         /* delay processing until pnp is finished with enumeration */
         IoMarkIrpPending(Irp);
@@ -2086,9 +2095,6 @@ KsServiceBusEnumPnpRequest(
             /* backup device entry */
             DeviceEntry = ChildDeviceExtension->DeviceEntry;
 
-            /* free device extension */
-            FreeItem(ChildDeviceExtension);
-
             /* clear PDO reference */
             DeviceEntry->PDO = NULL;
 
@@ -2109,6 +2115,16 @@ KsServiceBusEnumPnpRequest(
 
             /* complete pending irps */
             KspCompletePendingIrps(DeviceEntry, STATUS_DEVICE_REMOVED);
+
+            /* free device extension */
+            FreeItem(ChildDeviceExtension);
+
+            /* FIXME this should only be done while installing the drivers */
+            /* lets recreate the PDO */
+            Status = KspCreatePDO(BusDeviceExtension, DeviceEntry, &DeviceEntry->PDO);
+
+            /* restart enumeration */
+            IoInvalidateDeviceRelations(BusDeviceExtension->PhysicalDeviceObject, BusRelations);
 
             /* done */
             Status = STATUS_SUCCESS;
