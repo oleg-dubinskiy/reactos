@@ -3,6 +3,7 @@
 
 #include <portcls.h>
 #include <float_cast.h>
+#include <ks.h>
 
 typedef struct
 {

@@ -136,22 +136,18 @@ MIXER_STATUS
 MMixerGetCapabilities(
     IN PMIXER_CONTEXT MixerContext,
     IN ULONG MixerIndex,
-    OUT LPMIXERCAPSW MixerCaps);
+    OUT LPMIXERCAPSW Caps);
 
 MIXER_STATUS
 MMixerOpen(
     IN PMIXER_CONTEXT MixerContext,
     IN ULONG MixerId,
-    IN PVOID MixerEventContext,
-    IN PMIXER_EVENT MixerEventRoutine,
     OUT PHANDLE MixerHandle);
 
 MIXER_STATUS
 MMixerClose(
     IN PMIXER_CONTEXT MixerContext,
-    IN ULONG MixerId,
-    IN PVOID MixerEventContext,
-    IN PMIXER_EVENT MixerEventRoutine);
+    IN ULONG MixerId);
 
 MIXER_STATUS
 MMixerGetLineInfo(

@@ -587,11 +587,12 @@ PinWaveCyclicDataFormat(
             PC_ASSERT(IsEqualGUIDAligned(((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->DataFormat.MajorFormat, KSDATAFORMAT_TYPE_AUDIO));
             PC_ASSERT(IsEqualGUIDAligned(((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->DataFormat.SubFormat, KSDATAFORMAT_SUBTYPE_PCM));
             PC_ASSERT(IsEqualGUIDAligned(((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->DataFormat.Specifier, KSDATAFORMAT_SPECIFIER_WAVEFORMATEX));
+#endif
 
             DPRINT("NewDataFormat: Channels %u Bits %u Samples %u\n", ((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->WaveFormatEx.nChannels,
                                                                        ((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->WaveFormatEx.wBitsPerSample,
                                                                        ((PKSDATAFORMAT_WAVEFORMATEX)NewDataFormat)->WaveFormatEx.nSamplesPerSec);
-#endif
+
 
         }
         else
@@ -1223,7 +1224,7 @@ CPortPinWaveCyclic::Init(
     }
 #endif
 
-    DPRINT1("CPortPinWaveCyclic::Init Status %x PinId %u Capture %u\n", Status, ConnectDetails->PinId, Capture);
+    DPRINT1("CPortPinWaveCyclic::Init Status %x PinId %u Capture %u\n", Status, ConnectDetails->PinId, KsPinDescriptor->DataFlow == KSPIN_DATAFLOW_OUT);
 
     if (!NT_SUCCESS(Status))
         return Status;

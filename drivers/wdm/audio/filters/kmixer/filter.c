@@ -109,16 +109,6 @@ DispatchCreateKMix(
 
     DPRINT("DispatchCreateKMix entered\n");
 
-    /* check if the request was from usermode */
-    if (Irp->RequestorMode == UserMode)
-    {
-        /* deny access from usermode */
-        Irp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
-        Irp->IoStatus.Information = 0;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
-        return STATUS_INVALID_DEVICE_REQUEST;
-    }
-
     /* get device extension */
     DeviceExtension = (PKMIXER_DEVICE_EXT)DeviceObject->DeviceExtension;
 

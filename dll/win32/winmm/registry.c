@@ -20,7 +20,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(winmm);
 
-BOOL LoadRegistryMMEDrivers(char* key)
+INT LoadRegistryMMEDrivers(char* key)
 {
     INT driver_count = 0;
     INT driver_index = 0;

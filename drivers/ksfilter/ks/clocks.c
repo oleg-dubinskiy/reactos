@@ -299,6 +299,7 @@ KsValidateClockCreateRequest(
     if (ClockCreate->CreateFlags != 0)
     {
         /* flags must be zero */
+        DPRINT1("CLockCreate->CreateFlags %d\n", ClockCreate->CreateFlags);
         FreeItem(ClockCreate);
         return STATUS_INVALID_PARAMETER;
     }

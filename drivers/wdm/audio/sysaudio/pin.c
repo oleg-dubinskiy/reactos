@@ -11,6 +11,98 @@
 #define NDEBUG
 #include <debug.h>
 
+
+NTSTATUS
+NTAPI
+Pin_fnRead(
+    PDEVICE_OBJECT DeviceObject,
+    PIRP Irp)
+{
+    UNIMPLEMENTED;
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    Irp->IoStatus.Information = 0;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+Pin_fnWrite(
+    PDEVICE_OBJECT DeviceObject,
+    PIRP Irp)
+{
+    PDISPATCH_CONTEXT Context;
+    PIO_STACK_LOCATION IoStack;
+    PFILE_OBJECT FileObject;
+    NTSTATUS Status;
+
+    DPRINT("Pin_fnWrite called DeviceObject %p Irp %p\n", DeviceObject, Irp);
+
+    /* Get current stack location */
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    /* The dispatch context is stored in the FsContext member */
+    Context = (PDISPATCH_CONTEXT)IoStack->FileObject->FsContext;
+
+    /* Sanity check */
+    ASSERT(Context);
+
+    if (Context->hMixerPin)
+    {
+        /* Acquire kmixer pin file object */
+        Status = ObReferenceObjectByHandle(Context->hMixerPin, GENERIC_WRITE, *IoFileObjectType, KernelMode, (PVOID*)&FileObject, NULL);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("Failed to reference kmixer pin file object with status 0x%lx\n", Status);
+            return Status;
+        }
+
+        /* Skip current irp location */
+        IoSkipCurrentIrpStackLocation(Irp);
+
+        /* Get next irp stack location */
+        IoStack = IoGetNextIrpStackLocation(Irp);
+
+        /* Setup stack parameters */
+        IoStack->MajorFunction = IRP_MJ_WRITE;
+        IoStack->FileObject = FileObject;
+
+        /* Call kmixer to convert stream */
+        IoCallDriver(IoGetRelatedDeviceObject(FileObject), Irp);
+
+        /* Dereference file object */
+        ObDereferenceObject(FileObject);
+    }
+
+    /* Acquire sysaudio pin file object */
+    Status = ObReferenceObjectByHandle(Context->Handle, GENERIC_WRITE, *IoFileObjectType, KernelMode, (PVOID*)&FileObject, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("Failed to reference sysaudio pin file object with status 0x%lx\n", Status);
+        return Status;
+    }
+
+    /* Skip current irp location */
+    IoSkipCurrentIrpStackLocation(Irp);
+
+    /* Get next irp stack location */
+    IoStack = IoGetNextIrpStackLocation(Irp);
+
+    /* Setup stack parameters */
+    IoStack->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+    IoStack->FileObject = FileObject;
+
+    /* Send the stream */
+    IoCallDriver(IoGetRelatedDeviceObject(FileObject), Irp);
+
+    /* Dereference file object */
+    ObDereferenceObject(FileObject);
+
+    /* Done */
+    return STATUS_PENDING;
+}
+
 NTSTATUS
 NTAPI
 Pin_fnDeviceIoControl(
@@ -27,6 +119,12 @@ Pin_fnDeviceIoControl(
 
     /* Get current stack location */
     IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    /* Handle Read/Write I/O request */
+    if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_READ_STREAM)
+        return Pin_fnRead(DeviceObject, Irp);
+    else if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_WRITE_STREAM)
+        return Pin_fnWrite(DeviceObject, Irp);
 
     /* The dispatch context is stored in the FsContext member */
     Context = (PDISPATCH_CONTEXT)IoStack->FileObject->FsContext;
@@ -64,67 +162,6 @@ Pin_fnDeviceIoControl(
     return Status;
 }
 
-
-
-NTSTATUS
-NTAPI
-Pin_fnWrite(
-    PDEVICE_OBJECT DeviceObject,
-    PIRP Irp)
-{
-    PDISPATCH_CONTEXT Context;
-    PIO_STACK_LOCATION IoStack;
-    PFILE_OBJECT FileObject;
-    NTSTATUS Status;
-
-    /* Get current stack location */
-    IoStack = IoGetCurrentIrpStackLocation(Irp);
-
-    /* The dispatch context is stored in the FsContext member */
-    Context = (PDISPATCH_CONTEXT)IoStack->FileObject->FsContext;
-
-    /* Sanity check */
-    ASSERT(Context);
-
-    if (Context->hMixerPin)
-    {
-        // FIXME
-        // call kmixer to convert stream
-        UNIMPLEMENTED;
-    }
-
-    /* acquire real pin file object */
-    Status = ObReferenceObjectByHandle(Context->Handle, GENERIC_WRITE, *IoFileObjectType, KernelMode, (PVOID*)&FileObject, NULL);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("failed\n");
-        Irp->IoStatus.Information = 0;
-        Irp->IoStatus.Status = Status;
-        /* Complete the irp */
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
-        return Status;
-    }
-
-    /* skip current irp location */
-    IoSkipCurrentIrpStackLocation(Irp);
-
-    /* get next stack location */
-    IoStack = IoGetNextIrpStackLocation(Irp);
-    /* store file object of next device object */
-    IoStack->FileObject = FileObject;
-    IoStack->MajorFunction = IRP_MJ_DEVICE_CONTROL;
-    //ASSERT(Irp->AssociatedIrp.SystemBuffer);
-
-    /* now call the driver */
-    Status = IoCallDriver(IoGetRelatedDeviceObject(FileObject), Irp);
-
-    /* dereference file object */
-    ObDereferenceObject(FileObject);
-
-    return Status;
-
-}
-
 NTSTATUS
 NTAPI
 Pin_fnClose(
@@ -134,7 +171,7 @@ Pin_fnClose(
     PDISPATCH_CONTEXT Context;
     PIO_STACK_LOCATION IoStack;
 
-    //DPRINT("Pin_fnClose called DeviceObject %p Irp %p\n", DeviceObject, Irp);
+    DPRINT("Pin_fnClose called DeviceObject %p Irp %p\n", DeviceObject, Irp);
 
     /* Get current stack location */
     IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -163,7 +200,7 @@ Pin_fnClose(
 static KSDISPATCH_TABLE PinTable =
 {
     Pin_fnDeviceIoControl,
-    KsDispatchInvalidDeviceRequest,
+    Pin_fnRead,
     Pin_fnWrite,
     KsDispatchInvalidDeviceRequest,
     Pin_fnClose,
@@ -230,8 +267,8 @@ CreateMixerPinAndSetFormat(
 
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("Failed to create Mixer Pin with %x\n", Status);
-        return STATUS_UNSUCCESSFUL;
+        DPRINT1("Failed to create Mixer Pin with 0x%lx\n", Status);
+        return Status;
     }
 
     Status = ObReferenceObjectByHandle(PinHandle,
@@ -240,8 +277,9 @@ CreateMixerPinAndSetFormat(
 
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("Failed to get file object with %x\n", Status);
-        return STATUS_UNSUCCESSFUL;
+        DPRINT1("Failed to get file object with 0x%lx\n", Status);
+        ZwClose(PinHandle);
+        return Status;
     }
 
     Status = SetMixerInputOutputFormat(FileObject, InputFormat, OutputFormat);
@@ -252,10 +290,11 @@ CreateMixerPinAndSetFormat(
         return Status;
     }
 
+    *MixerPinHandle = PinHandle;
+
     ObDereferenceObject(FileObject);
 
-    *MixerPinHandle = PinHandle;
-     return Status;
+    return Status;
 }
 
 
@@ -269,8 +308,7 @@ InstantiatePins(
 {
     NTSTATUS Status;
     HANDLE RealPinHandle;
-    PKSDATAFORMAT_WAVEFORMATEX InputFormat;
-    PKSDATAFORMAT_WAVEFORMATEX OutputFormat = NULL;
+    PKSDATAFORMAT_WAVEFORMATEX InputFormat, OutputFormat = NULL;
     PKSPIN_CONNECT MixerPinConnect = NULL;
     KSPIN_CINSTANCES PinInstances;
 
@@ -308,37 +346,41 @@ InstantiatePins(
 
     if (!NT_SUCCESS(Status))
     {
-        /* FIXME disable kmixer
-         */
-        return STATUS_UNSUCCESSFUL;
-    }
 #if 0
-    if (!NT_SUCCESS(Status))
-    {
         /* the audio irp pin didnt accept the input format
          * let's compute a compatible format
          */
-        MixerPinConnect = AllocateItem(NonPagedPool, sizeof(KSPIN_CONNECT) + sizeof(KSDATAFORMAT_WAVEFORMATEX));
+
+        if (!DeviceExtension->KMixerHandle || !DeviceExtension->KMixerFileObject)
+        {
+            /* Load kmixer */
+            Status = SysAudioOpenKMixer(DeviceExtension);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("SysAudioOpenKMixer failed with 0x%lx\n", Status);
+                return Status;
+            }
+	    }
+
+        /* Allocate pin connect */
+        MixerPinConnect = AllocateItem(NonPagedPool, sizeof(KSPIN_CONNECT) + sizeof(KSDATAFORMAT_WAVEFORMATEXTENSIBLE));
         if (!MixerPinConnect)
         {
             /* not enough memory */
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        /* Zero pin connect */
-        RtlZeroMemory(MixerPinConnect, sizeof(KSPIN_CONNECT) + sizeof(KSDATAFORMAT_WAVEFORMATEX));
-
         /* Copy initial connect details */
         RtlMoveMemory(MixerPinConnect, Connect, sizeof(KSPIN_CONNECT));
 
-
+        /* Fetch output format */
         OutputFormat = (PKSDATAFORMAT_WAVEFORMATEX)(MixerPinConnect + 1);
 
+        /* Compute compatible format */
         Status = ComputeCompatibleFormat(DeviceEntry, Connect->PinId, InputFormat, OutputFormat);
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("ComputeCompatibleFormat failed with %x\n", Status);
-            FreeItem(MixerPinConnect);
+            DPRINT1("ComputeCompatibleFormat failed with 0x%lx\n", Status);
             return Status;
         }
 
@@ -346,16 +388,19 @@ InstantiatePins(
         Status = KsCreatePin(DeviceEntry->Handle, MixerPinConnect, GENERIC_READ | GENERIC_WRITE, &RealPinHandle);
         if (!NT_SUCCESS(Status))
         {
-           /* This should not fail */
-            DPRINT1("KsCreatePin failed with %x\n", Status);
+            /* This should not fail */
+            DPRINT1("KsCreatePin failed with 0x%lx\n", Status);
             DPRINT1(" InputFormat: SampleRate %u Bits %u Channels %u\n", InputFormat->WaveFormatEx.nSamplesPerSec, InputFormat->WaveFormatEx.wBitsPerSample, InputFormat->WaveFormatEx.nChannels);
             DPRINT1("OutputFormat: SampleRate %u Bits %u Channels %u\n", OutputFormat->WaveFormatEx.nSamplesPerSec, OutputFormat->WaveFormatEx.wBitsPerSample, OutputFormat->WaveFormatEx.nChannels);
 
             FreeItem(MixerPinConnect);
             return Status;
         }
-    }
+#else
+        DPRINT1("KsCreatePin failed with status 0x%lx\n", Status);
+        return Status;
 #endif
+    }
 
     //DeviceEntry->Pins[Connect->PinId].References = 0;
 
@@ -364,8 +409,8 @@ InstantiatePins(
     DispatchContext->PinId = Connect->PinId;
     DispatchContext->AudioEntry = DeviceEntry;
 
-
     DPRINT("RealPinHandle %p\n", RealPinHandle);
+    DPRINT("OutputFormat %p\n", OutputFormat);
 
     /* Do we need to transform the audio stream */
     if (OutputFormat != NULL)
@@ -380,10 +425,12 @@ InstantiatePins(
         /* check for success */
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("Failed to create Mixer Pin with %x\n", Status);
+            DPRINT1("Failed to create Mixer Pin with 0x%lx\n", Status);
+            FreeItem(OutputFormat);
             FreeItem(MixerPinConnect);
         }
     }
+
     /* done */
     return Status;
 }
@@ -419,7 +466,7 @@ GetConnectRequest(
     RtlMoveMemory(Buffer, &IoStack->FileObject->FileName.Buffer[ObjectLength / sizeof(WCHAR)], ParametersLength);
 
     /* store result */
-    *Result = (PKSPIN_CONNECT)Buffer;
+    *Result = Buffer;
 
     return STATUS_SUCCESS;
 }
@@ -432,7 +479,7 @@ DispatchCreateSysAudioPin(
     IN PDEVICE_OBJECT DeviceObject,
     IN PIRP Irp)
 {
-    NTSTATUS Status = STATUS_SUCCESS;
+    NTSTATUS Status;
     PIO_STACK_LOCATION IoStack;
     PKSAUDIO_DEVICE_ENTRY DeviceEntry;
     PKSPIN_CONNECT Connect;
@@ -450,15 +497,6 @@ DispatchCreateSysAudioPin(
 
     /* get current attached virtual device */
     DeviceEntry = (PKSAUDIO_DEVICE_ENTRY)IoStack->FileObject->RelatedFileObject->FsContext;
-
-    /* check for success */
-    if (!NT_SUCCESS(Status))
-    {
-        /* failed */
-        Irp->IoStatus.Status = Status;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
-        return Status;
-    }
 
     /* get connect details */
     Status = GetConnectRequest(Irp, &Connect);

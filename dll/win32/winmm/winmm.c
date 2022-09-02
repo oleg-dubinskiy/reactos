@@ -333,6 +333,8 @@ static void CALLBACK MIXER_WCallback(HMIXEROBJ hmx, UINT uMsg, DWORD_PTR dwInsta
     PostMessageW(hWnd, uMsg, (WPARAM)hmx, (LPARAM)dwParam);
 }
 
+extern LPWSTR device_interface;
+
 /**************************************************************************
  * 				mixerOpen			[WINMM.@]
  */
@@ -352,10 +354,8 @@ UINT WINAPI mixerOpen(LPHMIXER lphMix, UINT uDeviceID, DWORD_PTR dwCallback,
         return dwRet;
 
     mod.dwCallback = (DWORD_PTR)MIXER_WCallback;
-    if ((fdwOpen & CALLBACK_TYPEMASK) == CALLBACK_WINDOW)
-        mod.dwInstance = dwCallback;
-    else
-        mod.dwInstance = 0;
+    mod.dwInstance = dwInstance;
+    mod.dnDevNode = (DWORD_PTR)device_interface;
 
     /* We're remapping to CALLBACK_FUNCTION because that's what old winmm is
      * documented to do when opening the mixer driver.

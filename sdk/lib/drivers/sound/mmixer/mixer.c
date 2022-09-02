@@ -38,10 +38,13 @@ MIXER_STATUS
 MMixerGetCapabilities(
     IN PMIXER_CONTEXT MixerContext,
     IN ULONG MixerIndex,
-    OUT LPMIXERCAPSW MixerCaps)
+    OUT LPMIXERCAPSW Caps)
 {
     MIXER_STATUS Status;
+    PMIXER_LIST MixerList;
+    LPMIXER_DATA MixerData;
     LPMIXER_INFO MixerInfo;
+    MIXERCAPSW MixerCaps;
 
     /* verify mixer context */
     Status = MMixerVerifyContext(MixerContext);
@@ -52,23 +55,48 @@ MMixerGetCapabilities(
         return Status;
     }
 
+    /* grab mixer list */
+    MixerList = (PMIXER_LIST)MixerContext->MixerContext;
+
+    /* get mixer data */
+    MixerData = MMixerGetDataByDeviceId(MixerList, MixerIndex);
+
+    if (!MixerData)
+    {
+        /* invalid device index */
+        return MM_STATUS_INVALID_PARAMETER;
+    }
+
     /* get mixer info */
     MixerInfo = MMixerGetMixerInfoByIndex(MixerContext, MixerIndex);
 
     if (!MixerInfo)
     {
-        // invalid device index
+        /* invalid device index */
         return MM_STATUS_INVALID_PARAMETER;
     }
 
-    MixerCaps->wMid = MixerInfo->MixCaps.wMid;
-    MixerCaps->wPid = MixerInfo->MixCaps.wPid;
-    MixerCaps->vDriverVersion = MixerInfo->MixCaps.vDriverVersion;
-    MixerCaps->fdwSupport = MixerInfo->MixCaps.fdwSupport;
-    MixerCaps->cDestinations = MixerInfo->MixCaps.cDestinations;
+    /* intialize capabilities */
+    MixerCaps.wMid = MixerInfo->MixCaps.wMid;
+    MixerCaps.wPid = MixerInfo->MixCaps.wPid;
+    MixerCaps.vDriverVersion = MixerInfo->MixCaps.vDriverVersion;
+    MixerCaps.fdwSupport = MixerInfo->MixCaps.fdwSupport;
+    MixerCaps.cDestinations = MixerInfo->MixCaps.cDestinations;
 
+    /* copy device name */
     ASSERT(MixerInfo->MixCaps.szPname[MAXPNAMELEN-1] == 0);
-    wcscpy(MixerCaps->szPname, MixerInfo->MixCaps.szPname);
+    wcscpy(MixerCaps.szPname, MixerInfo->MixCaps.szPname);
+
+    /* allocate capabilities */
+    Caps = MixerContext->Alloc(sizeof(MIXERCAPSW));
+    if (!Caps)
+    {
+        /* no memory */
+        return MM_STATUS_NO_MEMORY;
+    }
+
+    /* copy capabilities */
+    MixerContext->Copy(Caps, &MixerCaps, sizeof(MIXERCAPSW));
 
     return MM_STATUS_SUCCESS;
 }
@@ -77,8 +105,6 @@ MIXER_STATUS
 MMixerOpen(
     IN PMIXER_CONTEXT MixerContext,
     IN ULONG MixerId,
-    IN PVOID MixerEventContext,
-    IN PMIXER_EVENT MixerEventRoutine,
     OUT PHANDLE MixerHandle)
 {
     MIXER_STATUS Status;
@@ -103,9 +129,6 @@ MMixerOpen(
         return MM_STATUS_INVALID_PARAMETER;
     }
 
-    /* add the event */
-    Status = MMixerAddEvent(MixerContext, MixerInfo, MixerEventContext, MixerEventRoutine);
-
     /* store result */
     *MixerHandle = (HANDLE)MixerInfo;
     return MM_STATUS_SUCCESS;
@@ -114,9 +137,7 @@ MMixerOpen(
 MIXER_STATUS
 MMixerClose(
     IN PMIXER_CONTEXT MixerContext,
-    IN ULONG MixerId,
-    IN PVOID MixerEventContext,
-    IN PMIXER_EVENT MixerEventRoutine)
+    IN ULONG MixerId)
 {
     MIXER_STATUS Status;
     LPMIXER_INFO MixerInfo;
@@ -140,8 +161,8 @@ MMixerClose(
         return MM_STATUS_INVALID_PARAMETER;
     }
 
-    /* remove event from list */
-    return MMixerRemoveEvent(MixerContext, MixerInfo, MixerEventContext, MixerEventRoutine);
+    /* done */
+    return MM_STATUS_SUCCESS;
 }
 
 MIXER_STATUS
@@ -554,8 +575,22 @@ MMixerSetControlDetails(
         case MIXERCONTROL_CONTROLTYPE_MUX:
             Status = MMixerSetGetMuxControlDetails(MixerContext, MixerInfo, NodeId, TRUE, Flags, MixerControl, MixerControlDetails, MixerLine);
             break;
+        case MIXERCONTROL_CONTROLTYPE_ONOFF:
+            DPRINT1("Not Implemented MIXERCONTROL_CONTROLTYPE_ONOFF\n");
+            break;
+        case MIXERCONTROL_CONTROLTYPE_LOUDNESS:
+            DPRINT1("Not Implemented MIXERCONTROL_CONTROLTYPE_LOUDNESS\n");
+            break;
+        case MIXERCONTROL_CONTROLTYPE_PEAKMETER:
+            DPRINT1("Not Implemented MIXERCONTROL_CONTROLTYPE_PEAKMETER\n");
+            break;
+        case MIXERCONTROL_CONTROLTYPE_FADER:
+            DPRINT1("Not Implemented MIXERCONTROL_CONTROLTYPE_FADER\n");
+            break;
+
         default:
             Status = MM_STATUS_NOT_IMPLEMENTED;
+            DPRINT1("ControlType %lx not implemented\n", MixerControl->Control.dwControlType);
     }
 
     return Status;
@@ -588,10 +623,11 @@ MMixerGetControlDetails(
     {
         /* caller passed mixer id */
         MixerHandle = (HANDLE)MMixerGetMixerInfoByIndex(MixerContext, MixerId);
-
+        DPRINT1("MixerHandle %p\n", MixerHandle);
         if (!MixerHandle)
         {
             /* invalid parameter */
+            DPRINT1("Invalid mixer handle\n");
             return MM_STATUS_INVALID_PARAMETER;
         }
     }
@@ -600,12 +636,13 @@ MMixerGetControlDetails(
     MixerInfo = (LPMIXER_INFO)MixerHandle;
 
     /* get mixer control */
-     Status = MMixerGetMixerControlById(MixerInfo, MixerControlDetails->dwControlID, &MixerLine, &MixerControl, &NodeId);
+    Status = MMixerGetMixerControlById(MixerInfo, MixerControlDetails->dwControlID, &MixerLine, &MixerControl, &NodeId);
 
     /* check for success */
     if (Status != MM_STATUS_SUCCESS)
     {
         /* failed to find control id */
+        DPRINT1("Failed to get mixer control for id %d\n", MixerControlDetails->dwControlID);
         return MM_STATUS_INVALID_PARAMETER;
     }
 
@@ -617,11 +654,20 @@ MMixerGetControlDetails(
         case MIXERCONTROL_CONTROLTYPE_VOLUME:
             Status = MMixerSetGetVolumeControlDetails(MixerContext, MixerInfo, NodeId, FALSE, MixerControl, MixerControlDetails, MixerLine);
             break;
+        case MIXERCONTROL_CONTROLTYPE_MUX:
+            Status = MMixerSetGetMuxControlDetails(MixerContext, MixerInfo, NodeId, FALSE, Flags, MixerControl, MixerControlDetails, MixerLine);
+            break;
         case MIXERCONTROL_CONTROLTYPE_ONOFF:
             DPRINT1("Not Implemented MIXERCONTROL_CONTROLTYPE_ONOFF\n");
             break;
-        case MIXERCONTROL_CONTROLTYPE_MUX:
-            Status = MMixerSetGetMuxControlDetails(MixerContext, MixerInfo, NodeId, FALSE, Flags, MixerControl, MixerControlDetails, MixerLine);
+        case MIXERCONTROL_CONTROLTYPE_LOUDNESS:
+            DPRINT1("Not Implemented MIXERCONTROL_CONTROLTYPE_LOUDNESS\n");
+            break;
+        case MIXERCONTROL_CONTROLTYPE_PEAKMETER:
+            DPRINT1("Not Implemented MIXERCONTROL_CONTROLTYPE_PEAKMETER\n");
+            break;
+        case MIXERCONTROL_CONTROLTYPE_FADER:
+            DPRINT1("Not Implemented MIXERCONTROL_CONTROLTYPE_FADER\n");
             break;
 
         default:

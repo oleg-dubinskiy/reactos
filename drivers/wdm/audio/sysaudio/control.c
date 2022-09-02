@@ -135,134 +135,123 @@ NTSTATUS
 ComputeCompatibleFormat(
     IN PKSAUDIO_DEVICE_ENTRY Entry,
     IN ULONG PinId,
-    IN PKSDATAFORMAT_WAVEFORMATEX ClientFormat,
-    OUT PKSDATAFORMAT_WAVEFORMATEX MixerFormat)
+    IN PKSDATAFORMAT_WAVEFORMATEX InputFormat,
+    OUT PKSDATAFORMAT_WAVEFORMATEX OutputFormat)
 {
-    BOOL bFound;
-    ULONG BytesReturned;
+    ULONG BytesReturned, Length;
     PKSP_PIN PinRequest;
     NTSTATUS Status;
     PKSMULTIPLE_ITEM MultipleItem;
-    ULONG Length;
-    PKSDATARANGE_AUDIO AudioRange;
-    ULONG Index;
+    PKSDATARANGE_AUDIO DataRangeAudio;
+    DWORD cbSize;
 
-    Length = sizeof(KSP_PIN) + sizeof(KSMULTIPLE_ITEM) + ClientFormat->DataFormat.FormatSize;
+    /* Calculate additional data size */
+    cbSize = InputFormat->WaveFormatEx.wFormatTag == WAVE_FORMAT_PCM ? 0 : InputFormat->WaveFormatEx.cbSize;
+
+    /* Allocate pin request */
+    Length = sizeof(KSP_PIN) + sizeof(KSMULTIPLE_ITEM) + InputFormat->DataFormat.FormatSize;
     PinRequest = AllocateItem(NonPagedPool, Length);
     if (!PinRequest)
-        return STATUS_UNSUCCESSFUL;
+    {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
+    /* Setup request block */
+    PinRequest->Reserved = 0;
     PinRequest->PinId = PinId;
     PinRequest->Property.Set = KSPROPSETID_Pin;
     PinRequest->Property.Flags = KSPROPERTY_TYPE_GET;
     PinRequest->Property.Id = KSPROPERTY_PIN_DATAINTERSECTION;
 
+    /* Prepare multiple item */
     MultipleItem = (PKSMULTIPLE_ITEM)(PinRequest + 1);
     MultipleItem->Count = 1;
-    MultipleItem->Size = ClientFormat->DataFormat.FormatSize;
+    MultipleItem->Size = InputFormat->DataFormat.FormatSize;
 
-    RtlMoveMemory(MultipleItem + 1, ClientFormat, ClientFormat->DataFormat.FormatSize);
+    RtlMoveMemory(MultipleItem + 1, InputFormat, InputFormat->DataFormat.FormatSize);
+
     /* Query the miniport data intersection handler */
-    Status = KsSynchronousIoControlDevice(Entry->FileObject, KernelMode, IOCTL_KS_PROPERTY, (PVOID)PinRequest, Length, (PVOID)MixerFormat, sizeof(KSDATAFORMAT_WAVEFORMATEX), &BytesReturned);
-
-    DPRINT("Status %x\n", Status);
-
-    if (NT_SUCCESS(Status))
+    Status = KsSynchronousIoControlDevice(Entry->FileObject, KernelMode, IOCTL_KS_PROPERTY, (PVOID)PinRequest, Length, (PVOID)OutputFormat, sizeof(KSDATAFORMAT_WAVEFORMATEX) + cbSize, &BytesReturned);
+    if (!NT_SUCCESS(Status))
     {
-        FreeItem(PinRequest);
-        return Status;
+        DPRINT1("Property Request KSPROPERTY_PIN_DATAINTERSECTION failed with 0x%lx\n", Status);
+        //FreeItem(PinRequest);
+        //return Status;
     }
 
     /* Setup request block */
     PinRequest->Property.Id = KSPROPERTY_PIN_DATARANGES;
-    /* Query pin data ranges */
-    Status = KsSynchronousIoControlDevice(Entry->FileObject, KernelMode, IOCTL_KS_PROPERTY, (PVOID)PinRequest, sizeof(KSP_PIN), NULL, 0, &BytesReturned);
 
-    if (Status != STATUS_MORE_ENTRIES)
+    /* Query pin data ranges size */
+    Status = KsSynchronousIoControlDevice(Entry->FileObject, KernelMode, IOCTL_KS_PROPERTY, (PVOID)PinRequest, sizeof(KSP_PIN), NULL, 0, &BytesReturned);
+    if (Status != STATUS_BUFFER_OVERFLOW)
     {
-        /* Failed to get data ranges */
+        DPRINT1("Property Request KSPROPERTY_PIN_DATARANGES failed with 0x%lx\n", Status);
+        FreeItem(PinRequest);
         return Status;
     }
 
+    /* Allocate multiple item */
     MultipleItem = AllocateItem(NonPagedPool, BytesReturned);
     if (!MultipleItem)
     {
         FreeItem(PinRequest);
-        return STATUS_NO_MEMORY;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    /* Query pin data ranges */
     Status = KsSynchronousIoControlDevice(Entry->FileObject, KernelMode, IOCTL_KS_PROPERTY, (PVOID)PinRequest, sizeof(KSP_PIN), (PVOID)MultipleItem, BytesReturned, &BytesReturned);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("Property Request KSPROPERTY_PIN_DATARANGES failed with %x\n", Status);
+        DPRINT1("Property Request KSPROPERTY_PIN_DATARANGES failed with 0x%lx\n", Status);
         FreeItem(MultipleItem);
         FreeItem(PinRequest);
-        return STATUS_UNSUCCESSFUL;
+        return Status;
     }
 
-    AudioRange = (PKSDATARANGE_AUDIO)(MultipleItem + 1);
-    bFound = FALSE;
-    for(Index = 0; Index < MultipleItem->Count; Index++)
+    /* Get data range */
+    DataRangeAudio = (PKSDATARANGE_AUDIO)(MultipleItem + 1);
+
+    /* Select best quality available */
+    OutputFormat->WaveFormatEx.wFormatTag = InputFormat->WaveFormatEx.wFormatTag;
+    OutputFormat->WaveFormatEx.nChannels = DataRangeAudio->MaximumChannels;
+    OutputFormat->WaveFormatEx.wBitsPerSample = DataRangeAudio->MaximumBitsPerSample;
+    OutputFormat->WaveFormatEx.nSamplesPerSec = min(InputFormat->WaveFormatEx.nSamplesPerSec, DataRangeAudio->MaximumSampleFrequency);
+    OutputFormat->WaveFormatEx.nBlockAlign = (OutputFormat->WaveFormatEx.nChannels * OutputFormat->WaveFormatEx.wBitsPerSample) / 8;
+    OutputFormat->WaveFormatEx.nAvgBytesPerSec = OutputFormat->WaveFormatEx.nSamplesPerSec * OutputFormat->WaveFormatEx.nBlockAlign;
+    OutputFormat->WaveFormatEx.cbSize = cbSize;
+    OutputFormat->DataFormat.FormatSize = sizeof(KSDATAFORMAT) + sizeof(WAVEFORMATEX) + cbSize;
+    OutputFormat->DataFormat.Flags = 0;
+    OutputFormat->DataFormat.Reserved = 0;
+    OutputFormat->DataFormat.MajorFormat = KSDATAFORMAT_TYPE_AUDIO;
+    OutputFormat->DataFormat.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+    OutputFormat->DataFormat.Specifier = KSDATAFORMAT_SPECIFIER_WAVEFORMATEX;
+    OutputFormat->DataFormat.SampleSize = 4;
+
+    /* Write additional fields for Extensible audio format */
+    if (InputFormat->WaveFormatEx.wFormatTag == WAVE_FORMAT_EXTENSIBLE)
     {
-        if (AudioRange->DataRange.FormatSize != sizeof(KSDATARANGE_AUDIO))
-        {
-            UNIMPLEMENTED;
-            AudioRange = (PKSDATARANGE_AUDIO)((PUCHAR)AudioRange + AudioRange->DataRange.FormatSize);
-            continue;
-        }
-        /* Select best quality available */
-
-        MixerFormat->DataFormat.FormatSize = sizeof(KSDATAFORMAT) + sizeof(WAVEFORMATEX);
-        MixerFormat->DataFormat.Flags = 0;
-        MixerFormat->DataFormat.Reserved = 0;
-        MixerFormat->DataFormat.MajorFormat = KSDATAFORMAT_TYPE_AUDIO;
-        MixerFormat->DataFormat.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-        MixerFormat->DataFormat.Specifier = KSDATAFORMAT_SPECIFIER_WAVEFORMATEX;
-        MixerFormat->DataFormat.SampleSize = 4;
-        MixerFormat->WaveFormatEx.wFormatTag = ClientFormat->WaveFormatEx.wFormatTag;
-#ifndef NO_AC97_HACK
-        /* HACK: AC97 does not support mono render / record */
-        MixerFormat->WaveFormatEx.nChannels = 2;
-        /*HACK: AC97 only supports 16-Bit Bits */
-        MixerFormat->WaveFormatEx.wBitsPerSample = 16;
-
-#else
-        MixerFormat->WaveFormatEx.nChannels = min(ClientFormat->WaveFormatEx.nChannels, AudioRange->MaximumChannels);
-        MixerFormat->WaveFormatEx.wBitsPerSample = AudioRange->MaximumBitsPerSample;
-#endif
-
-#ifdef KMIXER_RESAMPLING_IMPLEMENTED
-        MixerFormat->WaveFormatEx.nSamplesPerSec = AudioRange->MaximumSampleFrequency;
-#else
-        MixerFormat->WaveFormatEx.nSamplesPerSec = max(AudioRange->MinimumSampleFrequency, min(ClientFormat->WaveFormatEx.nSamplesPerSec, AudioRange->MaximumSampleFrequency));
-#endif
-
-        MixerFormat->WaveFormatEx.cbSize = 0;
-        MixerFormat->WaveFormatEx.nBlockAlign = (MixerFormat->WaveFormatEx.nChannels * MixerFormat->WaveFormatEx.wBitsPerSample) / 8;
-        MixerFormat->WaveFormatEx.nAvgBytesPerSec = MixerFormat->WaveFormatEx.nChannels * MixerFormat->WaveFormatEx.nSamplesPerSec * (MixerFormat->WaveFormatEx.wBitsPerSample / 8);
-
-        bFound = TRUE;
-        break;
-
-        AudioRange = (PKSDATARANGE_AUDIO)((PUCHAR)AudioRange + AudioRange->DataRange.FormatSize);
+        PWAVEFORMATEXTENSIBLE WaveFormatExt = (PWAVEFORMATEXTENSIBLE)&OutputFormat->WaveFormatEx;
+        WaveFormatExt->SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+        WaveFormatExt->Samples.wValidBitsPerSample = OutputFormat->WaveFormatEx.wBitsPerSample;
+        if (OutputFormat->WaveFormatEx.nChannels == 0)
+            WaveFormatExt->dwChannelMask = KSAUDIO_SPEAKER_DIRECTOUT;
+        else if (OutputFormat->WaveFormatEx.nChannels == 1)
+            WaveFormatExt->dwChannelMask = KSAUDIO_SPEAKER_MONO;
+        else if (OutputFormat->WaveFormatEx.nChannels == 2)
+            WaveFormatExt->dwChannelMask = KSAUDIO_SPEAKER_STEREO;
+        else if (OutputFormat->WaveFormatEx.nChannels == 4)
+            WaveFormatExt->dwChannelMask = KSAUDIO_SPEAKER_QUAD;
+        else if (OutputFormat->WaveFormatEx.nChannels == 5)
+            WaveFormatExt->dwChannelMask = KSAUDIO_SPEAKER_5POINT1;
+        else if (OutputFormat->WaveFormatEx.nChannels == 7)
+            WaveFormatExt->dwChannelMask = KSAUDIO_SPEAKER_7POINT1;
     }
-
-#if 0
-    DPRINT1("\nNum Max Channels %u Channels %u Old Channels %u\n Max SampleRate %u SampleRate %u Old SampleRate %u\n Max BitsPerSample %u BitsPerSample %u Old BitsPerSample %u\n",
-           AudioRange->MaximumChannels, MixerFormat->WaveFormatEx.nChannels, ClientFormat->WaveFormatEx.nChannels,
-           AudioRange->MaximumSampleFrequency, MixerFormat->WaveFormatEx.nSamplesPerSec, ClientFormat->WaveFormatEx.nSamplesPerSec,
-           AudioRange->MaximumBitsPerSample, MixerFormat->WaveFormatEx.wBitsPerSample, ClientFormat->WaveFormatEx.wBitsPerSample);
-
-
-#endif
 
     FreeItem(MultipleItem);
     FreeItem(PinRequest);
 
-    if (bFound)
-        return STATUS_SUCCESS;
-    else
-        return STATUS_NOT_IMPLEMENTED;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -363,7 +352,7 @@ SysAudioHandleProperty(
             if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < BytesReturned)
             {
                 /* too small buffer */
-                return SetIrpIoStatus(Irp, STATUS_BUFFER_TOO_SMALL, BytesReturned);
+                return SetIrpIoStatus(Irp, STATUS_BUFFER_OVERFLOW, BytesReturned);
             }
 
             /* copy device name */
@@ -452,6 +441,18 @@ SysAudioHandleProperty(
             {
                 return SysAudioOpenVirtualDevice(Irp, InstanceInfo->DeviceNumber, DeviceExtension);
             }
+        }
+        else if (Property->Id == KSPROPERTY_SYSAUDIO_DEVICE_DEFAULT)
+        {
+            DPRINT1("Undocumented property KSPROPERTY_SYSAUDIO_DEVICE_DEFAULT called\n");
+            return SetIrpIoStatus(Irp, STATUS_SUCCESS, 0);
+        }
+        else if (Property->Id == KSPROPERTY_SYSAUDIO_CREATE_VIRTUAL_SOURCE ||
+                 Property->Id == 13)
+        {
+            DPRINT1("KSPROPERTY_SYSAUDIO_CREATE_VIRTUAL_SOURCE/undocumented property 13 called\n", Property->Id);
+            *((PULONG)Irp->UserBuffer) = 0;
+            return SetIrpIoStatus(Irp, STATUS_SUCCESS, sizeof(ULONG));
         }
     }
 

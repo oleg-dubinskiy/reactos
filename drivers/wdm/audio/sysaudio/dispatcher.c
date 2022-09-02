@@ -11,6 +11,8 @@
 #define NDEBUG
 #include <debug.h>
 
+const GUID KSCATEGORY_MIXER   = {0xAD809C00L, 0x7B88, 0x11D0, {0xA5, 0xD6, 0x28, 0xDB, 0x04, 0xC1, 0x00, 0x00}};
+
 NTSTATUS
 NTAPI
 Dispatch_fnDeviceIoControl(
@@ -133,21 +135,48 @@ SysAudioOpenKMixer(
     IN SYSAUDIODEVEXT *DeviceExtension)
 {
     NTSTATUS Status;
-    UNICODE_STRING DeviceInstanceName = RTL_CONSTANT_STRING(L"\\Device\\kmixer\\GLOBAL");
+    LPWSTR SymbolicLinkList, SymbolicLink;
+    UNICODE_STRING SymbolicLinkU;
     UNICODE_STRING DevicePath = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\kmixer");
 
     Status = ZwLoadDriver(&DevicePath);
 
     if (NT_SUCCESS(Status))
     {
-        Status = OpenDevice(&DeviceInstanceName, &DeviceExtension->KMixerHandle, &DeviceExtension->KMixerFileObject);
+        Status = IoGetDeviceInterfaces(&KSCATEGORY_MIXER,
+                                       NULL,
+                                       0,
+                                       &SymbolicLinkList);
+
         if (!NT_SUCCESS(Status))
         {
+            DPRINT1("IoGetDeviceInterfaces failed with status 0x%lx\n", Status);
             DeviceExtension->KMixerHandle = NULL;
             DeviceExtension->KMixerFileObject = NULL;
+            return Status;
+        }
+
+        for (SymbolicLink = SymbolicLinkList;
+             *SymbolicLink != UNICODE_NULL;
+             SymbolicLink += wcslen(SymbolicLink) + 1)
+        {
+            DPRINT("Opening device %S\n", SymbolicLink);
+            RtlInitUnicodeString(&SymbolicLinkU, SymbolicLink);
+            Status = OpenDevice(&SymbolicLinkU, &DeviceExtension->KMixerHandle, &DeviceExtension->KMixerFileObject);
+            if (NT_SUCCESS(Status))
+            {
+                DPRINT("Successfully opened %S, handle %p\n", SymbolicLink, DeviceExtension->KMixerHandle);
+                break;
+            }
+            else
+            {
+                RtlFreeUnicodeString(&SymbolicLinkU);
+                DeviceExtension->KMixerHandle = NULL;
+                DeviceExtension->KMixerFileObject = NULL;
+            }
         }
     }
 
-    DPRINT("Status %lx KMixerHandle %p KMixerFileObject %p\n", Status, DeviceExtension->KMixerHandle, DeviceExtension->KMixerFileObject);
-    return STATUS_SUCCESS;
+    DPRINT("Status 0x%lx KMixerHandle %p KMixerFileObject %p\n", Status, DeviceExtension->KMixerHandle, DeviceExtension->KMixerFileObject);
+    return Status;
 }

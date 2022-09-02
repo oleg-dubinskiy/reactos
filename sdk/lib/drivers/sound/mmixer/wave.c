@@ -120,9 +120,9 @@ MMixerInitializeDataFormat(
     DataFormat->WaveFormatEx.wFormatTag = WaveFormatEx->wFormatTag;
     DataFormat->WaveFormatEx.nChannels = WaveFormatEx->nChannels;
     DataFormat->WaveFormatEx.nSamplesPerSec = WaveFormatEx->nSamplesPerSec;
-    DataFormat->WaveFormatEx.nBlockAlign = WaveFormatEx->nBlockAlign;
-    DataFormat->WaveFormatEx.nAvgBytesPerSec = WaveFormatEx->nAvgBytesPerSec;
     DataFormat->WaveFormatEx.wBitsPerSample = WaveFormatEx->wBitsPerSample;
+    DataFormat->WaveFormatEx.nBlockAlign = DataFormat->WaveFormatEx.nChannels * DataFormat->WaveFormatEx.wBitsPerSample / 8;
+    DataFormat->WaveFormatEx.nAvgBytesPerSec = DataFormat->WaveFormatEx.nSamplesPerSec * DataFormat->WaveFormatEx.nBlockAlign;
     DataFormat->WaveFormatEx.cbSize = cbSize;
     DataFormat->DataFormat.FormatSize = sizeof(KSDATAFORMAT) + sizeof(WAVEFORMATEX) + cbSize;
     DataFormat->DataFormat.Flags = 0;
@@ -229,6 +229,63 @@ MMixerFindAudioDataRange(
 }
 
 MIXER_STATUS
+MMixerFindAvailableDataRanges(
+    IN PMIXER_CONTEXT MixerContext,
+    IN ULONG DeviceId,
+    IN ULONG PinId,
+    OUT PKSDATARANGE_AUDIO * OutDataRangeAudio)
+{
+    MIXER_STATUS Status;
+    PMIXER_LIST MixerList;
+    LPMIXER_DATA MixerData;
+    PKSMULTIPLE_ITEM MultipleItem;
+    PKSDATARANGE_AUDIO DataRangeAudio;
+
+    /* grab mixer list */
+    MixerList = (PMIXER_LIST)MixerContext->MixerContext;
+
+    MixerData = MMixerGetDataByDeviceId(MixerList, DeviceId);
+    if (!MixerData)
+        return MM_STATUS_INVALID_PARAMETER;
+
+    /* get audio pin data ranges */
+    Status = MMixerGetAudioPinDataRanges(MixerContext, MixerData->hDevice, PinId, &MultipleItem);
+    if (Status != MM_STATUS_SUCCESS)
+    {
+        /* failed to get audio pin data ranges */
+        return MM_STATUS_UNSUCCESSFUL;
+    }
+
+    /* allocate data range pointer */
+    DataRangeAudio = (PKSDATARANGE_AUDIO)MixerContext->Alloc(sizeof(KSDATARANGE_AUDIO));
+    if (!DataRangeAudio)
+    {
+        /* no memory */
+        MixerContext->Free(MultipleItem);
+        return MM_STATUS_NO_MEMORY;
+    }
+
+    /* find an KSDATARANGE_AUDIO range */
+    Status = MMixerFindAudioDataRange(MultipleItem, &DataRangeAudio);
+    if (Status != MM_STATUS_SUCCESS)
+    {
+        /* failed to find audio pin data range */
+        MixerContext->Free(DataRangeAudio);
+        MixerContext->Free(MultipleItem);
+        return MM_STATUS_UNSUCCESSFUL;
+    }
+
+    /* free dataranges buffer */
+    MixerContext->Free(MultipleItem);
+
+    /* store output */
+    *OutDataRangeAudio = DataRangeAudio;
+
+    /* done */
+    return MM_STATUS_SUCCESS;
+}
+
+MIXER_STATUS
 MMixerOpenWavePin(
     IN PMIXER_CONTEXT MixerContext,
     IN PMIXER_LIST MixerList,
@@ -262,11 +319,12 @@ MMixerOpenWavePin(
         return MM_STATUS_NO_MEMORY;
     }
 
+    /* get offset to dataformat */
+    DataFormat = (PKSDATAFORMAT_WAVEFORMATEX)(PinConnect + 1);
+
     /* initialize pin connect struct */
     MMixerInitializePinConnect(PinConnect, PinId);
 
-    /* get offset to dataformat */
-    DataFormat = (PKSDATAFORMAT_WAVEFORMATEX) (PinConnect + 1);
     /* initialize with requested wave format */
     MMixerInitializeDataFormat(DataFormat, WaveFormatEx, cbSize);
 
@@ -297,11 +355,11 @@ MMixerOpenWavePin(
 VOID
 MMixerCheckFormat(
     IN PKSDATARANGE_AUDIO DataRangeAudio,
-    IN LPWAVE_INFO WaveInfo,
-    IN ULONG bInput)
+    OUT PULONG Result)
 {
     ULONG Index, SampleFrequency;
-    ULONG Result = 0;
+
+    *Result = 0;
 
     for(Index = 0; Index < AUDIO_TEST_RANGE; Index++)
     {
@@ -312,35 +370,30 @@ MMixerCheckFormat(
             /* the audio adapter supports the sample frequency */
             if (DataRangeAudio->MinimumBitsPerSample <= 8 && DataRangeAudio->MaximumBitsPerSample >= 8)
             {
-                Result |= TestRange[Index].Bit8Mono;
+                *Result |= TestRange[Index].Bit8Mono;
 
                 if (DataRangeAudio->MaximumChannels > 1)
                 {
                     /* check if pin supports the sample rate in 8-Bit Stereo */
-                    Result |= TestRange[Index].Bit8Stereo;
+                    *Result |= TestRange[Index].Bit8Stereo;
                 }
             }
 
             if (DataRangeAudio->MinimumBitsPerSample <= 16 && DataRangeAudio->MaximumBitsPerSample >= 16)
             {
                 /* check if pin supports the sample rate in 16-Bit Mono */
-                Result |= TestRange[Index].Bit16Mono;
+                *Result |= TestRange[Index].Bit16Mono;
 
                 if (DataRangeAudio->MaximumChannels > 1)
                 {
                     /* check if pin supports the sample rate in 16-Bit Stereo */
-                    Result |= TestRange[Index].Bit16Stereo;
+                    *Result |= TestRange[Index].Bit16Stereo;
                 }
             }
         }
     }
 
-    if (bInput)
-        WaveInfo->u.InCaps.dwFormats = Result;
-    else
-        WaveInfo->u.OutCaps.dwFormats = Result;
-
-    DPRINT("Format %lx bInput %u\n", Result, bInput);
+    DPRINT("Format %lx\n", *Result);
 }
 
 MIXER_STATUS
@@ -353,9 +406,6 @@ MMixerInitializeWaveInfo(
     IN ULONG PinCount,
     IN PULONG Pins)
 {
-    MIXER_STATUS Status;
-    PKSMULTIPLE_ITEM MultipleItem;
-    PKSDATARANGE_AUDIO DataRangeAudio;
     LPWAVE_INFO WaveInfo;
 
     WaveInfo = (LPWAVE_INFO)MixerContext->Alloc(sizeof(WAVE_INFO));
@@ -371,69 +421,13 @@ MMixerInitializeWaveInfo(
 
     /* initialize wave info */
     WaveInfo->DeviceId = MixerData->DeviceId;
-    WaveInfo->PinId = Pins[0];
+    WaveInfo->PinId = bWaveIn ? 2 : 1;
 
     /* sanity check */
     ASSERT(wcslen(DeviceName) < MAXPNAMELEN);
 
     /* copy device name */
-    if (bWaveIn)
-    {
-        wcscpy(WaveInfo->u.InCaps.szPname, DeviceName);
-    }
-    else
-    {
-        wcscpy(WaveInfo->u.OutCaps.szPname, DeviceName);
-    }
-
-    /* FIXME determine manufacturer / product id */
-    if (bWaveIn)
-    {
-        WaveInfo->u.InCaps.wMid = MM_MICROSOFT;
-        WaveInfo->u.InCaps.wPid = MM_PID_UNMAPPED;
-        WaveInfo->u.InCaps.vDriverVersion = 1;
-    }
-    else
-    {
-        WaveInfo->u.OutCaps.wMid = MM_MICROSOFT;
-        WaveInfo->u.OutCaps.wPid = MM_PID_UNMAPPED;
-        WaveInfo->u.OutCaps.vDriverVersion = 1;
-    }
-
-    /* get audio pin data ranges */
-    Status = MMixerGetAudioPinDataRanges(MixerContext, MixerData->hDevice, Pins[0], &MultipleItem);
-    if (Status != MM_STATUS_SUCCESS)
-    {
-        /* failed to get audio pin data ranges */
-        MixerContext->Free(WaveInfo);
-        return MM_STATUS_UNSUCCESSFUL;
-    }
-
-    /* find an KSDATARANGE_AUDIO range */
-    Status = MMixerFindAudioDataRange(MultipleItem, &DataRangeAudio);
-    if (Status != MM_STATUS_SUCCESS)
-    {
-        /* failed to find audio pin data range */
-        MixerContext->Free(MultipleItem);
-        MixerContext->Free(WaveInfo);
-        return MM_STATUS_UNSUCCESSFUL;
-    }
-
-    /* store channel count */
-    if (bWaveIn)
-    {
-        WaveInfo->u.InCaps.wChannels = DataRangeAudio->MaximumChannels;
-    }
-    else
-    {
-       WaveInfo->u.OutCaps.wChannels = DataRangeAudio->MaximumChannels;
-    }
-
-    /* get all supported formats */
-    MMixerCheckFormat(DataRangeAudio, WaveInfo, bWaveIn);
-
-    /* free dataranges buffer */
-    MixerContext->Free(MultipleItem);
+    wcscpy(WaveInfo->DeviceName, DeviceName);
 
     if (bWaveIn)
     {
@@ -507,6 +501,8 @@ MMixerWaveInCapabilities(
     PMIXER_LIST MixerList;
     MIXER_STATUS Status;
     LPWAVE_INFO WaveInfo;
+    WAVEINCAPSW WaveInCaps;
+    PKSDATARANGE_AUDIO DataRangeAudio;
 
     /* verify mixer context */
     Status = MMixerVerifyContext(MixerContext);
@@ -528,8 +524,42 @@ MMixerWaveInCapabilities(
         return MM_STATUS_UNSUCCESSFUL;
     }
 
+    /* get available audio data range */
+    Status = MMixerFindAvailableDataRanges(MixerContext, WaveInfo->DeviceId, WaveInfo->PinId, &DataRangeAudio);
+    if (Status != MM_STATUS_SUCCESS)
+    {
+        /* failed to get data range */
+        return MM_STATUS_UNSUCCESSFUL;
+    }
+
+    /* FIXME determine manufacturer / product id */
+    WaveInCaps.wMid = MM_MICROSOFT;
+    WaveInCaps.wPid = MM_MSFT_WDMAUDIO_WAVEIN;
+    WaveInCaps.vDriverVersion = 0x050a;
+    WaveInCaps.wReserved1 = 0;
+
+    /* store channel count */
+    WaveInCaps.wChannels = DataRangeAudio->MaximumChannels;
+
+    /* get all supported formats */
+    MMixerCheckFormat(DataRangeAudio, &WaveInCaps.dwFormats);
+
+    /* copy device name */
+    wcscpy(WaveInCaps.szPname, WaveInfo->DeviceName);
+
+    /* make sure it's null terminated */
+    WaveInCaps.szPname[MAXPNAMELEN-1] = L'\0';
+
+    /* allocate capabilities */
+    Caps = MixerContext->Alloc(sizeof(WAVEINCAPSW));
+    if (!Caps)
+    {
+        /* no memory */
+        return MM_STATUS_NO_MEMORY;
+    }
+
     /* copy capabilities */
-    MixerContext->Copy(Caps, &WaveInfo->u.InCaps, sizeof(WAVEINCAPSW));
+    MixerContext->Copy(Caps, &WaveInCaps, sizeof(WAVEINCAPSW));
 
     return MM_STATUS_SUCCESS;
 }
@@ -543,6 +573,8 @@ MMixerWaveOutCapabilities(
     PMIXER_LIST MixerList;
     MIXER_STATUS Status;
     LPWAVE_INFO WaveInfo;
+    WAVEOUTCAPSW WaveOutCaps;
+    PKSDATARANGE_AUDIO DataRangeAudio;
 
     /* verify mixer context */
     Status = MMixerVerifyContext(MixerContext);
@@ -564,8 +596,43 @@ MMixerWaveOutCapabilities(
         return MM_STATUS_UNSUCCESSFUL;
     }
 
+    /* get available audio data range */
+    Status = MMixerFindAvailableDataRanges(MixerContext, WaveInfo->DeviceId, WaveInfo->PinId, &DataRangeAudio);
+    if (Status != MM_STATUS_SUCCESS)
+    {
+        /* failed to get data range */
+        return MM_STATUS_UNSUCCESSFUL;
+    }
+
+    /* FIXME determine manufacturer / product id */
+    WaveOutCaps.wMid = MM_MICROSOFT;
+    WaveOutCaps.wPid = MM_MSFT_WDMAUDIO_WAVEOUT;
+    WaveOutCaps.vDriverVersion = 0x050a;
+    WaveOutCaps.wReserved1 = 0;
+    WaveOutCaps.dwSupport = WAVECAPS_VOLUME | WAVECAPS_LRVOLUME | WAVECAPS_SAMPLEACCURATE;
+
+    /* store channel count */
+    WaveOutCaps.wChannels = DataRangeAudio->MaximumChannels;
+
+    /* get all supported formats */
+    MMixerCheckFormat(DataRangeAudio, &WaveOutCaps.dwFormats);
+
+    /* copy device name */
+    wcscpy(WaveOutCaps.szPname, WaveInfo->DeviceName);
+
+    /* make sure it's null terminated */
+    WaveOutCaps.szPname[MAXPNAMELEN-1] = L'\0';
+
+    /* allocate capabilities */
+    Caps = MixerContext->Alloc(sizeof(WAVEOUTCAPSW));
+    if (!Caps)
+    {
+        /* no memory */
+        return MM_STATUS_NO_MEMORY;
+    }
+
     /* copy capabilities */
-    MixerContext->Copy(Caps, &WaveInfo->u.OutCaps, sizeof(WAVEOUTCAPSW));
+    MixerContext->Copy(Caps, &WaveOutCaps, sizeof(WAVEOUTCAPSW));
 
     return MM_STATUS_SUCCESS;
 }

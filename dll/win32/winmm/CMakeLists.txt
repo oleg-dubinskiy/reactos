@@ -4,6 +4,7 @@ include_directories(BEFORE ${REACTOS_SOURCE_DIR}/sdk/include/reactos/wine)
 spec2def(winmm.dll winmm.spec ADD_IMPORTLIB)
 
 list(APPEND SOURCE
+    deviface.c
     driver.c
     joystick.c
     lolvldrv.c
@@ -30,7 +31,7 @@ endif()
 
 set_module_type(winmm win32dll)
 target_link_libraries(winmm wine ${PSEH_LIB} oldnames)
-add_importlibs(winmm userenv advapi32 user32 msvcrt kernel32 ntdll)
+add_importlibs(winmm userenv setupapi advapi32 user32 msvcrt kernel32 ntdll)
 add_pch(winmm winemm.h SOURCE)
 add_cd_file(TARGET winmm DESTINATION reactos/system32 FOR all)
 

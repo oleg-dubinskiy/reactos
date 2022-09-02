@@ -1543,8 +1543,8 @@ MMixerInitializeFilter(
 
         /* intialize mixer caps */
         MixerInfo->MixCaps.wMid = MM_MICROSOFT; /* FIXME */
-        MixerInfo->MixCaps.wPid = MM_PID_UNMAPPED; /* FIXME */
-        MixerInfo->MixCaps.vDriverVersion = 1; /* FIXME */
+        MixerInfo->MixCaps.wPid = MM_MSFT_WDMAUDIO_MIXER; /* FIXME */
+        MixerInfo->MixCaps.vDriverVersion = 0x050a; /* FIXME */
         MixerInfo->MixCaps.fdwSupport = 0;
         MixerInfo->MixCaps.cDestinations = 0;
 
@@ -1584,7 +1584,6 @@ MMixerInitializeFilter(
      * For source pins (wave in) search down stream
      * The search direction is always the opposite of the current mixer type
      */
-    PinsFound = 0;
     MMixerGetAllUpOrDownstreamPinsFromNodeIndex(MixerContext, Topology, NodeIndex, !bInputMixer, &PinsFound, Pins);
 
     /* if there is no pin found, we have a broken topology */
@@ -1821,81 +1820,4 @@ MMixerSetupFilter(
 
     /* done */
     return Status;
-}
-
-MIXER_STATUS
-MMixerAddEvent(
-    IN PMIXER_CONTEXT MixerContext,
-    IN OUT LPMIXER_INFO MixerInfo,
-    IN PVOID MixerEventContext,
-    IN PMIXER_EVENT MixerEventRoutine)
-{
-    //KSE_NODE Property;
-    //KSEVENTDATA EventData
-    //ULONG BytesReturned;
-    //MIXER_STATUS Status;
-    PEVENT_NOTIFICATION_ENTRY EventNotification;
-
-    EventNotification = (PEVENT_NOTIFICATION_ENTRY)MixerContext->Alloc(sizeof(EVENT_NOTIFICATION_ENTRY));
-    if (!EventNotification)
-    {
-        /* not enough memory */
-        return MM_STATUS_NO_MEMORY;
-    }
-
-    /* FIXME: what is it supposed to happen with KSEVENTDATA ? */
-#if 0
-    /* setup request */
-    Property.Event.Set = KSEVENTSETID_AudioControlChange;
-    Property.Event.Flags = KSEVENT_TYPE_TOPOLOGY|KSEVENT_TYPE_ENABLE;
-    Property.Event.Id = KSEVENT_CONTROL_CHANGE;
-
-    Property.NodeId = NodeId;
-    Property.Reserved = 0;
-
-    Status = MixerContext->Control(MixerInfo->hMixer, IOCTL_KS_ENABLE_EVENT, (PVOID)&Property, sizeof(KSP_NODE), (PVOID)EventData, sizeof(KSEVENTDATA), &BytesReturned);
-    if (Status != MM_STATUS_SUCCESS)
-    {
-        /* failed to add event */
-        MixerContext->FreeEventData(EventData);
-        return Status;
-    }
-#endif
-
-    /* initialize notification entry */
-    EventNotification->MixerEventContext = MixerEventContext;
-    EventNotification->MixerEventRoutine = MixerEventRoutine;
-
-    /* store event */
-    InsertTailList(&MixerInfo->EventList, &EventNotification->Entry);
-    return MM_STATUS_SUCCESS;
-}
-
-MIXER_STATUS
-MMixerRemoveEvent(
-    IN PMIXER_CONTEXT MixerContext,
-    IN OUT LPMIXER_INFO MixerInfo,
-    IN PVOID MixerEventContext,
-    IN PMIXER_EVENT MixerEventRoutine)
-{
-    PLIST_ENTRY EventList;
-    PEVENT_NOTIFICATION_ENTRY NotificationEntry;
-
-    /* Lookup through mixers */
-    EventList = MixerInfo->EventList.Flink;
-    while(EventList != &MixerInfo->EventList)
-    {
-        NotificationEntry = CONTAINING_RECORD(EventList, EVENT_NOTIFICATION_ENTRY, Entry);
-        EventList = EventList->Flink;
-        /* TODO: find a better way to identify an event ? */
-        if(NotificationEntry->MixerEventRoutine == MixerEventRoutine &&
-                NotificationEntry->MixerEventContext == MixerEventContext)
-        {
-            DPRINT1("Freeing entry %p\n", NotificationEntry);
-            /* We found the event to remove */
-            RemoveEntryList(&NotificationEntry->Entry);
-            MixerContext->Free(NotificationEntry);
-        }
-    }
-    return MM_STATUS_SUCCESS;
 }

@@ -673,7 +673,10 @@ STDMETHODIMP_(NTSTATUS) CMiniport::DataRangeIntersection
             nMaxChannels--;
         // ... and also 0 channels wouldn't be a good request.
         if (!nMaxChannels)
+        {
+            DOUT (DBG_WARNING, ("[DataRangeIntersection] No valid channels found"));
             return STATUS_NO_MATCH;
+        }
 
         WaveFormat->Format.nChannels = (WORD)nMaxChannels;
     }
@@ -704,6 +707,7 @@ STDMETHODIMP_(NTSTATUS) CMiniport::DataRangeIntersection
         if ((((PKSDATARANGE_AUDIO)ClientsDataRange)->MaximumSampleFrequency < ulFrequency) ||
             (((PKSDATARANGE_AUDIO)ClientsDataRange)->MinimumSampleFrequency > ulFrequency))
         {
+            DOUT (DBG_WARNING, ("[DataRangeIntersection] Invalid sample frequency"));
             return STATUS_NO_MATCH;
         }
 

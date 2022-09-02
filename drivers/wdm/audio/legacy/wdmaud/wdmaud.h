@@ -1,7 +1,9 @@
 #ifndef _WDMAUD_PCH_
 #define _WDMAUD_PCH_
 
+#include <ntifs.h>
 #include <portcls.h>
+#include <swenum.h>
 #include <mmsystem.h>
 
 #include "interface.h"
@@ -14,13 +16,14 @@ typedef struct
     PFILE_OBJECT FileObject;
 }WDMAUD_COMPLETION_CONTEXT, *PWDMAUD_COMPLETION_CONTEXT;
 
-
 typedef struct
 {
     HANDLE Handle;
+    PFILE_OBJECT FileObject;
     SOUND_DEVICE_TYPE Type;
     ULONG FilterId;
     ULONG PinId;
+    BOOL Active;
     PRKEVENT NotifyEvent;
 }WDMAUD_HANDLE, *PWDMAUD_HANDLE;
 
@@ -44,22 +47,10 @@ typedef struct
 
 typedef struct
 {
-    LIST_ENTRY Entry;
-    UNICODE_STRING SymbolicLink;
-}SYSAUDIO_ENTRY, *PSYSAUDIO_ENTRY;
-
-typedef struct
-{
     KSDEVICE_HEADER DeviceHeader;
     PVOID SysAudioNotification;
 
-    BOOL DeviceInterfaceSupport;
-
     KSPIN_LOCK Lock;
-    ULONG NumSysAudioDevices;
-    LIST_ENTRY SysAudioDeviceList;
-    HANDLE hSysAudio;
-    PFILE_OBJECT FileObject;
     LIST_ENTRY WdmAudClientList;
 
     ULONG SysAudioDeviceCount;
@@ -73,20 +64,8 @@ typedef struct
 typedef struct
 {
     PWDMAUD_CLIENT ClientInfo;
-    PWDMAUD_DEVICE_EXTENSION DeviceExtension;
     SOUND_DEVICE_TYPE DeviceType;
 }PIN_CREATE_CONTEXT, *PPIN_CREATE_CONTEXT;
-
-
-NTSTATUS
-NTAPI
-OpenWavePin(
-    IN PWDMAUD_DEVICE_EXTENSION DeviceExtension,
-    IN ULONG FilterId,
-    IN ULONG PinId,
-    IN LPWAVEFORMATEX WaveFormatEx,
-    IN ACCESS_MASK DesiredAccess,
-    OUT PHANDLE PinHandle);
 
 NTSTATUS
 WdmAudRegisterDeviceInterface(
@@ -95,11 +74,11 @@ WdmAudRegisterDeviceInterface(
 
 NTSTATUS
 WdmAudOpenSysAudioDevices(
-    IN PDEVICE_OBJECT DeviceObject,
-    IN PWDMAUD_DEVICE_EXTENSION DeviceExtension);
+    OUT PHANDLE phSysAudio,
+    OUT PFILE_OBJECT *pFileObject);
 
 NTSTATUS
-WdmAudOpenSysaudio(
+WdmAudAllocateContext(
     IN PDEVICE_OBJECT DeviceObject,
     IN PWDMAUD_CLIENT *pClient);
 
@@ -112,12 +91,6 @@ WdmAudDeviceControl(
 NTSTATUS
 NTAPI
 WdmAudReadWrite(
-    IN  PDEVICE_OBJECT DeviceObject,
-    IN  PIRP Irp);
-
-NTSTATUS
-NTAPI
-WdmAudWrite(
     IN  PDEVICE_OBJECT DeviceObject,
     IN  PIRP Irp);
 
@@ -167,6 +140,10 @@ SetIrpIoStatus(
     IN ULONG Length);
 
 NTSTATUS
+GetSysAudioDeviceInterface(
+    OUT LPWSTR* SymbolicLonkList);
+
+NTSTATUS
 WdmAudOpenSysAudioDevice(
     IN LPWSTR DeviceName,
     OUT PHANDLE Handle);
@@ -180,6 +157,7 @@ FindProductName(
 NTSTATUS
 WdmAudMixerCapabilities(
     IN PDEVICE_OBJECT DeviceObject,
+    IN PIRP Irp,
     IN  PWDMAUD_DEVICE_INFO DeviceInfo,
     IN  PWDMAUD_CLIENT ClientInfo,
     IN PWDMAUD_DEVICE_EXTENSION DeviceExtension);
@@ -187,6 +165,7 @@ WdmAudMixerCapabilities(
 NTSTATUS
 WdmAudWaveCapabilities(
     IN PDEVICE_OBJECT DeviceObject,
+    IN PIRP Irp,
     IN  PWDMAUD_DEVICE_INFO DeviceInfo,
     IN  PWDMAUD_CLIENT ClientInfo,
     IN PWDMAUD_DEVICE_EXTENSION DeviceExtension);
@@ -194,6 +173,7 @@ WdmAudWaveCapabilities(
 NTSTATUS
 WdmAudMidiCapabilities(
     IN PDEVICE_OBJECT DeviceObject,
+    IN PIRP Irp,
     IN PWDMAUD_DEVICE_INFO DeviceInfo,
     IN PWDMAUD_CLIENT ClientInfo,
     IN PWDMAUD_DEVICE_EXTENSION DeviceExtension);
@@ -206,12 +186,20 @@ WdmAudGetPosition(
     _In_ PWDMAUD_DEVICE_INFO DeviceInfo);
 
 NTSTATUS
-NTAPI
-WdmAudFrameSize(
+WdmAudSetDeviceState(
     IN  PDEVICE_OBJECT DeviceObject,
     IN  PIRP Irp,
     IN  PWDMAUD_DEVICE_INFO DeviceInfo,
-    IN  PWDMAUD_CLIENT ClientInfo);
+    IN  KSSTATE State,
+    IN  BOOL CompleteIrp);
+
+NTSTATUS
+NTAPI
+WdmAudResetStream(
+    IN  PDEVICE_OBJECT DeviceObject,
+    IN  PIRP Irp,
+    IN  PWDMAUD_DEVICE_INFO DeviceInfo,
+    IN  BOOL CompleteIrp);
 
 NTSTATUS
 NTAPI
@@ -254,8 +242,13 @@ WdmAudGetControlDetails(
     IN  PWDMAUD_CLIENT ClientInfo);
 
 NTSTATUS
+WdmAudControlInitialize(
+    IN  PDEVICE_OBJECT DeviceObject,
+    IN  PIRP Irp);
+
+NTSTATUS
 WdmAudMixerInitialize(
-    IN PDEVICE_OBJECT DeviceObject);
+    IN PFILE_OBJECT FileObject);
 
 NTSTATUS
 NTAPI
@@ -263,11 +256,20 @@ WdmAudWaveInitialize(
     IN PDEVICE_OBJECT DeviceObject);
 
 ULONG
-ClosePin(
+ClosePinByIndex(
     IN  PWDMAUD_CLIENT ClientInfo,
     IN  ULONG FilterId,
     IN  ULONG PinId,
     IN  SOUND_DEVICE_TYPE DeviceType);
+
+VOID
+ClosePin(
+    IN  PWDMAUD_CLIENT ClientInfo,
+    IN  ULONG Index);
+
+ULONG
+GetActivePin(
+    IN  PWDMAUD_CLIENT ClientInfo);
 
 NTSTATUS
 InsertPinHandle(
@@ -276,11 +278,12 @@ InsertPinHandle(
     IN  ULONG PinId,
     IN  SOUND_DEVICE_TYPE DeviceType,
     IN  HANDLE PinHandle,
+    IN  PFILE_OBJECT PinFileObject,
     IN  ULONG FreeIndex);
 
 NTSTATUS
 GetSysAudioDevicePnpName(
-    IN  PDEVICE_OBJECT DeviceObject,
+    IN  PFILE_OBJECT FileObject,
     IN  ULONG DeviceIndex,
     OUT LPWSTR * Device);
 
@@ -323,8 +326,12 @@ WdmAudGetPnpNameByIndexAndType(
 
 ULONG
 GetSysAudioDeviceCount(
-    IN  PDEVICE_OBJECT DeviceObject);
+    IN  PFILE_OBJECT FileObject);
 
+NTSTATUS
+SetSysAudioDeviceInstance(
+    IN PFILE_OBJECT FileObject,
+    IN ULONG VirtualDeviceId);
 
 PVOID
 AllocateItem(
