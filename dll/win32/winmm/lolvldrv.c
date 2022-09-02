@@ -359,6 +359,7 @@ UINT	MMDRV_PhysicalFeatures(LPWINE_MLD mld, UINT uMsg,
 static  BOOL	MMDRV_InitPerType(LPWINE_MM_DRIVER lpDrv, UINT type, UINT wMsg)
 {
     WINE_MM_DRIVER_PART*	part = &lpDrv->parts[type];
+    LPWSTR			device_path;
     DWORD			ret;
     UINT			count = 0;
     int				i, k;
@@ -369,13 +370,14 @@ static  BOOL	MMDRV_InitPerType(LPWINE_MM_DRIVER lpDrv, UINT type, UINT wMsg)
     /* for DRVM_INIT and DRVM_ENABLE, dwParam2 should be PnP node */
     /* the DRVM_ENABLE is only required when the PnP node is non zero */
     if (part->fnMessage32) {
-        ret = part->fnMessage32(0, DRVM_INIT, 0L, 0L, 0L);
+        GetDeviceInterfacePath(&device_path);
+        ret = part->fnMessage32(0, DRVM_INIT, 0L, 0L, (DWORD_PTR)device_path);
         TRACE("DRVM_INIT => %s\n", WINMM_ErrorToString(ret));
 #if 0
         ret = part->fnMessage32(0, DRVM_ENABLE, 0L, 0L, 0L);
         TRACE("DRVM_ENABLE => %08lx\n", ret);
 #endif
-        count = part->fnMessage32(0, wMsg, 0L, 0L, 0L);
+        count = part->fnMessage32(0, wMsg, 0L, (DWORD_PTR)device_path, 0L);
     }
     else return FALSE;
 

@@ -578,8 +578,10 @@ MMixerAddPinIndexToArray(
     {
         if (OutPins[Index] != MAXULONG)
         {
+            DPRINT1("1\n");
             if (OutPins[Index] > PinId)
             {
+                DPRINT1("2\n");
                 /* shift entries up */
                 MixerContext->Copy(&OutPins[Index + 1], &OutPins[Index], (MaxPins - (Index + 1)) * sizeof(ULONG));
 
@@ -595,6 +597,7 @@ MMixerAddPinIndexToArray(
         }
         else
         {
+            DPRINT1("3\n");
             /* store pin id */
             OutPins[Index] = PinId;
 
@@ -642,7 +645,7 @@ MMixerGetUpOrDownStreamPins(
         TopologyNodesCount = TopologyNode->NodeConnectedToCount;
         TopologyNodes = TopologyNode->NodeConnectedTo;
     }
-
+    DPRINT1("PinsCount %d\n", PinsCount);
     /* add all diretly connected pins */
     for(Index = 0; Index < PinsCount; Index++)
     {
@@ -668,6 +671,7 @@ MMixerGetUpOrDownStreamPins(
             ASSERT(Pin->PinConnectedToCount == 0);
         }
 
+        DPRINT1("PinId %d\n", Pin->PinId);
         /* add them to pin array */
         MMixerAddPinIndexToArray(MixerContext, Pin->PinId, Topology->TopologyPinsCount, OutPinCount, OutPins);
 
@@ -678,6 +682,7 @@ MMixerGetUpOrDownStreamPins(
     /* mark node as visited */
     TopologyNode->Visited = TRUE;
 
+    DPRINT1("TopologyNodesCount %d\n", TopologyNodesCount);
     /* now visit all connected nodes */
     for(Index = 0; Index < TopologyNodesCount; Index++)
     {

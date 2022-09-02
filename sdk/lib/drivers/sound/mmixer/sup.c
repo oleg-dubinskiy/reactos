@@ -41,15 +41,24 @@ MMixerVerifyContext(
     IN PMIXER_CONTEXT MixerContext)
 {
     if (MixerContext->SizeOfStruct != sizeof(MIXER_CONTEXT))
+    {
+        DPRINT1("1\n");
         return MM_STATUS_INVALID_PARAMETER;
+    }
 
     if (!MixerContext->Alloc || !MixerContext->Control || !MixerContext->Free || !MixerContext->Open ||
         !MixerContext->AllocEventData || !MixerContext->FreeEventData ||
         !MixerContext->Close || !MixerContext->OpenKey || !MixerContext->QueryKeyValue || !MixerContext->CloseKey)
+    {
+        DPRINT1("2\n");
         return MM_STATUS_INVALID_PARAMETER;
+    }
 
     if (!MixerContext->MixerContext)
+    {
+        DPRINT1("3\n");
         return MM_STATUS_INVALID_PARAMETER;
+    }
 
     return MM_STATUS_SUCCESS;
 }

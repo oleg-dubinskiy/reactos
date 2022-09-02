@@ -109,12 +109,12 @@ static UINT MCI_GetDriverFromString(LPCWSTR lpstrName)
     if (!lpstrName)
 	return 0;
 
-    if (!wcsicmp(lpstrName, L"ALL"))
+    if (!_wcsicmp(lpstrName, L"ALL"))
 	return MCI_ALL_DEVICE_ID;
 
     EnterCriticalSection(&WINMM_cs);
     for (wmd = MciDrivers; wmd; wmd = wmd->lpNext) {
-	if (wmd->lpstrAlias && wcsicmp(wmd->lpstrAlias, lpstrName) == 0) {
+	if (wmd->lpstrAlias && _wcsicmp(wmd->lpstrAlias, lpstrName) == 0) {
 	    ret = wmd->wDeviceID;
 	    break;
 	}
@@ -542,7 +542,7 @@ static	UINT	MCI_GetDevTypeFromResource(LPCWSTR lpstrName)
     for (uDevType = MCI_DEVTYPE_FIRST; uDevType <= MCI_DEVTYPE_LAST; uDevType++) {
 	if (LoadStringW(hWinMM32Instance, uDevType, buf, ARRAY_SIZE(buf))) {
 	    /* FIXME: ignore digits suffix */
-	    if (!wcsicmp(buf, lpstrName))
+	    if (!_wcsicmp(buf, lpstrName))
 		return uDevType;
 	}
     }
@@ -835,7 +835,7 @@ static	DWORD	MCI_LoadMciDriver(LPCWSTR _strDevTyp, LPWINE_MCIDRIVER* lpwmd)
 	/* silence warning if all is used... some bogus program use commands like
 	 * 'open all'...
 	 */
-	if (wcsicmp(strDevTyp, L"ALL") == 0) {
+	if (_wcsicmp(strDevTyp, L"ALL") == 0) {
 	    dwRet = MCIERR_CANNOT_USE_ALL;
 	} else {
 	    FIXME("Couldn't load driver for type %s.\n",
@@ -943,7 +943,7 @@ static	LPCWSTR		MCI_FindCommand(UINT uTbl, LPCWSTR verb)
      * array look up
      */
     for (idx = 0; idx < S_MciCmdTable[uTbl].nVerbs; idx++) {
-	if (wcsicmp(S_MciCmdTable[uTbl].aVerbs[idx], verb) == 0)
+	if (_wcsicmp(S_MciCmdTable[uTbl].aVerbs[idx], verb) == 0)
 	    return S_MciCmdTable[uTbl].aVerbs[idx];
     }
 
@@ -1339,7 +1339,7 @@ DWORD WINAPI mciSendStringW(LPCWSTR lpstrCommand, LPWSTR lpstrRet,
     if ((dwRet = MCI_GetString(&dev, &args))) {
 	goto errCleanUp;
     }
-    uDevID = wcsicmp(dev, L"ALL") ? 0 : MCI_ALL_DEVICE_ID;
+    uDevID = _wcsicmp(dev, L"ALL") ? 0 : MCI_ALL_DEVICE_ID;
 
     /* Determine devType from open */
     if (!wcscmp(verb, L"open")) {

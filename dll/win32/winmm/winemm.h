@@ -192,6 +192,8 @@ extern HANDLE psStopEvent;
 #define WINE_GDF_EXTERNAL_MASK  0xF0000000
 #define WINE_GDF_SESSION        0x00000001
 
+/* Retrieves device interface path for DRVM_INIT and XXXX_GETNUMDEVS messages */
+BOOL GetDeviceInterfacePath(LPWSTR* DevicePath);
 
 /* Modification to take into account Windows NT's registry format */
 
