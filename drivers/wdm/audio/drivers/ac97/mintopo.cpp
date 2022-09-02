@@ -735,7 +735,7 @@ NTSTATUS CAC97MiniportTopology::BuildPinDescriptors (void)
         CurrentPin->KsPinDescriptor.DataRangesCount = SIZEOF_ARRAY(PinDataRangePointersAnalogBridge);
         CurrentPin->KsPinDescriptor.DataRanges      = PinDataRangePointersAnalogBridge;
         CurrentPin->KsPinDescriptor.DataFlow        = KSPIN_DATAFLOW_IN;
-        CurrentPin->KsPinDescriptor.Communication   = KSPIN_COMMUNICATION_NONE;
+        CurrentPin->KsPinDescriptor.Communication   = KSPIN_COMMUNICATION_SINK;
     }
 
     //

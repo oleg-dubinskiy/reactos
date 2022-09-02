@@ -194,11 +194,13 @@ CIrpQueue::AddMapping(
         if (m_Descriptor->DataFlow == KSPIN_DATAFLOW_IN)
         {
             // irp sink
+            DPRINT("Header->DataUsed %d\n", Header->DataUsed);
             HeaderLength = Header->DataUsed;
         }
         else
         {
             // irp source
+            DPRINT("Header->FrameExtent %d\n", Header->FrameExtent);
             HeaderLength = Header->FrameExtent;
         }
 
@@ -300,10 +302,11 @@ CIrpQueue::GetMapping(
     PIRP Irp;
     ULONG Offset;
     PKSSTREAM_DATA StreamData;
-
+    DPRINT("Irp %p\n", m_Irp);
     // check if there is an irp in the partially processed
     if (m_Irp)
     {
+        DPRINT("Irp->Cancel %x\n", m_Irp->Cancel);
         // use last irp
         if (m_Irp->Cancel == FALSE)
         {

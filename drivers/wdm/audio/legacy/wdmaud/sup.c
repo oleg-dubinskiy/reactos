@@ -33,9 +33,8 @@ FreeItem(
 
 ULONG
 GetSysAudioDeviceCount(
-    IN  PDEVICE_OBJECT DeviceObject)
+    IN  PFILE_OBJECT FileObject)
 {
-    PWDMAUD_DEVICE_EXTENSION DeviceExtension;
     KSPROPERTY Pin;
     ULONG Count, BytesReturned;
     NTSTATUS Status;
@@ -45,14 +44,45 @@ GetSysAudioDeviceCount(
     Pin.Id = KSPROPERTY_SYSAUDIO_DEVICE_COUNT;
     Pin.Flags = KSPROPERTY_TYPE_GET;
 
-    DeviceExtension = (PWDMAUD_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
-
     /* query sysaudio for the device count */
-    Status = KsSynchronousIoControlDevice(DeviceExtension->FileObject, KernelMode, IOCTL_KS_PROPERTY, (PVOID)&Pin, sizeof(KSPROPERTY), (PVOID)&Count, sizeof(ULONG), &BytesReturned);
+    Status = KsSynchronousIoControlDevice(FileObject,
+                                          KernelMode,
+                                          IOCTL_KS_PROPERTY,
+                                          (PVOID)&Pin,
+                                          sizeof(KSPROPERTY),
+                                          (PVOID)&Count,
+                                          sizeof(ULONG),
+                                          &BytesReturned);
     if (!NT_SUCCESS(Status))
         return 0;
 
     return Count;
+}
+
+NTSTATUS
+SetSysAudioDeviceInstance(
+    IN PFILE_OBJECT FileObject,
+    IN ULONG VirtualDeviceId)
+{
+    NTSTATUS Status;
+    KSPROPERTY Property;
+    ULONG BytesReturned;
+
+    /* setup property request */
+    Property.Set = KSPROPSETID_Sysaudio;
+    Property.Id = KSPROPERTY_SYSAUDIO_DEVICE_INSTANCE;
+    Property.Flags = KSPROPERTY_TYPE_SET;
+
+    /* attach to virtual device */
+    Status = KsSynchronousIoControlDevice(FileObject,
+                                          KernelMode,
+                                          IOCTL_KS_PROPERTY,
+                                          (PVOID)&Property,
+                                          sizeof(KSPROPERTY),
+                                          (PVOID)&VirtualDeviceId,
+                                          sizeof(ULONG),
+                                          &BytesReturned);
+    return Status;
 }
 
 NTSTATUS
@@ -64,12 +94,11 @@ SetIrpIoStatus(
     Irp->IoStatus.Information = Length;
     Irp->IoStatus.Status = Status;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
-
     return Status;
 }
 
 ULONG
-ClosePin(
+ClosePinByIndex(
     IN  PWDMAUD_CLIENT ClientInfo,
     IN  ULONG FilterId,
     IN  ULONG PinId,
@@ -77,15 +106,46 @@ ClosePin(
 {
     ULONG Index;
 
+    for (Index = 0; Index < ClientInfo->NumPins; Index++)
+    {
+        if (ClientInfo->hPins[Index].FilterId == FilterId &&
+            ClientInfo->hPins[Index].PinId == PinId &&
+            ClientInfo->hPins[Index].Handle &&
+            ClientInfo->hPins[Index].Type == DeviceType)
+        {
+            DPRINT("Closing pin %p, index %d\n", ClientInfo->hPins[Index].Handle, Index);
+            ClosePin(ClientInfo, Index);
+            return Index;
+        }
+    }
+    return MAXULONG;
+}
+
+VOID
+ClosePin(
+    IN  PWDMAUD_CLIENT ClientInfo,
+    IN  ULONG Index)
+{
+    if (ClientInfo->hPins[Index].Type != MIXER_DEVICE_TYPE)
+    {
+        ObDereferenceObject(ClientInfo->hPins[Index].FileObject);
+        ZwClose(ClientInfo->hPins[Index].Handle);
+        ClientInfo->hPins[Index].Handle = NULL;
+        ClientInfo->hPins[Index].Active = FALSE;
+    }    
+}
+
+ULONG
+GetActivePin(
+    IN  PWDMAUD_CLIENT ClientInfo)
+{
+    ULONG Index;
+
     for(Index = 0; Index < ClientInfo->NumPins; Index++)
     {
-        if (ClientInfo->hPins[Index].FilterId == FilterId && ClientInfo->hPins[Index].PinId == PinId && ClientInfo->hPins[Index].Handle && ClientInfo->hPins[Index].Type == DeviceType)
+        if (ClientInfo->hPins[Index].Active == TRUE &&
+            ClientInfo->hPins[Index].Type != MIXER_DEVICE_TYPE)
         {
-            if (ClientInfo->hPins[Index].Type != MIXER_DEVICE_TYPE)
-            {
-                ZwClose(ClientInfo->hPins[Index].Handle);
-            }
-            ClientInfo->hPins[Index].Handle = NULL;
             return Index;
         }
     }
@@ -99,37 +159,33 @@ InsertPinHandle(
     IN  ULONG PinId,
     IN  SOUND_DEVICE_TYPE DeviceType,
     IN  HANDLE PinHandle,
+    IN  PFILE_OBJECT PinFileObject,
     IN  ULONG FreeIndex)
 {
-    PWDMAUD_HANDLE Handles;
-
     if (FreeIndex != MAXULONG)
     {
         /* re-use a free index */
         ClientInfo->hPins[FreeIndex].Handle = PinHandle;
+        ClientInfo->hPins[FreeIndex].FileObject = PinFileObject;
         ClientInfo->hPins[FreeIndex].FilterId = FilterId;
         ClientInfo->hPins[FreeIndex].PinId = PinId;
         ClientInfo->hPins[FreeIndex].Type = DeviceType;
+        ClientInfo->hPins[FreeIndex].Active = TRUE;
 
         return STATUS_SUCCESS;
     }
 
-    Handles = AllocateItem(NonPagedPool, sizeof(WDMAUD_HANDLE) * (ClientInfo->NumPins+1));
+    ClientInfo->hPins = AllocateItem(NonPagedPool, sizeof(WDMAUD_HANDLE) * (ClientInfo->NumPins+1));
 
-    if (!Handles)
+    if (!ClientInfo->hPins)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    if (ClientInfo->NumPins)
-    {
-        RtlMoveMemory(Handles, ClientInfo->hPins, sizeof(WDMAUD_HANDLE) * ClientInfo->NumPins);
-        FreeItem(ClientInfo->hPins);
-    }
-
-    ClientInfo->hPins = Handles;
     ClientInfo->hPins[ClientInfo->NumPins].Handle = PinHandle;
+    ClientInfo->hPins[ClientInfo->NumPins].FileObject = PinFileObject;
     ClientInfo->hPins[ClientInfo->NumPins].Type = DeviceType;
     ClientInfo->hPins[ClientInfo->NumPins].FilterId = FilterId;
     ClientInfo->hPins[ClientInfo->NumPins].PinId = PinId;
+    ClientInfo->hPins[ClientInfo->NumPins].Active = TRUE;
     ClientInfo->NumPins++;
 
     return STATUS_SUCCESS;
@@ -344,18 +400,17 @@ FindProductName(
 
 NTSTATUS
 GetSysAudioDevicePnpName(
-    IN  PDEVICE_OBJECT DeviceObject,
+    IN  PFILE_OBJECT FileObject,
     IN  ULONG DeviceIndex,
     OUT LPWSTR * Device)
 {
     ULONG BytesReturned;
     KSP_PIN Pin;
     NTSTATUS Status;
-    PWDMAUD_DEVICE_EXTENSION DeviceExtension;
 
-   /* first check if the device index is within bounds */
-   if (DeviceIndex >= GetSysAudioDeviceCount(DeviceObject))
-       return STATUS_INVALID_PARAMETER;
+    /* first check if the device index is within bounds */
+    if (DeviceIndex >= GetSysAudioDeviceCount(FileObject))
+        return STATUS_INVALID_PARAMETER;
 
     /* setup the query request */
     Pin.Property.Set = KSPROPSETID_Sysaudio;
@@ -363,14 +418,19 @@ GetSysAudioDevicePnpName(
     Pin.Property.Flags = KSPROPERTY_TYPE_GET;
     Pin.PinId = DeviceIndex;
 
-    DeviceExtension = (PWDMAUD_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
-
     /* query sysaudio for the device path */
-    Status = KsSynchronousIoControlDevice(DeviceExtension->FileObject, KernelMode, IOCTL_KS_PROPERTY, (PVOID)&Pin, sizeof(KSPROPERTY) + sizeof(ULONG), NULL, 0, &BytesReturned);
+    Status = KsSynchronousIoControlDevice(FileObject,
+                                          KernelMode,
+                                          IOCTL_KS_PROPERTY,
+                                          (PVOID)&Pin,
+                                          sizeof(KSPROPERTY) + sizeof(ULONG),
+                                          NULL,
+                                          0,
+                                          &BytesReturned);
 
     /* check if the request failed */
-    if (Status != STATUS_BUFFER_TOO_SMALL || BytesReturned == 0)
-        return STATUS_UNSUCCESSFUL;
+    if (Status != STATUS_BUFFER_OVERFLOW || BytesReturned == 0)
+        return Status;
 
     /* allocate buffer for the device */
     *Device = AllocateItem(NonPagedPool, BytesReturned);
@@ -378,8 +438,15 @@ GetSysAudioDevicePnpName(
         return STATUS_INSUFFICIENT_RESOURCES;
 
     /* query sysaudio again for the device path */
-    Status = KsSynchronousIoControlDevice(DeviceExtension->FileObject, KernelMode, IOCTL_KS_PROPERTY, (PVOID)&Pin, sizeof(KSPROPERTY) + sizeof(ULONG), (PVOID)*Device, BytesReturned, &BytesReturned);
-
+    Status = KsSynchronousIoControlDevice(FileObject,
+                                          KernelMode,
+                                          IOCTL_KS_PROPERTY,
+                                          (PVOID)&Pin,
+                                          sizeof(KSPROPERTY) + sizeof(ULONG),
+                                          (PVOID)*Device,
+                                          BytesReturned,
+                                          &BytesReturned);
+    DPRINT("Device interface %S\n", *Device);
     if (!NT_SUCCESS(Status))
     {
         /* failed */
