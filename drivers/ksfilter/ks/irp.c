@@ -656,6 +656,10 @@ KsStreamIo(
     IoStack = IoGetNextIrpStackLocation(Irp);
     /* setup stack parameters */
     IoStack->FileObject = FileObject;
+
+    IoStack->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+    IoStack->Parameters.DeviceIoControl.Type3InputBuffer = StreamHeaders;
+    IoStack->Parameters.DeviceIoControl.InputBufferLength = Length;
     IoStack->Parameters.DeviceIoControl.OutputBufferLength = Length;
     IoStack->Parameters.DeviceIoControl.IoControlCode = (Flags == KSSTREAM_READ ? IOCTL_KS_READ_STREAM : IOCTL_KS_WRITE_STREAM);
 
@@ -667,6 +671,7 @@ KsStreamIo(
 
     /* now call the driver */
     Status = IoCallDriver(DeviceObject, Irp);
+    DPRINT1("Status 0x%lx\n", Status);
     /* done */
     return Status;
 }
@@ -834,6 +839,7 @@ ProbeMdl:
                     if (StreamHeader->Size != HeaderSize && !(StreamHeader->OptionsFlags & KSSTREAM_HEADER_OPTIONSF_TYPECHANGED))
                     {
                         /* invalid stream header */
+                        DPRINT1("1\n");
                         ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                     }
                 }
@@ -843,6 +849,7 @@ ProbeMdl:
                     if (StreamHeader->Size < sizeof(KSSTREAM_HEADER) || (StreamHeader->Size & 7))
                     {
                         /* invalid stream header */
+                        DPRINT1("2\n");
                         ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                     }
                 }
@@ -850,6 +857,7 @@ ProbeMdl:
                 if (Length < StreamHeader->Size)
                 {
                     /* length is too short */
+                    DPRINT1("3\n");
                     ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                 }
 
@@ -858,6 +866,7 @@ ProbeMdl:
                     if (StreamHeader->DataUsed > StreamHeader->FrameExtent)
                     {
                         /* frame extend can never be smaller */
+                        DPRINT1("4\n");
                         ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                     }
 
@@ -867,6 +876,7 @@ ProbeMdl:
                         if (Length != sizeof(KSSTREAM_HEADER) || (PVOID)StreamHeader != Irp->AssociatedIrp.SystemBuffer)
                         {
                             /* stream changed - must be send in a single packet */
+                            DPRINT1("5\n");
                             ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                         }
 
@@ -897,6 +907,7 @@ ProbeMdl:
                     if (StreamHeader->DataUsed)
                     {
                         /* DataUsed must be zero for stream read operation */
+                        DPRINT1("6\n");
                         ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                     }
 
@@ -939,6 +950,9 @@ ProbeMdl:
         else
             goto ProbeMdl;
     }
+
+    // HACK for MS portcls
+    //HeaderSize = Length;
 
     /* probe user mode buffers */
     if (Length && ( (!HeaderSize) || (Length % HeaderSize == 0) || ((ProbeFlags & KSPROBE_ALLOWFORMATCHANGE) && (Length == sizeof(KSSTREAM_HEADER))) ) )
@@ -1007,6 +1021,7 @@ ProbeMdl:
                     if (StreamHeader->Size != HeaderSize && !(StreamHeader->OptionsFlags & KSSTREAM_HEADER_OPTIONSF_TYPECHANGED))
                     {
                         /* invalid stream header */
+                        DPRINT1("7\n");
                         ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                     }
                 }
@@ -1016,6 +1031,7 @@ ProbeMdl:
                     if (StreamHeader->Size < sizeof(KSSTREAM_HEADER) || (StreamHeader->Size & 7))
                     {
                         /* invalid stream header */
+                        DPRINT1("8\n");
                         ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                     }
                 }
@@ -1023,6 +1039,7 @@ ProbeMdl:
                 if (Length < StreamHeader->Size)
                 {
                     /* length is too short */
+                        DPRINT1("9\n");
                     ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                 }
 
@@ -1031,6 +1048,7 @@ ProbeMdl:
                     if (StreamHeader->DataUsed > StreamHeader->FrameExtent)
                     {
                         /* frame extend can never be smaller */
+                        DPRINT1("10\n");
                         ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                     }
 
@@ -1040,6 +1058,7 @@ ProbeMdl:
                         if (Length != sizeof(KSSTREAM_HEADER) || (PVOID)StreamHeader != Irp->AssociatedIrp.SystemBuffer)
                         {
                             /* stream changed - must be send in a single packet */
+                            DPRINT1("11\n");
                             ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                         }
 
@@ -1071,6 +1090,7 @@ ProbeMdl:
                     if (StreamHeader->DataUsed)
                     {
                         /* DataUsed must be zero for stream read operation */
+                        DPRINT1("13\n");
                         ExRaiseStatus(STATUS_INVALID_BUFFER_SIZE);
                     }
 
@@ -1099,6 +1119,7 @@ ProbeMdl:
             return Status;
     }
 
+    DPRINT1("14\n");
     return STATUS_INVALID_BUFFER_SIZE;
 }
 
@@ -1190,6 +1211,9 @@ KsDispatchInvalidDeviceRequest(
     IN  PDEVICE_OBJECT DeviceObject,
     IN  PIRP Irp)
 {
+    DPRINT1("KsDispatchInvalidDeviceRequest called: DeviceObject %p, Irp %p\n",
+            DeviceObject, Irp);
+
     Irp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
     CompleteRequest(Irp, IO_NO_INCREMENT);
 
@@ -1208,6 +1232,9 @@ KsDefaultDeviceIoCompletion(
 {
     PIO_STACK_LOCATION IoStack;
     NTSTATUS Status;
+
+    DPRINT1("KsDefaultDeviceIoCompletion called: DeviceObject %p, Irp %p\n",
+            DeviceObject, Irp);
 
     /* get current irp stack */
     IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -1683,18 +1710,6 @@ KsAddIrpToCancelableQueue(
 
     DPRINT("KsAddIrpToCancelableQueue QueueHead %p SpinLock %p Irp %p ListLocation %x DriverCancel %p\n", QueueHead, SpinLock, Irp, ListLocation, DriverCancel);
 
-    // HACK for ms portcls
-    if (IoStack->MajorFunction == IRP_MJ_CREATE)
-    {
-        // complete the request
-        DPRINT1("MS HACK\n");
-        Irp->IoStatus.Status = STATUS_SUCCESS;
-        CompleteRequest(Irp, IO_NO_INCREMENT);
-
-        return;
-    }
-
-
     if (!DriverCancel)
     {
         /* default to KsCancelRoutine */
@@ -1898,7 +1913,7 @@ KspCreate(
     DeviceHeader = DeviceExtension->DeviceHeader;
 
 
-    if (IoStack->FileObject->FileName.Buffer == NULL)
+    if (IoStack->FileObject == NULL)
     {
         /* FIXME Pnp-Issue */
         DPRINT("Using reference string hack\n");
@@ -2052,6 +2067,9 @@ KsSetMajorFunctionHandler(
     IN  ULONG MajorFunction)
 {
     DPRINT("KsSetMajorFunctionHandler Function %x\n", MajorFunction);
+
+    // HACK for MS portcls
+    DriverObject->MajorFunction[IRP_MJ_CREATE] = KspCreate;
 
     switch ( MajorFunction )
     {

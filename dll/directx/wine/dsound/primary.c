@@ -465,19 +465,19 @@ HRESULT primarybuffer_SetFormat(DirectSoundDevice *device, LPCWAVEFORMATEX wfex)
 	LPWAVEFORMATEX oldpwfx;
         BOOL forced = device->priolevel == DSSCL_WRITEPRIMARY;
 
-	TRACE("(%p,%p)\n", device, wfex);
-
+	ERR("(%p,%p)\n", device, wfex);
+    ERR("forced %x\n", forced);
 	if (device->priolevel == DSSCL_NORMAL) {
-		WARN("failed priority check!\n");
+		ERR("failed priority check!\n");
 		return DSERR_PRIOLEVELNEEDED;
 	}
 
 	/* Let's be pedantic! */
 	if (wfex == NULL) {
-		WARN("invalid parameter: wfex==NULL!\n");
+		ERR("invalid parameter: wfex==NULL!\n");
 		return DSERR_INVALIDPARAM;
 	}
-	TRACE("(formattag=0x%04x,chans=%d,samplerate=%d,"
+	ERR("(formattag=0x%04x,chans=%d,samplerate=%d,"
               "bytespersec=%d,blockalign=%d,bitspersamp=%d,cbSize=%d)\n",
 	      wfex->wFormatTag, wfex->nChannels, wfex->nSamplesPerSec,
 	      wfex->nAvgBytesPerSec, wfex->nBlockAlign,
@@ -514,7 +514,7 @@ HRESULT primarybuffer_SetFormat(DirectSoundDevice *device, LPCWAVEFORMATEX wfex)
 
 		if (err != DSERR_BUFFERLOST && FAILED(err)) {
 			DWORD size = DSOUND_GetFormatSize(oldpwfx);
-			WARN("IDsDriverBuffer_SetFormat failed\n");
+			ERR("IDsDriverBuffer_SetFormat failed\n");
 			if (!forced) {
 				CopyMemory(device->pwfx, oldpwfx, size);
 				err = DS_OK;
@@ -547,12 +547,12 @@ HRESULT primarybuffer_SetFormat(DirectSoundDevice *device, LPCWAVEFORMATEX wfex)
 		err = DSOUND_ReopenDevice(device, FALSE);
 		if (FAILED(err))
 		{
-			WARN("DSOUND_ReopenDevice failed: %08x\n", err);
+			ERR("DSOUND_ReopenDevice failed: %08x\n", err);
 			goto done;
 		}
 		err = DSOUND_PrimaryOpen(device);
 		if (err != DS_OK) {
-			WARN("DSOUND_PrimaryOpen failed\n");
+			ERR("DSOUND_PrimaryOpen failed\n");
 			goto done;
 		}
 
@@ -562,9 +562,9 @@ HRESULT primarybuffer_SetFormat(DirectSoundDevice *device, LPCWAVEFORMATEX wfex)
 			device->pwfx->nSamplesPerSec = wfex->nSamplesPerSec;
 			err = DSOUND_ReopenDevice(device, TRUE);
 			if (FAILED(err))
-				WARN("DSOUND_ReopenDevice(2) failed: %08x\n", err);
+				ERR("DSOUND_ReopenDevice(2) failed: %08x\n", err);
 			else if (FAILED((err = DSOUND_PrimaryOpen(device))))
-				WARN("DSOUND_PrimaryOpen(2) failed: %08x\n", err);
+				ERR("DSOUND_PrimaryOpen(2) failed: %08x\n", err);
 		}
 	}
 

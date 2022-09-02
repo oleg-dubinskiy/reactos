@@ -33,7 +33,7 @@ HandlePropertyInstances(
     }
 
     Instances = (KSPIN_CINSTANCES*)Data;
-
+    DPRINT1("PinId %d\n", Pin->PinId);
     // check if the miniport supports the IPinCount interface
     Status = SubDevice->PinCount(Pin->PinId, &FilterNecessary, &FilterCurrent, &FilterPossible, &GlobalCurrent, &GlobalPossible);
 
@@ -59,7 +59,7 @@ HandlePropertyInstances(
 
         Instances->CurrentCount = Descriptor->Factory.Instances[Pin->PinId].CurrentPinInstanceCount;
     }
-
+    DPRINT1("CurrentCount %d, PossibleCount %d\n", Instances->CurrentCount, Instances->PossibleCount);
     IoStatus->Information = sizeof(KSPIN_CINSTANCES);
     IoStatus->Status = STATUS_SUCCESS;
     return STATUS_SUCCESS;
@@ -131,8 +131,9 @@ HandleDataIntersection(
         Status = SubDevice->DataRangeIntersection(Pin->PinId, DataRange, (PKSDATARANGE)Descriptor->Factory.KsPinDescriptor[Pin->PinId].DataRanges[0],
                                                   DataLength, Data, &Length);
 
-        if (Status == STATUS_SUCCESS)
+        if (Status == STATUS_SUCCESS || Status == STATUS_BUFFER_OVERFLOW || Status == STATUS_BUFFER_TOO_SMALL)
         {
+            ASSERT(Length);
             IoStatus->Information = Length;
             break;
         }

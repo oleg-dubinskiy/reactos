@@ -420,7 +420,7 @@ IKsPin_PinDataFormatPropertyHandler(
     /* get current irp stack */
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
-    DPRINT("IKsPin_PinDataFormatPropertyHandler\n");
+    DPRINT1("IKsPin_PinDataFormatPropertyHandler\n");
 
     /* sanity check */
     ASSERT(IoStack->FileObject);
@@ -455,6 +455,7 @@ IKsPin_PinDataFormatPropertyHandler(
         if (This->Pin.Descriptor->Flags & KSPIN_FLAG_FIXED_FORMAT)
         {
             /* format cannot be changed */
+            DPRINT1("3\n");
             Status = STATUS_INVALID_DEVICE_REQUEST;
         }
         else
@@ -473,7 +474,7 @@ IKsPin_PinDataFormatPropertyHandler(
     /* release processing mutex */
     KeReleaseMutex(This->BasicHeader.ControlMutex, FALSE);
 
-    DPRINT("IKsPin_PinDataFormatPropertyHandler Status %lx\n", Status);
+    DPRINT1("IKsPin_PinDataFormatPropertyHandler Status %lx\n", Status);
 
     return Status;
 }

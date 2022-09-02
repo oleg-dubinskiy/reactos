@@ -88,7 +88,6 @@ typedef struct
     ULONG PinId;
     MIXERLINEW Line;
     LIST_ENTRY ControlsList;
-
 }MIXERLINE_EXT, *LPMIXERLINE_EXT;
 
 typedef struct
@@ -124,11 +123,8 @@ typedef struct
     LIST_ENTRY Entry;
     ULONG DeviceId;
     ULONG PinId;
-    union
-    {
-        WAVEOUTCAPSW OutCaps;
-        WAVEINCAPSW  InCaps;
-    }u;
+    LPWSTR DeviceName;
+    PKSDATARANGE_AUDIO DataRangeAudio;
 }WAVE_INFO, *LPWAVE_INFO;
 
 typedef struct
@@ -136,12 +132,7 @@ typedef struct
     LIST_ENTRY Entry;
     ULONG DeviceId;
     ULONG PinId;
-    union
-    {
-        MIDIOUTCAPSW OutCaps;
-        MIDIINCAPSW InCaps;
-    }u;
-
+    LPWSTR DeviceName;
 }MIDI_INFO, *LPMIDI_INFO;
 
 typedef struct

@@ -1543,8 +1543,8 @@ MMixerInitializeFilter(
 
         /* intialize mixer caps */
         MixerInfo->MixCaps.wMid = MM_MICROSOFT; /* FIXME */
-        MixerInfo->MixCaps.wPid = MM_PID_UNMAPPED; /* FIXME */
-        MixerInfo->MixCaps.vDriverVersion = 1; /* FIXME */
+        MixerInfo->MixCaps.wPid = MM_MSFT_WDMAUDIO_MIXER; /* FIXME */
+        MixerInfo->MixCaps.vDriverVersion = 0x050a; /* FIXME */
         MixerInfo->MixCaps.fdwSupport = 0;
         MixerInfo->MixCaps.cDestinations = 0;
 
@@ -1584,7 +1584,6 @@ MMixerInitializeFilter(
      * For source pins (wave in) search down stream
      * The search direction is always the opposite of the current mixer type
      */
-    PinsFound = 0;
     MMixerGetAllUpOrDownstreamPinsFromNodeIndex(MixerContext, Topology, NodeIndex, !bInputMixer, &PinsFound, Pins);
 
     /* if there is no pin found, we have a broken topology */

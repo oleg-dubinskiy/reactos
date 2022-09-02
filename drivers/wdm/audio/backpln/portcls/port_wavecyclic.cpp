@@ -205,7 +205,7 @@ CPortWaveCyclic::Init(
     Status = UnknownMiniport->QueryInterface(IID_IMiniportWaveCyclic, (PVOID*)&Miniport);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("IPortWaveCyclic_Init called with invalid IMiniport adapter\n");
+        DPRINT1("IPortWaveCyclic_Init called with invalid IMiniport adapter\n");
         return STATUS_INVALID_PARAMETER;
     }
 
