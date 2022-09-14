@@ -1,5 +1,19 @@
 #pragma once
 
+#define NODE_TYPE_DEFERRED_WRITE 0x02FC
+#define NODE_TYPE_BCB            0x02FD
+#define NODE_TYPE_PRIVATE_MAP    0x02FE
+#define NODE_TYPE_SHARED_MAP     0x02FF
+
+/* SharedCacheMap->Flags */
+#define SHARE_FL_PIN_ACCESS        0x00000004
+#define SHARE_FL_WRITE_QUEUED      0x00000020
+#define SHARE_FL_SEQUENTIAL_ONLY   0x00000040
+#define SHARE_FL_SECTION_INIT      0x00000100
+#define SHARE_FL_MODIFIED_NO_WRITE 0x00000200
+#define SHARE_FL_RANDOM_ACCESS     0x00001000
+#define SHARE_FL_WAITING_TEARDOWN  0x00010000
+
 /* Counters */
 extern ULONG CcLazyWritePages;
 extern ULONG CcLazyWriteIos;
