@@ -92,6 +92,7 @@ extern SIZE_T MmTotalCommittedPages;
 extern MMPDE ValidKernelPde;
 extern PFN_NUMBER MmAvailablePages;
 extern ULONG MmSecondaryColorMask;
+extern SIZE_T MmAllocationFragment;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -2506,8 +2507,237 @@ MiCreateDataFileMap(
     _In_ ULONG AllocationAttributes,
     _In_ BOOLEAN IgnoreFileSizing)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    LARGE_INTEGER fileSize;
+    ULONGLONG FileSize;
+    ULONGLONG TotalNumberOfPtes;
+    ULONGLONG CurrentSize;
+    ULONGLONG CurrentPtes;
+    PCONTROL_AREA ControlArea;
+    PMAPPED_FILE_SEGMENT Segment;
+    PMSUBSECTION NewSubsection;
+    PMSUBSECTION Subsection;
+    PMSUBSECTION LastSubsection;
+    ULONG NumberOfNewSubsections;
+    ULONG SubsectionSize;
+    MMPTE ProtoTemplate;
+    NTSTATUS Status;
+    ULONGLONG maximum;
+    PULONGLONG maximumSize;
+
+    PAGED_CODE();
+    DPRINT("MiCreateDataFileMap: %p '%wZ', %I64X, %X, %X, %X\n", File, &File->FileName, MaximumSize, SectionPageProtection, AllocationAttributes, IgnoreFileSizing);
+
+    if (MaximumSize)
+    {
+         maximum = *MaximumSize;
+         maximumSize = &maximum;
+         //DPRINT("MiCreateDataFileMap: maximumSize %I64X\n", maximum);
+    }
+
+    if (IgnoreFileSizing)
+    {
+        /* CC is caller */
+        FileSize = *maximumSize;
+    }
+    else
+    {
+        /* Get size via fs */
+        Status = FsRtlGetFileSize(File, &fileSize);
+        if (Status == STATUS_FILE_IS_A_DIRECTORY)
+        {
+            DPRINT1("MiCreateDataFileMap: STATUS_FILE_IS_A_DIRECTORY\n");
+            return STATUS_INVALID_FILE_FOR_SECTION;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MiCreateDataFileMap: Status %X\n", Status);
+            return Status;
+        }
+
+        FileSize = (ULONGLONG)fileSize.QuadPart;
+
+        if (!FileSize && !(*maximumSize))
+        {
+            DPRINT1("MiCreateDataFileMap: STATUS_MAPPED_FILE_SIZE_ZERO\n");
+            return STATUS_MAPPED_FILE_SIZE_ZERO;
+        }
+
+        //DPRINT("MiCreateDataFileMap: FileSize %I64X\n", FileSize);
+
+        if (*maximumSize > FileSize)
+        {
+            if (!(SectionPageProtection & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)))
+            {
+                DPRINT1("MiCreateDataFileMap: STATUS_SECTION_TOO_BIG\n");
+                return STATUS_SECTION_TOO_BIG;
+            }
+
+            fileSize.QuadPart = (LONGLONG)*maximumSize;
+
+            DPRINT1("MiCreateDataFileMap: FsRtlSetFileSize\n");
+            ASSERT(FALSE);
+            Status = STATUS_NOT_IMPLEMENTED;//FsRtlSetFileSize(File, &fileSize);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT("MiCreateDataFileMap: Status %X\n", Status);
+                return Status;
+            }
+        }
+    }
+
+    if (FileSize >= ((16 * _1PB) & ~(PAGE_SIZE - 1)))
+    {
+        DPRINT1("MiCreateDataFileMap: STATUS_SECTION_TOO_BIG\n");
+        return STATUS_SECTION_TOO_BIG;
+    }
+
+    TotalNumberOfPtes = ((FileSize + (PAGE_SIZE - 1)) / PAGE_SIZE);
+
+    Segment = ExAllocatePoolWithTag(PagedPool, sizeof(MAPPED_FILE_SEGMENT), 'mSmM');
+    if (!Segment)
+    {
+        DPRINT1("MiCreateDataFileMap: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    ASSERT(BYTE_OFFSET(MmAllocationFragment) == 0);
+    ASSERT(MmAllocationFragment >= PAGE_SIZE);
+
+    ControlArea = (PCONTROL_AREA)File->SectionObjectPointer->DataSectionObject;
+
+    NumberOfNewSubsections = 0;
+    SubsectionSize = MmAllocationFragment;
+
+    NewSubsection = NULL;
+    LastSubsection = NULL;
+
+    /* Split file on parts sizeof MmAllocationFragment */
+    for (CurrentSize = (TotalNumberOfPtes * sizeof(MMPTE));
+         CurrentSize;
+         CurrentSize -= SubsectionSize)
+    {
+        if (CurrentSize < MmAllocationFragment)
+        {
+            CurrentSize = PAGE_ROUND_UP(CurrentSize);
+            SubsectionSize = CurrentSize;
+        }
+
+        /* Allocate subsections */
+        if (NewSubsection)
+        {
+            NewSubsection = ExAllocatePoolWithTag(NonPagedPool, sizeof(MSUBSECTION), 'cSmM');
+            if (!NewSubsection)
+            {
+                PMSUBSECTION NextSubsection;
+
+                DPRINT1("MiCreateDataFileMap: STATUS_INSUFFICIENT_RESOURCES\n");
+
+                ExFreePoolWithTag(Segment, 'mSmM');
+
+                for (NewSubsection = (PMSUBSECTION)((PMSUBSECTION)&ControlArea[1])->NextSubsection;
+                     NewSubsection;
+                     NewSubsection = NextSubsection)
+                {
+                    NextSubsection = (PMSUBSECTION)NewSubsection->NextSubsection;
+                    ExFreePoolWithTag(NewSubsection, 'cSmM');
+                }
+
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlZeroMemory(NewSubsection, sizeof(MSUBSECTION));
+            LastSubsection->NextSubsection = (PSUBSECTION)NewSubsection;
+        }
+        else
+        {
+            /* First Subsection */
+            NewSubsection = (PMSUBSECTION)&ControlArea[1];
+        }
+
+        LastSubsection = NewSubsection;
+        NumberOfNewSubsections++;
+
+        NewSubsection->PtesInSubsection = (SubsectionSize / sizeof(MMPTE));
+    }
+
+    RtlZeroMemory(Segment, sizeof(MAPPED_FILE_SEGMENT));
+    *OutSegment = (PSEGMENT)Segment;
+
+    Segment->LastSubsectionHint = LastSubsection;
+
+    ControlArea->Segment = (PSEGMENT)Segment;
+    ControlArea->NumberOfSectionReferences = 1;
+
+    if (IgnoreFileSizing)
+        /* CC is caller */
+        ControlArea->u.Flags.WasPurged = 1;
+    else
+        ControlArea->NumberOfUserReferences = 1;
+
+    ControlArea->u.Flags.BeingCreated = 1;
+    ControlArea->u.Flags.File = 1;
+
+    if (File->DeviceObject->Characteristics & FILE_REMOTE_DEVICE)
+        ControlArea->u.Flags.Networked = 1;
+
+    if (AllocationAttributes & SEC_NOCACHE)
+        ControlArea->u.Flags.NoCache = 1;
+
+    ControlArea->FilePointer = File;
+    ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 0);
+
+    Subsection = (PMSUBSECTION)&ControlArea[1];
+
+    MI_MAKE_SUBSECTION_PTE(&ProtoTemplate, Subsection);
+    ProtoTemplate.u.Soft.Prototype = 1;
+    ProtoTemplate.u.Soft.Protection = MM_EXECUTE_READWRITE;
+    Segment->SegmentPteTemplate = ProtoTemplate;
+
+    Segment->ControlArea = ControlArea;
+    Segment->SizeOfSegment = FileSize;
+    Segment->TotalNumberOfPtes = (ULONG)TotalNumberOfPtes;
+
+    DPRINT("MiCreateDataFileMap: Segment->SizeOfSegment %I64X\n", Segment->SizeOfSegment);
+
+    if (TotalNumberOfPtes >= (1ull << 32))
+        Segment->SegmentFlags.TotalNumberOfPtes4132 = (TotalNumberOfPtes >> 32);
+
+    if (Subsection->NextSubsection)
+        Segment->NonExtendedPtes = (Subsection->PtesInSubsection & ~(((ULONG)MmAllocationFragment / PAGE_SIZE) - 1));
+    else
+        Segment->NonExtendedPtes = Segment->TotalNumberOfPtes;
+
+    Subsection->PtesInSubsection = Segment->NonExtendedPtes;
+
+    CurrentPtes = 0;
+
+    for (; Subsection; Subsection = (PMSUBSECTION)Subsection->NextSubsection)
+    {
+        Subsection->StartingSector = (ULONG)CurrentPtes;
+        Subsection->u.SubsectionFlags.StartingSector4132 = (CurrentPtes >> 32);
+
+        Subsection->ControlArea = ControlArea;
+
+        if (Subsection->NextSubsection)
+        {
+            Subsection->NumberOfFullSectors = Subsection->PtesInSubsection;
+        }
+        else
+        {
+            Subsection->NumberOfFullSectors = (FileSize / PAGE_SIZE) - (ULONG)CurrentPtes;
+            Subsection->u.SubsectionFlags.SectorEndOffset = BYTE_OFFSET(FileSize);
+
+            Subsection->UnusedPtes = Subsection->PtesInSubsection - (TotalNumberOfPtes - CurrentPtes);
+            Subsection->PtesInSubsection -= Subsection->UnusedPtes;
+        }
+
+        MiSubsectionConsistent((PSUBSECTION)Subsection);
+
+        CurrentPtes += (ULONGLONG)Subsection->PtesInSubsection;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
