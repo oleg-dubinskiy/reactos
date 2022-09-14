@@ -8,6 +8,7 @@
 
 /* GLOBALS ********************************************************************/
 
+LIST_ENTRY CcCleanSharedCacheMapList;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -94,8 +95,13 @@ BOOLEAN
 NTAPI
 CcInitializeCacheManager(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    DPRINT("CcInitializeCacheManager()\n");
+
+    InitializeListHead(&CcCleanSharedCacheMapList);
+
+    CcInitializeVacbs();
+
+    return TRUE;
 }
 
 /* EOF */
