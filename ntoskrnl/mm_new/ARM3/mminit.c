@@ -2,7 +2,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 #include "miarm.h"
 
@@ -651,7 +651,7 @@ MmInitializeMemoryLimits(
     Buffer = ExAllocatePoolWithTag(NonPagedPool, Size, 'lMmM');
     if (!Buffer)
     {
-        DPRINT1("MiScanMemoryDescriptors: Allocate failed\n");
+        DPRINT1("MmInitializeMemoryLimits: Allocate failed\n");
         return NULL;
     }
 

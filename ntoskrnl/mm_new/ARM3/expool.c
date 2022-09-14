@@ -2,7 +2,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 #include "miarm.h"
 
@@ -610,7 +610,7 @@ ExpRemovePoolTracker(
     ULONG Hash;
     ULONG Index;
 
-    DPRINT1("ExpRemovePoolTracker: PoolType %X, NumberOfBytes %X, Key %X\n", PoolType, NumberOfBytes, Key);
+    DPRINT("ExpRemovePoolTracker: PoolType %X, NumberOfBytes %X, Key %X\n", PoolType, NumberOfBytes, Key);
 
     /* Remove the PROTECTED_POOL flag which is not part of the tag. */
     Key &= ~PROTECTED_POOL;
