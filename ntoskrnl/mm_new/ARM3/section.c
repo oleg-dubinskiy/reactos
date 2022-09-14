@@ -2474,6 +2474,28 @@ MiInsertImageSectionObject(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+VOID
+NTAPI
+MiSubsectionConsistent(
+    _In_ PSUBSECTION Subsection)
+{
+    ULONG NumberOfFullSectors = Subsection->NumberOfFullSectors;
+
+    DPRINT("MiSubsectionConsistent: Subsection %p, NumberOfFullSectors %X\n", Subsection, NumberOfFullSectors);
+
+    if (Subsection->u.SubsectionFlags.SectorEndOffset)
+        NumberOfFullSectors++;
+
+    /* Therefore, then number of PTEs should be equal to the number of sectors */
+    if (NumberOfFullSectors == Subsection->PtesInSubsection)
+        return;
+
+    DPRINT1("MiSubsectionConsistent: Subsection inconsistent (%X vs %X)\n",
+            NumberOfFullSectors, Subsection->PtesInSubsection);
+
+    DbgBreakPoint();
+}
+
 NTSTATUS
 NTAPI
 MiCreateDataFileMap(
