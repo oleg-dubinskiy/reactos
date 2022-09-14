@@ -10,6 +10,7 @@ typedef ULONG_PTR SWAPENTRY;
 extern PFN_COUNT MmNumberOfPhysicalPages;
 extern PFN_NUMBER MmHighestPhysicalPage;
 extern PKTHREAD MmPfnOwner;
+extern PFN_NUMBER MmSizeOfSystemCacheInPages;
 
 /* Although Microsoft says this isn't hardcoded anymore, they won't be able to change it.
    Stuff depends on it
