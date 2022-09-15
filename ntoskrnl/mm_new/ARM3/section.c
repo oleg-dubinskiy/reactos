@@ -2739,8 +2739,139 @@ MiAddViewsForSection(
     _In_ ULONGLONG LastPteOffset,
     _In_ KIRQL OldIrql)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PMSUBSECTION MappedSubsection;
+    PVOID SectionProtos;
+    MMPTE ProtoTemplate;
+    ULONG SubsectionPoolSize;
+    ULONG PteCount;
+
+    DPRINT("MiAddViewsForSection: %p, %I64X\n", StartMappedSubsection, LastPteOffset);
+
+    ASSERT((StartMappedSubsection->ControlArea->u.Flags.Image == 0) &&
+           (StartMappedSubsection->ControlArea->FilePointer != NULL) &&
+           (StartMappedSubsection->ControlArea->u.Flags.PhysicalMemory == 0));
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    for (MappedSubsection = StartMappedSubsection;
+         MappedSubsection;
+         MappedSubsection = (PMSUBSECTION)MappedSubsection->NextSubsection)
+    {
+        ASSERT(MappedSubsection->ControlArea->DereferenceList.Flink == NULL);
+
+        if (MappedSubsection->SubsectionBase)
+        {
+            MappedSubsection->NumberOfMappedViews++;
+
+            if (MappedSubsection->DereferenceList.Flink)
+            {
+                RemoveEntryList(&MappedSubsection->DereferenceList);
+                MappedSubsection->DereferenceList.Flink = NULL;
+
+                PteCount = (MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
+                AlloccatePoolForSubsectionPtes(PteCount);
+            }
+
+            MappedSubsection->u2.SubsectionFlags2.SubsectionAccessed = 1;
+        }
+        else
+        {
+            ASSERT(MappedSubsection->u.SubsectionFlags.SubsectionStatic == 0);
+            ASSERT(MappedSubsection->NumberOfMappedViews == 0);
+
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+            PteCount = (MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
+            SubsectionPoolSize = (PteCount * sizeof(MMPTE));
+            ASSERT(SubsectionPoolSize != 0);
+
+            SectionProtos = ExAllocatePoolWithTag(PagedPool, SubsectionPoolSize, 'tSmM'); // ? POOL_TYPE == 0x80000001
+            if (!SectionProtos)
+            {
+                OldIrql = MiLockPfnDb(APC_LEVEL);
+
+                while (StartMappedSubsection != MappedSubsection);
+                {
+                    ASSERT((LONG_PTR)StartMappedSubsection->NumberOfMappedViews >= 1);
+                    StartMappedSubsection->NumberOfMappedViews--;
+
+                    ASSERT(StartMappedSubsection->u.SubsectionFlags.SubsectionStatic == 0);
+                    ASSERT(StartMappedSubsection->DereferenceList.Flink == NULL);
+
+                    if (!StartMappedSubsection->NumberOfMappedViews)
+                    {
+                        InsertHeadList(&MmUnusedSubsectionList, &StartMappedSubsection->DereferenceList);
+
+                        PteCount = (MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
+                        FreePoolForSubsectionPtes(PteCount);
+                    }
+
+                    StartMappedSubsection = (PMSUBSECTION)StartMappedSubsection->NextSubsection;
+                }
+
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                DPRINT1("MiAddViewsForSection: return STATUS_INSUFFICIENT_RESOURCES\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            MI_MAKE_SUBSECTION_PTE(&ProtoTemplate, MappedSubsection);
+
+            ProtoTemplate.u.Soft.Prototype = 1;
+            ProtoTemplate.u.Soft.Protection = MappedSubsection->ControlArea->Segment->SegmentPteTemplate.u.Soft.Protection;
+
+            RtlFillMemoryUlong(SectionProtos, SubsectionPoolSize, ProtoTemplate.u.Long); // FIXME for 64 bit
+
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+
+            MappedSubsection->NumberOfMappedViews++;
+            MappedSubsection->u2.SubsectionFlags2.SubsectionAccessed = 1;
+
+            if (MappedSubsection->SubsectionBase)
+            {
+                if (MappedSubsection->DereferenceList.Flink)
+                {
+                    ASSERT(MappedSubsection->NumberOfMappedViews == 1);
+
+                    RemoveEntryList(&MappedSubsection->DereferenceList);
+                    MappedSubsection->DereferenceList.Flink = NULL;
+
+                    PteCount = (MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
+                    AlloccatePoolForSubsectionPtes(PteCount);
+                }
+                else
+                {
+                    ASSERT(MappedSubsection->NumberOfMappedViews > 1);
+                }
+
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                ExFreePoolWithTag(SectionProtos, 'tSmM');
+                OldIrql = MiLockPfnDb(APC_LEVEL);
+            }
+            else
+            {
+                ASSERT(MappedSubsection->NumberOfMappedViews == 1);
+                MappedSubsection->SubsectionBase = (PMMPTE)SectionProtos;
+            }
+        }
+
+        if (LastPteOffset)
+        {
+            ASSERT((LONG)MappedSubsection->PtesInSubsection > 0);
+            ASSERT((UINT64)LastPteOffset > 0);
+
+            if (LastPteOffset <= MappedSubsection->PtesInSubsection)
+                break;
+
+            LastPteOffset -= MappedSubsection->PtesInSubsection;
+        }
+    }
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    DPRINT("MiAddViewsForSection: return STATUS_SUCCESS\n");
+    return STATUS_SUCCESS;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
