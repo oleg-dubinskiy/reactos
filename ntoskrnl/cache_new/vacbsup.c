@@ -118,7 +118,16 @@ SetVacb(
     _In_ LARGE_INTEGER SectionOffset,
     _In_ PVACB Vacb)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    DPRINT("SetVacb: %p, %I64X, %p\n", SharedMap, SectionOffset.QuadPart, Vacb);
+
+    if (SharedMap->SectionSize.QuadPart <= CACHE_OVERALL_SIZE)
+    {
+        SharedMap->Vacbs[SectionOffset.LowPart / VACB_MAPPING_GRANULARITY] = Vacb;
+        return;
+    }
+
+    DPRINT1("SetVacb: FIXME CcSetVacbLargeOffset()\n");
+    ASSERT(FALSE);
 }
 
 PVACB
