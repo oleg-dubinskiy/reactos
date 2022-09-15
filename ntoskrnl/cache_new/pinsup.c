@@ -210,9 +210,25 @@ CcSetBcbOwnerPointer(IN PVOID Bcb,
 
 VOID
 NTAPI
-CcUnpinData(IN PVOID Bcb)
+CcUnpinData(
+    _In_ PVOID InBcb)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PCC_BCB Bcb = InBcb;
+    BOOLEAN IsNoWrite;
+
+    DPRINT("CcUnpinData: Bcb %p\n", Bcb);
+
+    if ((ULONG_PTR)Bcb & 1)
+    {
+        IsNoWrite = TRUE;
+        Bcb = (PCC_BCB)((ULONG_PTR)Bcb & ~(1));
+
+        CcUnpinFileDataEx(Bcb, IsNoWrite);
+
+        return;
+    }
+
+    ASSERT(FALSE);
 }
 
 VOID
