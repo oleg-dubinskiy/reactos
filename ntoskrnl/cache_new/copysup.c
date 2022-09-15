@@ -11,6 +11,19 @@
 
 /* FUNCTIONS ******************************************************************/
 
+LONG
+CcCopyReadExceptionFilter(
+    _In_ PEXCEPTION_POINTERS ExceptionInfo,
+    _Out_ NTSTATUS* OutStatus)
+{
+    DPRINT1("CcCopyReadExceptionFilter: FIXME! ExceptionInfo %p\n", ExceptionInfo);
+    ASSERT(FALSE);
+
+
+    ASSERT(!NT_SUCCESS(*OutStatus));
+
+    return EXCEPTION_EXECUTE_HANDLER;
+}
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 
