@@ -198,10 +198,14 @@ CcSetDirtyPinnedData(IN PVOID BcbVoid,
 
 VOID
 NTAPI
-CcSetReadAheadGranularity(IN PFILE_OBJECT FileObject,
-                          IN ULONG Granularity)
+CcSetReadAheadGranularity(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ ULONG Granularity)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PPRIVATE_CACHE_MAP PrivateMap;
+
+    PrivateMap = FileObject->PrivateCacheMap;
+    PrivateMap->ReadAheadMask = (Granularity - 1);
 }
 
 VOID
