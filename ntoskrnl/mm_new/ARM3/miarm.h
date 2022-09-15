@@ -21,6 +21,9 @@
 
 #define MI_LOWEST_VAD_ADDRESS (PVOID)MM_LOWEST_USER_ADDRESS
 
+/* Number of bytes for subsection sector of image file */
+#define MM_SECTOR_SIZE (0x200)
+
 /* Protection Bits part of the internal memory manager Protection Mask, from:
    http://reactos.org/wiki/Techwiki:Memory_management_in_the_Windows_XP_kernel
    https://www.reactos.org/wiki/Techwiki:Memory_Protection_constants
