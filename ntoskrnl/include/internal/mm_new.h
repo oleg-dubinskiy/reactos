@@ -209,6 +209,9 @@ ExReturnPoolQuota(
 #define MMDBG_COPY_UNCACHED         0x00000010
 #define MMDBG_COPY_WRITE_COMBINED   0x00000020
 
+/* Maximal number of pages in the claster */
+#define MM_MAXIMUM_READ_CLUSTER_SIZE 0xF // (15)
+
 /* Mm copy support for Kd */
 NTSTATUS
 NTAPI

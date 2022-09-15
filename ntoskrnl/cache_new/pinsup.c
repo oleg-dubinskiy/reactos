@@ -53,15 +53,87 @@ Exit:
 
 BOOLEAN
 NTAPI
-CcMapData(IN PFILE_OBJECT FileObject,
-          IN PLARGE_INTEGER FileOffset,
-          IN ULONG Length,
-          IN ULONG Flags,
-          OUT PVOID *BcbResult,
-          OUT PVOID *Buffer)
+CcMapData(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ ULONG Flags,
+    _Out_ PVOID* OutBcb,
+    _Out_ PVOID* OutBuffer)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PETHREAD Thread = PsGetCurrentThread();
+    PVOID BaseAddress;
+    PVOID Bcb;
+    ULONG NumberOfPages;
+    ULONG OldReadClusterSize;
+    ULONG Size;
+    UCHAR OldForwardClusterOnly;
+    UCHAR Probe;
+    BOOLEAN Result;
+
+    DPRINT("CcMapData: %p, %I64X, %X, %X\n", FileObject, (FileOffset ? FileOffset->QuadPart : 0), Length, Flags);
+   
+    /* Save previous values */
+    OldForwardClusterOnly = Thread->ForwardClusterOnly;
+    OldReadClusterSize = Thread->ReadClusterSize;
+
+    /* Maps a file to a buffer */
+    Result = CcMapDataCommon(FileObject, FileOffset, Length, Flags, &Bcb, OutBuffer);
+    if (!Result)
+    {
+        DPRINT1("CcMapData: failed то map\n");
+        return Result;
+    }
+
+    /* Check flags */
+    if (Flags & MAP_NO_READ)
+        goto Exit;
+
+    /* Calculates count pages */
+    Size = (Length + BYTE_OFFSET(FileOffset->LowPart));
+    NumberOfPages = ((Size + (PAGE_SIZE - 1)) / PAGE_SIZE);
+
+    /* If the pages are not in memory, PageFault() will read them */
+    _SEH2_TRY
+    {
+        for (BaseAddress = *OutBuffer;
+             NumberOfPages;
+             BaseAddress = (PVOID)((ULONG_PTR)BaseAddress + PAGE_SIZE))
+        {
+            /* Claster variables used in MiResolveMappedFileFault() */
+            Thread->ForwardClusterOnly = 1;
+            NumberOfPages--;
+
+            if (NumberOfPages <= MM_MAXIMUM_READ_CLUSTER_SIZE)
+                Thread->ReadClusterSize = NumberOfPages;
+            else
+                Thread->ReadClusterSize = MM_MAXIMUM_READ_CLUSTER_SIZE;
+
+            /* Test address */
+            *(PUCHAR)&Probe = *(PUCHAR)BaseAddress;
+        }
+    }
+    _SEH2_FINALLY
+    {
+        /* Restore claster variables */
+        Thread->ForwardClusterOnly = OldForwardClusterOnly;
+        Thread->ReadClusterSize = OldReadClusterSize;
+
+        if (_SEH2_AbnormalTermination() && Bcb)
+        {
+            /* Releases cached file data that has been mapped or pinned */
+            DPRINT1("CcMapData: FIXME CcUnpinFileDataEx()\n");
+            ASSERT(FALSE);
+        }
+    }
+    _SEH2_END;
+
+Exit:
+
+    /* Windows does this */
+    *OutBcb = (PVOID)((ULONG_PTR)Bcb + 1);
+
+    return TRUE;
 }
 
 BOOLEAN
