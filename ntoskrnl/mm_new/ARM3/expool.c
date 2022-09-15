@@ -1382,8 +1382,87 @@ ExAllocatePoolWithQuotaTag(
     _In_ SIZE_T NumberOfBytes,
     _In_ ULONG Tag)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PEPROCESS Process = PsGetCurrentProcess();
+    PPOOL_HEADER Entry;
+    PVOID Buffer;
+    BOOLEAN Raise = TRUE;
+    NTSTATUS Status;
+
+    /* Check if we should fail instead of raising an exception */
+    if (PoolType & POOL_QUOTA_FAIL_INSTEAD_OF_RAISE)
+    {
+        Raise = FALSE;
+        PoolType &= ~POOL_QUOTA_FAIL_INSTEAD_OF_RAISE;
+    }
+
+    /* Inject the pool quota mask */
+    PoolType += QUOTA_POOL_MASK;
+
+    /* Check if we have enough space to add the quota owner process,
+       as long as this isn't the system process, which never gets charged quota
+    */
+    ASSERT(NumberOfBytes != 0);
+
+    if (NumberOfBytes <= (PAGE_SIZE - POOL_BLOCK_SIZE - sizeof(PVOID)) &&
+        Process != PsInitialSystemProcess)
+    {
+        /* Add space for our EPROCESS pointer */
+        NumberOfBytes += sizeof(PEPROCESS);
+    }
+    else
+    {
+        /* We won't be able to store the pointer, so don't use quota for this */
+        PoolType -= QUOTA_POOL_MASK;
+    }
+
+    /* Allocate the pool buffer now */
+    Buffer = ExAllocatePoolWithTag(PoolType, NumberOfBytes, Tag);
+
+    /* If the buffer is page-aligned, this is a large page allocation and we won't touch it */
+    if (PAGE_ALIGN(Buffer) != Buffer)
+    {
+        /* Also if special pool is enabled, and this was allocated from there, we won't touch it either */
+        if ((ExpPoolFlags & POOL_FLAG_SPECIAL_POOL) && MmIsSpecialPoolAddress(Buffer))
+            return Buffer;
+
+        /* If it wasn't actually allocated with quota charges, ignore it too */
+        if (!(PoolType & QUOTA_POOL_MASK))
+            return Buffer;
+
+        /* If this is the system process, we don't charge quota, so ignore */
+        if (Process == PsInitialSystemProcess)
+            return Buffer;
+
+        /* Actually go and charge quota for the process now */
+        Entry = POOL_ENTRY(Buffer);
+        Status = PsChargeProcessPoolQuota(Process,
+                                          (PoolType & BASE_POOL_TYPE_MASK),
+                                          (Entry->BlockSize * POOL_BLOCK_SIZE));
+        if (!NT_SUCCESS(Status))
+        {
+            /* Quota failed, back out the allocation, clear the owner, and fail */
+            ((PVOID *)POOL_NEXT_BLOCK(Entry))[-1] = NULL;
+
+            ExFreePoolWithTag(Buffer, Tag);
+
+            if (Raise)
+                RtlRaiseStatus(Status);
+
+            return NULL;
+        }
+
+        /* Quota worked, write the owner and then reference it before returning */
+        ((PVOID *)POOL_NEXT_BLOCK(Entry))[-1] = Process;
+
+        ObReferenceObject(Process);
+    }
+    else if (!Buffer && Raise)
+    {
+        /* The allocation failed, raise an error if we are in raise mode */
+        RtlRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+    }
+
+    return Buffer;
 }
 
 PVOID
