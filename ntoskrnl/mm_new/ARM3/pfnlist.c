@@ -26,6 +26,9 @@ BOOLEAN MmDynamicPfn;
 BOOLEAN MmMirroring;
 ULONG MmSystemPageColor;
 ULONG MmStandbyRePurposed;
+ULONG MmTransitionSharedPages;
+ULONG MmTransitionPrivatePages;
+ULONG MmTotalPagesForPagingFile;
 
 MMPFNLIST MmZeroedPageListHead = {0, ZeroedPageList, LIST_HEAD, LIST_HEAD};
 MMPFNLIST MmFreePageListHead = {0, FreePageList, LIST_HEAD, LIST_HEAD};
@@ -798,7 +801,256 @@ MiInsertPageInList(
     _In_ PMMPFNLIST ListHead,
     _In_ PFN_NUMBER PageFrameIndex)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMMCOLOR_TABLES ColorHead;
+    PMMPFN Pfn;
+    MMLISTS ListName;
+    PFN_NUMBER Flink;
+    PFN_NUMBER LastPage;
+    ULONG Color;
+
+    DPRINT("MiInsertPageInList: PageFrameIndex %X\n", PageFrameIndex);
+
+    /* For free pages, use MiInsertPageInFreeList */
+    ASSERT(ListHead != &MmFreePageListHead);
+
+    /* Make sure the lock is held */
+    MI_ASSERT_PFN_LOCK_HELD();
+
+    /* Make sure the PFN is valid */
+    ASSERT((PageFrameIndex != 0) &&
+           (PageFrameIndex <= MmHighestPhysicalPage) &&
+           (PageFrameIndex >= MmLowestPhysicalPage));
+
+    /* Page should be unused */
+    Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+
+    /* Is a standby or modified page being inserted? */
+    ListName = ListHead->ListName;
+
+    if (ListName == StandbyPageList || ListName == ModifiedPageList)
+    {
+        /* If the page is in transition, it must also be a prototype page */
+        if (!Pfn->OriginalPte.u.Soft.Prototype && Pfn->OriginalPte.u.Soft.Transition)
+        {
+            DPRINT1("MiInsertPageInList: KeBugCheckEx()\n");
+            ASSERT(FALSE);
+
+            /* Crash the system on inconsistency */
+            KeBugCheckEx(MEMORY_MANAGEMENT, 0x8888, 0, 0, 0);
+        }
+    }
+
+    ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+
+    if (Pfn->u3.e1.ParityError)
+    {
+        //ASSERT(XIPConfigured == TRUE);
+        ASSERT(Pfn->u3.e1.Modified == 0);
+        ASSERT(Pfn->u3.e1.CacheAttribute == MiCached);
+
+        /* Don't handle yet */
+        DPRINT1("MiInsertPageInList: FIXME\n");
+        ASSERT(FALSE);
+
+        return;
+    }
+
+    /* Standby pages are prioritized, so we need to get the real head */
+    if (ListHead == &MmStandbyPageListHead)
+    {
+        /* Obviously the prioritized list should still have the same name */
+        ListHead = &MmStandbyPageListByPriority[Pfn->u4.Priority];
+
+        ASSERT(ListHead->ListName == ListName);
+    }
+
+    /* Increment the list count */
+    ListHead->Total++;
+
+    /* Is a modified page being inserted? */
+    if (ListHead == &MmModifiedPageListHead)
+    {
+        DPRINT("MiInsertPageInList: PageFrameIndex %X\n", PageFrameIndex);
+
+        if (Pfn->OriginalPte.u.Soft.Prototype)
+        {
+            if ((ListHead->Total - MmTotalPagesForPagingFile) == 1)// && !MiTimerPending)
+            {
+                DPRINT1("MiInsertPageInList: FIXME MiTimerPending\n");
+                //ASSERT(FALSE);
+            }
+        }
+        else
+        {
+            /* Modified pages are colored when they are selected for page file */
+            ListHead = &MmModifiedPageListByColor[0];
+            ASSERT(ListHead->ListName == ListName);
+
+            ListHead->Total++;
+
+            /* Increment the number of paging file modified pages */
+            MmTotalPagesForPagingFile++;
+        }
+    }
+    else if (Pfn->u3.e1.RemovalRequested && ListName <= StandbyPageList)
+    {
+        /* Don't handle bad pages yet yet */
+        ASSERT(Pfn->u3.e1.RemovalRequested == 0);
+#if 0
+        ListHead->Total = ListHead->Total - 1;
+        if (ListName == StandbyPageList)
+        {
+            Pfn->u3.e1.PageLocation = StandbyPageList;
+            MiRestoreTransitionPte(Pfn);
+        }
+
+        ListHead = &MmBadPageListHead;
+        ASSERT(ListHead->ListName == BadPageList);
+
+        ListHead->Total++;
+        ListName = BadPageList;
+#endif
+    }
+
+    /* Zero pages go to the head, all other pages go to the end */
+    if (ListName == ZeroedPageList)
+    {
+        /* Make the head of the list point to this page now */
+        Flink = ListHead->Flink;
+        ListHead->Flink = PageFrameIndex;
+
+        /* Make the page point to the previous head, and back to the list */
+        Pfn->u1.Flink = Flink;
+        Pfn->u2.Blink = LIST_HEAD;
+
+        /* Was the list empty? */
+        if (Flink == LIST_HEAD)
+            /* It was empty, so have it loop back around to this new page */
+            ListHead->Blink = PageFrameIndex;
+        else
+            /* It wasn't, so update the backlink of the previous head page */
+            MI_PFN_ELEMENT(Flink)->u2.Blink = PageFrameIndex;
+    }
+    else
+    {
+        /* Get the last page on the list */
+        LastPage = ListHead->Blink;
+
+        if (LastPage == LIST_HEAD)
+            /* The list is empty, so we are the first page */
+            ListHead->Flink = PageFrameIndex;
+        else
+            /* Link us with the previous page, so we're at the end now */
+            MI_PFN_ELEMENT(LastPage)->u1.Flink = PageFrameIndex;
+
+        /* Now make the list head point back to us (since we go at the end) */
+        ListHead->Blink = PageFrameIndex;
+
+        /* And initialize our own list pointers */
+        Pfn->u1.Flink = LIST_HEAD;
+        Pfn->u2.Blink = LastPage;
+    }
+
+    /* Move the page onto its new location */
+    Pfn->u3.e1.PageLocation = ListName;
+
+    /* For zero/free pages, we also have to handle the colored lists */
+    if (ListName <= StandbyPageList)
+    {
+#if 0
+        if ((MmAvailablePages + 1) == 0x80)
+        {
+            KeSetEvent(&MmAvailablePagesEventHigh, 0, 0);
+            MiAvailablePagesEventHighSets++;
+        }
+        else if ((MmAvailablePages + 1) == 2)
+        {
+            KeSetEvent(&MmAvailablePagesEvent, 0, 0);
+            MiAvailablePagesEventLowSets++;
+        }
+#endif
+        /* Increment number of available pages */
+        MiIncrementAvailablePages();
+
+        if (ListName <= FreePageList)
+        {
+            /* Sanity checks */
+            ASSERT(ListName == ZeroedPageList);
+            ASSERT(Pfn->u4.InPageError == 0);
+
+            /* Get the page color */
+            Color = PageFrameIndex & MmSecondaryColorMask;
+
+            /* Get the list for this color */
+            ColorHead = &MmFreePagesByColor[ZeroedPageList][Color];
+
+            /* Get the old head */
+            Flink = ColorHead->Flink;
+
+            /* Make this page point back to the list, and point forwards to the old head */
+            Pfn->u4.PteFrame = COLORED_LIST_HEAD;
+            Pfn->OriginalPte.u.Long = Flink;
+
+            /* Set the new head */
+            ColorHead->Flink = PageFrameIndex;
+
+            /* Was the head empty? */
+            if (Flink == LIST_HEAD)
+                /* Yes, make it loop back to this page */
+                ColorHead->Blink = (PVOID)Pfn;
+            else
+                /* No, so make the old head point to this page */
+                MI_PFN_ELEMENT(Flink)->u4.PteFrame = PageFrameIndex;
+
+            /* One more paged on the colored list */
+            ColorHead->Count++;
+
+            return;
+        }
+
+        goto Exit;
+    }
+
+    if (ListName == ModifiedPageList)
+    {
+        if (Pfn->u3.e1.PrototypePte)
+            /* One more transition page */
+            MmTransitionSharedPages++;
+        else
+            MmTransitionPrivatePages++;
+
+        if (!Pfn->OriginalPte.u.Soft.Prototype)
+        {
+            ASSERT(Pfn->OriginalPte.u.Soft.PageFileHigh == 0);
+        }
+
+        /* Increment the number of per-process modified pages */
+        PsGetCurrentProcess()->ModifiedPageCount++;
+
+        if (MmAvailablePages < 0x400)
+        {
+            /* FIXME: Wake up modified page writer if there are not enough free pages */
+            DPRINT1("MiInsertPageInList: FIXME\n");
+            ASSERT(FALSE);
+
+            //KeSetEvent(&MmModifiedPageWriterEvent, 0, FALSE);
+        }
+
+        return;
+    }
+
+    if (ListName != ModifiedNoWritePageList)
+        return;
+
+    ASSERT(Pfn->u3.e1.CacheAttribute == MiCached);
+
+Exit:
+
+    if (Pfn->u3.e1.PrototypePte)
+        /* One more transition page */
+        MmTransitionSharedPages++;
+    else
+        MmTransitionPrivatePages++;
 }
 
 VOID
