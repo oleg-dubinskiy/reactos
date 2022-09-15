@@ -456,7 +456,17 @@ MiResolveDemandZeroFault(
     /* Must currently only be called by paging path */
     if (Process > HYDRA_PROCESS && OldIrql == MM_NOIRQL)
     {
-        ASSERT(FALSE);
+        /* Sanity check */
+        ASSERT(MI_IS_PAGE_TABLE_ADDRESS(Pte));
+
+        /* No forking yet */
+        ASSERT(Process->ForkInProgress == NULL);
+
+        /* Get process color */
+        Color = MI_GET_NEXT_PROCESS_COLOR(Process);
+        ASSERT(Color != 0xFFFFFFFF);
+
+        /* We'll need a zero page */
     }
     else
     {
@@ -500,17 +510,19 @@ MiResolveDemandZeroFault(
     /* Do we need a zero page? */
     if (Color != 0xFFFFFFFF)
     {
-        ASSERT(FALSE);
+        /* Try to get one, if we couldn't grab a free page and zero it */
+        PageFrameNumber = MiRemoveZeroPageSafe(Color);
+        if (!PageFrameNumber)
+        {
+            /* We'll need a free page and zero it manually */
+            PageFrameNumber = MiRemoveAnyPage(Color);
+            IsZeroPage = TRUE;
+        }
     }
     else
     {
         /* Get a color, and see if we should grab a zero or non-zero page */
-      #if !defined(CONFIG_SMP)
-        Color = MI_GET_NEXT_COLOR();
-      #else
-        //#error FIXME
-        Color = MI_GET_NEXT_COLOR();
-      #endif
+        Color = MI_GET_NEXT_COLOR(); // ? CONFIG_SMP
 
         if (IsNeedAnyPage)
             /* Process or system doesn't want a zero page, grab anything */
@@ -542,9 +554,7 @@ MiResolveDemandZeroFault(
 
     /* Zero the page if need be */
     if (IsZeroPage)
-    {
-        ASSERT(FALSE);
-    }
+        MiZeroPfn(PageFrameNumber);
 
     /* Fault on user PDE, or fault on user PTE? */
     if (Pte <= MiHighestUserPte)
