@@ -412,7 +412,44 @@ NTAPI
 CcFreeVirtualAddress(
     _In_ PVACB Vacb)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PSHARED_CACHE_MAP SharedMap;
+    KIRQL OldIrql;
+
+    DPRINT("CcFreeVirtualAddress: Vacb %p\n", Vacb);
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+
+    ASSERT((Vacb->Overlay.ActiveCount) != 0);
+    Vacb->Overlay.ActiveCount--;
+
+    if (Vacb->Overlay.ActiveCount)
+        goto Finish;
+
+    SharedMap = Vacb->SharedCacheMap;
+    if (!SharedMap)
+    {
+        ASSERT(Vacb->BaseAddress == NULL);
+
+        RemoveEntryList(&Vacb->LruList);
+        InsertHeadList(&CcVacbFreeList, &Vacb->LruList);
+
+        KeReleaseQueuedSpinLock(LockQueueVacbLock, OldIrql);
+        return;
+    }
+
+    ASSERT((SharedMap->VacbActiveCount) != 0);
+    SharedMap->VacbActiveCount--;
+
+    if (SharedMap->WaitOnActiveCount)
+        KeSetEvent(SharedMap->WaitOnActiveCount, 0, FALSE);
+
+Finish:
+
+    RemoveEntryList(&Vacb->LruList);
+    InsertTailList(&CcVacbLru, &Vacb->LruList);
+
+    KeReleaseQueuedSpinLock(LockQueueVacbLock, OldIrql);
+    return;
 }
 
 /* EOF */
