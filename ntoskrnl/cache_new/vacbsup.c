@@ -47,4 +47,56 @@ CcInitializeVacbs(VOID)
         InsertTailList(&CcVacbFreeList, &CurrentVacb->LruList);
 }
 
+NTSTATUS
+NTAPI
+CcCreateVacbArray(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LARGE_INTEGER AllocationSize)
+{
+    PVACB* NewVacbs;
+    ULONG NewSize;
+
+    DPRINT("CcCreateVacbArray: SharedMap %p AllocationSize %I64X\n", SharedMap, AllocationSize.QuadPart);
+
+    if ((ULONGLONG)AllocationSize.QuadPart >= (4ull * _1TB))
+    {
+        DPRINT1("CcCreateVacbArray: STATUS_SECTION_TOO_BIG\n");
+        return STATUS_SECTION_TOO_BIG;
+    }
+
+    if ((ULONGLONG)AllocationSize.QuadPart >= (4ull * _1GB))
+    {
+        NewSize = 0xFFFFFFFF;
+        DPRINT("CcCreateVacbArray: NewSize %X\n", NewSize);
+    }
+    else if (AllocationSize.LowPart <= (VACB_MAPPING_GRANULARITY * sizeof(PVACB)))
+    {
+        NewSize = (CC_DEFAULT_NUMBER_OF_VACBS * sizeof(PVACB));
+        DPRINT("CcCreateVacbArray: NewSize %X\n", NewSize);
+    }
+    else
+    {
+        NewSize = ((AllocationSize.LowPart / VACB_MAPPING_GRANULARITY) * sizeof(PVACB));
+        DPRINT("CcCreateVacbArray: NewSize %X\n", NewSize);
+    }
+
+
+    if (NewSize == (CC_DEFAULT_NUMBER_OF_VACBS * sizeof(PVACB)))
+    {
+        NewVacbs = SharedMap->InitialVacbs;
+    }
+    else
+    {
+        DPRINT1("CcCreateVacbArray: FIXME! NewSize %X\n", NewSize);
+        ASSERT(FALSE);
+    }
+
+    RtlZeroMemory(NewVacbs, NewSize);
+
+    SharedMap->SectionSize.QuadPart = AllocationSize.QuadPart;
+    SharedMap->Vacbs = NewVacbs;
+
+    return STATUS_SUCCESS;
+}
+
 /* EOF */

@@ -268,9 +268,7 @@ CcInitializeCacheMap(
                 KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
             }
 
-            DPRINT1("CcInitializeCacheMap: FIXME CcCreateVacbArray()\n");
-            ASSERT(FALSE);
-            Status = STATUS_NOT_IMPLEMENTED;//CcCreateVacbArray(SharedMap, fileSizes.AllocationSize);
+            Status = CcCreateVacbArray(SharedMap, fileSizes.AllocationSize);
             if (!NT_SUCCESS(Status))
             {
                 DPRINT1("CcInitializeCacheMap: Status %X\n", Status);
