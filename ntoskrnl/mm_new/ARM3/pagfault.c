@@ -17,6 +17,7 @@ ULONG MiInPageSinglePages = 0;
 PFN_NUMBER MmFreeGoal = 100;
 SIZE_T MmSystemLockPagesCount;
 
+extern MI_PFN_CACHE_ATTRIBUTE MiPlatformCacheAttributes[2][MmMaximumCacheType];
 extern PMMPTE MiSessionLastPte;
 extern PMM_SESSION_SPACE MmSessionSpace;
 extern PVOID MmHyperSpaceEnd;
@@ -36,6 +37,7 @@ extern PMMPTE MmSharedUserDataPte;
 extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
 extern RTL_BITMAP MiPfnBitMap;
 extern SLIST_HEADER MmInPageSupportSListHead;
+extern SIZE_T MmTotalCommittedPages;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -872,7 +874,139 @@ MiInitializeReadInProgressPfn(
     _In_ PKEVENT Event,
     _In_ BOOLEAN IsProto)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PFN_NUMBER* MdlPages;
+    PMMPTE Pte = NULL;
+    PMMPFN Pfn;
+    MMPTE TempPte;
+    PFN_NUMBER PageNumber = 0;
+    LONG ByteCount;
+    ULONG CacheAttribute;
+    SHORT NewRefCount;
+    BOOLEAN IsFlush = FALSE;
+    BOOLEAN IsCommit;
+
+    DPRINT("MiInitializeReadInProgressPfn: %p %p, %X\n", Mdl, BasePte, IsProto);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    MdlPages = MmGetMdlPfnArray(Mdl);
+
+    for (ByteCount = Mdl->ByteCount; ByteCount > 0; ByteCount -= PAGE_SIZE)
+    {
+        Pfn = &MmPfnDatabase[*MdlPages];
+        Pfn->u1.Event = Event;
+        Pfn->PteAddress = BasePte;
+        Pfn->OriginalPte.u.Long = BasePte->u.Long;
+
+        if (IsProto)
+            Pfn->u3.e1.PrototypePte = 1;
+
+        DPRINT("MiInitializeReadInProgressPfn: %X, %p, %p, %p\n", *MdlPages, Pfn, BasePte, BasePte->u.Long);
+
+        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+        ASSERT(Pfn->u2.ShareCount == 0);
+        ASSERT(Pfn->u3.e1.PageLocation != ActiveAndValid);
+
+        if (Pfn->u3.e1.PrototypePte &&
+            Pfn->OriginalPte.u.Soft.Prototype)
+        {
+            InterlockedIncrement((PLONG)&MmTotalCommittedPages);
+            IsCommit = TRUE;
+        }
+        else
+        {
+            IsCommit = FALSE;
+        }
+
+        InterlockedIncrementSizeT(&MmSystemLockPagesCount);
+        NewRefCount = InterlockedIncrement16((PSHORT)&Pfn->u3.e2.ReferenceCount);
+
+        if (NewRefCount != 1)
+        {
+            ASSERT(NewRefCount < 2500);
+
+            InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+
+            if (IsCommit)
+            {
+                ASSERT(MmTotalCommittedPages >= 1);
+                InterlockedDecrement((PLONG)&MmTotalCommittedPages);
+            }
+        }
+
+        Pfn->u3.e1.ReadInProgress = 1;
+        Pfn->u2.ShareCount = 0;
+
+        if ((BasePte->u.Soft.Protection & MM_WRITECOMBINE) == MM_WRITECOMBINE &&
+            BasePte->u.Soft.Protection & MM_PROTECT_ACCESS)
+        {
+            CacheAttribute = MiPlatformCacheAttributes[0][MmWriteCombined];
+        }
+        else if ((BasePte->u.Soft.Protection & MM_NOCACHE) == MM_NOCACHE)
+        {
+            CacheAttribute = MiPlatformCacheAttributes[0][MmNonCached];
+        }
+        else
+        {
+            CacheAttribute = MiCached;
+        }
+
+        if (Pfn->u3.e1.CacheAttribute != CacheAttribute)
+        {
+            IsFlush = TRUE;
+            Pfn->u3.e1.CacheAttribute = CacheAttribute;
+        }
+
+        Pfn->u4.InPageError = 0;
+
+        if (!PageNumber || MiIsPteOnPdeBoundary(BasePte))
+        {
+            if (!PageNumber)
+            {
+                Pte = MiAddressToPte(BasePte);
+            }
+            else
+            {
+                Pte++;
+                ASSERT(Pte == MiAddressToPte(BasePte));
+            }
+
+            if (!Pte->u.Hard.Valid)
+            {
+                if (!NT_SUCCESS(MiCheckPdeForPagedPool(BasePte)))
+                {
+                    DPRINT1("KeBugCheckEx()\n");
+                    ASSERT(FALSE);
+                    //KeBugCheckEx();
+                }
+            }
+
+            PageNumber = Pte->u.Hard.PageFrameNumber;
+            ASSERT(PageNumber != 0);
+        }
+
+        Pfn->u4.PteFrame = PageNumber;
+
+        MI_MAKE_TRANSITION_PTE(&TempPte, *MdlPages, BasePte->u.Soft.Protection);
+        MI_WRITE_INVALID_PTE(BasePte, TempPte);
+
+        ASSERT(PageNumber != 0);
+        MmPfnDatabase[PageNumber].u2.ShareCount++;
+
+        DPRINT("MiInitializeReadInProgressPfn: %X, %X, %p, %p\n", ByteCount, PageNumber, Pte, BasePte);
+
+        MdlPages++;
+        BasePte++;
+    }
+
+    if (IsFlush)
+    {
+        KeFlushEntireTb(TRUE, TRUE);
+
+        if (CacheAttribute != 1)
+            KeInvalidateAllCaches();
+    }
 }
 
 NTSTATUS
