@@ -150,4 +150,16 @@ MiInitializeSystemCache(
     //FIXME MiAllowWorkingSetExpansion();
 }
 
+NTSTATUS
+NTAPI
+MmMapViewInSystemCache(
+    _In_ PVOID SectionObject,
+    _Out_ PVOID* OutBase,
+    _In_ PLARGE_INTEGER SectionOffset,
+    _In_ PULONG CapturedViewSize)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* EOF */

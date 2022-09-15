@@ -466,6 +466,16 @@ MmIsSpecialPoolAddressFree(
     _In_ PVOID P
 );
 
+/* ARM3\syscache.c */
+NTSTATUS
+NTAPI
+MmMapViewInSystemCache(
+    _In_ PVOID SectionObject,
+    _Inout_ PVOID* BaseAddress,
+    _In_ PLARGE_INTEGER SectionOffset,
+    _In_ PULONG CapturedViewSize
+);
+
 /* ARM3\sysldr.c */
 BOOLEAN
 NTAPI

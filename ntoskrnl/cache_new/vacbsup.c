@@ -99,6 +99,28 @@ CcCreateVacbArray(
     return STATUS_SUCCESS;
 }
 
+BOOLEAN
+NTAPI
+CcUnmapVacbArray(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ BOOLEAN FrontOfList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+VOID
+NTAPI
+SetVacb(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LARGE_INTEGER SectionOffset,
+    _In_ PVACB Vacb)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 PVACB
 NTAPI
 CcGetVacbMiss(
@@ -107,8 +129,182 @@ CcGetVacbMiss(
      _In_ PKLOCK_QUEUE_HANDLE LockHandle,
      _In_ BOOLEAN IsMmodifiedNoWrite)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PVACB Vacb;
+    PVACB OutVacb;
+    LARGE_INTEGER ViewSize;
+    LARGE_INTEGER SectionOffset;
+    NTSTATUS Status;
+
+    DPRINT("CcGetVacbMiss: %p, %I64X, %X\n", SharedMap, FileOffset.QuadPart, IsMmodifiedNoWrite);
+
+    SectionOffset = FileOffset;
+    SectionOffset.LowPart -= (FileOffset.LowPart & (VACB_MAPPING_GRANULARITY - 1));
+
+    if (!(SharedMap->Flags & SHARE_FL_RANDOM_ACCESS) &&
+        !(SectionOffset.LowPart & (0x80000 - 1)) &&
+        SectionOffset.QuadPart >= 0x100000)
+    {
+        if (IsMmodifiedNoWrite)
+        {
+            KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+            KeReleaseInStackQueuedSpinLock(LockHandle);
+        }
+        else
+        {
+            KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle->OldIrql);
+        }
+
+        ExReleasePushLockShared((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
+        
+        ViewSize.QuadPart = (SectionOffset.QuadPart - 0x100000);
+        CcUnmapVacbArray(SharedMap, &ViewSize, 0x100000, TRUE);
+
+        ExAcquirePushLockShared((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
+
+        if (IsMmodifiedNoWrite)
+        {
+            KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, LockHandle);
+            KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+        }
+        else
+        {
+            LockHandle->OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+        }
+    }
+
+    if (!IsListEmpty(&CcVacbFreeList))
+    {
+        Vacb = CONTAINING_RECORD(CcVacbFreeList.Flink, VACB, LruList);
+
+        RemoveEntryList(&Vacb->LruList);
+        InsertTailList(&CcVacbLru, &Vacb->LruList);
+    }
+    else
+    {
+        DPRINT1("CcGetVacbMiss: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (Vacb->SharedCacheMap)
+    {
+        SetVacb(Vacb->SharedCacheMap, Vacb->Overlay.FileOffset, NULL);
+        Vacb->SharedCacheMap = NULL;
+    }
+
+    Vacb->Overlay.ActiveCount = 1;
+    SharedMap->VacbActiveCount++;
+
+    if (IsMmodifiedNoWrite)
+    {
+        KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+        KeReleaseInStackQueuedSpinLock(LockHandle);
+    }
+    else
+    {
+        KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle->OldIrql);
+    }
+
+    if (Vacb->BaseAddress)
+    {
+        DPRINT("CcGetVacbMiss: FIXME CcDrainVacbLevelZone()\n");
+        ASSERT(FALSE);
+    }
+
+    ViewSize.QuadPart = (SharedMap->SectionSize.QuadPart - SectionOffset.QuadPart);
+
+    if (ViewSize.HighPart || (ViewSize.LowPart > VACB_MAPPING_GRANULARITY))
+        ViewSize.LowPart = VACB_MAPPING_GRANULARITY;
+
+    _SEH2_TRY
+    {
+        Status = MmMapViewInSystemCache(SharedMap->Section,
+                                        &Vacb->BaseAddress,
+                                        &SectionOffset,
+                                        &ViewSize.LowPart);
+        if (!NT_SUCCESS(Status))
+        {
+            Vacb->BaseAddress = NULL;
+            Status = FsRtlNormalizeNtstatus(Status, STATUS_UNEXPECTED_MM_MAP_ERROR);
+            RtlRaiseStatus(Status);
+        }
+
+        if (SharedMap->SectionSize.QuadPart <= CACHE_OVERALL_SIZE)
+        {
+            if (IsMmodifiedNoWrite)
+            {
+                KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, LockHandle);
+                KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+            }
+            else
+            {
+                LockHandle->OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+            }
+        }
+        else
+        {
+            DPRINT1("CcGetVacbMiss: FIXME CcPrefillVacbLevelZone()\n");
+            ASSERT(FALSE);
+        }
+    }
+    _SEH2_FINALLY
+    {
+        if (_SEH2_AbnormalTermination())
+        {
+            if (Vacb->BaseAddress)
+            {
+                DPRINT1("CcGetVacbMiss: FIXME CcUnmapVacb()\n");
+                ASSERT(FALSE);
+            }
+
+            ExReleasePushLockShared((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
+            LockHandle->OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+
+            ASSERT((Vacb->Overlay.ActiveCount) != 0);
+            Vacb->Overlay.ActiveCount--;
+
+            ASSERT((SharedMap->VacbActiveCount) != 0);
+            SharedMap->VacbActiveCount--;
+
+            if (SharedMap->WaitOnActiveCount)
+                KeSetEvent(SharedMap->WaitOnActiveCount, 0, FALSE);
+
+            ASSERT(Vacb->SharedCacheMap == NULL);
+
+            RemoveEntryList(&Vacb->LruList);
+            InsertHeadList(&CcVacbFreeList, &Vacb->LruList);
+
+            KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle->OldIrql);
+        }
+    }
+    _SEH2_END;
+
+    if (SharedMap->SectionSize.QuadPart <= CACHE_OVERALL_SIZE)
+    {
+        OutVacb = SharedMap->Vacbs[SectionOffset.LowPart / VACB_MAPPING_GRANULARITY];
+    }
+    else
+    {
+        DPRINT1("CcGetVacbMiss: FIXME CcGetVacbLargeOffset()\n");
+        ASSERT(FALSE);
+    }
+
+    if (!OutVacb)
+    {
+        OutVacb = Vacb;
+        OutVacb->SharedCacheMap = SharedMap;
+
+        OutVacb->Overlay.FileOffset.QuadPart = SectionOffset.QuadPart;
+        OutVacb->Overlay.ActiveCount = 1;
+
+        SetVacb(SharedMap, SectionOffset, OutVacb);
+    }
+    else
+    {
+        DPRINT1("CcGetVacbMiss: FIXME CcUnmapVacb()\n");
+        ASSERT(FALSE);
+    }
+
+    return OutVacb;
 }
 
 PVOID
