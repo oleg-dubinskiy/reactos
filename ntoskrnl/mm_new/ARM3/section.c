@@ -2433,28 +2433,6 @@ Exit:
     return Status;
 }
 
-/* PUBLIC FUNCTIONS ***********************************************************/
-
-BOOLEAN
-NTAPI
-MmCanFileBeTruncated(
-    _In_ PSECTION_OBJECT_POINTERS SectionPointer,
-    _In_ PLARGE_INTEGER NewFileSize)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
-}
-
-NTSTATUS
-NTAPI
-MmCommitSessionMappedView(
-    _In_ PVOID MappedBase,
-    _In_ SIZE_T ViewSize)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
-}
-
 PCONTROL_AREA
 NTAPI
 MiFindImageSectionObject(
@@ -2745,6 +2723,28 @@ NTAPI
 MiCreateImageFileMap(
     _In_ PFILE_OBJECT FileObject,
     _Out_ PSEGMENT* OutSegment)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* PUBLIC FUNCTIONS ***********************************************************/
+
+BOOLEAN
+NTAPI
+MmCanFileBeTruncated(
+    _In_ PSECTION_OBJECT_POINTERS SectionPointer,
+    _In_ PLARGE_INTEGER NewFileSize)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+NTSTATUS
+NTAPI
+MmCommitSessionMappedView(
+    _In_ PVOID MappedBase,
+    _In_ SIZE_T ViewSize)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
