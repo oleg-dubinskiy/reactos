@@ -35,6 +35,7 @@ extern MMPDE DemandZeroPde;
 extern PMMPTE MmSharedUserDataPte;
 extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
 extern RTL_BITMAP MiPfnBitMap;
+extern SLIST_HEADER MmInPageSupportSListHead;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -786,7 +787,80 @@ MiGetInPageSupportBlock(
     _In_ KIRQL OldIrql,
     _Out_ NTSTATUS* OutStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMI_PAGE_SUPPORT_BLOCK Support;
+    PSINGLE_LIST_ENTRY Entry;
+
+    DPRINT("MiGetInPageSupportBlock: OldIrql %X\n", OldIrql);
+
+    if (OldIrql != MM_NOIRQL)
+    {
+        ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+        ASSERT(MmPfnOwner == KeGetCurrentThread());
+    }
+    else
+    {
+        ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+    }
+
+    if (ExQueryDepthSList(&MmInPageSupportSListHead))
+    {
+        Entry = InterlockedPopEntrySList(&MmInPageSupportSListHead);
+        if (Entry)
+        {
+            Support = CONTAINING_RECORD(Entry, MI_PAGE_SUPPORT_BLOCK, ListEntry);
+            DPRINT("MiGetInPageSupportBlock: Support %p\n", Support);
+            goto Exit;
+        }
+    }
+
+    if (OldIrql != MM_NOIRQL)
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    Support = ExAllocatePoolWithTag(NonPagedPool, sizeof(MI_PAGE_SUPPORT_BLOCK), 'nImM');
+    if (!Support)
+    {
+        DPRINT1("MiGetInPageSupportBlock: STATUS_INSUFFICIENT_RESOURCES\n");
+        *OutStatus = STATUS_INSUFFICIENT_RESOURCES;
+        goto ErrorExit;
+    }
+
+    KeInitializeEvent(&Support->Event, NotificationEvent, FALSE);
+ 
+    Support->WaitCount = 1;
+    Support->u1.LongFlags = 0;
+    Support->CurrentThread = NULL;
+
+    ASSERT(KeReadStateEvent(&Support->Event) == 0);
+
+    if (OldIrql != MM_NOIRQL)
+    {
+        InterlockedPushEntrySList(&MmInPageSupportSListHead, &Support->ListEntry);
+
+        DPRINT1("MiGetInPageSupportBlock: 0xC7303001\n");
+        *OutStatus = 0xC7303001; // ?
+        goto ErrorExit;
+    }
+
+    DPRINT("MiGetInPageSupportBlock: Support %p\n", Support);
+
+Exit:
+
+    ASSERT(Support->WaitCount == 1);
+    ASSERT(Support->u1.e1.PrefetchMdlHighBits == 0);
+    ASSERT(Support->u1.LongFlags == 0);
+    ASSERT(KeReadStateEvent(&Support->Event) == 0);
+
+    Support->CurrentThread = PsGetCurrentThread();
+    Support->ListEntry.Next = NULL;
+
+    return Support;
+
+ErrorExit:
+
+    if (OldIrql != MM_NOIRQL)
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    DPRINT("MiGetInPageSupportBlock: return NULL\n");
     return NULL;
 }
 
