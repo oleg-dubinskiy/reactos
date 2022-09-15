@@ -838,10 +838,16 @@ MiDecrementReferenceCount(
     if (Pfn->u3.e2.ReferenceCount)
         return;
 
+    DPRINT("MiDecrementReferenceCount: (%p, %X) Pfn->u3.e2.ReferenceCount %X\n", Pfn, PageFrameIndex, Pfn->u3.e2.ReferenceCount);
+
     /* Nobody should still have reference to this page */
     if (Pfn->u2.ShareCount)
+    {
         /* Otherwise something's really wrong */
-        ASSERT(FALSE);KeBugCheckEx(PFN_LIST_CORRUPT, 7, PageFrameIndex, Pfn->u2.ShareCount, 0);
+        DPRINT1("MiDecrementReferenceCount: KeBugCheckEx(). Pfn->u2.ShareCount %X\n", Pfn->u2.ShareCount);
+        ASSERT(FALSE);
+        KeBugCheckEx(PFN_LIST_CORRUPT, 7, PageFrameIndex, Pfn->u2.ShareCount, 0);
+    }
 
     /* And it should be lying on some page list */
     ASSERT(Pfn->u3.e1.PageLocation != ActiveAndValid);
