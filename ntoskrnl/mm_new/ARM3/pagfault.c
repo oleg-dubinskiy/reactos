@@ -1494,6 +1494,66 @@ MiResolveProtoPteFault(
     return Status;
 }
 
+VOID
+NTAPI
+MiCompleteInPage(
+    _In_ PVOID FaultAddress,
+    _In_ PMI_PAGE_SUPPORT_BLOCK PageBlock,
+    _In_ PMDL Mdl)
+{
+    PPFN_NUMBER ReadEndPage;
+    PPFN_NUMBER MdlEndPage;
+    ULONG ReadBytes;
+    ULONG ReadPageCount;
+    ULONG ReadOffset;
+    ULONG MdlPageCount;
+
+    DPRINT("MiCompleteInPage: ReadBytes %X, Mdl->ByteCount %X\n", PageBlock->IoStatus.Information, Mdl->ByteCount);
+
+    ReadBytes = PageBlock->IoStatus.Information;
+    ASSERT(ReadBytes);
+
+    if (!PageBlock->Pfn->OriginalPte.u.Soft.Prototype)
+    {
+        DPRINT1("MiCompleteInPage: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0x7A, 4, (ULONG_PTR)FaultAddress, (ULONG_PTR)PageBlock, 0);
+    }
+
+    ReadPageCount = ((ReadBytes - 1) / PAGE_SIZE);
+    ReadEndPage = (MmGetMdlPfnArray(Mdl) + ReadPageCount);
+
+    ReadOffset = BYTE_OFFSET(ReadBytes);
+    if (ReadOffset)
+    {
+        PEPROCESS process = PsGetCurrentProcess();
+        PVOID startAddress;
+        PVOID endAddress;
+        KIRQL oldIrql;
+
+        ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+
+        startAddress = MiMapPageInHyperSpace(process, *ReadEndPage, &oldIrql);
+        endAddress = (PVOID)((ULONG_PTR)startAddress + ReadOffset);
+
+        RtlZeroMemory(endAddress, (PAGE_SIZE - ReadOffset));
+
+        MiUnmapPageInHyperSpace(process, startAddress, oldIrql);
+    }
+
+    MdlPageCount = ((Mdl->ByteCount - 1) / PAGE_SIZE);
+    MdlEndPage = (MmGetMdlPfnArray(Mdl) + MdlPageCount);
+
+    while (TRUE)
+    {
+        ReadEndPage++;
+        if (ReadEndPage > MdlEndPage)
+            break;
+
+        MiZeroPhysicalPage(*ReadEndPage);
+    }
+}
+
 NTSTATUS
 NTAPI
 MiWaitForInPageComplete(
