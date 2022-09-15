@@ -303,4 +303,144 @@ MmMapViewInSystemCache(
     return STATUS_SUCCESS;
 }
 
+BOOLEAN
+NTAPI
+MmCheckCachedPageState(
+    _In_ PVOID CacheAddress,
+    _In_ BOOLEAN Param2)
+{
+    PETHREAD Thread;
+    PMMPFN CachePfn;
+    PMMPFN ProtoPfn;
+    PMMPTE CachePte;
+    PMMPTE SectionProto;
+    PMMPTE ProtoPte;
+    PMMPTE CachePde;
+    MMPTE TempProto;
+    MMPTE TempPte;
+    PFN_NUMBER ProtoPageNumber;
+    ULONG Protection;
+    KIRQL OldIrql;
+
+    DPRINT("MmCheckCachedPageState: CacheAddress %p, Param2 %X\n", CacheAddress, Param2);
+
+    CachePte = MiAddressToPte(CacheAddress);
+
+    if (CachePte->u.Hard.Valid)
+    {
+        DPRINT("MmCheckCachedPageState: return TRUE\n");
+        return TRUE;
+    }
+
+    Thread = PsGetCurrentThread();
+    MiLockWorkingSet(Thread, &MmSystemCacheWs);
+
+    if (CachePte->u.Hard.Valid)
+    {
+        MiUnlockWorkingSet(Thread, &MmSystemCacheWs);
+        DPRINT("MmCheckCachedPageState: return TRUE\n");
+        return TRUE;
+    }
+
+    ASSERT(CachePte->u.Soft.Prototype == 1);
+
+    SectionProto = MiGetProtoPtr(CachePte);
+    ProtoPte = MiAddressToPte(SectionProto);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    ASSERT(CachePte->u.Hard.Valid == 0);
+    ASSERT(CachePte->u.Soft.Prototype == 1);
+
+    if (!ProtoPte->u.Hard.Valid)
+    {
+        DPRINT1("MmCheckCachedPageState: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    TempProto.u.Long = SectionProto->u.Long;
+    ProtoPageNumber = TempProto.u.Hard.PageFrameNumber;
+
+    if (SectionProto->u.Hard.Valid)
+    {
+        ProtoPfn = MI_PFN_ELEMENT(ProtoPageNumber);
+        TempPte.u.Long = TempProto.u.Long;
+    }
+    else if (TempProto.u.Soft.Transition && !TempProto.u.Soft.Prototype)
+    {
+        ProtoPfn = MI_PFN_ELEMENT(ProtoPageNumber);
+
+        if (ProtoPfn->u3.e1.ReadInProgress || ProtoPfn->u4.InPageError)
+        {
+            DPRINT("MmCheckCachedPageState: return TRUE\n");
+            goto Exit;
+        }
+
+        if (MmAvailablePages < 0x80)
+        {
+            if (!PsGetCurrentThread()->MemoryMaker || !MmAvailablePages)
+            {
+                DPRINT("MmCheckCachedPageState: return TRUE\n");
+                goto Exit;
+            }
+        }
+
+        MiUnlinkPageFromList(ProtoPfn);
+        InterlockedIncrement16((PSHORT)&ProtoPfn->u3.e2.ReferenceCount);
+        ProtoPfn->u3.e1.PageLocation = ActiveAndValid;
+
+        Protection = ProtoPfn->OriginalPte.u.Soft.Protection;
+        Protection &= ~(MM_NOCACHE | MM_WRITECOMBINE);
+
+        if (ProtoPfn->u3.e1.CacheAttribute != MiCached)
+        {
+            if (ProtoPfn->u3.e1.CacheAttribute == MiNonCached)
+                Protection |= MM_NOCACHE;
+            else if (ProtoPfn->u3.e1.CacheAttribute == MiWriteCombined)
+                Protection |= MM_WRITECOMBINE;
+        }
+
+        MI_MAKE_HARDWARE_PTE_KERNEL(&TempPte, (MiHighestUserPte + 1), Protection, ProtoPageNumber);
+        MI_WRITE_VALID_PTE(SectionProto, TempPte);
+
+        CachePfn = MI_PFN_ELEMENT(ProtoPfn->u4.PteFrame);
+    }
+    else
+    {
+        if (!Param2 || MmAvailablePages < 0x80)
+        {
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            MiUnlockWorkingSet(Thread, &MmSystemCacheWs);
+
+            MmAccessFault(0, CacheAddress, KernelMode, NULL);
+
+            DPRINT1("MmCheckCachedPageState: return FALSE\n");
+            return FALSE;
+        }
+
+        DPRINT1("MmCheckCachedPageState: FIXME\n");
+        ASSERT(FALSE);
+
+    }
+
+    ProtoPfn->u2.ShareCount++;
+
+    CachePde = MiAddressToPte(CachePte);
+
+    CachePfn = MI_PFN_ELEMENT(CachePde->u.Hard.PageFrameNumber);
+    CachePfn->u2.ShareCount++;
+
+    TempPte.u.Hard.Owner = 0;
+    MI_WRITE_VALID_PTE(CachePte, TempPte);
+
+    DPRINT("MmCheckCachedPageState: return TRUE\n");
+
+Exit:
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    MiUnlockWorkingSet(Thread, &MmSystemCacheWs);
+
+    return TRUE;
+}
+
 /* EOF */

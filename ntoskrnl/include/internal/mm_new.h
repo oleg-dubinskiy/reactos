@@ -476,6 +476,13 @@ MmMapViewInSystemCache(
     _In_ PULONG CapturedViewSize
 );
 
+BOOLEAN
+NTAPI
+MmCheckCachedPageState(
+    _In_ PVOID CacheAddress,
+    _In_ BOOLEAN Parametr2
+);
+
 /* ARM3\sysldr.c */
 BOOLEAN
 NTAPI
