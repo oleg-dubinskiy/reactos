@@ -1107,6 +1107,34 @@ MI_PFN_ELEMENT(
     return &MmPfnDatabase[Pfn];
 };
 
+/* Drops a locked page without dereferencing it */
+FORCEINLINE
+VOID
+MiDropLockCount(IN PMMPFN Pfn)
+{
+    /* This page shouldn't be locked, but it should be valid */
+    ASSERT(Pfn->u3.e2.ReferenceCount != 0);
+    ASSERT(Pfn->u2.ShareCount == 0);
+
+    /* Is this the last reference to the page */
+    if (Pfn->u3.e2.ReferenceCount != 1)
+        return;
+
+    /* It better not be valid */
+    ASSERT(Pfn->u3.e1.PageLocation != ActiveAndValid);
+
+    /* Is it a prototype PTE? */
+    if (Pfn->u3.e1.PrototypePte &&
+        Pfn->OriginalPte.u.Soft.Prototype)
+    {
+        /* FIXME: We should return commit */
+        ;//DPRINT1("Not returning commit for prototype PTE\n");
+    }
+
+    /* Update the counter */
+    InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+}
+
 FORCEINLINE
 PFN_NUMBER
 MiGetPfnEntryIndex(
