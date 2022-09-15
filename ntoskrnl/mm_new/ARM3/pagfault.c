@@ -2,7 +2,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 #include "miarm.h"
 
@@ -969,9 +969,8 @@ MiDispatchFault(
     KIRQL LockIrql = MM_NOIRQL;
     NTSTATUS Status;
 
-    DPRINT("MiDispatchFault: %X, %p, Pte %p [%p], Proto %p [%I64X], %X, %p, %p, %p\n",
-           FaultCode, Address, Pte, Pte->u.Long, SectionProto, MiGetPteContents(SectionProto),
-           Recursive, Process, TrapInformation, Vad);
+    DPRINT("MiDispatchFault: %X, %p, %p, %X, %X, %p, %p, %X\n",
+           FaultCode, Address, Pte, SectionProto, Recursive, Process, TrapInformation, Vad);
 
     /* Make sure APCs are off and we're not at dispatch */
     OldIrql = KeGetCurrentIrql();
@@ -1421,8 +1420,7 @@ MmAccessFault(
     KIRQL WsLockIrql = MM_NOIRQL;
     NTSTATUS Status;
 
-    DPRINT1("MmAccessFault: %X, %p, Pde %p [%p], Pte %p [%p], %X, %p\n",
-            FaultCode, Address, Pde, Pde->u.Long, Pte, Pte->u.Long, Mode, TrapInformation);
+    DPRINT("MmAccessFault: %X, %p, %X, %p\n", FaultCode, Address, Mode, TrapInformation);
 
     OldIrql = KeGetCurrentIrql();
 

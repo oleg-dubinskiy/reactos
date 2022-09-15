@@ -2,7 +2,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 #include "miarm.h"
 
@@ -1034,7 +1034,7 @@ MiWriteProtectSystemImage(
     if (!MmEnforceWriteProtection)
     {
         /* Ignore section protection */
-        DPRINT1("MiWriteProtectSystemImage: Ignore section protection %p. FIXME\n", ImageBase);
+        DPRINT("MiWriteProtectSystemImage: Ignore section protection %p. FIXME\n", ImageBase);
         return;
     }
 
