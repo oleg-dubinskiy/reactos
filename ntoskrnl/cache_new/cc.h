@@ -28,6 +28,23 @@ typedef union _CC_BCB
     struct _MBCB Mbcb;
 } CC_BCB, *PCC_BCB;
 
+typedef struct _SHARED_CACHE_MAP_LIST_CURSOR
+{
+    LIST_ENTRY SharedCacheMapLinks;
+    ULONG Flags;
+} SHARED_CACHE_MAP_LIST_CURSOR, *PSHARED_CACHE_MAP_LIST_CURSOR;
+
+typedef struct _LAZY_WRITER
+{
+    LIST_ENTRY WorkQueue;
+    KDPC ScanDpc;
+    KTIMER ScanTimer;
+    BOOLEAN ScanActive;
+    BOOLEAN OtherWork;
+    BOOLEAN PendingTeardown;
+    UCHAR Pad[0x5];
+} LAZY_WRITER, *PLAZY_WRITER;
+
 VOID
 NTAPI
 CcInitializeVacbs(
@@ -63,6 +80,15 @@ CcGetActiveVacb(
     _Out_ PVACB* OutVacb,
     _Out_ ULONG* OutActivePage,
     _Out_ BOOLEAN* OutIsVacbLocked
+);
+
+VOID
+NTAPI
+CcSetActiveVacb(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _Inout_ PVACB* OutVacb,
+    _In_ ULONG ActivePage,
+    _In_ BOOLEAN IsVacbLocked
 );
 
 /* EOF */

@@ -13,6 +13,10 @@ PVACB CcBeyondVacbs;
 LIST_ENTRY CcVacbLru;
 LIST_ENTRY CcVacbFreeList;
 
+extern SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
+extern ULONG CcTotalDirtyPages;
+extern LAZY_WRITER LazyWriter;
+
 /* FUNCTIONS ******************************************************************/
 
 VOID
@@ -476,6 +480,96 @@ CcGetActiveVacb(
     }
 
     KeReleaseSpinLock(&SharedMap->ActiveVacbSpinLock, OldIrql);
+}
+
+VOID
+NTAPI
+CcSetActiveVacb(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _Inout_ PVACB* OutVacb,
+    _In_ ULONG ActivePage,
+    _In_ BOOLEAN IsVacbLocked)
+{
+    KIRQL OldIrql;
+
+    DPRINT("CcSetActiveVacb: %p, %p, %X, %X\n", SharedMap, *OutVacb, ActivePage, IsVacbLocked);
+
+    if (IsVacbLocked)
+    {
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+        KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
+    }
+    else
+    {
+        KeAcquireSpinLock(&SharedMap->ActiveVacbSpinLock, &OldIrql);
+    }
+
+    DPRINT("CcSetActiveVacb: ActiveVacb %p\n", SharedMap->ActiveVacb);
+
+    if (SharedMap->ActiveVacb)
+        goto Exit1;
+
+    if (IsVacbLocked == ((SharedMap->Flags & SHARE_FL_VACB_LOCKED) != 0))
+    {
+        SharedMap->ActiveVacb = *OutVacb;
+        SharedMap->ActivePage = ActivePage;
+
+        *OutVacb = NULL;
+        goto Exit1;
+    }
+
+    if (!IsVacbLocked)
+    {
+       KeReleaseSpinLock(&SharedMap->ActiveVacbSpinLock, OldIrql);
+       goto Exit;
+    }
+
+    SharedMap->ActiveVacb = *OutVacb;
+    SharedMap->ActivePage = ActivePage;
+
+    *OutVacb = NULL;
+
+    SharedMap->Flags |= SHARE_FL_VACB_LOCKED;
+
+    CcTotalDirtyPages++;
+    SharedMap->DirtyPages++;
+
+    if (SharedMap->DirtyPages != 1)
+       goto Exit;
+
+    RemoveEntryList(&SharedMap->SharedCacheMapLinks);
+    InsertTailList(&CcDirtySharedCacheMapList.SharedCacheMapLinks, &SharedMap->SharedCacheMapLinks);
+
+    if (!LazyWriter.ScanActive)
+    {
+        LazyWriter.ScanActive = 1;
+
+        DPRINT1("CcSetActiveVacb: FIXME LazyWriter\n");
+        ASSERT(FALSE);
+
+        return;
+    }
+
+Exit1:
+
+    if (IsVacbLocked)
+    {
+        KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+    }
+    else
+    {
+        KeReleaseSpinLock(&SharedMap->ActiveVacbSpinLock, OldIrql);
+    }
+
+Exit:
+
+    if (*OutVacb)
+    {
+        DPRINT1("CcSetActiveVacb: FIXME CcFreeActiveVacb()\n");
+        ASSERT(FALSE);
+        //CcFreeActiveVacb(SharedMap, *OutVacb, ActivePage, IsVacbLocked);
+    }
 }
 
 /* EOF */

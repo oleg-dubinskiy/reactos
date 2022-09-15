@@ -8,7 +8,11 @@
 
 /* GLOBALS ********************************************************************/
 
+SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
+
 LIST_ENTRY CcCleanSharedCacheMapList;
+
+extern LAZY_WRITER LazyWriter;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -529,6 +533,16 @@ CcInitializeCacheManager(VOID)
     DPRINT("CcInitializeCacheManager()\n");
 
     InitializeListHead(&CcCleanSharedCacheMapList);
+
+    InitializeListHead(&CcDirtySharedCacheMapList.SharedCacheMapLinks);
+    CcDirtySharedCacheMapList.Flags = 0x800;
+
+    RtlZeroMemory(&LazyWriter, sizeof(LazyWriter));
+
+    InitializeListHead(&LazyWriter.WorkQueue);
+    //KeInitializeDpc(&LazyWriter.ScanDpc, CcScanDpc, NULL);
+    KeInitializeTimer(&LazyWriter.ScanTimer);
+
 
     CcInitializeVacbs();
 
