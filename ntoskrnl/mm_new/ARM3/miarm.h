@@ -1314,6 +1314,19 @@ MiIsUserPte(PVOID Address)
 }
 #endif
 
+FORCEINLINE
+VOID
+MI_MAKE_TRANSITION_PTE(
+    _Out_ PMMPTE NewPte,
+    _In_ PFN_NUMBER Page,
+    _In_ ULONG Protection)
+{
+    NewPte->u.Long = 0;
+    NewPte->u.Trans.Transition = 1;
+    NewPte->u.Trans.Protection = Protection;
+    NewPte->u.Trans.PageFrameNumber = Page;
+}
+
 /* Returns if the page is physically resident (ie: a large page). FIXFIX: CISC/x86 only? */
 FORCEINLINE
 BOOLEAN
