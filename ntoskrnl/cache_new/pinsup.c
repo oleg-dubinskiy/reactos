@@ -8,6 +8,8 @@
 
 /* GLOBALS ********************************************************************/
 
+extern PVACB CcVacbs;
+extern PVACB CcBeyondVacbs;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -47,6 +49,29 @@ Exit:
 
     *OutBcb = Bcb;
     return TRUE;
+}
+
+VOID
+NTAPI
+CcUnpinFileDataEx(
+    _In_ PCC_BCB Bcb,
+    _In_ BOOLEAN IsNoWrite)
+{
+    DPRINT("CcUnpinFileDataEx: Bcb %p, IsNoWrite %X\n", Bcb, IsNoWrite);
+
+    if (Bcb->NodeTypeCode != NODE_TYPE_BCB)
+    {
+        PVACB Vacb = (PVACB)Bcb;
+
+        ASSERT((Vacb >= CcVacbs) && (Vacb < CcBeyondVacbs));
+        ASSERT(Vacb->SharedCacheMap->NodeTypeCode == NODE_TYPE_SHARED_MAP);
+
+        CcFreeVirtualAddress(Vacb);
+
+        return;
+    }
+
+    ASSERT(FALSE);
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/

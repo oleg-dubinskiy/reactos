@@ -407,4 +407,12 @@ CcGetVirtualAddress(
     return (PVOID)((ULONG_PTR)Vacb->BaseAddress + VacbOffset);
 }
 
+VOID
+NTAPI
+CcFreeVirtualAddress(
+    _In_ PVACB Vacb)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 /* EOF */

@@ -9,6 +9,25 @@
 #define CC_DEFAULT_NUMBER_OF_VACBS 4
 #define CACHE_OVERALL_SIZE        (32 * _1MB)
 
+typedef union _CC_BCB
+{
+    struct
+    {
+        USHORT NodeTypeCode;
+        UCHAR Reserved1[2];
+        ULONG Length;
+        LARGE_INTEGER FileOffset;
+        LIST_ENTRY Link;
+        LARGE_INTEGER BeyondLastByte;
+        PVACB Vacb;
+        ULONG PinCount;
+        ERESOURCE BcbResource;
+        PSHARED_CACHE_MAP SharedCacheMap;
+        PVOID BaseAddress;
+    };
+    struct _MBCB Mbcb;
+} CC_BCB, *PCC_BCB;
+
 VOID
 NTAPI
 CcInitializeVacbs(
@@ -29,6 +48,12 @@ CcGetVirtualAddress(
     _In_ LARGE_INTEGER FileOffset,
     _Out_ PVACB* OutVacb,
     _Out_ ULONG* OutReceivedLength
+);
+
+VOID
+NTAPI
+CcFreeVirtualAddress(
+    _In_ PVACB Vacb
 );
 
 /* EOF */
