@@ -1612,8 +1612,158 @@ MiWaitForInPageComplete(
     _In_ PMI_PAGE_SUPPORT_BLOCK PageBlock,
     _In_ PEPROCESS Process)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PETHREAD Thread = PsGetCurrentThread();
+    PMMPTE Pte;
+    PMMPTE SectionProto;
+    PMDL Mdl;
+    NTSTATUS Status;
+
+    DPRINT("MiWaitForInPageComplete: %p, %p, %p, %p, %p, %p\n", InPfn, ReadPte, Address, OriginalPte, PageBlock, Process);
+
+    KeWaitForSingleObject(&PageBlock->Event, WrPageIn, KernelMode, FALSE, NULL);
+
+    if (Process == HYDRA_PROCESS)
+    {
+        DPRINT1("MiWaitForInPageComplete: FIXME! Process == HYDRA_PROCESS\n");
+        ASSERT(FALSE);
+    }
+    else if (Process == (PEPROCESS)2)
+    {
+        DPRINT1("MiWaitForInPageComplete: FIXME! Process == (PEPROCESS)2\n");
+        ASSERT(FALSE);
+    }
+    else if (Process)
+    {
+        MiLockWorkingSet(Thread, &Process->Vm);
+    }
+    else
+    {
+        MiLockWorkingSet(Thread, &MmSystemCacheWs);
+    }
+
+    MiLockPfnDb(APC_LEVEL);
+
+    ASSERT(InPfn->u3.e2.ReferenceCount != 0);
+
+    if (InPfn != PageBlock->Pfn)
+    {
+        ASSERT(InPfn->u4.PteFrame != 0x1FFEDCB);
+        InPfn->u3.e1.ReadInProgress = 0;
+    }
+
+    if (InPfn->u4.InPageError)
+    {
+        DPRINT1("MiWaitForInPageComplete: InPfn->u1.ReadStatus %X\n", InPfn->u1.ReadStatus);
+
+        ASSERT(!NT_SUCCESS(InPfn->u1.ReadStatus));
+        Status = InPfn->u1.ReadStatus;
+
+        if (Status == STATUS_INSUFFICIENT_RESOURCES ||
+            Status == STATUS_WORKING_SET_QUOTA ||
+            Status == STATUS_NO_MEMORY)
+        {
+            Status = 0xC7303001;
+        }
+
+        return Status;
+    }
+
+    if (!PageBlock->u1.e1.InPageComplete)
+    {
+        NTSTATUS ReadStatus;
+
+        ASSERT((PageBlock->Pfn->u3.e1.ReadInProgress == 1) ||
+               (PageBlock->Pfn->PteAddress == (PMMPTE)0x23452345));
+
+        PageBlock->u1.e1.InPageComplete = 1;
+
+        if (PageBlock->u1.e1.PrefetchMdlHighBits)
+            Mdl = (PMDL)((ULONG_PTR)PageBlock->u1.e1.PrefetchMdlHighBits << 3);
+        else
+            Mdl = &PageBlock->Mdl;
+
+        if (Mdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA)
+            MmUnmapLockedPages(Mdl->MappedSystemVa, Mdl);
+
+        ASSERT(PageBlock->Pfn->u4.PteFrame != 0x1FFEDCB);
+
+        PageBlock->Pfn->u3.e1.ReadInProgress = 0;
+        PageBlock->Pfn->u1.Event = NULL;
+
+        ReadStatus = PageBlock->IoStatus.Status;
+
+        if (!NT_SUCCESS(ReadStatus))
+        {
+            if (ReadStatus != STATUS_END_OF_FILE)
+            {
+                Status = ReadStatus;
+                DPRINT1("MiWaitForInPageComplete: FIXME! ReadStatus %X\n", ReadStatus);
+                ASSERT(FALSE);
+                return Status;
+            }
+
+            /* ReadStatus == STATUS_END_OF_FILE */
+            DPRINT1("MiWaitForInPageComplete: FIXME! ReadStatus == STATUS_END_OF_FILE\n");
+            ASSERT(FALSE);
+        }
+        else if (PageBlock->IoStatus.Information != Mdl->ByteCount)
+        {
+            MiCompleteInPage(Address, PageBlock, Mdl);
+        }
+    }
+
+    if (Process == (PEPROCESS)2)
+        return STATUS_SUCCESS;
+
+    Pte = MiFindActualFaultingPte(Address);
+    if (!Pte)
+    {
+        DPRINT1("MiWaitForInPageComplete: Pte %X\n", Pte);
+        return 0x87303000;
+    }
+
+    if (Pte == ReadPte)
+    {
+        if (Pte->u.Long != OriginalPte->u.Long)
+        {
+            DPRINT1("MiWaitForInPageComplete: %X - %X\n", Pte->u.Long, OriginalPte->u.Long);
+            return 0x87303000;
+        }
+
+        return STATUS_SUCCESS;
+    }
+
+    if (!Pte->u.Soft.Prototype)
+    {
+        DPRINT("MiWaitForInPageComplete: Pte->u.Soft.Prototype %X\n", Pte->u.Soft.Prototype);
+        return 0x87303000;
+    }
+
+    if (Pte->u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)
+    {
+        ULONG dummyProtection;
+        PMMVAD dummyProtoVad;
+
+        SectionProto = MiCheckVirtualAddress(Address, &dummyProtection, &dummyProtoVad);
+    }
+    else
+    {
+        SectionProto = MiGetProtoPtr(Pte);
+    }
+
+    if (SectionProto != ReadPte)
+    {
+        DPRINT("MiWaitForInPageComplete: SectionProto %X, ReadPte %X\n", SectionProto, ReadPte);
+        return 0x87303000;
+    }
+
+    if (SectionProto->u.Long != OriginalPte->u.Long)
+    {
+        DPRINT("MiWaitForInPageComplete: %X - %X\n", SectionProto->u.Long, OriginalPte->u.Long);
+        return 0x87303000;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 VOID
