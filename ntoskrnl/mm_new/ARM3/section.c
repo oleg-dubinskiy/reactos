@@ -2728,6 +2728,17 @@ MiCreateImageFileMap(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+NTAPI
+MiAddViewsForSection(
+    _In_ PMSUBSECTION StartMappedSubsection,
+    _In_ ULONGLONG LastPteOffset,
+    _In_ KIRQL OldIrql)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 BOOLEAN

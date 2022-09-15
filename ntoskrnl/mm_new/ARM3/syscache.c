@@ -26,6 +26,7 @@ extern PVOID MmSystemCacheEnd;
 extern ULONG MmSecondaryColorMask;
 extern PMMWSL MmSystemCacheWorkingSetList;
 extern PFN_NUMBER MmResidentAvailablePages;
+extern volatile LONG KiTbFlushTimeStamp;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -158,8 +159,148 @@ MmMapViewInSystemCache(
     _In_ PLARGE_INTEGER SectionOffset,
     _In_ PULONG CapturedViewSize)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PSECTION Section = SectionObject;
+    PCONTROL_AREA ControlArea;
+    PSUBSECTION Subsection;
+    ULONGLONG OffsetInPages;
+    ULONGLONG LastPage;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    PMMPTE SectionProto;
+    PMMPTE LastProto;
+    MMPTE ProtoPte;
+    ULONG SizeInPages;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("MmMapViewInSystemCache: %p, [%p], [%I64X], [%X]\n", Section, (OutBase ? *OutBase : NULL),
+           (SectionOffset ? SectionOffset->QuadPart : 0), (CapturedViewSize ? *CapturedViewSize : 0));
+
+    ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+    ASSERT(*CapturedViewSize <= VACB_MAPPING_GRANULARITY);
+    ASSERT((SectionOffset->LowPart & (VACB_MAPPING_GRANULARITY - 1)) == 0);
+
+    if (Section->u.Flags.Image)
+    {
+        DPRINT1("MmMapViewInSystemCache: return STATUS_NOT_MAPPED_DATA\n");
+        return STATUS_NOT_MAPPED_DATA;
+    }
+
+    ASSERT(*CapturedViewSize != 0);
+
+    ControlArea = Section->Segment->ControlArea;
+    ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 0);
+
+    if (ControlArea->u.Flags.Rom)
+        Subsection = (PSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+    else
+        Subsection = (PSUBSECTION)((PCONTROL_AREA)ControlArea + 1);
+
+    OffsetInPages = (SectionOffset->QuadPart / PAGE_SIZE);
+    SizeInPages = BYTES_TO_PAGES(*CapturedViewSize);
+    LastPage = (OffsetInPages + SizeInPages);
+
+    while (OffsetInPages >= (ULONGLONG)Subsection->PtesInSubsection)
+    {
+        OffsetInPages -= Subsection->PtesInSubsection;
+        LastPage -= Subsection->PtesInSubsection;
+        Subsection = Subsection->NextSubsection;
+
+        DPRINT("MmMapViewInSystemCache: OffsetInPages %I64X, LastPage %I64X\n", OffsetInPages, LastPage);
+    }
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    ASSERT(ControlArea->u.Flags.BeingCreated == 0);
+    ASSERT(ControlArea->u.Flags.BeingDeleted == 0);
+    ASSERT(ControlArea->u.Flags.BeingPurged == 0);
+
+    if (MmFirstFreeSystemCache == (PMMPTE)MM_EMPTY_LIST)
+    {
+        DPRINT1("MmMapViewInSystemCache: return STATUS_NO_MEMORY\n");
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        return STATUS_NO_MEMORY;
+    }
+
+    Pte = MmFirstFreeSystemCache;
+    ASSERT(Pte->u.Hard.Valid == 0);
+
+    MmFirstFreeSystemCache = (MmSystemCachePteBase + Pte->u.List.NextEntry);
+    ASSERT(MmFirstFreeSystemCache <= MiAddressToPte(MmSystemCacheEnd));
+
+    ControlArea->NumberOfMappedViews++;
+    ControlArea->NumberOfSystemCacheViews++;
+
+    ASSERT(ControlArea->NumberOfSectionReferences != 0);
+
+    if (ControlArea->FilePointer)
+    {
+        Status = MiAddViewsForSection((PMSUBSECTION)Subsection, LastPage, OldIrql);
+
+        ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+
+        if (!NT_SUCCESS(Status))
+        {
+            Pte->u.List.NextEntry = MM_EMPTY_PTE_LIST;
+            Pte[1].u.List.NextEntry = KiTbFlushTimeStamp;
+
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+
+            MmLastFreeSystemCache->u.List.NextEntry = (Pte - MmSystemCachePteBase);
+            MmLastFreeSystemCache = Pte;
+
+            ControlArea->NumberOfMappedViews--;
+            ControlArea->NumberOfSystemCacheViews--;
+
+            MiCheckControlArea(ControlArea, OldIrql);
+
+            DPRINT("MmMapViewInSystemCache: return %X\n", Status);
+            return Status;
+        }
+    }
+    else
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    }
+
+    if (Pte->u.List.NextEntry == MM_EMPTY_PTE_LIST)
+    {
+        DPRINT1("FIXME KeBugCheckEx()\n");
+        ASSERT(FALSE);
+    }
+
+    DPRINT("MmMapViewInSystemCache: FIXME Flush Tb\n");
+
+    *OutBase = MiPteToAddress(Pte);
+    DPRINT("MmMapViewInSystemCache: Pte %p, *OutBase %p\n", Pte, *OutBase);
+
+    Pte[1].u.List.NextEntry = 0;
+    LastPte = &Pte[SizeInPages];
+
+    SectionProto = &Subsection->SubsectionBase[OffsetInPages];
+    LastProto = &Subsection->SubsectionBase[Subsection->PtesInSubsection];
+
+    for (; Pte < LastPte; Pte++, SectionProto++)
+    {
+        if (SectionProto >= LastProto)
+        {
+            if (!Subsection->NextSubsection)
+            {
+                DPRINT("MmMapViewInSystemCache: Subsection %p\n", Subsection);
+                break;
+            }
+
+            Subsection = Subsection->NextSubsection;
+
+            SectionProto = Subsection->SubsectionBase;
+            LastProto = &SectionProto[Subsection->PtesInSubsection];
+        }
+
+        MI_MAKE_PROTOTYPE_PTE(&ProtoPte, SectionProto);
+        MI_WRITE_INVALID_PTE(Pte, ProtoPte);
+    }
+
+    return STATUS_SUCCESS;
 }
 
 /* EOF */

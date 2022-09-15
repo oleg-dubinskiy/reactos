@@ -1783,6 +1783,21 @@ MiLocateSubsection(
     _In_ ULONG_PTR Vpn
 );
 
+VOID
+NTAPI
+MiCheckControlArea(
+    _In_ PCONTROL_AREA ControlArea,
+    _In_ KIRQL OldIrql
+);
+
+NTSTATUS
+NTAPI
+MiAddViewsForSection(
+    _In_ PMSUBSECTION StartMappedSubsection,
+    _In_ ULONGLONG LastPteOffset,
+    _In_ KIRQL OldIrql
+);
+
 /* ARM3\session.c */
 VOID
 NTAPI
