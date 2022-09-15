@@ -7,6 +7,7 @@
 #define _1TB (1024ull * _1GB)
 
 #define CC_DEFAULT_NUMBER_OF_VACBS 4
+#define CACHE_OVERALL_SIZE        (32 * _1MB)
 
 VOID
 NTAPI
@@ -21,5 +22,13 @@ CcCreateVacbArray(
     _In_ LARGE_INTEGER AllocationSize
 );
 
+PVOID
+NTAPI
+CcGetVirtualAddress(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LARGE_INTEGER FileOffset,
+    _Out_ PVACB* OutVacb,
+    _Out_ ULONG* OutReceivedLength
+);
 
 /* EOF */
