@@ -32,6 +32,7 @@ extern MMPTE PrototypePte;
 extern MMPDE DemandZeroPde;
 extern PMMPTE MmSharedUserDataPte;
 extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
+extern RTL_BITMAP MiPfnBitMap;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -149,10 +150,57 @@ NTAPI
 MiSetDirtyBit(
     _In_ PVOID Address,
     _In_ PMMPTE Pte,
-    _In_ BOOLEAN Param3)
+    _In_ BOOLEAN IsSetPfn)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PFN_NUMBER PageFrameNumber;
+    MMPTE TempPte;
+    PMMPFN Pfn;
+
+    //DPRINT("MiSetDirtyBit: Address %p, Pte %p [%p], IsSetPfn %X\n", Address, Pte, (Pte?Pte->u.Long:0), IsSetPfn);
+
+    TempPte.u.Long = Pte->u.Long;
+    PageFrameNumber = TempPte.u.Hard.PageFrameNumber;
+
+    if (PageFrameNumber > MmHighestPhysicalPage) // should be MmHighestPossiblePhysicalPage
+        return FALSE;
+
+    if (!((MiPfnBitMap.Buffer[PageFrameNumber / 0x20] >> (PageFrameNumber & (0x20 - 1))) & 1))
+        return FALSE;
+
+    TempPte.u.Hard.Dirty = 1;
+    TempPte.u.Hard.Accessed = 1;
+
+  #if defined(CONFIG_SMP)
+    TempPte.u.Hard.Writable = 1;
+  #endif
+
+    ASSERT((Pte)->u.Hard.Valid == 1);
+    ASSERT((TempPte).u.Hard.Valid == 1);
+    ASSERT((Pte)->u.Hard.PageFrameNumber == (TempPte).u.Hard.PageFrameNumber);
+
+    Pte->u.Long = TempPte.u.Long;
+
+    if (!IsSetPfn)
+        goto Exit;
+
+    Pfn = MI_PFN_ELEMENT(PageFrameNumber);
+
+    if (!Pfn->OriginalPte.u.Soft.Prototype && !Pfn->u3.e1.WriteInProgress)
+    {
+        DPRINT1("MiSetDirtyBit: FIXME MiReleasePageFileSpace()\n");
+        ASSERT(FALSE);
+
+        //MiReleasePageFileSpace(Pfn->OriginalPte.u.Long);
+        Pfn->OriginalPte.u.Soft.PageFileHigh = 0;
+    }
+
+    ASSERT(Pfn->u3.e1.Rom == 0);
+    Pfn->u3.e1.Modified = 1;
+
+Exit:
+
+    KeInvalidateTlbEntry(Address);
+    return TRUE;
 }
 
 NTSTATUS
