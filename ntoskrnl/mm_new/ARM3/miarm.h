@@ -1827,6 +1827,12 @@ MiUnlinkFreeOrZeroedPage(
     _In_ PMMPFN Entry
 );
 
+VOID
+NTAPI
+MiUnlinkPageFromList(
+    _In_ PMMPFN Pfn
+);
+
 /* ARM3\pool.c */
 INIT_FUNCTION
 VOID

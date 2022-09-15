@@ -1337,4 +1337,108 @@ MiUnlinkFreeOrZeroedPage(
   #endif
 }
 
+VOID
+NTAPI
+MiUnlinkPageFromList(
+    _In_ PMMPFN Pfn)
+{
+    PMMPFNLIST ListHead;
+    PFN_NUMBER OldFlink;
+    PFN_NUMBER OldBlink;
+
+    /* Make sure the PFN lock is held */
+    MI_ASSERT_PFN_LOCK_HELD();
+
+    /* ARM3 should only call this for dead pages */
+    if (Pfn->u3.e2.ReferenceCount > 0)
+    {
+        if (!Pfn->u2.ShareCount)
+            return;
+
+        DPRINT1("MiUnlinkPageFromList: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0x4E, 2, (Pfn - MmPfnDatabase), MmHighestPhysicalPage, Pfn->u3.e2.ReferenceCount);
+    }
+
+    /* Transition pages are supposed to be standby/modified/nowrite */
+    ListHead = MmPageLocationList[Pfn->u3.e1.PageLocation];
+
+    ASSERT(ListHead->ListName >= StandbyPageList);
+
+    /* Check if this was standby, or modified */
+    if (ListHead == &MmStandbyPageListHead)
+    {
+        /* Should not be a ROM page */
+        ASSERT(Pfn->u3.e1.Rom == 0);
+
+        /* Get the exact list */
+        ListHead = &MmStandbyPageListByPriority[Pfn->u4.Priority];
+
+        /* Decrement number of available pages */
+        MiDecrementAvailablePages();
+
+        /* Decrease transition page counter */
+        ASSERT(Pfn->u3.e1.PrototypePte == 1); /* Only supported ARM3 case */
+        MmTransitionSharedPages--;
+    }
+    else if (ListHead == &MmModifiedPageListHead)
+    {
+        if (!Pfn->OriginalPte.u.Soft.Prototype)
+        {
+            /* Decrement the counters */
+            ListHead->Total--;
+            MmTotalPagesForPagingFile--;
+
+            /* Pick the correct colored list */
+            ListHead = &MmModifiedPageListByColor[0];
+        }
+
+        if (Pfn->u3.e1.PrototypePte)
+            /* Decrease transition page counter */
+            MmTransitionSharedPages--;
+        else
+            MmTransitionPrivatePages--;
+    }
+    else if (ListHead == &MmModifiedNoWritePageListHead)
+    {
+        /* List not yet supported */
+        DPRINT1("MiUnlinkPageFromList: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    /* Nothing should be in progress and the list should not be empty */
+    ASSERT(Pfn->u3.e1.WriteInProgress == 0);
+    ASSERT(Pfn->u3.e1.ReadInProgress == 0);
+    ASSERT(ListHead->Total != 0);
+
+    /* Get the forward and back pointers */
+    OldFlink = Pfn->u1.Flink;
+    OldBlink = Pfn->u2.Blink;
+
+    /* Check if the next entry is the list head */
+    if (OldFlink != LIST_HEAD)
+        /* It is not, so set the backlink of the actual entry, to our backlink */
+        MI_PFN_ELEMENT(OldFlink)->u2.Blink = OldBlink;
+    else
+        /* Set the list head's backlink instead */
+        ListHead->Blink = OldBlink;
+
+    /* Check if the back entry is the list head */
+    if (OldBlink != LIST_HEAD)
+        /* It is not, so set the backlink of the actual entry, to our backlink */
+        MI_PFN_ELEMENT(OldBlink)->u1.Flink = OldFlink;
+    else
+        /* Set the list head's backlink instead */
+        ListHead->Flink = OldFlink;
+
+    /* We are not on a list anymore */
+    Pfn->u1.Flink = 0;
+    Pfn->u1.Flink = 0;
+
+    /* Remove one entry from the list */
+    ListHead->Total--;
+
+    ASSERT_LIST_INVARIANT(ListHead);
+}
+
 /* EOF */
