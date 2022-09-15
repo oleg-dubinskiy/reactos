@@ -3368,7 +3368,40 @@ MmCreateSection(
     /* Did we already have a segment? */
     if (!NewSegment)
     {
-        ASSERT(FALSE);
+        /* This must be the file path and we created a segment */
+        NewSegment = Segment;
+        ASSERT(File != NULL);
+
+        /* Acquire the PFN lock while we set control area */
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        /* Reset the waiting-for-deletion event */
+        Event = ControlArea->WaitingForDeletion;
+        ControlArea->WaitingForDeletion = NULL;
+
+        if (AllocationAttributes & SEC_IMAGE)
+        {
+            /* Image-file backed section*/
+            ASSERT(FALSE);
+        }
+        else if (NewSegment->ControlArea->u.Flags.Rom)
+        {
+            /* ROM image sections */
+            ASSERT(File->SectionObjectPointer->DataSectionObject == NewControlArea);
+            File->SectionObjectPointer->DataSectionObject = NewSegment->ControlArea;
+            ControlArea = NewSegment->ControlArea;
+        }
+
+        /* Take off the being created flag, and then release the lock */
+        ControlArea->u.Flags.BeingCreated = 0;
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        if ((AllocationAttributes & SEC_IMAGE) || NewSegment->ControlArea->u.Flags.Rom)
+            /* Free the new control area */
+            ExFreePoolWithTag(NewControlArea, 'aCmM');
+
+        if (Event)
+            KeSetEvent(&Event->Event, 0, FALSE);
     }
 
     /* Check if we locked the file earlier */
