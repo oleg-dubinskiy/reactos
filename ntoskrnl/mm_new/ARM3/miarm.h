@@ -513,6 +513,7 @@ extern SIZE_T MmSystemLockPagesCount;
 extern ULONG MmUnusedSubsectionCount;
 extern ULONG MmUnusedSubsectionCountPeak;
 extern SIZE_T MiUnusedSubsectionPagedPool;
+extern SIZE_T MmTotalCommittedPages;
 
 #if (_MI_PAGING_LEVELS <= 3)
   extern PFN_NUMBER MmSystemPageDirectory[PD_COUNT];
@@ -1180,8 +1181,7 @@ MiDereferencePfnAndDropLockCount(
             if (Pfn->u3.e1.PrototypePte && Pfn->OriginalPte.u.Soft.Prototype)
             {
                 /* FIXME: We should return commit */
-                DPRINT1("Not returning commit for prototype PTE\n");
-                //DbgPrint("Not returning commit for prototype PTE\n");
+                ;//DbgPrint("Not returning commit for prototype PTE\n");
             }
 
             /* Update the counter, and drop a reference the long way */
@@ -1214,8 +1214,9 @@ MiDereferencePfnAndDropLockCount(
     /* Is it a prototype PTE? */
     if (Pfn->u3.e1.PrototypePte && Pfn->OriginalPte.u.Soft.Prototype)
     {
-        /* We don't handle ethis */
-        ASSERT(FALSE);
+        //ASSERT(MiLockedCommit > 0);
+        //MiLockedCommit--;
+        InterlockedDecrementSizeT(&MmTotalCommittedPages);
     }
 
     /* Update the counter */
