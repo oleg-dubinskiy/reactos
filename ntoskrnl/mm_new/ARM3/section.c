@@ -16,6 +16,10 @@ LIST_ENTRY MmUnusedSubsectionList;
 MMSESSION MmSession;
 MM_AVL_TABLE MmSectionBasedRoot;
 ULONG MmUnusedSegmentCount = 0;
+ULONG MmUnusedSubsectionCount = 0;
+ULONG MmUnusedSubsectionCountPeak = 0;
+SIZE_T MiUnusedSubsectionPagedPool;
+//SIZE_T MiUnusedSubsectionPagedPoolPeak;
 
 ACCESS_MASK MmMakeSectionAccess[8] =
 {

@@ -507,6 +507,9 @@ extern MMPTE ValidKernelPte;
 extern MMSUPPORT MmSystemCacheWs;
 extern PMMWSL MmWorkingSetList;
 extern SIZE_T MmSystemLockPagesCount;
+extern ULONG MmUnusedSubsectionCount;
+extern ULONG MmUnusedSubsectionCountPeak;
+extern SIZE_T MiUnusedSubsectionPagedPool;
 
 #if (_MI_PAGING_LEVELS <= 3)
   extern PFN_NUMBER MmSystemPageDirectory[PD_COUNT];
@@ -1571,6 +1574,57 @@ MiDecrementPageTableReferences(
 
     *RefCount -= 1;
     ASSERT(*RefCount < PTE_PER_PAGE);
+}
+
+FORCEINLINE
+VOID
+AlloccatePoolForSubsectionPtes(
+    _In_ ULONG PtesInSubsection)
+{
+    ULONG AlloccateSize;
+    ULONG SubsectionPagedPool;
+
+    MmUnusedSubsectionCount--;
+
+    AlloccateSize = (PtesInSubsection * sizeof(MMPTE));
+
+    if (AlloccateSize <= (PAGE_SIZE - (2 * POOL_BLOCK_SIZE)))
+    {
+        SubsectionPagedPool = ((AlloccateSize + POOL_BLOCK_SIZE + (POOL_BLOCK_SIZE - 1)) & ~(POOL_BLOCK_SIZE - 1));
+    }
+    else
+    {
+        SubsectionPagedPool = ROUND_TO_PAGES(AlloccateSize);
+    }
+
+    MiUnusedSubsectionPagedPool -= SubsectionPagedPool;
+}
+
+FORCEINLINE
+VOID
+FreePoolForSubsectionPtes(
+    _In_ ULONG PtesInSubsection)
+{
+    ULONG AlloccateSize;
+    ULONG SubsectionPagedPool;
+
+    MmUnusedSubsectionCount++;
+
+    if (MmUnusedSubsectionCount > MmUnusedSubsectionCountPeak)
+        MmUnusedSubsectionCountPeak = MmUnusedSubsectionCount;
+
+    AlloccateSize = (PtesInSubsection * sizeof(MMPTE));
+
+    if (AlloccateSize <= (PAGE_SIZE - (2 * POOL_BLOCK_SIZE)))
+    {
+        SubsectionPagedPool = ((AlloccateSize + POOL_BLOCK_SIZE + (POOL_BLOCK_SIZE - 1)) & ~(POOL_BLOCK_SIZE - 1));
+    }
+    else
+    {
+        SubsectionPagedPool = ROUND_TO_PAGES(AlloccateSize);
+    }
+
+    MiUnusedSubsectionPagedPool += SubsectionPagedPool;
 }
 
 /* ARM3\i386\init.c */
