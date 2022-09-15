@@ -11,6 +11,43 @@
 
 /* FUNCTIONS ******************************************************************/
 
+BOOLEAN
+NTAPI
+CcMapDataCommon(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ ULONG Flags,
+    _Out_ PVOID* OutBcb,
+    _Out_ PVOID* OutBuffer)
+{
+    PSHARED_CACHE_MAP SharedMap;
+    ULONG ReceivedLength;
+    PVOID Bcb;
+
+    DPRINT("CcMapDataCommon: %p, %I64X, %X, %X\n", FileObject, (FileOffset ? FileOffset->QuadPart : 0), Length, Flags);
+
+    if (Flags & MAP_WAIT)
+    {
+        CcMapDataWait++;
+
+        SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+        *OutBuffer = CcGetVirtualAddress(SharedMap, *FileOffset, (PVACB *)&Bcb, &ReceivedLength);
+
+        ASSERT(ReceivedLength >= Length);
+        goto Exit;
+    }
+
+    CcMapDataNoWait++;
+
+    DPRINT1("CcMapDataCommon: FIXME! Flags %X\n", Flags);
+    ASSERT(FALSE);
+
+Exit:
+
+    *OutBcb = Bcb;
+    return TRUE;
+}
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 
