@@ -27,6 +27,23 @@ CcPostWorkQueue(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+VOID
+NTAPI
+CcScheduleLazyWriteScanEx(
+    _In_ BOOLEAN NoDelay,
+    _In_ BOOLEAN PendingTeardown)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+CcScheduleLazyWriteScan(
+    _In_ BOOLEAN NoDelay)
+{
+    CcScheduleLazyWriteScanEx(NoDelay, FALSE);
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 NTSTATUS

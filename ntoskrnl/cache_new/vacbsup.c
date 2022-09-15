@@ -572,4 +572,15 @@ Exit:
     }
 }
 
+VOID
+NTAPI
+CcFreeActiveVacb(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PVACB Vacb,
+    _In_ ULONG ActivePage,
+    _In_ BOOLEAN IsVacbLocked)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 /* EOF */

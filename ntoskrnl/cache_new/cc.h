@@ -134,4 +134,19 @@ CcPostWorkQueue(
     _In_ PLIST_ENTRY WorkQueue
 );
 
+VOID
+NTAPI
+CcScheduleLazyWriteScan(
+    _In_ BOOLEAN NoDelay
+);
+
+VOID
+NTAPI
+CcFreeActiveVacb(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PVACB Vacb,
+    _In_ ULONG ActivePage,
+    _In_ BOOLEAN IsVacbLocked
+);
+
 /* EOF */

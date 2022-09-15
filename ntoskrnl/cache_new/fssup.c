@@ -66,6 +66,16 @@ CcCreateSharedCacheMap(
     return SharedMap;
 }
 
+VOID
+NTAPI
+CcDeleteSharedCacheMap(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ KIRQL OldIrql,
+    _In_ BOOLEAN IsReleaseFile)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PFILE_OBJECT
@@ -506,12 +516,152 @@ CcSetFileSizes(IN PFILE_OBJECT FileObject,
 
 BOOLEAN
 NTAPI
-CcUninitializeCacheMap(IN PFILE_OBJECT FileObject,
-                       IN OPTIONAL PLARGE_INTEGER TruncateSize,
-                       IN OPTIONAL PCACHE_UNINITIALIZE_EVENT UninitializeEvent)
+CcUninitializeCacheMap(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PLARGE_INTEGER TruncateSize OPTIONAL,
+    _In_ PCACHE_UNINITIALIZE_EVENT Event OPTIONAL)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PSHARED_CACHE_MAP SharedMap;
+    PPRIVATE_CACHE_MAP PrivateMap;
+    PVACB Vacb = NULL;
+    ULONG ActivePage;
+    BOOLEAN Result = FALSE;
+    KIRQL OldIrql;
+
+    DPRINT("CcUninitializeCacheMap: %p [%wZ], %p\n", FileObject, &FileObject->FileName, FileObject->SectionObjectPointer);
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+    PrivateMap = FileObject->PrivateCacheMap;
+
+    if (PrivateMap)
+    {
+        ASSERT(PrivateMap->FileObject == FileObject);
+
+        SharedMap->OpenCount--;
+        RemoveEntryList(&PrivateMap->PrivateLinks);
+
+        if (PrivateMap == &SharedMap->PrivateCacheMap)
+        {
+            PrivateMap->NodeTypeCode = 0;
+            PrivateMap = NULL;
+        }
+
+        FileObject->PrivateCacheMap = NULL;
+    }
+
+    if (!SharedMap)
+    {
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        if (TruncateSize &&
+            !TruncateSize->QuadPart &&
+            FileObject->SectionObjectPointer->DataSectionObject)
+        {
+            CcPurgeCacheSection(FileObject->SectionObjectPointer, TruncateSize, 0, FALSE);
+        }
+
+        if (Event)
+            KeSetEvent(&Event->Event, 0, FALSE);
+
+        goto Exit;
+    }
+
+    if (TruncateSize)
+    {
+        if (!TruncateSize->QuadPart && SharedMap->FileSize.QuadPart)
+            SharedMap->Flags |= SHARE_FL_TRUNCATE_SIZE;
+        else if (IsListEmpty(&SharedMap->PrivateList))
+            SharedMap->FileSize.QuadPart = TruncateSize->QuadPart;
+    }
+
+    if (SharedMap->OpenCount)
+    {
+        if (Event)
+        {
+            if (IsListEmpty(&SharedMap->PrivateList))
+            {
+                Event->Next = SharedMap->UninitializeEvent;
+                SharedMap->UninitializeEvent = Event;
+            }
+            else
+            {
+                KeSetEvent(&Event->Event, 0, FALSE);
+            }
+        }
+
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        Result = FALSE;
+        goto Exit;
+    }
+
+    if (SharedMap->Flags & 0x2000)
+    {
+        SharedMap->Flags = (SharedMap->Flags & ~(0x2000 | 0x2));
+
+        DPRINT1("CcUninitializeCacheMap: FIXME MmEnableModifiedWriteOfSection()\n");
+        ASSERT(FALSE);
+    }
+
+    ASSERT(IsListEmpty(&SharedMap->PrivateList));
+
+    if (Event)
+    {
+        Event->Next = SharedMap->UninitializeEvent;
+        SharedMap->UninitializeEvent = Event;
+    }
+
+    if ((SharedMap->Flags & SHARE_FL_PIN_ACCESS) || Event)
+    {
+        if (!(SharedMap->Flags & SHARE_FL_WRITE_QUEUED) &&
+            !SharedMap->DirtyPages &&
+            !(SharedMap->Flags & 0x8000))
+        {
+            CcDeleteSharedCacheMap(SharedMap, OldIrql, FALSE);
+            Result = TRUE;
+            goto Exit;
+        }
+    }
+
+    if (!(SharedMap->Flags & SHARE_FL_WRITE_QUEUED))
+    {
+        RemoveEntryList(&SharedMap->SharedCacheMapLinks);
+        InsertTailList(&CcDirtySharedCacheMapList.SharedCacheMapLinks, &SharedMap->SharedCacheMapLinks);
+    }
+
+    LazyWriter.OtherWork = 1;
+
+    if (!LazyWriter.ScanActive)
+        CcScheduleLazyWriteScan(FALSE);
+
+    KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
+
+    Vacb = SharedMap->ActiveVacb;
+    if (Vacb)
+    {
+        SharedMap->ActiveVacb = NULL;
+        ActivePage = SharedMap->ActivePage;
+    }
+
+    KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+    DPRINT("CcUninitializeCacheMap: SharedMap %p, Vacb %p\n", SharedMap, Vacb);
+
+    if (Vacb)
+    {
+        BOOLEAN IsVacbLocked = ((SharedMap->Flags & SHARE_FL_VACB_LOCKED) != 0);
+        CcFreeActiveVacb(Vacb->SharedCacheMap, Vacb, ActivePage, IsVacbLocked);
+    }
+
+Exit:
+
+    if (PrivateMap)
+        ExFreePoolWithTag(PrivateMap, 'cPcC');
+
+    return Result;
 }
 
 BOOLEAN
