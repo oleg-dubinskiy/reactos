@@ -1496,6 +1496,28 @@ MiResolveProtoPteFault(
 
 NTSTATUS
 NTAPI
+MiWaitForInPageComplete(
+    _In_ PMMPFN InPfn,
+    _In_ PMMPTE ReadPte,
+    _In_ PVOID Address,
+    _In_ PMMPTE OriginalPte,
+    _In_ PMI_PAGE_SUPPORT_BLOCK PageBlock,
+    _In_ PEPROCESS Process)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+MiFreeInPageSupportBlock(
+    _In_ PMI_PAGE_SUPPORT_BLOCK Support)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
 MiDispatchFault(
     _In_ ULONG FaultCode,
     _In_ PVOID Address,
@@ -1506,12 +1528,17 @@ MiDispatchFault(
     _In_ PVOID TrapInformation,
     _In_ PMMVAD Vad)
 {
+    PETHREAD CurrentThread = PsGetCurrentThread();
     PMI_PAGE_SUPPORT_BLOCK PageBlock;
     PMMPFN LockedProtoPfn = NULL;
+    PMMPFN PfnClusterPage;
     PMMPFN PfnForPde;
     PMMPFN Pfn;
     PMMSUPPORT SessionWs = NULL;
+    PPFN_NUMBER MdlPages;
     PMMPTE SectionProtoPte;
+    PMMPTE ReadPte = NULL;
+    PMMPTE StartProto;
     MMPTE TempPte;
     MMPTE TempProto;
     MMPTE OriginalPte;
@@ -1519,8 +1546,11 @@ MiDispatchFault(
     MMPTE NewPteContents;
     MMWSLE ProtoProtect;
     PFN_NUMBER PageFrameIndex;
+    PFN_NUMBER PageNumber = -1;
     PFN_COUNT ProcessedPtes;
     PFN_COUNT PteCount;
+    ULONG CacheAttribute;
+    ULONG MdlPageCount;
     ULONG Flags = 0;
     ULONG Index;
     ULONG ix;
@@ -1869,6 +1899,7 @@ MiDispatchFault(
                                         Process,
                                         LockIrql,
                                         TrapInformation);
+        ReadPte = SectionProto;
 
         ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
         goto Finish;
@@ -1923,8 +1954,243 @@ Finish:
 
     if (Status == 0xC0033333)
     {
-        DPRINT1("MiDispatchFault: FIXME! Status == 0xC0033333\n");
-        ASSERT(FALSE);
+        PMMPFN PageBlockPfn;
+
+        ASSERT(ReadPte != NULL);
+        ASSERT(PageBlock != NULL);
+
+        if (SectionProto)
+        {
+            ASSERT(OriginalPte.u.Hard.Valid == 0);
+            ASSERT(OriginalPte.u.Soft.Prototype == 0);
+            ASSERT(OriginalPte.u.Soft.Transition == 1);
+        }
+        else
+        {
+            OriginalPte.u.Long = ReadPte->u.Long;
+        }
+
+        if (Process == HYDRA_PROCESS)
+        {
+            MiUnlockWorkingSet(CurrentThread, &MmSessionSpace->GlobalVirtualAddress->Vm);
+
+            ASSERT(KeGetCurrentIrql () <= APC_LEVEL);
+            ASSERT(KeAreAllApcsDisabled () == TRUE);
+        }
+        else if (Process)
+        {
+            PKTHREAD _Thread = &CurrentThread->Tcb;
+            KeEnterCriticalRegionThread(_Thread);
+            MiUnlockWorkingSet(CurrentThread, &Process->Vm);
+
+            Flags |= 0x10;
+        }
+        else
+        {
+            MiUnlockWorkingSet(CurrentThread, &MmSystemCacheWs);
+            ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+            ASSERT(KeAreAllApcsDisabled() == TRUE);
+        }
+
+        ASSERT(PageBlock->u1.e1.PrefetchMdlHighBits == 0);
+
+        Status = IoPageRead(PageBlock->FilePointer,
+                            &PageBlock->Mdl,
+                            &PageBlock->StartingOffset,
+                            &PageBlock->Event,
+                            &PageBlock->IoStatus);
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MiDispatchFault: Status %X\n", Status);
+            PageBlock->IoStatus.Status = Status;
+            PageBlock->IoStatus.Information = 0;
+
+            KeSetEvent(&PageBlock->Event, 0, FALSE);
+        }
+
+        Status = MiWaitForInPageComplete(PageBlock->Pfn, ReadPte, Address, &OriginalPte, PageBlock, Process);
+        DPRINT("MiDispatchFault: Status %X\n", Status);
+
+        CurrentThread->ActiveFaultCount--;
+
+        if (Flags & 0x10)
+        {
+            PKTHREAD _Thread = &CurrentThread->Tcb;
+            KeLeaveCriticalRegionThread(_Thread);
+        }
+
+        PageBlockPfn = PageBlock->Pfn;
+        MdlPages = PageBlock->MdlPages;
+        StartProto = PageBlock->StartProto;
+
+        if ((LONG)PageBlock->Mdl.ByteCount > 0)
+        {
+            for (MdlPageCount = (((PageBlock->Mdl.ByteCount - 1) / PAGE_SIZE) + 1);
+                 MdlPageCount;
+                 MdlPageCount--, MdlPages++, StartProto++)
+            {
+                DPRINT("MiDispatchFault: PageNumber %X\n", *MdlPages);
+
+                if (StartProto == ReadPte)
+                {
+                    PageNumber = *MdlPages;
+                    continue;
+                }
+
+                PfnClusterPage = MI_PFN_ELEMENT(*MdlPages);
+                ASSERT(PfnClusterPage->u4.PteFrame == PageBlockPfn->u4.PteFrame);
+
+                if (PfnClusterPage->u4.InPageError)
+                {
+                    ASSERT(Status != STATUS_SUCCESS);
+                }
+
+                if (PfnClusterPage->u3.e1.ReadInProgress)
+                {
+                    ASSERT(PfnClusterPage->u4.PteFrame != 0x1FFEDCB);
+                    PfnClusterPage->u3.e1.ReadInProgress = 0;
+
+                    if (!PfnClusterPage->u4.InPageError)
+                        PfnClusterPage->u1.Event = NULL;
+                }
+
+                MiDereferencePfnAndDropLockCount(PfnClusterPage);
+            }
+        }
+
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT("MiDispatchFault: PageNumber %X, Status %X\n", PageNumber, Status);
+
+            MiDereferencePfnAndDropLockCount(MI_PFN_ELEMENT(PageNumber));
+
+            if (Status != 0x87303000)
+            {
+                MdlPages = PageBlock->MdlPages;
+
+                if ((LONG)PageBlock->Mdl.ByteCount > 0)
+                {
+                    for (MdlPageCount = (((PageBlock->Mdl.ByteCount - 1) / PAGE_SIZE) + 1);
+                         MdlPageCount;
+                         MdlPageCount--, MdlPages++)
+                    {
+                        PfnClusterPage = MI_PFN_ELEMENT(*MdlPages);
+
+                        if (!PfnClusterPage->u4.InPageError)
+                            continue;
+
+                        if (PfnClusterPage->u3.e2.ReferenceCount)
+                            continue;
+
+                        PfnClusterPage->u4.InPageError = 0;
+
+                        if (PfnClusterPage->u3.e1.PageLocation != FreePageList)
+                        {
+                            DPRINT1("MiDispatchFault: FIXME\n");
+                            ASSERT(FALSE);
+                        }
+                    }
+                }
+            }
+
+            if (LockedProtoPfn)
+            {
+                ASSERT(SectionProto != NULL);
+                ASSERT(LockedProtoPfn->u3.e2.ReferenceCount >= 1);
+                MiDereferencePfnAndDropLockCount(LockedProtoPfn);
+            }
+
+            /* Unlock the PFN database */
+            MiUnlockPfnDb(LockIrql, APC_LEVEL);
+
+            if (SessionWs)
+            {
+                DPRINT1("MiDispatchFault: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            MiFreeInPageSupportBlock(PageBlock);
+
+            if (Status == 0x87303000)
+                Status = STATUS_SUCCESS;
+            else if (Status == 0xC7303001)
+                Status = STATUS_NO_MEMORY;
+
+            ASSERT(OldIrql == KeGetCurrentIrql());
+
+            DPRINT("MiDispatchFault: return Status %X\n", Status);
+            return Status;
+        }
+
+        ASSERT(PageBlockPfn->u4.InPageError == 0);
+
+        if (!PageBlockPfn->u2.ShareCount)
+            MiDropLockCount(PageBlockPfn);
+
+        PageBlockPfn->u2.ShareCount++;
+        PageBlockPfn->u3.e1.PageLocation = ActiveAndValid;
+
+        /* Is MEMORY mapping */
+        if (((ReadPte->u.Soft.Protection & MM_WRITECOMBINE) == MM_WRITECOMBINE) &&
+            (ReadPte->u.Soft.Protection & MM_PROTECT_ACCESS))
+        {
+            CacheAttribute = MiPlatformCacheAttributes[0][MmWriteCombined];
+        }
+        else if ((ReadPte->u.Soft.Protection & MM_NOCACHE) == MM_NOCACHE)
+        {
+            CacheAttribute = MiPlatformCacheAttributes[0][MmNonCached];
+        }
+        else
+        {
+            CacheAttribute = MiCached;
+        }
+
+        if (PageBlockPfn->u3.e1.CacheAttribute != CacheAttribute)
+        {
+            DPRINT("MiDispatchFault: FIXME Flushing\n");
+            ASSERT(FALSE);
+            PageBlockPfn->u3.e1.CacheAttribute = CacheAttribute;
+        }
+
+        /* ReadPte is Transition PTE. Do it valid */
+        ASSERT((ReadPte->u.Hard.Valid == 0) &&
+               (ReadPte->u.Trans.Prototype == 0) &&
+               (ReadPte->u.Trans.Transition == 1));
+
+        MI_MAKE_HARDWARE_PTE(&TempPte,
+                             ReadPte,
+                             ReadPte->u.Trans.Protection,
+                             ReadPte->u.Trans.PageFrameNumber);
+
+        if (MI_IS_WRITE_ACCESS(FaultCode) && TempPte.u.Hard.Write)
+            MI_MAKE_DIRTY_PAGE(&TempPte);
+
+        MI_WRITE_VALID_PTE(ReadPte, TempPte);
+
+        if (SectionProto)
+        {
+            ASSERT(Pte->u.Hard.Valid == 0);
+
+            Status = MiCompleteProtoPteFault(MI_IS_WRITE_ACCESS(FaultCode),
+                                             Address,
+                                             Pte,
+                                             SectionProto,
+                                             OldIrql,
+                                             &LockedProtoPfn);
+
+            ASSERT(KeAreAllApcsDisabled() == TRUE);
+        }
+        else
+        {
+            DPRINT1("MiDispatchFault: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        MiFreeInPageSupportBlock(PageBlock);
+
+        if (Status == STATUS_SUCCESS)
+            Status = STATUS_PAGE_FAULT_PAGING_FILE;
     }
 
     if (Status == 0xC7303001 || Status == 0x87303000)
