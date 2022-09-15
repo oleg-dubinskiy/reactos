@@ -1771,7 +1771,45 @@ NTAPI
 MiFreeInPageSupportBlock(
     _In_ PMI_PAGE_SUPPORT_BLOCK Support)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMDL Mdl;
+
+    DPRINT("MiFreeInPageSupportBlock: Support %p\n", Support);
+
+    ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+    ASSERT(Support->CurrentThread != NULL);
+    ASSERT(Support->WaitCount != 0);
+
+    ASSERT((Support->ListEntry.Next == NULL) ||
+           (Support->u1.e1.PrefetchMdlHighBits != 0));
+
+    if (InterlockedDecrement((PLONG)&Support->WaitCount))
+    {
+        DPRINT("MiFreeInPageSupportBlock: Support->WaitCount %X\n", Support->WaitCount);
+        return;
+    }
+
+    if (Support->u1.e1.PrefetchMdlHighBits)
+    {
+        Mdl = (PMDL)(Support->u1.e1.PrefetchMdlHighBits << 3);
+
+        if (Mdl != &Support->Mdl)
+            ExFreePool(Mdl);
+    }
+
+    if (MmInPageSupportSListHead.Depth >= MmInPageSupportMinimum)
+    {
+        ExFreePoolWithTag(Support, 'nImM');
+        return;
+    }
+
+    Support->WaitCount = 1;
+    Support->u1.LongFlags = 0;
+
+    KeClearEvent(&Support->Event);
+
+    Support->CurrentThread = NULL;
+
+    InterlockedPushEntrySList(&MmInPageSupportSListHead, &Support->ListEntry);
 }
 
 NTSTATUS
