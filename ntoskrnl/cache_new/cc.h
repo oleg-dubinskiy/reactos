@@ -56,4 +56,13 @@ CcFreeVirtualAddress(
     _In_ PVACB Vacb
 );
 
+VOID
+NTAPI
+CcGetActiveVacb(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _Out_ PVACB* OutVacb,
+    _Out_ ULONG* OutActivePage,
+    _Out_ BOOLEAN* OutIsVacbLocked
+);
+
 /* EOF */

@@ -452,4 +452,30 @@ Finish:
     return;
 }
 
+VOID
+NTAPI
+CcGetActiveVacb(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _Out_ PVACB* OutVacb,
+    _Out_ ULONG* OutActivePage,
+    _Out_ BOOLEAN* OutIsVacbLocked)
+{
+    KIRQL OldIrql;
+
+    KeAcquireSpinLock(&SharedMap->ActiveVacbSpinLock, &OldIrql);
+
+    *OutVacb = SharedMap->ActiveVacb;
+    DPRINT("CcGetActiveVacb: ActiveVacb %p\n", SharedMap->ActiveVacb);
+
+    if (*OutVacb)
+    {
+        SharedMap->ActiveVacb = NULL;
+
+        *OutActivePage = SharedMap->ActivePage;
+        *OutIsVacbLocked = ((SharedMap->Flags & SHARE_FL_VACB_LOCKED) == SHARE_FL_VACB_LOCKED);
+    }
+
+    KeReleaseSpinLock(&SharedMap->ActiveVacbSpinLock, OldIrql);
+}
+
 /* EOF */
