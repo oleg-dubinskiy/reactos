@@ -1554,6 +1554,54 @@ MiCompleteInPage(
     }
 }
 
+PMMPTE
+NTAPI
+MiFindActualFaultingPte(
+    _In_ PVOID Address)
+{
+    PMMPDE Pde;
+    PMMPTE Pte;
+    PMMPTE FaultingProto;
+    PMMPTE FaultingPte;
+
+    DPRINT("MiFindActualFaultingPte: Address %p\n", Address);
+
+    if (MI_IS_PHYSICAL_ADDRESS(Address))
+        return NULL;
+
+    Pde = MiAddressToPde(Address);
+    if (!Pde->u.Hard.Valid)
+        return Pde;
+
+    Pte = MiAddressToPte(Address);
+    if (Pte->u.Hard.Valid)
+        return NULL;
+
+    if (!Pte->u.Soft.Prototype)
+        return Pte;
+
+    if (Pte->u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)
+    {
+        ULONG dummyProtection;
+        PMMVAD dummyProtoVad;
+
+        FaultingProto = MiCheckVirtualAddress(Address, &dummyProtection, &dummyProtoVad);
+        if (!FaultingProto)
+            return NULL;
+    }
+    else
+    {
+        FaultingProto = MiGetProtoPtr(Pte);
+    }
+
+    FaultingPte = MiFindActualFaultingPte(FaultingProto);
+
+    if (!FaultingPte)
+        return Pte;
+
+    return FaultingPte;
+}
+
 NTSTATUS
 NTAPI
 MiWaitForInPageComplete(
