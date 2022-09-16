@@ -8,6 +8,17 @@
 
 /* GLOBALS ********************************************************************/
 
+#define MI_PE_HEADER_MAX_PAGES 2
+#define MI_MAX_IMAGE_SECTIONS  16
+
+#define MI_PE_HEADER_MAX_SIZE (sizeof(IMAGE_NT_HEADERS) + MI_MAX_IMAGE_SECTIONS * sizeof(IMAGE_SECTION_HEADER))
+
+typedef struct _MI_PE_HEADER_MDL
+{
+    MDL Mdl;
+    PFN_NUMBER PageNumber[MI_PE_HEADER_MAX_PAGES];
+} MI_PE_HEADER_MDL, *PMI_PE_HEADER_MDL;
+
 KGUARDED_MUTEX MmSectionCommitMutex;
 KGUARDED_MUTEX MmSectionBasedMutex;
 KEVENT MmCollidedFlushEvent;
@@ -2870,6 +2881,56 @@ MiCreateDataFileMap(
     }
 
     return STATUS_SUCCESS;
+}
+
+PFN_NUMBER
+NTAPI
+MiGetPageForHeader(
+    _In_ BOOLEAN IsZeroPage)
+{
+    PFN_NUMBER PageNumber;
+    PMMPFN PeHeaderPfn;
+    ULONG Color;
+    BOOLEAN IsFlush = FALSE;
+    KIRQL OldIrql;
+
+    DPRINT("MiGetPageForHeader: IsZeroPage %X\n", IsZeroPage);
+
+    Color = MI_GET_NEXT_PROCESS_COLOR(PsGetCurrentProcess());
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (MmAvailablePages < 0x80)
+    {
+        DPRINT1("MiGetPageForHeader: FIXME MiEnsureAvailablePageOrWait()\n");
+    }
+
+    if (IsZeroPage)
+        PageNumber = MiRemoveZeroPage(Color);
+    else
+        PageNumber = MiRemoveAnyPage(Color);
+
+    PeHeaderPfn = &MmPfnDatabase[PageNumber];
+    PeHeaderPfn->u3.ReferenceCount++;
+
+    if (PeHeaderPfn->u3.e1.CacheAttribute != MiCached)
+    {
+        PeHeaderPfn->u3.e1.CacheAttribute = MiCached;
+        IsFlush = TRUE;
+    }
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    ASSERT(PeHeaderPfn->u1.Flink == 0);
+    ASSERT(PeHeaderPfn->u2.Blink == 0);
+
+    PeHeaderPfn->OriginalPte.u.Long = 0;
+    PeHeaderPfn->PteAddress = (PMMPTE)0x10001;
+
+    if (IsFlush)
+        KeFlushEntireTb(TRUE, TRUE);
+
+    return PageNumber;
 }
 
 NTSTATUS
