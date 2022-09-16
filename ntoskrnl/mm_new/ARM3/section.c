@@ -3073,6 +3073,93 @@ MmPurgeSection(
     return FALSE;
 }
 
+BOOLEAN
+NTAPI
+MiCheckControlAreaStatus(
+    _In_ ULONG Type,
+    _In_ PSECTION_OBJECT_POINTERS SectionPointers,
+    _In_ BOOLEAN IsDeleteOnClose,
+    _Out_ PCONTROL_AREA* OutControlArea,
+    _Out_ KIRQL* OutOldIrql)
+{
+    PCONTROL_AREA ControlArea;
+    ULONG NumberOfReferences;
+    KIRQL OldIrql;
+
+    DPRINT("MiCheckControlAreaStatus: %X, %p, %X\n", Type, SectionPointers, IsDeleteOnClose);
+
+    *OutControlArea = NULL;
+
+    // FIXME SegmentEvent
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (Type == 1)
+        ControlArea = SectionPointers->ImageSectionObject;
+    else
+        ControlArea = SectionPointers->DataSectionObject;
+
+    DPRINT("MiCheckControlAreaStatus: ControlArea %p\n", ControlArea);
+
+    if (ControlArea)
+    {
+        if (Type == 2)
+            NumberOfReferences = ControlArea->NumberOfUserReferences;
+        else
+            NumberOfReferences = ControlArea->NumberOfSectionReferences;
+    }
+    else
+    {
+        if (Type == 3)
+        {
+            ControlArea = SectionPointers->ImageSectionObject;
+            if (!ControlArea)
+            {
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                // FIXME SegmentEvent
+                return TRUE;
+            }
+
+            NumberOfReferences = ControlArea->NumberOfSectionReferences;
+        }
+        else
+        {
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            // FIXME SegmentEvent
+            return TRUE;
+        }
+    }
+
+    if (NumberOfReferences ||
+        ControlArea->NumberOfMappedViews ||
+        ControlArea->u.Flags.BeingCreated)
+    {
+        if (IsDeleteOnClose)
+            ControlArea->u.Flags.DeleteOnClose = 1;
+
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        // FIXME SegmentEvent
+        return FALSE;
+    }
+
+    // FIXME SegmentEvent
+
+    if (ControlArea->u.Flags.BeingDeleted)
+    {
+        DPRINT1("MiCheckControlAreaStatus: FIXME\n");
+        ASSERT(FALSE);
+        return TRUE;
+    }
+
+    DPRINT1("MiCheckControlAreaStatus: FIXME\n");
+    ASSERT(FALSE);
+
+    *OutControlArea = ControlArea;
+    *OutOldIrql = OldIrql;
+
+    return FALSE;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 BOOLEAN
