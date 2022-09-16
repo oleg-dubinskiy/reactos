@@ -97,6 +97,213 @@ MiResolveImageReferences(
 
 NTSTATUS
 NTAPI
+MiLoadImageSection(
+    _Inout_ PVOID* OutSection,
+    _Out_ PVOID* OutBaseAddress,
+    _In_ PUNICODE_STRING FileName,
+    _In_ BOOLEAN IsSessionLoad,
+    _In_ PLDR_DATA_TABLE_ENTRY LdrEntry)
+{
+    PSECTION Section = *OutSection;
+    PSEGMENT Segment = Section->Segment;
+    PFN_COUNT PteCount = Segment->TotalNumberOfPtes;
+    LARGE_INTEGER SectionOffset = {{0, 0}};
+    PCONTROL_AREA ControlArea;
+    PSUBSECTION Subsection;
+    PEPROCESS Process;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    PMMPTE Proto;
+    PMMPTE LastProto;
+    PVOID MapBase = NULL;
+    PVOID BaseAddress;
+    PVOID CurrentVa;
+    MMPTE TempPte = ValidKernelPte;
+    SIZE_T ViewSize = 0;
+    PFN_NUMBER PageFrameIndex;
+    ULONG Count = 0;
+    KAPC_STATE ApcState;
+    BOOLEAN IsLoadSymbols = FALSE;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("MiLoadImageSection: Section %p, FileName %wZ\n", *OutSection, FileName);
+
+    /* Detect session load */
+    if (IsSessionLoad)
+    {
+        UNIMPLEMENTED_DBGBREAK("Session loading not yet supported!\n");
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    /* Not session load, shouldn't have an entry */
+    ASSERT(LdrEntry == NULL);
+
+    DPRINT("MiLoadImageSection: FIXME MiChargeResidentAvailable\n");
+
+    /* Reserve system PTEs needed */
+    Pte = MiReserveSystemPtes(PteCount, SystemPteSpace);
+    if (!Pte)
+    {
+        DPRINT1("MiLoadImageSection: MiReserveSystemPtes failed\n");
+        ASSERT(FALSE);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* New driver base */
+    BaseAddress = MiPteToAddress(Pte);
+
+    DPRINT("MiLoadImageSection: FIXME MiChargeCommitment \n");
+
+    InterlockedExchangeAdd((PLONG)&MmDriverCommit, PteCount);
+
+    /* Attach to the system process */
+    KeStackAttachProcess(&PsInitialSystemProcess->Pcb, &ApcState);
+
+    /* Check if we need to load symbols */
+    if (NtGlobalFlag & FLG_ENABLE_KDEBUG_SYMBOL_LOAD)
+    {
+        /* Yes we do */
+        IsLoadSymbols = TRUE;
+        NtGlobalFlag &= ~FLG_ENABLE_KDEBUG_SYMBOL_LOAD;
+    }
+
+    /* Map the driver */
+    Process = PsGetCurrentProcess();
+
+    Status = MmMapViewOfSection(Section,
+                                Process,
+                                &MapBase,
+                                0,
+                                0,
+                                &SectionOffset,
+                                &ViewSize,
+                                ViewUnmap,
+                                0,
+                                PAGE_EXECUTE);
+    /* Re-enable the flag */
+    if (IsLoadSymbols)
+        NtGlobalFlag |= FLG_ENABLE_KDEBUG_SYMBOL_LOAD;
+
+    /* Check if we failed with distinguished status code */
+    if (Status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)
+        /* Change it to something more generic */
+        Status = STATUS_INVALID_IMAGE_FORMAT;
+
+    /* Now check if we failed */
+    if (!NT_SUCCESS(Status))
+    {
+        /* Detach and return */
+        DPRINT1("MmMapViewOfSection failed with status 0x%X\n", Status);
+        KeUnstackDetachProcess(&ApcState);
+
+        ASSERT((SSIZE_T)(PteCount) >= 0);
+        MiReleaseSystemPtes(Pte, PteCount, SystemPteSpace);
+
+        return Status;
+    }
+
+    ControlArea = Segment->ControlArea;
+
+    if (ControlArea->u.Flags.GlobalOnlyPerSession || ControlArea->u.Flags.Rom)
+        Subsection = (PSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+    else
+        Subsection = (PSUBSECTION)(ControlArea + 1);
+
+    DPRINT("MiLoadImageSection: Segment %p, ControlArea %p\n", Segment, ControlArea);
+
+    ASSERT(Subsection->SubsectionBase != NULL);
+
+    Proto = Subsection->SubsectionBase;
+    LastProto = &Subsection->SubsectionBase[Subsection->PtesInSubsection];
+
+    //DPRINT("MiLoadImageSection: Proto %p [%p], LastProto %p\n", Proto, (Proto?Proto->u.Long:0), LastProto);
+
+    /* The driver is here */
+    *OutBaseAddress = BaseAddress;
+    CurrentVa = MapBase;
+
+    DPRINT1("MiLoadImageSection: %wZ at %p with %X pages\n", FileName, BaseAddress, PteCount);
+
+    LastPte = (Pte + PteCount);
+
+    /* Loop the new driver PTEs */
+    for (; Pte < LastPte; Pte++, Proto++)
+    {
+        //DPRINT("MiLoadImageSection: Pte %p, [%X:%X]\n", Pte, PteCount, Count);
+        //DPRINT("MiLoadImageSection: Proto %p, LastProto %p\n", Proto, LastProto);
+
+        if (Proto >= LastProto)
+        {
+            ASSERT(Subsection->NextSubsection != NULL);
+
+            //DPRINT("MiLoadImageSection: Subsection %p, Subsection->NextSubsection %p\n", Subsection, Subsection->NextSubsection);
+            Subsection = Subsection->NextSubsection;
+
+            //DPRINT("MiLoadImageSection: UnusedPtes %X, PtesInSubsection %X\n", Subsection->UnusedPtes, Subsection->PtesInSubsection);
+            Proto = Subsection->SubsectionBase;
+            LastProto = &Proto[Subsection->PtesInSubsection];
+            //DPRINT("MiLoadImageSection: Proto %p, LastProto %p\n", Proto, LastProto);
+        }
+
+        if (Proto->u.Hard.Valid || Proto->u.Soft.Protection != 0x18)
+        {
+            Count++;
+
+            /* Grab a page */
+            PageFrameIndex = MiAllocatePfn(Pte, MM_EXECUTE);
+
+            /* Write the PTE */
+            TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
+            MI_WRITE_VALID_PTE(Pte, TempPte);
+
+            ASSERT(MI_PFN_ELEMENT(PageFrameIndex)->u1.WsIndex == 0);
+
+            _SEH2_TRY
+            {
+                /* Copy the image */
+                RtlCopyMemory(BaseAddress, CurrentVa, PAGE_SIZE);
+            }
+            _SEH2_EXCEPT (EXCEPTION_EXECUTE_HANDLER)
+            {
+                DPRINT1("MiLoadImageSection: FIXME\n");
+                ASSERT(FALSE);
+                return _SEH2_GetExceptionCode();
+            }
+            _SEH2_END;
+        }
+        else
+        {
+            Pte->u.Long = 0;
+        }
+
+        /* Move on */
+        BaseAddress = (PVOID)((ULONG_PTR)BaseAddress + PAGE_SIZE);
+        CurrentVa = (PVOID)((ULONG_PTR)CurrentVa + PAGE_SIZE);
+    }
+
+    /* Now unmap the view */
+    Status = MiUnmapViewOfSection(Process, MapBase, 0);
+    ASSERT(NT_SUCCESS(Status));
+
+    MmPurgeSection(ControlArea->FilePointer->SectionObjectPointer, NULL, 0, FALSE);
+
+    /* Detach and return status */
+    KeUnstackDetachProcess(&ApcState);
+
+    if (PteCount != Count)
+    {
+        ASSERT(PteCount > Count);
+
+        DPRINT1("MiLoadImageSection: PteCount %X, Count %X\n", PteCount, Count);
+        ASSERT(FALSE);
+    }
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 MmLoadSystemImage(
     _In_ PUNICODE_STRING FileName,
     _In_ PUNICODE_STRING NamePrefix OPTIONAL,
