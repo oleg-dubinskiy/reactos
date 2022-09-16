@@ -1203,8 +1203,111 @@ MmCheckSystemImage(
     _In_ HANDLE ImageHandle,
     _In_ BOOLEAN PurgeSection)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    FILE_STANDARD_INFORMATION FileStandardInfo;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    IO_STATUS_BLOCK IoStatusBlock;
+    PIMAGE_NT_HEADERS NtHeaders;
+    PVOID ViewBase = NULL;
+    HANDLE SectionHandle;
+    SIZE_T ViewSize = 0;
+    KAPC_STATE ApcState;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    /* Setup the object attributes */
+    InitializeObjectAttributes(&ObjectAttributes,
+                               NULL,
+                               (OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE),
+                               NULL,
+                               NULL);
+
+    /* Create a section for the DLL */
+    Status = ZwCreateSection(&SectionHandle,
+                             SECTION_MAP_EXECUTE,
+                             &ObjectAttributes,
+                             NULL,
+                             PAGE_EXECUTE,
+                             SEC_IMAGE,
+                             ImageHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmCheckSystemImage: Status %X\n", Status);
+        return Status;
+    }
+
+    /* Make sure we're in the system process */
+    KeStackAttachProcess(&PsInitialSystemProcess->Pcb, &ApcState);
+
+    /* Map it */
+    Status = ZwMapViewOfSection(SectionHandle,
+                                NtCurrentProcess(),
+                                &ViewBase,
+                                0,
+                                0,
+                                NULL,
+                                &ViewSize,
+                                ViewShare,
+                                0,
+                                PAGE_EXECUTE);
+    if (!NT_SUCCESS(Status))
+    {
+        /* We failed, close the handle and return */
+        DPRINT1("MmCheckSystemImage: Status %X\n", Status);
+        KeUnstackDetachProcess(&ApcState);
+        ZwClose(SectionHandle);
+        return Status;
+    }
+
+    /* Now query image information */
+    Status = ZwQueryInformationFile(ImageHandle,
+                                    &IoStatusBlock,
+                                    &FileStandardInfo,
+                                    sizeof(FileStandardInfo),
+                                    FileStandardInformation);
+    if (NT_SUCCESS(Status))
+    {
+        /* First, verify the checksum */
+        if (!LdrVerifyMappedImageMatchesChecksum(ViewBase,
+                                                 ViewSize,
+                                                 FileStandardInfo.
+                                                 EndOfFile.LowPart))
+        {
+            /* Set checksum failure */
+            Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
+            goto Fail;
+        }
+
+        /* Make sure it's a real image */
+        NtHeaders = RtlImageNtHeader(ViewBase);
+        if (!NtHeaders)
+        {
+            /* Set checksum failure */
+            Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
+            goto Fail;
+        }
+
+        /* Make sure it's for the correct architecture */
+        if (NtHeaders->FileHeader.Machine != IMAGE_FILE_MACHINE_NATIVE ||
+            NtHeaders->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR_MAGIC)
+        {
+            /* Set protection failure */
+            Status = STATUS_INVALID_IMAGE_PROTECT;
+            goto Fail;
+        }
+
+        /* Check that it's a valid SMP image if we have more then one CPU */
+        if (!MmVerifyImageIsOkForMpUse(ViewBase))
+            /* Otherwise it's not the right image */
+            Status = STATUS_IMAGE_MP_UP_MISMATCH;
+    }
+
+    /* Unmap the section, close the handle, and return status */
+Fail:
+    ZwUnmapViewOfSection(NtCurrentProcess(), ViewBase);
+    KeUnstackDetachProcess(&ApcState);
+    ZwClose(SectionHandle);
+    return Status;
 }
 
 INIT_FUNCTION
