@@ -3120,8 +3120,404 @@ MmPurgeSection(
     _In_ SIZE_T Length,
     _In_ BOOLEAN IsFullPurge)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PCONTROL_AREA ControlArea;
+    PMAPPED_FILE_SEGMENT Segment;
+    PSUBSECTION Subsection;
+    PSUBSECTION FirstSubsection;
+    PSUBSECTION LastSubsection;
+    PSUBSECTION TempSubsection;
+    PSUBSECTION LastTempSubsection;
+    PMSUBSECTION MappedSubsection;
+    PLARGE_INTEGER fileOffset;
+    PMMPTE SectionProto;
+    PMMPTE LastProto;
+    PMMPTE lastProto;
+    PMMPTE ProtoPte;
+    MMPTE TempProto;
+    PMMPFN ProtoPfn;
+    PMMPFN Pfn;
+    LARGE_INTEGER offset;
+    ULONGLONG PteOffset;
+    ULONG LastPteOffset;
+    PFN_NUMBER PageNumber;
+    KIRQL OldIrql;
+    BOOLEAN IsLock;
+    BOOLEAN Result;
+
+    DPRINT("MmPurgeSection: %p, %I64X, %X, %X\n", SectionPointer, (FileOffset?FileOffset->QuadPart:0), Length, IsFullPurge);
+
+    ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+
+    if (FileOffset)
+    {
+        offset = *FileOffset;
+        fileOffset = &offset;
+    }
+    else
+    {
+        fileOffset = NULL;
+    }
+
+    if (!MiCanFileBeTruncatedInternal(SectionPointer, fileOffset, TRUE, &OldIrql))
+    {
+        DPRINT("MmPurgeSection: return FALSE\n");
+        return FALSE;
+    }
+
+    ControlArea = SectionPointer->DataSectionObject;
+
+    if (!ControlArea || ControlArea->u.Flags.Rom)
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        DPRINT("MmPurgeSection: return TRUE\n");
+        return TRUE;
+    }
+
+    if (!IsFullPurge && ControlArea->NumberOfSystemCacheViews)
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        DPRINT("MmPurgeSection: return FALSE\n");
+        return FALSE;
+    }
+
+    ASSERT(ControlArea->u.Flags.BeingDeleted == 0);
+    ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 0);
+
+    Subsection = (PSUBSECTION)&ControlArea[1];
+
+    if (fileOffset)
+    {
+        for (PteOffset = (fileOffset->QuadPart / PAGE_SIZE);
+             PteOffset >= Subsection->PtesInSubsection;
+             PteOffset -= Subsection->PtesInSubsection)
+        {
+            Subsection = Subsection->NextSubsection;
+
+            if (!Subsection)
+            {
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                DPRINT("MmPurgeSection: return TRUE\n");
+                return TRUE;
+            }
+        }
+
+        ASSERT(PteOffset < (ULONGLONG)Subsection->PtesInSubsection);
+    }
+    else
+    {
+        PteOffset = 0;
+    }
+
+    if (fileOffset && Length)
+    {
+        LastPteOffset = PteOffset + (((Length + BYTE_OFFSET(fileOffset->LowPart)) - 1) / PAGE_SIZE);
+
+        for (LastSubsection = Subsection;
+             (ULONGLONG)LastSubsection->PtesInSubsection <= LastPteOffset;
+             LastSubsection = LastSubsection->NextSubsection)
+        {
+            LastPteOffset -= LastSubsection->PtesInSubsection;
+
+            if (!LastSubsection->NextSubsection)
+            {
+                LastPteOffset = (LastSubsection->PtesInSubsection - 1);
+                break;
+            }
+        }
+
+        ASSERT(LastPteOffset < (ULONGLONG)LastSubsection->PtesInSubsection);
+    }
+    else
+    {
+        LastSubsection = Subsection;
+        Segment = (PMAPPED_FILE_SEGMENT)ControlArea->Segment;
+
+        if (MiIsAddressValid(Segment) &&
+            Segment->LastSubsectionHint)
+        {
+            LastSubsection = (PSUBSECTION)Segment->LastSubsectionHint;
+        }
+
+        while (LastSubsection->NextSubsection)
+            LastSubsection = LastSubsection->NextSubsection;
+
+        LastPteOffset = (LastSubsection->PtesInSubsection - 1);
+    }
+
+    if (!MiReferenceSubsection((PMSUBSECTION)Subsection))
+    {
+        while (TRUE)
+        {
+            if (Subsection == LastSubsection)
+            {
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                DPRINT("MmPurgeSection: return TRUE\n");
+                return TRUE;
+            }
+
+            Subsection = Subsection->NextSubsection;
+
+            if (!Subsection)
+            {
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                DPRINT("MmPurgeSection: return TRUE\n");
+                return TRUE;
+            }
+
+            if (MiReferenceSubsection((PMSUBSECTION)Subsection))
+            {
+                SectionProto = Subsection->SubsectionBase;
+                break;
+            }
+        }
+    }
+    else
+    {
+        SectionProto = &Subsection->SubsectionBase[PteOffset];
+    }
+
+    FirstSubsection = Subsection;
+    ASSERT(Subsection->SubsectionBase != NULL);
+
+    if (!MiReferenceSubsection((PMSUBSECTION)LastSubsection))
+    {
+        ASSERT(Subsection != LastSubsection);
+
+        TempSubsection = Subsection->NextSubsection;
+        LastTempSubsection = NULL;
+
+        while (TempSubsection != LastSubsection)
+        {
+            ASSERT(TempSubsection != NULL);
+
+            if ((PMSUBSECTION)TempSubsection->SubsectionBase)
+                LastTempSubsection = TempSubsection;
+
+            TempSubsection = TempSubsection->NextSubsection;
+        }
+
+        if (!LastTempSubsection)
+        {
+            ASSERT(Subsection != NULL);
+            ASSERT(Subsection->SubsectionBase != NULL);
+
+            TempSubsection = Subsection;
+        }
+        else
+        {
+            TempSubsection = LastTempSubsection;
+        }
+
+        if (!MiReferenceSubsection((PMSUBSECTION)TempSubsection))
+        {
+            DPRINT1("MmPurgeSection: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        ASSERT(TempSubsection->SubsectionBase != NULL);
+
+        LastSubsection = TempSubsection;
+        LastPteOffset = LastSubsection->PtesInSubsection - 1;
+    }
+
+    lastProto = &LastSubsection->SubsectionBase[LastPteOffset + 1];
+
+    ControlArea->NumberOfMappedViews++;
+
+    ControlArea->u.Flags.BeingPurged = 1;
+    ControlArea->u.Flags.WasPurged = 1;
+
+    Result = TRUE;
+
+    while (TRUE)
+    {
+        DPRINT("MmPurgeSection: SectionProto %p\n", SectionProto);
+
+        if (OldIrql == MM_NOIRQL)
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        if (Subsection == LastSubsection)
+            LastProto = lastProto;
+        else
+            LastProto = &Subsection->SubsectionBase[Subsection->PtesInSubsection];
+
+        if (!Subsection->SubsectionBase)
+        {
+            ASSERT(OldIrql != MM_NOIRQL);
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            goto Next;
+        }
+
+        MappedSubsection = (PMSUBSECTION)Subsection;
+        MappedSubsection->NumberOfMappedViews++;
+
+        if (MappedSubsection->DereferenceList.Flink)
+        {
+            RemoveEntryList(&MappedSubsection->DereferenceList);
+            AlloccatePoolForSubsectionPtes(MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
+
+            MappedSubsection->DereferenceList.Flink = NULL;
+        }
+
+        MappedSubsection->u2.SubsectionFlags2.SubsectionAccessed = 1;
+
+        if (!MiCheckProtoPtePageState(SectionProto, OldIrql, &IsLock))
+            SectionProto = (PMMPTE)(((ULONG_PTR)SectionProto | (PAGE_SIZE - 1)) + 1);
+
+        while (SectionProto < LastProto)
+        {
+            if (MiIsPteOnPdeBoundary(SectionProto) &&
+                !MiCheckProtoPtePageState(SectionProto, OldIrql, &IsLock))
+            {
+                SectionProto += PTE_PER_PAGE;
+                continue;
+            }
+
+            TempProto.u.Long = SectionProto->u.Long;
+
+            if (TempProto.u.Hard.Valid)
+            {
+                Result = FALSE;
+                break;
+            }
+
+            if (!TempProto.u.Soft.Prototype && TempProto.u.Soft.Transition)
+            {
+                if (OldIrql == MM_NOIRQL)
+                {
+                    ProtoPte = MiAddressToPte(SectionProto);
+                    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+                    if (!ProtoPte->u.Hard.Valid)
+                    {
+                        DPRINT1("MmPurgeSection: FIXME\n");
+                        ASSERT(FALSE);
+                        //MiMakeSystemAddressValidPfn(SectionProto, OldIrql);
+                    }
+
+                    continue;
+                }
+
+                ProtoPfn = MI_PFN_ELEMENT(TempProto.u.Hard.PageFrameNumber);
+
+                if (!ProtoPfn->OriginalPte.u.Soft.Prototype ||
+                    ProtoPfn->OriginalPte.u.Hard.Valid ||
+                    ProtoPfn->PteAddress != SectionProto)
+                {
+                    DPRINT1("MmPurgeSection: FIXME KeBugCheckEx()\n");
+                    ASSERT(FALSE);
+                }
+
+                if (ProtoPfn->u3.e1.WriteInProgress)
+                {
+                    DPRINT1("MmPurgeSection: FIXME\n");
+                    ASSERT(FALSE);
+                    continue;
+                }
+
+                if (ProtoPfn->u3.e1.ReadInProgress)
+                {
+                    Result = FALSE;
+                    break;
+                }
+
+                ASSERT(!((ProtoPfn->OriginalPte.u.Soft.Prototype == 0) &&
+                       (ProtoPfn->OriginalPte.u.Soft.Transition == 1)));
+
+                MI_WRITE_INVALID_PTE(SectionProto, ProtoPfn->OriginalPte);
+                ASSERT(ProtoPfn->OriginalPte.u.Hard.Valid == 0);
+
+                ControlArea->NumberOfPfnReferences--;
+                ASSERT((LONG)ControlArea->NumberOfPfnReferences >= 0);
+
+                MiUnlinkPageFromList(ProtoPfn);
+                MI_SET_PFN_DELETED(ProtoPfn);
+
+                PageNumber = ProtoPfn->u4.PteFrame;
+                Pfn = MI_PFN_ELEMENT(PageNumber);
+
+                if (Pfn->u2.ShareCount != 1)
+                {
+                    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+                    ASSERT(MmPfnOwner == KeGetCurrentThread());
+                    ASSERT(PageNumber > 0);
+
+                    ASSERT(MI_PFN_ELEMENT(PageNumber) == Pfn);
+                    ASSERT(Pfn->u2.ShareCount != 0);
+
+                    if (Pfn->u3.e1.PageLocation != ActiveAndValid &&
+                        Pfn->u3.e1.PageLocation != StandbyPageList)
+                    {
+                        DPRINT1("MmPurgeSection: FIXME\n");
+                        ASSERT(FALSE);
+                    }
+
+                    Pfn->u2.ShareCount--;
+                    ASSERT(Pfn->u2.ShareCount < 0xF000000);
+                }
+                else
+                {
+                    MiDecrementShareCount(Pfn, PageNumber);
+                }
+
+                if (!ProtoPfn->u3.e2.ReferenceCount)
+                {
+                    DPRINT("MmPurgeSection: FIXME MiReleasePageFileSpace \n");
+                    MiInsertPageInFreeList(TempProto.u.Trans.PageFrameNumber);
+                }
+            }
+
+            SectionProto++;
+
+            if (MiIsPteOnPdeBoundary(SectionProto) && OldIrql != MM_NOIRQL)
+            {
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                OldIrql = MM_NOIRQL;
+            }
+        }
+
+        if (OldIrql == MM_NOIRQL)
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        ASSERT(MappedSubsection->DereferenceList.Flink == NULL);
+        ASSERT(((LONG_PTR)MappedSubsection->NumberOfMappedViews >= 1) ||
+                (MappedSubsection->u.SubsectionFlags.SubsectionStatic == 1));
+
+        MappedSubsection->NumberOfMappedViews--;
+
+        if (!MappedSubsection->NumberOfMappedViews &&
+            !MappedSubsection->u.SubsectionFlags.SubsectionStatic)
+        {
+            InsertTailList(&MmUnusedSubsectionList, &MappedSubsection->DereferenceList);
+            FreePoolForSubsectionPtes(MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
+        }
+
+        ASSERT(OldIrql != MM_NOIRQL);
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+Next:
+        OldIrql = MM_NOIRQL;
+
+        if (LastSubsection == Subsection || !Result)
+            break;
+
+        Subsection = Subsection->NextSubsection;
+        SectionProto = Subsection->SubsectionBase;
+    }
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    MiDecrementSubsections(FirstSubsection, FirstSubsection);
+    MiDecrementSubsections(LastSubsection, LastSubsection);
+
+    ASSERT((LONG)ControlArea->NumberOfMappedViews >= 1);
+
+    ControlArea->NumberOfMappedViews--;
+    ControlArea->u.Flags.BeingPurged = 0;
+
+    MiCheckControlArea(ControlArea, OldIrql);
+
+    DPRINT("MmPurgeSection: return %X\n", Result);
+    return Result;
 }
 
 BOOLEAN
@@ -3915,7 +4311,7 @@ MmDoesFileHaveUserWritableReferences(
 BOOLEAN
 NTAPI
 MmFlushImageSection(
-    _In_ PSECTION_OBJECT_POINTERS SectionObjectPointer,
+    _In_ PSECTION_OBJECT_POINTERS SectionPointer,
     _In_ MMFLUSH_TYPE FlushType)
 {
     PCONTROL_AREA ControlArea;
