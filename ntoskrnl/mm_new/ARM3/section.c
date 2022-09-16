@@ -2874,6 +2874,15 @@ MiAddViewsForSection(
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+MiRemoveViewsFromSection(
+    _In_ PMSUBSECTION MappedSubsection,
+    _In_ ULONGLONG PteCount)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 BOOLEAN
 NTAPI
 MmPurgeSection(

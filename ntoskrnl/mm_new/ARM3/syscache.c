@@ -451,7 +451,279 @@ MmUnmapViewInSystemCache(
     _In_ PVOID SectionObject,
     _In_ ULONG FrontOfList)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    MMPTE CacheChunkPte[MM_PAGES_PER_VACB];
+    PSECTION Section = SectionObject;
+    PFILE_OBJECT FileObject;
+    PCONTROL_AREA ControlArea;
+    PMSUBSECTION Subsection = NULL;
+    PETHREAD Thread;
+    PMMPTE Pte;
+    PMMPTE StartPte;
+    PMMPTE LastPte;
+    PMMPTE SectionProto = NULL;
+    PMMPTE ProtoPde;
+    MMPTE TempPte;
+    MMPTE TempProto;
+    PMMPFN StartPfn;
+    PMMPFN Pfn;
+    PFN_NUMBER StartPageNumber;
+    PFN_NUMBER PageNumber;
+    ULONG Idx = 0;
+    ULONG ix;
+    BOOLEAN IsLocked = FALSE;
+    KIRQL OldIrql;
+
+    DPRINT("MmUnmapViewInSystemCache: BaseAddress %p, Section %p, FrontOfList %X\n", BaseAddress, Section, FrontOfList);
+
+    ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+    Thread = PsGetCurrentThread();
+
+    StartPte = MiAddressToPte(BaseAddress);
+    LastPte = (StartPte + MM_PAGES_PER_VACB);
+
+    DPRINT("MmUnmapViewInSystemCache: StartPte %p, LastPte %p\n", StartPte, LastPte);
+
+    StartPageNumber = (MiAddressToPte(StartPte))->u.Hard.PageFrameNumber;
+    StartPfn = MI_PFN_ELEMENT(StartPageNumber);
+
+    ControlArea = Section->Segment->ControlArea;
+    FileObject = ControlArea->FilePointer;
+
+    ASSERT((ControlArea->u.Flags.Image == 0) &&
+           (ControlArea->u.Flags.PhysicalMemory == 0) &&
+           (ControlArea->u.Flags.GlobalOnlyPerSession == 0));
+
+    for (Pte = StartPte; Pte < LastPte; Pte++, Idx++)
+    {
+        TempPte.u.Long = Pte->u.Long;
+        CacheChunkPte[Idx] = TempPte;
+
+        if (TempPte.u.Hard.Valid)
+        {
+            if (!IsLocked)
+            {
+                IsLocked = TRUE;
+                MiLockWorkingSet(Thread, &MmSystemCacheWs);
+                continue;
+            }
+
+            Pfn = MI_PFN_ELEMENT(Pte->u.Hard.PageFrameNumber);
+
+            DPRINT("MmUnmapViewInSystemCache: FIXME MiTerminateWsle()\n");
+
+            if (FileObject)
+            {
+                ASSERT(Pfn->u3.e1.PrototypePte);
+                ASSERT(Pfn->OriginalPte.u.Soft.Prototype);
+
+                SectionProto = Pfn->PteAddress;
+
+                if (!Subsection)
+                    Subsection = (PMSUBSECTION)MiSubsectionPteToSubsection(&Pfn->OriginalPte);
+            }
+
+            MI_ERASE_PTE(Pte);
+
+            BaseAddress = ((PCHAR)BaseAddress + PAGE_SIZE);
+            continue;
+        }
+
+        if (!TempPte.u.Soft.Prototype)
+        {
+            ULONG size = ((LastPte - Pte) * sizeof(MMPTE));
+
+            ASSERT(TempPte.u.Long == 0);
+            ASSERT(RtlCompareMemoryUlong(Pte, size, 0) == size);
+
+            break;
+        }
+
+        if (!FileObject)
+        {
+            MI_ERASE_PTE(Pte);
+            BaseAddress = ((PCHAR)BaseAddress + PAGE_SIZE);
+            continue;
+        }
+
+        SectionProto = MiGetProtoPtr(&TempPte);
+
+        if (!Subsection)
+        {
+            ProtoPde = MiAddressToPte(SectionProto);
+
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+
+            if (!ProtoPde->u.Hard.Valid)
+            {
+                if (IsLocked)
+                {
+                    DPRINT1("MmUnmapViewInSystemCache: FIXME MiMakeSystemAddressValidPfnSystemWs \n");
+                    ASSERT(FALSE);
+                }
+                else
+                {
+                    DPRINT1("MmUnmapViewInSystemCache: FIXME MiMakeSystemAddressValidPfn \n");
+                    ASSERT(FALSE);
+                }
+            }
+
+            TempProto.u.Long = SectionProto->u.Long;
+
+            if (TempProto.u.Hard.Valid)
+            {
+                PageNumber = TempProto.u.Hard.PageFrameNumber;
+                Pfn = MI_PFN_ELEMENT(PageNumber);
+                SectionProto = &Pfn->OriginalPte;
+            }
+            else if (TempProto.u.Soft.Transition && !TempProto.u.Soft.Prototype)
+            {
+                PageNumber = TempProto.u.Trans.PageFrameNumber;
+                Pfn = MI_PFN_ELEMENT(PageNumber);
+                SectionProto = &Pfn->OriginalPte;
+            }
+            else
+            {
+                ASSERT(TempProto.u.Soft.Prototype == 1);
+            }
+
+            Subsection = (PMSUBSECTION)MiSubsectionPteToSubsection(SectionProto);
+
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        }
+
+        MI_ERASE_PTE(Pte);
+
+        BaseAddress = ((PCHAR)BaseAddress + PAGE_SIZE);
+    }
+
+    if (IsLocked)
+        MiUnlockWorkingSet(Thread, &MmSystemCacheWs);
+
+    StartPte->u.List.NextEntry = MM_EMPTY_PTE_LIST;
+    StartPte[1].u.List.NextEntry = KiTbFlushTimeStamp;
+
+    if (Subsection && Subsection->ControlArea != ControlArea)
+    {
+        DPRINT1("MmUnmapViewInSystemCache: FIXME KeBugCheckEx()\n");
+        ASSERT(FALSE);
+    }
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    MmLastFreeSystemCache->u.List.NextEntry = (StartPte - MmSystemCachePteBase);
+    MmLastFreeSystemCache = StartPte;
+
+    MmFrontOfList = FrontOfList;
+
+    for (ix = 0; ix < Idx; ix++)
+    {
+        if (!CacheChunkPte[ix].u.Hard.Valid)
+            continue;
+
+        PageNumber = (CacheChunkPte[ix].u.Long / PAGE_SIZE);
+        Pfn = MI_PFN_ELEMENT(PageNumber);
+
+        ASSERT(KeGetCurrentIrql() > APC_LEVEL);
+
+        if (!Pfn->u3.e1.Modified &&
+            CacheChunkPte[ix].u.Hard.Dirty)
+        {
+            ASSERT(Pfn->u3.e1.Rom == 0);
+            Pfn->u3.e1.Modified = 1;
+
+            if (!Pfn->OriginalPte.u.Soft.Prototype &&
+                !Pfn->u3.e1.WriteInProgress)
+            {
+                DPRINT1("MmUnmapViewInSystemCache: FIXME MiReleasePageFileSpace \n");
+                ASSERT(FALSE);
+                Pfn->OriginalPte.u.Soft.PageFileHigh = 0;
+            }
+        }
+
+        if (StartPfn->u2.ShareCount == 1)
+        {
+            MiDecrementShareCount(StartPfn, StartPageNumber);
+        }
+        else
+        {
+            ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+            ASSERT(MmPfnOwner == KeGetCurrentThread());
+            ASSERT(StartPageNumber > 0);
+
+            ASSERT(MI_PFN_ELEMENT(StartPageNumber) == StartPfn);
+            ASSERT(StartPfn->u2.ShareCount != 0);
+
+            if (StartPfn->u3.e1.PageLocation != ActiveAndValid &&
+                StartPfn->u3.e1.PageLocation != StandbyPageList)
+            {
+                DPRINT1("MmUnmapViewInSystemCache: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            StartPfn->u2.ShareCount--;
+            ASSERT(StartPfn->u2.ShareCount < 0xF000000);
+        }
+
+        if (ControlArea->NumberOfMappedViews == 1)
+        {
+            ASSERT(Pfn->u2.ShareCount == 1);
+        }
+
+        if (Pfn->u2.ShareCount == 1)
+        {
+            MiDecrementShareCount(Pfn, PageNumber);
+        }
+        else
+        {
+            ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+            ASSERT(MmPfnOwner == KeGetCurrentThread());
+            ASSERT(PageNumber > 0);
+
+            ASSERT(MI_PFN_ELEMENT(PageNumber) == Pfn);
+            ASSERT(Pfn->u2.ShareCount != 0);
+
+            if (Pfn->u3.e1.PageLocation != ActiveAndValid &&
+                Pfn->u3.e1.PageLocation != StandbyPageList)
+            {
+                DPRINT1("MmUnmapViewInSystemCache: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            Pfn->u2.ShareCount--;
+            ASSERT(Pfn->u2.ShareCount < 0xF000000);
+        }
+    }
+
+    MmFrontOfList = 0;
+
+    while (Subsection)
+    {
+        ASSERT(SectionProto != NULL);
+        ASSERT((Subsection->NumberOfMappedViews >= 1) ||
+               (Subsection->u.SubsectionFlags.SubsectionStatic == 1));
+
+        MiRemoveViewsFromSection(Subsection, Subsection->PtesInSubsection);
+
+        if (SectionProto >= Subsection->SubsectionBase &&
+            SectionProto < &Subsection->SubsectionBase[Subsection->PtesInSubsection])
+        {
+            break;
+        }
+
+        Subsection = (PMSUBSECTION)Subsection->NextSubsection;
+        if (!Subsection)
+        {
+            DPRINT1("MmUnmapViewInSystemCache: FIXME KeBugCheckEx()\n");
+            ASSERT(FALSE);
+        }
+
+        ASSERT(Subsection->ControlArea == ControlArea);
+    }
+
+    ControlArea->NumberOfMappedViews--;
+    ControlArea->NumberOfSystemCacheViews--;
+
+    MiCheckControlArea(ControlArea, OldIrql);
 }
 
 /* EOF */

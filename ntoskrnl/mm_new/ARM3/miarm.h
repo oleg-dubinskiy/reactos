@@ -1903,6 +1903,13 @@ MiAddViewsForSection(
     _In_ KIRQL OldIrql
 );
 
+VOID
+NTAPI
+MiRemoveViewsFromSection(
+    _In_ PMSUBSECTION MappedSubsection,
+    _In_ ULONGLONG PteCount
+);
+
 NTSTATUS
 NTAPI
 MiUnmapViewOfSection(
