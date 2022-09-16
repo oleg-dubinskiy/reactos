@@ -1171,6 +1171,32 @@ MmMakeKernelResourceSectionWritable(VOID)
     UNIMPLEMENTED_DBGBREAK();
 }
 
+BOOLEAN
+NTAPI
+MmVerifyImageIsOkForMpUse(
+    _In_ PVOID BaseAddress)
+{
+    PIMAGE_NT_HEADERS NtHeader;
+
+    PAGED_CODE();
+
+    /* Get NT Headers */
+    NtHeader = RtlImageNtHeader(BaseAddress);
+    if (!NtHeader)
+        return TRUE;
+
+    /* Check if this image is only safe for UP while we have 2+ CPUs */
+    if (KeNumberProcessors > 1)
+    {
+        if (NtHeader->FileHeader.Characteristics & IMAGE_FILE_UP_SYSTEM_ONLY)
+            /* Fail */
+            return FALSE;
+    }
+
+    /* Otherwise, it's safe */
+    return TRUE;
+}
+
 NTSTATUS
 NTAPI
 MmCheckSystemImage(
