@@ -83,6 +83,79 @@ CcDeleteSharedCacheMap(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+VOID
+NTAPI
+CcWaitForUninitializeCacheMap(
+    _In_ PFILE_OBJECT FileObject)
+{
+    PSHARED_CACHE_MAP SharedMap;
+    CACHE_UNINITIALIZE_EVENT event;
+    PCACHE_UNINITIALIZE_EVENT Event;
+    LARGE_INTEGER Timeout;
+    BOOLEAN IsWait = FALSE;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("CcWaitForUninitializeCacheMap: FileObject %p\n", FileObject);
+
+    if (!FileObject->SectionObjectPointer->SharedCacheMap)
+        return;
+
+    KeInitializeEvent(&event.Event, NotificationEvent, FALSE);
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+
+    if (SharedMap && 
+        (!SharedMap->OpenCount || IsListEmpty(&SharedMap->PrivateList)))
+    {
+        SharedMap->Flags |= 0x10000;
+        event.Next = SharedMap->UninitializeEvent;
+        SharedMap->UninitializeEvent = (PCACHE_UNINITIALIZE_EVENT)((ULONG_PTR)&event | 1);
+
+        IsWait = TRUE; 
+        CcScheduleLazyWriteScanEx(TRUE, TRUE);
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+    if (!IsWait)
+        return;
+
+    Timeout.QuadPart = 600 * (-10000ll * 1000); // 600 seconds (10 m)
+
+    Status = KeWaitForSingleObject(&event.Event,  Executive, KernelMode, FALSE, &Timeout);
+    if (Status != STATUS_TIMEOUT)
+        return;
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+    if (!SharedMap)
+    {
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+        KeWaitForSingleObject(&event.Event,  Executive, KernelMode, FALSE, NULL);
+        return;
+    }
+
+    Event = CONTAINING_RECORD(&SharedMap->UninitializeEvent, CACHE_UNINITIALIZE_EVENT, Next);
+
+    while (Event->Next != NULL)
+    {
+        if (Event->Next == (PCACHE_UNINITIALIZE_EVENT)((ULONG_PTR)&event | 1))
+        {
+            Event->Next = event.Next;
+            break;
+        }
+
+        Event = (PCACHE_UNINITIALIZE_EVENT)((ULONG_PTR)(Event->Next) & ~1);
+    }
+
+    SharedMap->Flags &= ~0x10000;
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PFILE_OBJECT

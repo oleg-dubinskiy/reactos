@@ -167,4 +167,11 @@ CcUnmapVacbArray(
     _In_ BOOLEAN FrontOfList
 );
 
+VOID
+NTAPI
+CcScheduleLazyWriteScanEx(
+    _In_ BOOLEAN NoDelay,
+    _In_ BOOLEAN PendingTeardown
+);
+
 /* EOF */
