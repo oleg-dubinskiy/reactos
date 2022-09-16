@@ -30,8 +30,47 @@ ULONG_PTR MmPteCodeEnd;
 BOOLEAN MmMakeLowMemory;
 BOOLEAN MmEnforceWriteProtection = FALSE; // FIXME: should be TRUE, but that would cause CORE-16387 & CORE-16449
 
+extern SIZE_T MmDriverCommit;
+extern PFN_NUMBER MmAvailablePages;
+extern ULONG MmSecondaryColorMask;
+extern MMPTE DemandZeroPte;
 
 /* FUNCTIONS ******************************************************************/
+
+PFN_NUMBER
+NTAPI
+MiAllocatePfn(
+    _In_ PMMPTE Pte,
+    _In_ ULONG Protection)
+{
+    PFN_NUMBER PageFrameNumber;
+    ULONG Color;
+    KIRQL OldIrql;
+
+    DPRINT("MiAllocatePfn: Pte %p, Protection %X\n", Pte, Protection);
+
+    /* Lock the PFN database */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (MmAvailablePages < 0x80)
+    {
+        DPRINT1("MiAllocatePfn: FIXME MiEnsureAvailablePageOrWait()\n");
+        ASSERT(FALSE);
+    }
+
+    Color = MI_GET_NEXT_COLOR();
+    PageFrameNumber = MiRemoveAnyPage(Color);
+
+    MI_WRITE_INVALID_PTE(Pte, DemandZeroPte);
+    Pte->u.Soft.Protection |= Protection;
+
+    MiInitializePfn(PageFrameNumber, Pte, TRUE);
+
+    /* Release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    return PageFrameNumber;
+}
 
 NTSTATUS
 NTAPI
