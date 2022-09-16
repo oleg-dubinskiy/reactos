@@ -44,6 +44,20 @@ MmUnloadSystemImage(
 
 NTSTATUS
 NTAPI
+MiResolveImageReferences(
+    _In_ PVOID ImageBase,
+    _In_ PUNICODE_STRING ImageFileDirectory,
+    _In_ PUNICODE_STRING NamePrefix OPTIONAL,
+    _Out_ PCHAR* MissingApi,
+    _Out_ PWCHAR* MissingDriver,
+    _Out_ PLOAD_IMPORTS* LoadImports)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 MmLoadSystemImage(
     _In_ PUNICODE_STRING FileName,
     _In_ PUNICODE_STRING NamePrefix OPTIONAL,
@@ -94,20 +108,6 @@ MmFreeDriverInitialization(
     _In_ PVOID DriverSection)
 {
     UNIMPLEMENTED_DBGBREAK();
-}
-
-NTSTATUS
-NTAPI
-MiResolveImageReferences(
-    _In_ PVOID ImageBase,
-    _In_ PUNICODE_STRING ImageFileDirectory,
-    _In_ PUNICODE_STRING NamePrefix OPTIONAL,
-    _Out_ PCHAR* MissingApi,
-    _Out_ PWCHAR* MissingDriver,
-    _Out_ PLOAD_IMPORTS* LoadImports)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
 }
 
 PVOID
