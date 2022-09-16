@@ -2874,6 +2874,18 @@ MiAddViewsForSection(
     return STATUS_SUCCESS;
 }
 
+BOOLEAN
+NTAPI
+MmPurgeSection(
+    _In_ PSECTION_OBJECT_POINTERS SectionPointer,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ SIZE_T Length,
+    _In_ BOOLEAN IsFullPurge)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 BOOLEAN

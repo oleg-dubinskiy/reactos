@@ -382,6 +382,15 @@ MmGetFileNameForSection(
     _Out_ POBJECT_NAME_INFORMATION* ModuleName
 );
 
+BOOLEAN
+NTAPI
+MmPurgeSection(
+    _In_ PSECTION_OBJECT_POINTERS SectionPointer,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ SIZE_T Length,
+    _In_ BOOLEAN IsFullPurge
+);
+
 /* ARM3\session.c */
 ULONG
 NTAPI

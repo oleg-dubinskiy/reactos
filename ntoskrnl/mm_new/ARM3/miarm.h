@@ -1903,6 +1903,14 @@ MiAddViewsForSection(
     _In_ KIRQL OldIrql
 );
 
+NTSTATUS
+NTAPI
+MiUnmapViewOfSection(
+    _In_ PEPROCESS Process,
+    _In_ PVOID BaseAddress,
+    _In_ ULONG Flags
+);
+
 /* ARM3\session.c */
 VOID
 NTAPI

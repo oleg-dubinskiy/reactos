@@ -37,6 +37,20 @@ extern MMPTE DemandZeroPte;
 
 /* FUNCTIONS ******************************************************************/
 
+static
+inline
+VOID
+sprintf_nt(
+    _In_ PCHAR Buffer,
+    _In_ PCHAR Format,
+    _In_ ...)
+{
+    va_list ap;
+    va_start(ap, Format);
+    vsprintf(Buffer, Format, ap);
+    va_end(ap);
+}
+
 PFN_NUMBER
 NTAPI
 MiAllocatePfn(
@@ -302,6 +316,35 @@ MiLoadImageSection(
     return Status;
 }
 
+VOID
+NTAPI
+MiProcessLoaderEntry(
+    _In_ PLDR_DATA_TABLE_ENTRY LdrEntry,
+    _In_ BOOLEAN Insert)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+BOOLEAN
+NTAPI
+MiUseLargeDriverPage(
+    _In_ ULONG NumberOfPtes,
+    _Inout_ PVOID* ImageBaseAddress,
+    _In_ PUNICODE_STRING BaseImageName,
+    _In_ BOOLEAN BootDriver)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+VOID
+NTAPI
+MiEnablePagingOfDriver(
+    _In_ PLDR_DATA_TABLE_ENTRY LdrEntry)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 MmLoadSystemImage(
@@ -312,8 +355,565 @@ MmLoadSystemImage(
     _Out_ PVOID* ModuleObject,
     _Out_ PVOID* ImageBaseAddress)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PLOAD_IMPORTS LoadedImports = MM_SYSLDR_NO_IMPORTS;
+    PLDR_DATA_TABLE_ENTRY LdrEntry = NULL;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    IO_STATUS_BLOCK IoStatusBlock;
+    UNICODE_STRING BaseName;
+    UNICODE_STRING BaseDirectory;
+    UNICODE_STRING PrefixName;
+    UNICODE_STRING UnicodeTemp;
+    STRING AnsiTemp;
+    IMAGE_INFO ImageInfo;
+    PSECTION Section = NULL;
+    PIMAGE_NT_HEADERS NtHeader;
+    PWCHAR MissingDriverName;
+    PCHAR MissingApiName;
+    PLIST_ENTRY NextEntry;
+    PCHAR Buffer;
+    PVOID ModuleLoadBase = NULL;
+    HANDLE FileHandle = NULL;
+    HANDLE SectionHandle;
+    ACCESS_MASK DesiredAccess;
+    ULONG TotalNumberOfPtes;
+    ULONG EntrySize;
+    BOOLEAN NeedToFreeString = FALSE;
+    BOOLEAN IsLoadedBefore = FALSE;
+    BOOLEAN LockOwned = FALSE;
+    BOOLEAN IsLoadOk = FALSE;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("MmLoadSystemImage: '%wZ', '%wZ', '%wZ', Flags %X\n", FileName, NamePrefix, LoadedName, Flags);
+
+    /* Detect session-load */
+    if (Flags)
+    {
+        /* Sanity checks */
+        ASSERT(NamePrefix == NULL);
+        ASSERT(LoadedName == NULL);
+
+        /* Make sure the process is in session too */
+        if (!PsGetCurrentProcess()->ProcessInSession)
+        {
+            DPRINT1("MmLoadSystemImage: STATUS_NO_MEMORY\n");
+            return STATUS_NO_MEMORY;
+        }
+    }
+
+    /* Allocate a buffer we'll use for names */
+    Buffer = ExAllocatePoolWithTag(NonPagedPool, MAXIMUM_FILENAME_LENGTH, TAG_LDR_WSTR);
+    if (!Buffer)
+    {
+        DPRINT1("MmLoadSystemImage: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Check for a separator */
+    if (FileName->Buffer[0] == OBJ_NAME_PATH_SEPARATOR)
+    {
+        PWCHAR p;
+        ULONG BaseLength;
+
+        /* Loop the path until we get to the base name */
+        p = &FileName->Buffer[FileName->Length / sizeof(WCHAR)];
+
+        while (*(p - 1) != OBJ_NAME_PATH_SEPARATOR)
+            p--;
+
+        /* Get the length */
+        BaseLength = (ULONG)(&FileName->Buffer[FileName->Length / sizeof(WCHAR)] - p);
+        BaseLength *= sizeof(WCHAR);
+
+        /* Setup the string */
+        BaseName.Length = (USHORT)BaseLength;
+        BaseName.Buffer = p;
+    }
+    else
+    {
+        /* Otherwise, we already have a base name */
+        BaseName.Length = FileName->Length;
+        BaseName.Buffer = FileName->Buffer;
+    }
+
+    /* Setup the maximum length */
+    BaseName.MaximumLength = BaseName.Length;
+
+    /* Now compute the base directory */
+    BaseDirectory = *FileName;
+    BaseDirectory.Length -= BaseName.Length;
+    BaseDirectory.MaximumLength = BaseDirectory.Length;
+
+    /* And the prefix, which for now is just the name itself */
+    PrefixName = *FileName;
+
+    /* Check if we have a prefix */
+    if (NamePrefix)
+    {
+        DPRINT1("Prefixed images are not yet supported!\n");
+    }
+
+    /* Check if we already have a name, use it instead */
+    if (LoadedName)
+        BaseName = *LoadedName;
+
+    /* Check for loader snap debugging */
+    if (NtGlobalFlag & FLG_SHOW_LDR_SNAPS)
+    {
+        /* Print out standard string */
+        DPRINT1("MM:SYSLDR Loading %wZ (%wZ) %s\n", &PrefixName, &BaseName, Flags ? "in session space" : "");
+    }
+
+LoaderScan:
+
+    /* Acquire the load lock */
+    ASSERT(LockOwned == FALSE);
+    LockOwned = TRUE;
+    KeEnterCriticalRegion();
+
+    KeWaitForSingleObject(&MmSystemLoadLock, WrVirtualMemory, KernelMode, FALSE, NULL);
+
+    DPRINT("MmLoadSystemImage: PrefixName '%wZ'\n", &PrefixName);
+
+    /* Scan the module list */
+    for (NextEntry = PsLoadedModuleList.Flink;
+         NextEntry != &PsLoadedModuleList;
+         NextEntry = NextEntry->Flink)
+    {
+        /* Get the entry and compare the names */
+        LdrEntry = CONTAINING_RECORD(NextEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+        if (RtlEqualUnicodeString(&PrefixName, &LdrEntry->FullDllName, TRUE))
+            /* Found it, break out */
+            break;
+    }
+
+    /* Check if we found the image */
+    if (NextEntry != &PsLoadedModuleList)
+    {
+        DPRINT("MmLoadSystemImage: Section %p\n", Section);
+
+        DPRINT1("MmLoadSystemImage: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (!Section)
+    {
+        DPRINT("MmLoadSystemImage: Section %p\n", Section);
+
+        /* It wasn't loaded, and we didn't have a previous attempt */
+        KeReleaseMutant(&MmSystemLoadLock, 1, FALSE, FALSE);
+        KeLeaveCriticalRegion();
+        LockOwned = FALSE;
+
+        /* Check if KD is enabled */
+        if (KdDebuggerEnabled && !KdDebuggerNotPresent)
+        {
+            DPRINT1("MmLoadSystemImage: FIXME: Attempt to get image from KD\n");
+        }
+
+        /* We don't have a valid entry */
+        LdrEntry = NULL;
+
+        /* Setup image attributes */
+        InitializeObjectAttributes(&ObjectAttributes,
+                                   FileName,
+                                   (OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE),
+                                   NULL,
+                                   NULL);
+
+        DPRINT("MmLoadSystemImage: '%wZ'\n", FileName);
+
+        /* Open the image */
+        Status = ZwOpenFile(&FileHandle,
+                            FILE_EXECUTE,
+                            &ObjectAttributes,
+                            &IoStatusBlock,
+                            (FILE_SHARE_READ | FILE_SHARE_DELETE),
+                            0);
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MmLoadSystemImage: '%wZ', %X\n", FileName, Status);
+            goto Exit;
+        }
+
+        /* Validate it */
+        Status = MmCheckSystemImage(FileHandle, FALSE);
+
+        if (Status == STATUS_IMAGE_CHECKSUM_MISMATCH ||
+            Status == STATUS_IMAGE_MP_UP_MISMATCH ||
+            Status == STATUS_INVALID_IMAGE_PROTECT)
+        {
+            /* Fail loading */
+            DPRINT1("MmLoadSystemImage: Status %X\n", Status);
+            goto Exit1;
+        }
+
+        /* Check if this is a session-load */
+        if (Flags)
+            /* Then we only need read and execute */
+            DesiredAccess = (SECTION_MAP_READ | SECTION_MAP_EXECUTE);
+        else
+            /* Otherwise, we can allow write access */
+            DesiredAccess = SECTION_ALL_ACCESS;
+
+        /* Initialize the attributes for the section */
+        InitializeObjectAttributes(&ObjectAttributes,
+                                   NULL,
+                                   (OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE),
+                                   NULL,
+                                   NULL);
+
+        /* Create the section */
+        Status = ZwCreateSection(&SectionHandle,
+                                 DesiredAccess,
+                                 &ObjectAttributes,
+                                 NULL,
+                                 PAGE_EXECUTE,
+                                 SEC_IMAGE,
+                                 FileHandle);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MmLoadSystemImage: Status %X\n", Status);
+            goto Exit1;
+        }
+
+        /* Now get the section pointer */
+        Status = ObReferenceObjectByHandle(SectionHandle,
+                                           SECTION_MAP_EXECUTE,
+                                           MmSectionObjectType,
+                                           KernelMode,
+                                           (PVOID *)&Section,
+                                           NULL);
+        ZwClose(SectionHandle);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MmLoadSystemImage: Status %X\n", Status);
+            goto Exit1;
+        }
+
+        /* Check if this was supposed to be a session-load */
+        if (Flags && !Section->Segment->ControlArea->u.Flags.FloppyMedia)
+        {
+            /* We don't support session loading yet */
+            UNIMPLEMENTED_DBGBREAK("Unsupported Session-Load!\n");
+        }
+
+        /* Check the loader list again, we should end up in the path below */
+        DPRINT("MmLoadSystemImage: goto LoaderScan\n");
+        goto LoaderScan;
+    }
+    else
+    {
+        /* We don't have a valid entry */
+        LdrEntry = NULL;
+    }
+
+    /* Load the image */
+    Status = MiLoadImageSection((PVOID *)&Section, &ModuleLoadBase, FileName, Flags, NULL);
+    ASSERT(Status != STATUS_ALREADY_COMMITTED);
+
+    /* Get the size of the driver */
+    TotalNumberOfPtes = Section->Segment->TotalNumberOfPtes;
+
+    /* Make sure we're not being loaded into session space */
+    if (!Flags)
+    {
+        /* Check for success */
+        if (NT_SUCCESS(Status))
+            /* Support large pages for drivers */
+            MiUseLargeDriverPage(TotalNumberOfPtes, &ModuleLoadBase, &BaseName, TRUE);
+
+        /* Dereference the section */
+        ObDereferenceObject(Section);
+        Section = NULL;
+    }
+
+    /* Check for failure of the load earlier */
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmLoadSystemImage: %X\n", Status);
+
+        if (IsLoadedBefore)
+        {
+            DPRINT1("MmLoadSystemImage: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        goto Exit1;
+    }
+
+    IsLoadOk = TRUE;
+
+    if (IsLoadedBefore)
+        goto Finish;
+
+    if (!Flags || ModuleLoadBase != Section->Segment->BasedAddress)
+    {
+        /* Relocate the driver */
+        Status = LdrRelocateImageWithBias(ModuleLoadBase,
+                                          0,
+                                          "SYSLDR",
+                                          STATUS_SUCCESS,
+                                          STATUS_CONFLICTING_ADDRESSES,
+                                          STATUS_INVALID_IMAGE_FORMAT);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MmLoadSystemImage: %X\n", Status);
+            goto Exit1;
+        }
+    }
+
+    /* Get the NT Header */
+    NtHeader = RtlImageNtHeader(ModuleLoadBase);
+
+    if (Flags)
+    {
+        DPRINT1("MmLoadSystemImage: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    /* Calculate the size we'll need for the entry and allocate it */
+    EntrySize = (sizeof(LDR_DATA_TABLE_ENTRY) + BaseName.Length + sizeof(UNICODE_NULL));
+
+    /* Allocate the entry */
+    LdrEntry = ExAllocatePoolWithTag(NonPagedPool, EntrySize, TAG_MODULE_OBJECT);
+    if (!LdrEntry)
+    {
+        DPRINT1("MmLoadSystemImage: %X\n", STATUS_INSUFFICIENT_RESOURCES);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit1;
+    }
+
+    /* Setup the entry */
+    LdrEntry->Flags = LDRP_LOAD_IN_PROGRESS;
+    LdrEntry->LoadCount = 1;
+    LdrEntry->LoadedImports = LoadedImports;
+    LdrEntry->PatchInformation = NULL;
+
+    /* Check the version */
+    if (NtHeader->OptionalHeader.MajorOperatingSystemVersion >= 5 &&
+        NtHeader->OptionalHeader.MajorImageVersion >= 5)
+    {
+        /* Mark this image as a native image */
+        LdrEntry->Flags |= LDRP_ENTRY_NATIVE;
+    }
+
+    if (Flags)
+    {
+        DPRINT1("MmLoadSystemImage: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    /* Setup the rest of the entry */
+    LdrEntry->DllBase = ModuleLoadBase;
+    LdrEntry->EntryPoint = (PVOID)((ULONG_PTR)ModuleLoadBase + NtHeader->OptionalHeader.AddressOfEntryPoint);
+    LdrEntry->SizeOfImage = NtHeader->OptionalHeader.SizeOfImage;
+    LdrEntry->CheckSum = NtHeader->OptionalHeader.CheckSum;
+    LdrEntry->SectionPointer = Section;
+
+    /* Now write the DLL name */
+    LdrEntry->BaseDllName.Buffer = (PVOID)(LdrEntry + 1);
+    LdrEntry->BaseDllName.Length = BaseName.Length;
+    LdrEntry->BaseDllName.MaximumLength = BaseName.Length;
+
+    /* Copy and null-terminate it */
+    RtlCopyMemory(LdrEntry->BaseDllName.Buffer, BaseName.Buffer, BaseName.Length);
+    LdrEntry->BaseDllName.Buffer[BaseName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+    /* Now allocate the full name */
+    LdrEntry->FullDllName.Buffer = ExAllocatePoolWithTag(PagedPool, (PrefixName.Length + sizeof(UNICODE_NULL)), TAG_LDR_WSTR);
+
+    if (!LdrEntry->FullDllName.Buffer)
+    {
+        /* Don't fail, just set it to zero */
+        LdrEntry->FullDllName.Length = 0;
+        LdrEntry->FullDllName.MaximumLength = 0;
+    }
+    else
+    {
+        /* Set it up */
+        LdrEntry->FullDllName.Length = PrefixName.Length;
+        LdrEntry->FullDllName.MaximumLength = PrefixName.Length;
+
+        /* Copy and null-terminate */
+        RtlCopyMemory(LdrEntry->FullDllName.Buffer, PrefixName.Buffer, PrefixName.Length);
+        LdrEntry->FullDllName.Buffer[PrefixName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+    }
+
+    /* Add the entry */
+    MiProcessLoaderEntry(LdrEntry, TRUE);
+
+    /* Resolve imports */
+    MissingApiName = Buffer;
+    MissingDriverName = NULL;
+
+    Status = MiResolveImageReferences(ModuleLoadBase,
+                                      &BaseDirectory,
+                                      NULL,
+                                      &MissingApiName,
+                                      &MissingDriverName,
+                                      &LoadedImports);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmLoadSystemImage: '%ls', '%s', %X\n", MissingDriverName, MissingApiName, Status);
+
+        /* If the lowest bit is set to 1, this is a hint that we need to free */
+        if (*(ULONG_PTR*)&MissingDriverName & 1)
+        {
+            NeedToFreeString = TRUE;
+            *(ULONG_PTR*)&MissingDriverName &= ~1;
+        }
+
+        if (NeedToFreeString)
+            ExFreePoolWithTag(MissingDriverName, TAG_LDR_WSTR);
+
+        /* Fail */
+        MiProcessLoaderEntry(LdrEntry, FALSE);
+
+        /* Check if we need to free the name */
+        if (LdrEntry->FullDllName.Buffer)
+            /* Free it */
+            ExFreePoolWithTag(LdrEntry->FullDllName.Buffer, TAG_LDR_WSTR);
+
+        /* Free the entry itself */
+        ExFreePoolWithTag(LdrEntry, TAG_MODULE_OBJECT);
+        LdrEntry = NULL;
+        goto Exit1;
+    }
+
+    /* Update the loader entry */
+    LdrEntry->Flags |= (LDRP_SYSTEM_MAPPED | LDRP_ENTRY_PROCESSED | LDRP_MM_LOADED);
+    LdrEntry->Flags &= ~LDRP_LOAD_IN_PROGRESS;
+    LdrEntry->LoadedImports = LoadedImports;
+
+    DPRINT("MmLoadSystemImage: FIXME MiApplyDriverVerifier()\n");
+
+    if (Flags)
+    {
+        DPRINT1("MmLoadSystemImage: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    /* Write-protect the system image */
+    MiWriteProtectSystemImage(LdrEntry->DllBase);
+
+    if (Flags)
+    {
+        DPRINT1("MmLoadSystemImage: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    /* Check if notifications are enabled */
+    if (PsImageNotifyEnabled)
+    {
+        /* Fill out the notification data */
+        ImageInfo.Properties = 0;
+        ImageInfo.ImageAddressingMode = IMAGE_ADDRESSING_MODE_32BIT;
+        ImageInfo.SystemModeImage = TRUE;
+        ImageInfo.ImageSize = LdrEntry->SizeOfImage;
+        ImageInfo.ImageBase = LdrEntry->DllBase;
+        ImageInfo.ImageSectionNumber = ImageInfo.ImageSelector = 0;
+
+        /* Send the notification */
+        PspRunLoadImageNotifyRoutines(FileName, NULL, &ImageInfo);
+    }
+
+#if defined(KDBG) || defined(_WINKD_)
+    /* MiCacheImageSymbols doesn't detect rossym */
+    if (TRUE)
+#else
+    /* Check if there's symbols */
+    if (MiCacheImageSymbols(LdrEntry->DllBase))
+#endif
+    {
+        /* Check if the system root is present */
+        if (PrefixName.Length > (11 * sizeof(WCHAR)) &&
+            !(_wcsnicmp(PrefixName.Buffer, L"\\SystemRoot", 11)))
+        {
+            /* Add the system root */
+            UnicodeTemp = PrefixName;
+            UnicodeTemp.Buffer += 11;
+            UnicodeTemp.Length -= (11 * sizeof(WCHAR));
+
+            sprintf_nt(Buffer, "%ws%wZ", &SharedUserData->NtSystemRoot[2], &UnicodeTemp);
+        }
+        else
+        {
+            /* Build the name */
+            sprintf_nt(Buffer, "%wZ", &BaseName);
+        }
+
+        /* Setup the ansi string */
+        RtlInitString(&AnsiTemp, Buffer);
+
+        /* Notify the debugger */
+        DPRINT("MmLoadSystemImage: FIXME DbgLoadImageSymbols()\n");
+        //DbgLoadImageSymbols(&AnsiTemp, LdrEntry->DllBase, (ULONG_PTR)PsGetCurrentProcessId());
+        //LdrEntry->Flags |= LDRP_DEBUG_SYMBOLS_LOADED;
+    }
+
+Finish:
+
+    /* Page the driver */
+    ASSERT(Section == NULL);
+    MiEnablePagingOfDriver(LdrEntry);
+
+    /* Return pointers */
+    *ModuleObject = LdrEntry;
+    *ImageBaseAddress = LdrEntry->DllBase;
+
+Exit1:
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmLoadSystemImage: Status %X\n", Status);
+
+        if (IsLoadOk)
+        {
+            DPRINT1("MmLoadSystemImage: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!IsLoadedBefore && Section)
+            ObDereferenceObject(Section);
+    }
+
+    if (LockOwned)
+    {
+        KeReleaseMutant(&MmSystemLoadLock, 1, FALSE, FALSE);
+        KeLeaveCriticalRegion();
+        LockOwned = FALSE;
+    }
+
+    /* If we have a file handle, close it */
+    if (FileHandle)
+        ZwClose(FileHandle);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmLoadSystemImage: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+Exit:
+
+    /* Check if we have the lock acquired */
+    if (LockOwned)
+    {
+        /* Release the lock */
+        KeReleaseMutant(&MmSystemLoadLock, 1, FALSE, FALSE);
+        KeLeaveCriticalRegion();
+    }
+
+    /* Check if we had a prefix (not supported yet - PrefixName == *FileName now) */
+    /* if (NamePrefix)
+           ExFreePool(PrefixName.Buffer); */
+
+    /* Free the name buffer and return status */
+    ExFreePoolWithTag(Buffer, TAG_LDR_WSTR);
+
+    return Status;
 }
 
 BOOLEAN
