@@ -2880,7 +2880,46 @@ MiRemoveViewsFromSection(
     _In_ PMSUBSECTION MappedSubsection,
     _In_ ULONGLONG PteCount)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    DPRINT("MiRemoveViewsFromSection: MappedSubsection %p, PteCount %X\n", MappedSubsection, PteCount);
+
+    ASSERT((MappedSubsection->ControlArea->u.Flags.Image == 0) &&
+           (MappedSubsection->ControlArea->FilePointer != NULL) &&
+           (MappedSubsection->ControlArea->u.Flags.PhysicalMemory == 0));
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    for (;
+         MappedSubsection;
+         MappedSubsection = (PMSUBSECTION)MappedSubsection->NextSubsection)
+    {
+        ASSERT(MappedSubsection->ControlArea->DereferenceList.Flink == NULL);
+        ASSERT(MappedSubsection->SubsectionBase != NULL);
+        ASSERT(MappedSubsection->DereferenceList.Flink == NULL);
+
+        ASSERT(((LONG_PTR)MappedSubsection->NumberOfMappedViews >= 1) ||
+               (MappedSubsection->u.SubsectionFlags.SubsectionStatic == 1));
+
+        MappedSubsection->NumberOfMappedViews--;
+
+        if (!MappedSubsection->NumberOfMappedViews &&
+            !MappedSubsection->u.SubsectionFlags.SubsectionStatic)
+        {
+            InsertTailList(&MmUnusedSubsectionList, &MappedSubsection->DereferenceList);
+            FreePoolForSubsectionPtes(MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
+
+            //if (MiUnusedSubsectionPagedPoolPeak < MiUnusedSubsectionPagedPool)
+            //    MiUnusedSubsectionPagedPoolPeak = MiUnusedSubsectionPagedPool;
+        }
+
+        if (!PteCount)
+            continue;
+
+        if (PteCount <= (ULONGLONG)MappedSubsection->PtesInSubsection)
+            break;
+
+        PteCount -= MappedSubsection->PtesInSubsection;
+    }
 }
 
 BOOLEAN
