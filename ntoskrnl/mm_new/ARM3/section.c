@@ -2883,6 +2883,55 @@ MiCreateDataFileMap(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI 
+MmFlushSection(
+    _In_ PSECTION_OBJECT_POINTERS SectionPointers,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _Out_ IO_STATUS_BLOCK* OutIoStatus,
+    _In_ ULONG Flags)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+BOOLEAN
+NTAPI
+MiFlushDataSection(
+    _In_ PFILE_OBJECT FileObject)
+{
+    PCONTROL_AREA ControlArea;
+    IO_STATUS_BLOCK IoStatusBlock;
+    BOOLEAN IsDataSectionUsed;
+    KIRQL OldIrql;
+
+    DPRINT("MiFlushDataSection: FileObject %p\n", FileObject);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    ControlArea = FileObject->SectionObjectPointer->DataSectionObject;
+    if (!ControlArea)
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        return FALSE;
+    }
+
+    if (ControlArea->NumberOfSectionReferences || ControlArea->NumberOfMappedViews)
+        IsDataSectionUsed = TRUE;
+    else
+        IsDataSectionUsed = FALSE;
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    if (ControlArea->NumberOfSystemCacheViews)
+        CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &IoStatusBlock);
+    else
+        MmFlushSection(FileObject->SectionObjectPointer, NULL, 0, &IoStatusBlock, TRUE);
+
+    return IsDataSectionUsed;
+}
+
 PFN_NUMBER
 NTAPI
 MiGetPageForHeader(
