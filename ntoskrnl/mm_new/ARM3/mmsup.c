@@ -2,7 +2,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS ********************************************************************/
@@ -12,6 +12,45 @@ extern ULONG MmProductType;
 
 /* FUNCTIONS ******************************************************************/
 
+BOOLEAN
+NTAPI
+MiIsAddressValid(
+    _In_ PVOID Address)
+{
+    PMMPDE Pde;
+    PMMPTE Pte;
+
+    Pde = MiAddressToPde(Address);
+
+    if (!Pde->u.Hard.Valid)
+    {
+        DPRINT1("MiIsAddressValid: Address %p not valid\n", Address);
+        return FALSE;
+    }
+
+    if (Pde->u.Hard.LargePage)
+    {
+        DPRINT1("MiIsAddressValid: Address %p valid\n", Address);
+        return TRUE;
+    }
+
+    Pte = MiAddressToPte(Address);
+
+    if (!Pte->u.Hard.Valid)
+    {
+        DPRINT1("MiIsAddressValid: Address %p not valid\n", Address);
+        return FALSE;
+    }
+
+    if (!Pte->u.Hard.LargePage)
+    {
+        DPRINT1("MiIsAddressValid: Address %p not valid\n", Address);
+        return FALSE;
+    }
+
+    DPRINT1("MiIsAddressValid: Address %p valid\n", Address);
+    return TRUE;
+}
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 

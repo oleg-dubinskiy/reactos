@@ -1758,6 +1758,13 @@ MiInitializeMemoryEvents(
     VOID
 );
 
+/* ARM3\mmsup.c */
+BOOLEAN
+NTAPI
+MiIsAddressValid(
+    _In_ PVOID Address
+);
+
 /* ARM3\pagfault.c */
 NTSTATUS
 FASTCALL
