@@ -33,6 +33,18 @@ ACCESS_MASK MmMakeSectionAccess[8] =
     SECTION_MAP_EXECUTE | SECTION_MAP_READ
 };
 
+ACCESS_MASK MmMakeFileAccess[8] =
+{
+    FILE_READ_DATA,
+    FILE_READ_DATA,
+    FILE_EXECUTE,
+    FILE_EXECUTE | FILE_READ_DATA,
+    FILE_WRITE_DATA | FILE_READ_DATA,
+    FILE_READ_DATA,
+    FILE_EXECUTE | FILE_WRITE_DATA | FILE_READ_DATA,
+    FILE_EXECUTE | FILE_READ_DATA
+};
+
 CHAR MmUserProtectionToMask1[16] =
 {
     0,
@@ -3849,8 +3861,30 @@ MmCreateSection(
 
         if (FileHandle)
         {
-            DPRINT1("MmCreateSection: FIXME\n");
-            ASSERT(FALSE);
+            /* This is the file-mapped section. */
+            ASSERT(!FileObject);
+
+            /* Reference the file handle to get the object */
+            Status = ObReferenceObjectByHandle(FileHandle,
+                                               MmMakeFileAccess[ProtectionMask],
+                                               IoFileObjectType,
+                                               PreviousMode,
+                                               (PVOID*)&File,
+                                               NULL);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("MmCreateSection: Status %X\n", Status);
+                return Status;
+            }
+
+            /* Make sure Cc has been doing its job */
+            if (!File->SectionObjectPointer)
+            {
+                /* This is not a valid system-based file, fail */
+                DPRINT1("MmCreateSection: STATUS_INVALID_FILE_FOR_SECTION\n");
+                ObDereferenceObject(File);
+                return STATUS_INVALID_FILE_FOR_SECTION;
+            }
         }
         else
         {
@@ -3885,8 +3919,7 @@ MmCreateSection(
         {
             /* Image-file backed section */
             ControlAreaSize = sizeof(LARGE_CONTROL_AREA) + sizeof(SUBSECTION);
-            DPRINT1("MmCreateSection: FIXME\n");
-            ASSERT(FALSE);
+            CcWaitForUninitializeCacheMap(File);
         }
         else
         {
@@ -3909,8 +3942,24 @@ MmCreateSection(
         /* Did we get a handle, or an object? */
         if (FileHandle)
         {
-            DPRINT1("MmCreateSection: FIXME\n");
-            ASSERT(FALSE);
+            /* We got a file handle so we have to lock down the file */
+#if 0
+            Status = FsRtlAcquireToCreateMappedSection(File, SectionPageProtection);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("MmCreateSection: Status %X\n", Status);
+                ExFreePoolWithTag(NewControlArea, 'aCmM');
+                ObDereferenceObject(File);
+                return Status;
+            }
+#else
+            /* ReactOS doesn't support this API yet, so do nothing */
+            DPRINT("MmCreateSection: FIXME FsRtlAcquireToCreateMappedSection\n");
+            Status = STATUS_SUCCESS;
+#endif
+            /* Update the top-level IRP so that drivers know what's happening */
+            IoSetTopLevelIrp((PIRP)FSRTL_FSP_TOP_LEVEL_IRP);
+            FileLock = TRUE;
         }
 
         while (TRUE)

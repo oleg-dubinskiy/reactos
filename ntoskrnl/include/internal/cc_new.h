@@ -45,6 +45,12 @@ CcInitializeCacheManager(
     VOID
 );
 
+VOID
+NTAPI
+CcWaitForUninitializeCacheMap(
+    _In_ PFILE_OBJECT FileObject
+);
+
 /* lazyrite.c */
 
 /* logsup.c */
