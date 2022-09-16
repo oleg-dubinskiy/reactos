@@ -158,4 +158,13 @@ CcScanDpc(
     _In_ PVOID SystemArgument2
 );
 
+BOOLEAN
+NTAPI
+CcUnmapVacbArray(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ BOOLEAN FrontOfList
+);
+
 /* EOF */

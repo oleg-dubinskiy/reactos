@@ -18,7 +18,7 @@ extern LIST_ENTRY CcRegularWorkQueue;
 extern LIST_ENTRY CcExpressWorkQueue;
 extern LIST_ENTRY CcFastTeardownWorkQueue;
 extern LIST_ENTRY CcPostTickWorkQueue;
-
+extern LARGE_INTEGER CcCollisionDelay;
 extern LAZY_WRITER LazyWriter;
 
 /* FUNCTIONS ******************************************************************/
@@ -496,13 +496,116 @@ Exit:
 
 BOOLEAN
 NTAPI
-CcPurgeCacheSection(IN PSECTION_OBJECT_POINTERS SectionObjectPointer,
-                    IN OPTIONAL PLARGE_INTEGER FileOffset,
-                    IN ULONG Length,
-                    IN BOOLEAN UninitializeCacheMaps)
+CcPurgeCacheSection(
+    _In_ PSECTION_OBJECT_POINTERS SectionObjectPointer,
+    _In_ OPTIONAL PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ BOOLEAN UninitializeCacheMaps)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PSHARED_CACHE_MAP SharedMap;
+    PPRIVATE_CACHE_MAP PrivateMap;
+    PVACB Vacb = NULL;
+    BOOLEAN IsFullPurge;
+    BOOLEAN Result;
+    KIRQL OldIrql;
+
+    DPRINT("CcPurgeCacheSection: %p, %p, %X, %X\n", SectionObjectPointer, FileOffset, Length, UninitializeCacheMaps);
+
+    ASSERT(!UninitializeCacheMaps || (Length == 0) || (Length >= (2 * PAGE_SIZE)));
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    SharedMap = SectionObjectPointer->SharedCacheMap;
+    if (SharedMap)
+    {
+        if (SharedMap->Flags & 0x2000)
+        {
+            if (!((ULONG_PTR)FileOffset & 1))
+            {
+               KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+               return TRUE;
+            }
+
+            FileOffset = (PLARGE_INTEGER)((ULONG_PTR)FileOffset ^ 1);
+        }
+
+        SharedMap->OpenCount++;
+        KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
+
+        Vacb = SharedMap->ActiveVacb;
+
+        if (SharedMap->ActiveVacb)
+        {
+            SharedMap->ActiveVacb = NULL;
+        }
+
+        KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+    if (Vacb)
+    {
+        DPRINT1("CcPurgeCacheSection: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (SharedMap)
+    {
+        if (UninitializeCacheMaps)
+        {
+            while (!IsListEmpty(&SharedMap->PrivateList))
+            {
+                PrivateMap = CONTAINING_RECORD(SharedMap->PrivateList.Flink, PRIVATE_CACHE_MAP, PrivateLinks);
+                CcUninitializeCacheMap(PrivateMap->FileObject, NULL, NULL);
+            }
+        }
+
+        while (SharedMap->Vacbs && !CcUnmapVacbArray(SharedMap, FileOffset, Length, FALSE))
+        {
+            DPRINT1("CcPurgeCacheSection: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    while (TRUE)
+    {
+        if (SharedMap && FileOffset)
+            IsFullPurge = TRUE;
+        else
+            IsFullPurge = FALSE;
+
+        Result = MmPurgeSection(SectionObjectPointer, FileOffset, Length, IsFullPurge);
+        if (Result)
+            break;
+
+        if (Length)
+            break;
+
+        if (!MmCanFileBeTruncated(SectionObjectPointer, FileOffset))
+            break;
+
+        KeDelayExecutionThread(KernelMode, FALSE, &CcCollisionDelay);
+    }
+
+    if (SharedMap)
+    {
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+        SharedMap->OpenCount--;
+
+        if (!SharedMap->OpenCount &&
+            !(SharedMap->Flags & SHARE_FL_WRITE_QUEUED) &&
+            !SharedMap->DirtyPages)
+        {
+            DPRINT1("CcPurgeCacheSection: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+    }
+
+    return Result;
 }
 
 VOID
