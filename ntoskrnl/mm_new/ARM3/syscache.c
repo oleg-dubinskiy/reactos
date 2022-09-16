@@ -444,4 +444,14 @@ Exit:
     return TRUE;
 }
 
+VOID
+NTAPI
+MmUnmapViewInSystemCache(
+    _In_ PVOID BaseAddress,
+    _In_ PVOID SectionObject,
+    _In_ ULONG FrontOfList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 /* EOF */

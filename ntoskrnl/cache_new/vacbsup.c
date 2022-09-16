@@ -103,18 +103,6 @@ CcCreateVacbArray(
     return STATUS_SUCCESS;
 }
 
-BOOLEAN
-NTAPI
-CcUnmapVacbArray(
-    _In_ PSHARED_CACHE_MAP SharedMap,
-    _In_ PLARGE_INTEGER FileOffset,
-    _In_ ULONG Length,
-    _In_ BOOLEAN FrontOfList)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
-}
-
 VOID
 NTAPI
 SetVacb(
@@ -132,6 +120,172 @@ SetVacb(
 
     DPRINT1("SetVacb: FIXME CcSetVacbLargeOffset()\n");
     ASSERT(FALSE);
+}
+
+VOID
+NTAPI
+CcUnmapVacb(
+    _In_ PVACB Vacb,
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ BOOLEAN FrontOfList)
+{
+    ASSERT(SharedMap != NULL);
+    ASSERT(Vacb->BaseAddress != NULL);
+
+    DPRINT("CcUnmapVacb: Vacb %p, SharedMap %p, FrontOfList %X\n", Vacb, SharedMap, FrontOfList);
+
+    if (FrontOfList && (SharedMap->Flags & SHARE_FL_SEQUENTIAL_ONLY))
+        FrontOfList = TRUE;
+    else
+        FrontOfList = FALSE;
+
+    MmUnmapViewInSystemCache(Vacb->BaseAddress, SharedMap->Section, FrontOfList);
+
+    Vacb->BaseAddress = NULL;
+}
+
+BOOLEAN
+NTAPI
+CcUnmapVacbArray(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ BOOLEAN FrontOfList)
+{
+    KLOCK_QUEUE_HANDLE LockHandle;
+    LARGE_INTEGER Start;
+    LARGE_INTEGER End;
+    PVACB Vacb;
+    BOOLEAN IsMmodifiedNoWrite = FALSE;
+
+    DPRINT("CcUnmapVacbArray: %p, %I64X, %X, %X\n", SharedMap, (FileOffset ? FileOffset->QuadPart : 0), Length, FrontOfList);
+
+    if (!SharedMap->Vacbs)
+        return TRUE;
+
+    if (FileOffset)
+    {
+        Start.QuadPart = FileOffset->QuadPart & ~(VACB_MAPPING_GRANULARITY - 1);
+
+        if (Length)
+            End.QuadPart = (FileOffset->QuadPart + Length);
+        else
+            End.QuadPart = SharedMap->SectionSize.QuadPart;
+    }
+    else
+    {
+        Start.QuadPart = 0;
+        End.QuadPart = SharedMap->SectionSize.QuadPart;
+    }
+
+    if (SharedMap->SectionSize.QuadPart > (2 * _1MB) &&
+        (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
+    {
+        IsMmodifiedNoWrite = TRUE;
+    }
+
+    ExAcquirePushLockShared((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
+
+    if (IsMmodifiedNoWrite)
+    {
+        KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+        KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+    }
+    else
+    {
+        LockHandle.OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+    }
+
+    while (Start.QuadPart < End.QuadPart)
+    {
+        DPRINT("CcUnmapVacbArray: Start %I64X, End %I64X\n", Start.QuadPart, End.QuadPart);
+
+        if (Start.QuadPart < SharedMap->SectionSize.QuadPart)
+        {
+            if (SharedMap->SectionSize.QuadPart <= CACHE_OVERALL_SIZE)
+            {
+                Vacb = SharedMap->Vacbs[Start.LowPart / VACB_MAPPING_GRANULARITY];
+            }
+            else
+            {
+                DPRINT("CcUnmapVacbArray: FIXME CcGetVacbLargeOffset()\n");
+                ASSERT(FALSE);Vacb = NULL;
+            }
+
+            if (Vacb)
+            {
+                if (Vacb->Overlay.ActiveCount)
+                {
+                    if (IsMmodifiedNoWrite)
+                    {
+                        KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+                        KeReleaseInStackQueuedSpinLock(&LockHandle);
+                    }
+                    else
+                    {
+                        KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle.OldIrql);
+                    }
+
+                    ExReleasePushLockShared((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
+                    return FALSE;
+                }
+
+                SetVacb(SharedMap, Start, NULL);
+
+                Vacb->Overlay.ActiveCount++;
+                Vacb->SharedCacheMap = NULL;
+
+                if (!IsMmodifiedNoWrite)
+                {
+                    KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle.OldIrql);
+                }
+                else
+                {
+                    KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+                    KeReleaseInStackQueuedSpinLock(&LockHandle);
+                }
+
+                CcUnmapVacb(Vacb, SharedMap, FrontOfList);
+
+                if (IsMmodifiedNoWrite)
+                {
+                    KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+                    KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+                }
+                else
+                {
+                    LockHandle.OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+                }
+
+                Vacb->Overlay.ActiveCount--;
+
+                RemoveEntryList(&Vacb->LruList);
+                InsertHeadList(&CcVacbFreeList, &Vacb->LruList);
+            }
+            else
+            {
+                DPRINT("CcUnmapVacbArray: Vacb == NULL\n");
+            }
+        }
+
+        Start.QuadPart += VACB_MAPPING_GRANULARITY;
+    }
+
+    if (IsMmodifiedNoWrite)
+    {
+        KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+        KeReleaseInStackQueuedSpinLock(&LockHandle);
+    }
+    else
+    {
+        KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle.OldIrql);
+    }
+
+    ExReleasePushLockShared((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
+
+    DPRINT("CcUnmapVacbArray: FIXME CcDrainVacbLevelZone()\n");
+
+    return TRUE;
 }
 
 PVACB

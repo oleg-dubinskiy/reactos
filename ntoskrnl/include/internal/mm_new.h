@@ -485,6 +485,14 @@ MmMapViewInSystemCache(
     _In_ PULONG CapturedViewSize
 );
 
+VOID
+NTAPI
+MmUnmapViewInSystemCache(
+    _In_ PVOID BaseAddress,
+    _In_ PVOID SectionObject,
+    _In_ ULONG FrontOfList
+);
+
 BOOLEAN
 NTAPI
 MmCheckCachedPageState(
