@@ -2924,6 +2924,112 @@ MiRemoveViewsFromSection(
 
 BOOLEAN
 NTAPI
+MiCanFileBeTruncatedInternal(
+    _In_ PSECTION_OBJECT_POINTERS SectionPointers,
+    _In_ OUT PLARGE_INTEGER FileOffset,
+    _In_ BOOLEAN IsNotCheckUserReferences,
+    _Out_ KIRQL* OutOldIrql)
+{
+    PCONTROL_AREA ControlArea;
+    PSUBSECTION Subsection;
+    PMAPPED_FILE_SEGMENT Segment;
+    LARGE_INTEGER Offset;
+    KIRQL OldIrql;
+
+    DPRINT("MiCanFileBeTruncatedInternal: %p, %X\n", SectionPointers, IsNotCheckUserReferences);
+
+    if (!MmFlushImageSection(SectionPointers, MmFlushForWrite))
+    {
+        DPRINT("MiCanFileBeTruncatedInternal: return FALSE\n");
+        return FALSE;
+    }
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    ControlArea = SectionPointers->DataSectionObject;
+    if (!ControlArea)
+    {
+        DPRINT("MiCanFileBeTruncatedInternal: ControlArea == NULL\n");
+        *OutOldIrql = OldIrql;
+        return TRUE;
+    }
+
+    if (ControlArea->u.Flags.BeingCreated ||
+        ControlArea->u.Flags.BeingDeleted ||
+        ControlArea->u.Flags.Rom)
+    {
+        goto Exit;
+    }
+
+    if (!ControlArea->NumberOfUserReferences ||
+        (IsNotCheckUserReferences && !ControlArea->NumberOfMappedViews))
+    {
+        DPRINT("MiCanFileBeTruncatedInternal: return TRUE\n");
+        *OutOldIrql = OldIrql;
+        return TRUE;
+    }
+
+    if (!FileOffset)
+        goto Exit;
+
+    ASSERT(ControlArea->u.Flags.Image == 0);
+    ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 0);
+
+    Subsection = (PSUBSECTION)&ControlArea[1];
+
+    if (ControlArea->FilePointer)
+    {
+        Segment = (PMAPPED_FILE_SEGMENT)ControlArea->Segment;
+
+        if (MiIsAddressValid(Segment) && Segment->LastSubsectionHint)
+            Subsection = (PSUBSECTION)Segment->LastSubsectionHint;
+    }
+
+    while (Subsection->NextSubsection)
+        Subsection = Subsection->NextSubsection;
+
+    ASSERT(Subsection->ControlArea == ControlArea);
+
+    if (Subsection->ControlArea->u.Flags.Image)
+    {
+        Offset.QuadPart = (Subsection->StartingSector + Subsection->NumberOfFullSectors);
+        Offset.QuadPart *= MM_SECTOR_SIZE;
+    }
+    else
+    {
+        Offset.HighPart = Subsection->u.SubsectionFlags.StartingSector4132;
+        Offset.LowPart = Subsection->StartingSector;
+
+        Offset.QuadPart += Subsection->NumberOfFullSectors;
+        Offset.QuadPart *= PAGE_SIZE;
+    }
+
+    Offset.QuadPart += Subsection->u.SubsectionFlags.SectorEndOffset;
+
+    if (FileOffset->QuadPart >= Offset.QuadPart)
+    {
+        Offset.QuadPart += (PAGE_SIZE - 1);
+        Offset.LowPart &= ~(PAGE_SIZE - 1);
+
+        if (FileOffset->QuadPart < Offset.QuadPart)
+            *FileOffset = Offset;
+
+        *OutOldIrql = OldIrql;
+
+        DPRINT("MiCanFileBeTruncatedInternal: return TRUE\n");
+        return TRUE;
+    }
+
+Exit:
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    DPRINT("MiCanFileBeTruncatedInternal: return FALSE\n");
+    return FALSE;
+}
+
+BOOLEAN
+NTAPI
 MmPurgeSection(
     _In_ PSECTION_OBJECT_POINTERS SectionPointer,
     _In_ PLARGE_INTEGER FileOffset,
