@@ -580,7 +580,69 @@ CcFreeActiveVacb(
     _In_ ULONG ActivePage,
     _In_ BOOLEAN IsVacbLocked)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PVOID NeedToZero;
+    PVACB NeedToZeroVacb;
+    ULONG Size;
+    KIRQL OldIrql;
+
+    DPRINT("CcFreeActiveVacb: %p, %X, %X, %X\n", SharedMap, Vacb, ActivePage, IsVacbLocked);
+
+    if (SharedMap->NeedToZero)
+    {
+        KeAcquireSpinLock(&SharedMap->ActiveVacbSpinLock, &OldIrql);
+        NeedToZero = SharedMap->NeedToZero;
+
+        if (NeedToZero)
+        {
+            Size = (PAGE_SIZE - ((((ULONG_PTR)NeedToZero - 1) & (PAGE_SIZE - 1)) + 1));
+            RtlZeroMemory(NeedToZero, Size);
+
+            NeedToZeroVacb = SharedMap->NeedToZeroVacb;
+            ASSERT(NeedToZeroVacb != NULL);
+
+            SharedMap->NeedToZero = NULL;
+        }
+        else
+        {
+            NeedToZeroVacb = Vacb;
+        }
+
+        KeReleaseSpinLock(&SharedMap->ActiveVacbSpinLock, OldIrql);
+
+        if (NeedToZero)
+        {
+            DPRINT("CcFreeActiveVacb: FIXME MmUnlockCachedPage\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    if (!Vacb)
+        return;
+
+    if (!IsVacbLocked)
+    {
+        CcFreeVirtualAddress(Vacb);
+        return;
+    }
+
+    DPRINT("CcFreeActiveVacb: FIXME CcSetDirtyInMask\n");
+    ASSERT(FALSE);
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+    KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
+
+    if (!SharedMap->ActiveVacb && !(SharedMap->Flags & SHARE_FL_VACB_LOCKED))
+    {
+        SharedMap->Flags = (SharedMap->Flags & ~SHARE_FL_VACB_LOCKED);
+
+        CcTotalDirtyPages--;
+        SharedMap->DirtyPages--;
+    }
+
+    KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+    CcFreeVirtualAddress(Vacb);
 }
 
 /* EOF */
