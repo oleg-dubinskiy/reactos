@@ -3090,6 +3090,172 @@ ErrorExit:
 
 NTSTATUS
 NTAPI
+MiReadPeHeader(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PKEVENT Event,
+    _In_ PMI_PE_HEADER_MDL HeaderMdl,
+    _Out_ ULONGLONG* OutFileSize,
+    _Out_ BOOLEAN* OutIsDataSectionUsed,
+    _Out_ PVOID* OutPeHeader,
+    _Out_ ULONG* OutPeHeaderSize,
+    _Out_ PIMAGE_DOS_HEADER* OutDosHeader,
+    _Out_ PIMAGE_NT_HEADERS* OutNtHeader,
+    _Out_ ULONG* OutNtHeaderSize)
+{
+    PMMPFN PeHeaderPfn;
+    PPFN_NUMBER MdlPages;
+    PVOID PeHeader;
+    PMMPTE BasePte = NULL;
+    IO_STATUS_BLOCK IoStatusBlock;
+    LARGE_INTEGER Offset = {{0, 0}};
+    LARGE_INTEGER fileSize;
+    ULONGLONG FileSize;
+    PFN_NUMBER PageFrameNumber;
+    MMPTE TempPte;
+    ULONG PeHeaderSize;
+    NTSTATUS Status;
+
+    DPRINT("MiReadPeHeader: FileObject %p\n", FileObject);
+
+    /* Retrieve the file size for a file */
+    Status = FsRtlGetFileSize(FileObject, &fileSize);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MiReadPeHeader: Status %X, File '%wZ'\n", Status, &FileObject->FileName);
+
+        if (Status != STATUS_FILE_IS_A_DIRECTORY)
+        {
+            ASSERT(FALSE);
+            return Status;
+        }
+
+        DPRINT1("MiReadPeHeader: STATUS_INVALID_FILE_FOR_SECTION\n");
+        ASSERT(FALSE);
+        return STATUS_INVALID_FILE_FOR_SECTION;
+    }
+
+    if (fileSize.HighPart)
+    {
+        DPRINT1("MiReadPeHeader: File '%wZ'\n", &FileObject->FileName);
+        ASSERT(FALSE);
+
+        DPRINT1("MiReadPeHeader: STATUS_INVALID_FILE_FOR_SECTION\n");
+        return STATUS_INVALID_FILE_FOR_SECTION;
+    }
+
+    FileSize = (ULONGLONG)fileSize.QuadPart;
+
+    *OutFileSize = FileSize;
+
+    /* Initialize MDL to read the first page of the PE header */
+    MmInitializeMdl(&HeaderMdl->Mdl, NULL, PAGE_SIZE);
+    HeaderMdl->Mdl.MdlFlags |= MDL_PAGES_LOCKED;
+
+    /* Allocate one zero page for the first page of the PE header */
+    PageFrameNumber = MiGetPageForHeader(TRUE);
+    ASSERT(PageFrameNumber != 0);
+
+    PeHeaderPfn = &MmPfnDatabase[PageFrameNumber];
+    ASSERT(PeHeaderPfn->u1.Flink == 0);
+
+    /* Setup Mdl */
+    MdlPages = MmGetMdlPfnArray(&HeaderMdl->Mdl);
+    MdlPages[0] = PageFrameNumber;
+
+    DPRINT("MiReadPeHeader: FIXME CcZeroEndOfLastPage\n");
+
+    *OutIsDataSectionUsed = MiFlushDataSection(FileObject);
+
+    PeHeader = MiCopyHeaderIfResident(FileObject, PageFrameNumber);
+
+    /* Is the header resident in memory? */
+    if (PeHeader)
+    {
+        PeHeaderSize = PAGE_SIZE;
+        IoStatusBlock.Information = PAGE_SIZE;
+        BasePte = MiAddressToPte(PeHeader);
+    }
+    else
+    {
+        ASSERT(HeaderMdl->Mdl.MdlFlags & MDL_PAGES_LOCKED);
+
+        /* Read the first page of the PE header */
+        Status = IoPageRead(FileObject, &HeaderMdl->Mdl, &Offset, Event, &IoStatusBlock);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject (Event, WrPageIn, KernelMode, FALSE, NULL);
+            Status = IoStatusBlock.Status;
+        }
+
+        if (HeaderMdl->Mdl.MdlFlags & MDL_MAPPED_TO_SYSTEM_VA)
+        {
+            MmUnmapLockedPages(HeaderMdl->Mdl.MappedSystemVa, &HeaderMdl->Mdl);
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MiReadPeHeader: Status %X, File '%wZ'\n", Status, &FileObject->FileName);
+
+            if (Status != STATUS_FILE_LOCK_CONFLICT &&
+                Status != STATUS_FILE_IS_OFFLINE)
+            {
+                Status = STATUS_INVALID_FILE_FOR_SECTION;
+            }
+
+            goto Exit;
+        }
+
+        /* Allocate one system PTE for the first page of the PE header */
+        BasePte = MiReserveSystemPtes(1, SystemPteSpace);
+        if (!BasePte)
+        {
+            DPRINT1("MiReadPeHeader: Status %X, File '%wZ'\n", Status, &FileObject->FileName);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto Exit;
+        }
+
+        ASSERT(BasePte->u.Hard.Valid == 0);
+
+        /* Calculate Va for this system PTE */
+        PeHeader = MiPteToAddress(BasePte);
+
+        /* Fill tmp PTE with ValidKernelPte contents */
+        TempPte = ValidKernelPte;
+
+        /* Save number page of the PE header in tmp PTE */
+        TempPte.u.Hard.PageFrameNumber = PageFrameNumber;
+
+        /* Copy the tmp PTE to the PTE for the PE header and make it valid */
+        MI_WRITE_VALID_PTE(BasePte, TempPte);
+
+        /* Get size for the header */
+        PeHeaderSize = IoStatusBlock.Information;
+
+        /* Check size of the header */
+        if (PeHeaderSize != PAGE_SIZE)
+        {
+            if (PeHeaderSize < sizeof(IMAGE_DOS_HEADER))
+            {
+                DPRINT1("MiReadPeHeader: PeHeaderSize %X, File '%wZ'\n", PeHeaderSize, &FileObject->FileName);
+                Status = STATUS_INVALID_IMAGE_NOT_MZ;
+                goto Exit;
+            }
+
+            /* Zero end of page */
+            RtlZeroMemory((PVOID)((ULONG_PTR)PeHeader + PeHeaderSize), (PAGE_SIZE - PeHeaderSize));
+        }
+    }
+
+Exit:
+
+    *OutPeHeader = PeHeader;
+    *OutPeHeaderSize = PeHeaderSize;
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 MiCreateImageFileMap(
     _In_ PFILE_OBJECT FileObject,
     _Out_ PSEGMENT* OutSegment)
