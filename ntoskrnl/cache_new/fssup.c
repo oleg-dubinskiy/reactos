@@ -515,10 +515,107 @@ CcSetDirtyPageThreshold(IN PFILE_OBJECT FileObject,
 
 VOID
 NTAPI
-CcSetFileSizes(IN PFILE_OBJECT FileObject,
-               IN PCC_FILE_SIZES FileSizes)
+CcSetFileSizes(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PCC_FILE_SIZES FileSizes)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PSHARED_CACHE_MAP SharedMap;
+    LARGE_INTEGER ValidDataLength;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER FileSize;
+    PVACB ActiveVacb;
+    KIRQL OldIrql;
+
+    DPRINT("CcSetFileSizes: FileObject %p FileSizes %X\n", FileObject, FileSizes);
+
+    FileSize = FileSizes->FileSize;
+    AllocationSize = FileSizes->AllocationSize;
+    ValidDataLength = FileSizes->ValidDataLength;
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+
+    if (!SharedMap || !SharedMap->Section)
+    {
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        if (BYTE_OFFSET(FileSize.LowPart))
+        {
+            DPRINT1("CcSetFileSizes: FIXME MmFlushSection()\n");
+            ASSERT(FALSE);
+        }
+
+        CcPurgeCacheSection(FileObject->SectionObjectPointer, &FileSize, 0, FALSE);
+        return;
+    }
+
+    if (AllocationSize.QuadPart > SharedMap->SectionSize.QuadPart)
+    {
+        SharedMap->OpenCount++;
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        AllocationSize.QuadPart += (0x100000 - 1);
+        AllocationSize.LowPart &= ~(0x100000 - 1);
+
+        DPRINT1("CcSetFileSizes: FIXME MmFlushSection()\n");
+        ASSERT(FALSE);
+    }
+
+    SharedMap->OpenCount++;
+
+    if (FileSize.QuadPart < SharedMap->ValidDataGoal.QuadPart ||
+        FileSize.QuadPart < SharedMap->FileSize.QuadPart)
+    {
+        KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
+
+        ActiveVacb = SharedMap->ActiveVacb;
+
+        if (SharedMap->ActiveVacb)
+        {
+            SharedMap->ActiveVacb = NULL;
+        }
+
+        KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
+
+        if (ActiveVacb || SharedMap->NeedToZero)
+        {
+            KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+            DPRINT1("CcSetFileSizes: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    if (SharedMap->ValidDataLength.QuadPart != MAXLONGLONG)
+    {
+        if (SharedMap->ValidDataLength.QuadPart > FileSize.QuadPart)
+            SharedMap->ValidDataLength.QuadPart = FileSize.QuadPart;
+
+        SharedMap->ValidDataGoal.QuadPart = ValidDataLength.QuadPart;
+    }
+
+    if (FileSize.QuadPart < SharedMap->FileSize.QuadPart &&
+        !(SharedMap->Flags & SHARE_FL_PIN_ACCESS) &&
+        !SharedMap->VacbActiveCount)
+    {
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        DPRINT1("CcSetFileSizes: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    SharedMap->OpenCount--;
+    SharedMap->FileSize.QuadPart = FileSize.QuadPart;
+
+    if (!SharedMap->OpenCount &&
+        !(SharedMap->Flags & SHARE_FL_WRITE_QUEUED) &&
+        !SharedMap->DirtyPages)
+    {
+        DPRINT1("CcSetFileSizes: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
 }
 
 BOOLEAN
