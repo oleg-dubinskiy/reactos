@@ -3867,8 +3867,37 @@ MmFlushImageSection(
     _In_ PSECTION_OBJECT_POINTERS SectionObjectPointer,
     _In_ MMFLUSH_TYPE FlushType)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PCONTROL_AREA ControlArea;
+    KIRQL OldIrql;
+    BOOLEAN Result;
+
+    DPRINT("MmFlushImageSection: SectionPointers %p, FlushType %X\n", SectionPointer, FlushType);
+
+    if (FlushType == MmFlushForDelete)
+    {
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        ControlArea = SectionPointer->DataSectionObject;
+
+        if (ControlArea &&
+            (ControlArea->NumberOfUserReferences || ControlArea->u.Flags.BeingCreated))
+        {
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            return FALSE;
+        }
+
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    }
+
+    Result = MiCheckControlAreaStatus(1, SectionPointer, FALSE, &ControlArea, &OldIrql);
+
+    if (!ControlArea)
+        return Result;
+
+    DPRINT("MmFlushImageSection: FIXME. ControlArea %p\n", ControlArea);
+    ASSERT(FALSE);
+
+    return TRUE;
 }
 
 BOOLEAN
