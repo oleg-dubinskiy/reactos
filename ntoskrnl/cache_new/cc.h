@@ -149,4 +149,13 @@ CcFreeActiveVacb(
     _In_ BOOLEAN IsVacbLocked
 );
 
+VOID
+NTAPI
+CcScanDpc(
+    _In_ PKDPC Dpc,
+    _In_ PVOID DeferredContext,
+    _In_ PVOID SystemArgument1,
+    _In_ PVOID SystemArgument2
+);
+
 /* EOF */

@@ -9,8 +9,15 @@
 /* GLOBALS ********************************************************************/
 
 SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
+SHARED_CACHE_MAP_LIST_CURSOR CcLazyWriterCursor;
+GENERAL_LOOKASIDE CcTwilightLookasideList;
 
 LIST_ENTRY CcCleanSharedCacheMapList;
+
+extern LIST_ENTRY CcRegularWorkQueue;
+extern LIST_ENTRY CcExpressWorkQueue;
+extern LIST_ENTRY CcFastTeardownWorkQueue;
+extern LIST_ENTRY CcPostTickWorkQueue;
 
 extern LAZY_WRITER LazyWriter;
 
@@ -687,10 +694,18 @@ CcInitializeCacheManager(VOID)
     InitializeListHead(&CcDirtySharedCacheMapList.SharedCacheMapLinks);
     CcDirtySharedCacheMapList.Flags = 0x800;
 
+    InsertTailList(&CcDirtySharedCacheMapList.SharedCacheMapLinks, &CcLazyWriterCursor.SharedCacheMapLinks);
+    CcLazyWriterCursor.Flags = 0x800;
+
+    InitializeListHead(&CcFastTeardownWorkQueue);
+    InitializeListHead(&CcExpressWorkQueue);
+    InitializeListHead(&CcRegularWorkQueue);
+    InitializeListHead(&CcPostTickWorkQueue);
+
     RtlZeroMemory(&LazyWriter, sizeof(LazyWriter));
 
     InitializeListHead(&LazyWriter.WorkQueue);
-    //KeInitializeDpc(&LazyWriter.ScanDpc, CcScanDpc, NULL);
+    KeInitializeDpc(&LazyWriter.ScanDpc, CcScanDpc, NULL);
     KeInitializeTimer(&LazyWriter.ScanTimer);
 
 
