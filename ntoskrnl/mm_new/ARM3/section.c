@@ -2479,8 +2479,62 @@ MiFindImageSectionObject(
     _In_ BOOLEAN IsLocked,
     _Out_ BOOLEAN* OutIsGlobal)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PLARGE_CONTROL_AREA ControlArea;
+    PLIST_ENTRY Header;
+    PLIST_ENTRY Entry;
+    ULONG SessionId;
+    KIRQL OldIrql = PASSIVE_LEVEL;
+
+    DPRINT("MiFindImageSectionObject: FileObject %p\n", FileObject);
+
+    *OutIsGlobal = FALSE;
+
+    if (!IsLocked)
+    {
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+    }
+    else
+    {
+        ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+        ASSERT(MmPfnOwner == KeGetCurrentThread());
+    }
+
+    if (!FileObject->SectionObjectPointer->ImageSectionObject)
+        goto Exit;
+
+    ControlArea = FileObject->SectionObjectPointer->ImageSectionObject;
+
+    if (!ControlArea->u.Flags.GlobalOnlyPerSession)
+        goto Exit;
+
+    SessionId = MmGetSessionId(PsGetCurrentProcess());
+
+    if (ControlArea->SessionId == SessionId)
+        goto Exit;
+
+    Header = &ControlArea->UserGlobalList;
+
+    for (Entry = ControlArea->UserGlobalList.Flink;
+         Entry != Header;
+         Entry = Entry->Flink)
+    {
+        ControlArea = CONTAINING_RECORD(Entry, LARGE_CONTROL_AREA, UserGlobalList);
+
+        ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 1);
+
+        if (ControlArea->SessionId == SessionId)
+            goto Exit;
+    }
+
+    ControlArea = NULL;
+    *OutIsGlobal = TRUE;
+
+Exit:
+
+    if (!IsLocked)
+         MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    return (PCONTROL_AREA)ControlArea;
 }
 
 VOID
