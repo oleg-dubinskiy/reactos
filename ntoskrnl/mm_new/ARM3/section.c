@@ -108,6 +108,26 @@ ULONG MmCompatibleProtectionMask[8] =
     PAGE_NOACCESS | PAGE_READONLY | PAGE_WRITECOPY | PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_WRITECOPY
 };
 
+CHAR MmImageProtectionArray[16] =
+{
+    MM_NOACCESS,
+    MM_EXECUTE,
+    MM_READONLY,
+    MM_EXECUTE_READ,
+    MM_WRITECOPY,
+    MM_EXECUTE_WRITECOPY,
+    MM_WRITECOPY,
+    MM_EXECUTE_WRITECOPY,
+    MM_NOACCESS,
+    MM_EXECUTE,
+    MM_READONLY,
+    MM_EXECUTE_READ,
+    MM_READWRITE,
+    MM_EXECUTE_READWRITE,
+    MM_READWRITE,
+    MM_EXECUTE_READWRITE
+};
+
 extern MI_PFN_CACHE_ATTRIBUTE MiPlatformCacheAttributes[2][MmMaximumCacheType];
 extern PVOID MiSessionViewStart;   // 0xBE000000
 extern SIZE_T MmSessionViewSize;
@@ -3293,6 +3313,30 @@ MiValidateDosHeader(
     }
 
     return STATUS_SUCCESS;
+}
+
+CHAR
+NTAPI
+MiGetImageProtection(
+    _In_ ULONG Characteristics)
+{
+    ULONG Index = 0;
+
+    PAGED_CODE();
+
+    if (Characteristics & IMAGE_SCN_MEM_EXECUTE)
+        Index = 1;
+
+    if (Characteristics & IMAGE_SCN_MEM_READ)
+        Index |= 2;
+
+    if (Characteristics & IMAGE_SCN_MEM_WRITE)
+        Index |= 4;
+
+    if (Characteristics & IMAGE_SCN_MEM_SHARED)
+        Index |= 8;
+
+    return MmImageProtectionArray[Index];
 }
 
 NTSTATUS
