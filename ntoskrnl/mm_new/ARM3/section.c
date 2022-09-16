@@ -2982,6 +2982,112 @@ MiGetPageForHeader(
     return PageNumber;
 }
 
+PVOID
+NTAPI
+MiCopyHeaderIfResident(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PFN_NUMBER PageNumber)
+{
+    PSECTION_OBJECT_POINTERS SectionPointers;
+    PCONTROL_AREA ControlArea;
+    PSUBSECTION Subsection;
+    PEPROCESS Process;
+    PVOID ImageHeader;
+    PMMPTE ImagePte;
+    PMMPTE BasePte;
+    PMMPDE Pde;
+    MMPTE PteContents;
+    PFN_NUMBER PageFrameIndex;
+    KIRQL OldIrql;
+    KIRQL MapIrql;
+
+    DPRINT("MiCopyHeaderIfResident: FileObject %p, PageNumber %X\n", FileObject, PageNumber);
+
+    SectionPointers = FileObject->SectionObjectPointer;
+  
+    if (!SectionPointers)
+        return NULL;
+
+    if (!SectionPointers->DataSectionObject)
+        return NULL;
+
+    ImagePte = MiReserveSystemPtes(1, SystemPteSpace);
+    if (!ImagePte)
+        return NULL;
+
+    ImageHeader = MiPteToAddress(ImagePte);
+    ASSERT(ImagePte->u.Hard.Valid == 0);
+
+    PteContents = ValidKernelPte;
+    PteContents.u.Hard.PageFrameNumber = PageNumber;
+
+    MI_WRITE_VALID_PTE(ImagePte, PteContents);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    SectionPointers = FileObject->SectionObjectPointer;
+    if (!SectionPointers)
+        goto ErrorExit;
+
+    ControlArea = SectionPointers->DataSectionObject;
+    if (!ControlArea)
+        goto ErrorExit;
+
+    if (ControlArea->u.Flags.BeingCreated || ControlArea->u.Flags.BeingDeleted)
+        goto ErrorExit;
+
+    if (ControlArea->u.Flags.Rom)
+        Subsection = (PSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+    else
+        Subsection = (PSUBSECTION)(ControlArea + 1);
+
+    BasePte = Subsection->SubsectionBase;
+    if (!BasePte)
+        goto ErrorExit;
+
+    Pde = MiAddressToPte(BasePte);
+    if (!Pde->u.Hard.Valid)
+        goto ErrorExit;
+
+    PteContents.u.Long = BasePte->u.Long;
+
+    if (!PteContents.u.Hard.Valid &&
+        (PteContents.u.Soft.Prototype || !PteContents.u.Soft.Transition))
+    {
+        goto ErrorExit;
+    }
+
+    if (!PteContents.u.Hard.Valid)
+    {
+        PageFrameIndex = PteContents.u.Trans.PageFrameNumber;
+
+        if (MI_PFN_ELEMENT(PageFrameIndex)->u3.e1.ReadInProgress)
+            goto ErrorExit;
+    }
+    else
+    {
+        PageFrameIndex = PteContents.u.Hard.PageFrameNumber;
+    }
+
+    Process = PsGetCurrentProcess();
+    ImagePte = MiMapPageInHyperSpace(Process, PageFrameIndex, &MapIrql);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    RtlCopyMemory(ImageHeader, ImagePte, PAGE_SIZE);
+
+    MiUnmapPageInHyperSpace(Process, ImagePte, MapIrql);
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    return ImageHeader;
+
+ErrorExit:
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    MiReleaseSystemPtes(ImagePte, 1, SystemPteSpace);
+
+    return NULL;
+}
+
 NTSTATUS
 NTAPI
 MiCreateImageFileMap(
