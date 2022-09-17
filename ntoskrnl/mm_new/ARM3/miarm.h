@@ -499,6 +499,12 @@ typedef struct _MMPTE_FLUSH_LIST
     PVOID FlushVa[0x21];
 } MMPTE_FLUSH_LIST, *PMMPTE_FLUSH_LIST;
 
+typedef struct _MI_LARGE_PAGE_DRIVER_ENTRY
+{
+    LIST_ENTRY Links;
+    UNICODE_STRING BaseName;
+} MI_LARGE_PAGE_DRIVER_ENTRY, *PMI_LARGE_PAGE_DRIVER_ENTRY;
+
 extern PMMCOLOR_TABLES MmFreePagesByColor[FreePageList + 1];
 extern PVOID MmPagedPoolStart;
 extern PVOID MmNonPagedPoolEnd;

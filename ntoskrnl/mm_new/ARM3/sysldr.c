@@ -30,10 +30,13 @@ ULONG_PTR MmPteCodeEnd;
 BOOLEAN MmMakeLowMemory;
 BOOLEAN MmEnforceWriteProtection = FALSE; // FIXME: should be TRUE, but that would cause CORE-16387 & CORE-16449
 
+extern ULONG MmTotalFreeSystemPtes[MaximumPtePoolTypes];
 extern SIZE_T MmDriverCommit;
 extern PFN_NUMBER MmAvailablePages;
 extern ULONG MmSecondaryColorMask;
 extern MMPTE DemandZeroPte;
+extern BOOLEAN MiLargePageAllDrivers;
+extern LIST_ENTRY MiLargePageDriverList;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -333,7 +336,57 @@ MiUseLargeDriverPage(
     _In_ PUNICODE_STRING BaseImageName,
     _In_ BOOLEAN BootDriver)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMI_LARGE_PAGE_DRIVER_ENTRY LargePageDriverEntry;
+    PLIST_ENTRY NextEntry;
+    BOOLEAN DriverFound = FALSE;
+
+    ASSERT(KeGetCurrentIrql () <= APC_LEVEL);
+    ASSERT(*ImageBaseAddress >= MmSystemRangeStart);
+
+#ifdef _X86_
+    if (!(KeFeatureBits & KF_LARGE_PAGE))
+        return FALSE;
+
+    if (!(__readcr4() & CR4_PSE))
+        return FALSE;
+#endif
+
+    /* Make sure there's enough system PTEs for a large page driver */
+    if (MmTotalFreeSystemPtes[SystemPteSpace] < (16 * (PDE_MAPPED_VA / PAGE_SIZE)))
+    {
+        return FALSE;
+    }
+
+    /* This happens if the registry key had a "*" (wildcard) in it */
+    if (MiLargePageAllDrivers)
+    {
+        /* Nothing to do yet */
+        DPRINT1("Large pages not supported!\n");
+        return FALSE;
+    }
+
+    /* It didn't, so scan the list */
+    for (NextEntry = MiLargePageDriverList.Flink;
+         NextEntry != &MiLargePageDriverList;
+         NextEntry = NextEntry->Flink)
+    {
+        /* Check if the driver name matches */
+        LargePageDriverEntry = CONTAINING_RECORD(NextEntry, MI_LARGE_PAGE_DRIVER_ENTRY, Links);
+
+        if (RtlEqualUnicodeString(BaseImageName, &LargePageDriverEntry->BaseName, TRUE))
+        {
+            /* Enable large pages for this driver */
+            DriverFound = TRUE;
+            break;
+        }
+    }
+
+    /* If we didn't find the driver, it doesn't need large pages */
+    if (!DriverFound)
+        return FALSE;
+
+    /* Nothing to do yet */
+    DPRINT1("Large pages not supported!\n");
     return FALSE;
 }
 
