@@ -37,6 +37,7 @@ extern ULONG MmSecondaryColorMask;
 extern MMPTE DemandZeroPte;
 extern BOOLEAN MiLargePageAllDrivers;
 extern LIST_ENTRY MiLargePageDriverList;
+extern UCHAR MmDisablePagingExecutive;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1119,10 +1120,133 @@ MiUseLargeDriverPage(
 
 VOID
 NTAPI
+MiSetPagingOfDriver(
+    _In_ PMMPTE Pte,
+    _In_ PMMPTE LastPte)
+{
+#if 0
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    PVOID ImageBase;
+    PFN_COUNT PageCount = 0;
+    PFN_NUMBER PageFrameIndex;
+    PMMPFN Pfn;
+#endif
+
+    PAGED_CODE();
+
+    /* The page fault handler is broken and doesn't page back in! */
+    DPRINT1("WARNING: MiSetPagingOfDriver() called, but paging is broken! ignoring!\n");
+    return;
+
+#if 0
+    /* Get the driver's base address */
+    ImageBase = MiPteToAddress(Pte);
+
+    ASSERT(MI_IS_SESSION_IMAGE_ADDRESS(ImageBase) == FALSE);
+
+    /* If this is a large page, it's stuck in physical memory */
+    if (MI_IS_PHYSICAL_ADDRESS(ImageBase))
+        return;
+
+    /* Lock the working set */
+    MiLockWorkingSet(CurrentThread, &MmSystemCacheWs);
+
+    /* Loop the PTEs */
+    while (Pte <= LastPte)
+    {
+        /* Check for valid PTE */
+        if (Pte->u.Hard.Valid == 1)
+        {
+            PageFrameIndex = PFN_FROM_PTE(Pte);
+            Pfn = MiGetPfnEntry(PageFrameIndex);
+            ASSERT(Pfn->u2.ShareCount == 1);
+
+            /* No working sets in ReactOS yet */
+            PageCount++;
+        }
+
+        ImageBase = (PVOID)((ULONG_PTR)ImageBase + PAGE_SIZE);
+        Pte++;
+    }
+
+    /* Release the working set */
+    MiUnlockWorkingSet(CurrentThread, &MmSystemCacheWs);
+
+    /* Do we have any driver pages? */
+    if (PageCount)
+        /* Update counters */
+        InterlockedExchangeAdd((PLONG)&MmTotalSystemDriverPages, PageCount);
+#endif
+}
+
+VOID
+NTAPI
 MiEnablePagingOfDriver(
     _In_ PLDR_DATA_TABLE_ENTRY LdrEntry)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PIMAGE_NT_HEADERS NtHeaders;
+    PIMAGE_SECTION_HEADER Section;
+    PMMPTE Pte = NULL;
+    PMMPTE LastPte = NULL;
+    ULONG_PTR ImageBase;
+    ULONG Sections;
+    ULONG Alignment;
+    ULONG Size;
+
+    if (MmDisablePagingExecutive)
+    {
+        DPRINT1("MiEnablePagingOfDriver: MmDisablePagingExecutive ... return.\n");
+        return;
+    }
+
+    /* Get the driver base address and its NT header */
+    ImageBase = (ULONG_PTR)LdrEntry->DllBase;
+    NtHeaders = RtlImageNtHeader((PVOID)ImageBase);
+
+    if (!NtHeaders)
+        return;
+
+    /* Get the sections and their alignment */
+    Sections = NtHeaders->FileHeader.NumberOfSections;
+    Alignment = (NtHeaders->OptionalHeader.SectionAlignment - 1);
+
+    /* Loop each section */
+    Section = IMAGE_FIRST_SECTION(NtHeaders);
+    while (Sections)
+    {
+        /* Find PAGE or .edata */
+        if ((*(PULONG)Section->Name == 'EGAP') || (*(PULONG)Section->Name == 'ade.'))
+        {
+            /* Had we already done some work? */
+            if (!Pte)
+                /* Nope, setup the first PTE address */
+                Pte = MiAddressToPte(ROUND_TO_PAGES(ImageBase + Section->VirtualAddress));
+
+            /* Compute the size */
+            Size = max(Section->SizeOfRawData, Section->Misc.VirtualSize);
+
+            /* Find the last PTE that maps this section */
+            LastPte = MiAddressToPte(ImageBase + Section->VirtualAddress + Alignment + Size - PAGE_SIZE);
+        }
+        else
+        {
+            /* Had we found a section before? */
+            if (Pte)
+            {
+                /* Mark it as pageable */
+                MiSetPagingOfDriver(Pte, LastPte);
+                Pte = NULL;
+            }
+        }
+
+        /* Keep searching */
+        Sections--;
+        Section++;
+    }
+
+    /* Handle the straggler */
+    if (Pte)
+        MiSetPagingOfDriver(Pte, LastPte);
 }
 
 NTSTATUS
