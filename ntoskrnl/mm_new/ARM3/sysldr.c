@@ -100,6 +100,213 @@ MmUnloadSystemImage(
 
 NTSTATUS
 NTAPI
+MiSnapThunk(
+    _In_ PVOID DllBase,
+    _In_ PVOID ImageBase,
+    _In_ PIMAGE_THUNK_DATA Name,
+    _In_ PIMAGE_THUNK_DATA Address,
+    _In_ PIMAGE_EXPORT_DIRECTORY ExportDirectory,
+    _In_ ULONG ExportSize,
+    _In_ BOOLEAN SnapForwarder,
+    _Out_ PCHAR* MissingApi)
+{
+    CHAR NameBuffer[MAXIMUM_FILENAME_LENGTH];
+    IMAGE_THUNK_DATA ForwardThunk;
+    PIMAGE_EXPORT_DIRECTORY ForwardExportDirectory;
+    PIMAGE_IMPORT_BY_NAME NameImport;
+    PIMAGE_IMPORT_BY_NAME ForwardName;
+    PLDR_DATA_TABLE_ENTRY LdrEntry;
+    PLIST_ENTRY NextEntry;
+    PULONG NameTable;
+    PULONG ExportTable;
+    PUSHORT OrdinalTable;
+    PCHAR MissingForwarder;
+    ANSI_STRING DllName;
+    UNICODE_STRING ForwarderName;
+    SIZE_T ForwardLength;
+    ULONG ForwardExportSize;
+    ULONG Low = 0;
+    ULONG Mid = 0;
+    ULONG High;
+    LONG Ret;
+    USHORT Ordinal;
+    USHORT Hint;
+    BOOLEAN IsOrdinal;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    /* Check if this is an ordinal */
+    IsOrdinal = IMAGE_SNAP_BY_ORDINAL(Name->u1.Ordinal);
+
+    if (IsOrdinal && !SnapForwarder)
+    {
+        /* Get the ordinal number and set it as missing */
+        Ordinal = (USHORT)(IMAGE_ORDINAL(Name->u1.Ordinal) - ExportDirectory->Base);
+        *MissingApi = (PCHAR)(ULONG_PTR)Ordinal;
+    }
+    else
+    {
+        /* Get the VA if we don't have to snap */
+        if (!SnapForwarder)
+            Name->u1.AddressOfData += (ULONG_PTR)ImageBase;
+
+        NameImport = (PIMAGE_IMPORT_BY_NAME)Name->u1.AddressOfData;
+
+        /* Copy the procedure name */
+        RtlStringCbCopyA(*MissingApi, MAXIMUM_FILENAME_LENGTH, (PCHAR)&NameImport->Name[0]);
+
+        DPRINT("Import name: %s\n", NameImport->Name);
+
+        /* Setup name tables */
+        NameTable = (PULONG)((ULONG_PTR)DllBase + ExportDirectory->AddressOfNames);
+        OrdinalTable = (PUSHORT)((ULONG_PTR)DllBase + ExportDirectory->AddressOfNameOrdinals);
+
+        /* Get the hint and check if it's valid */
+        Hint = NameImport->Hint;
+
+        if (Hint < ExportDirectory->NumberOfNames &&
+            !(strcmp((PCHAR)NameImport->Name, (PCHAR)DllBase + NameTable[Hint])))
+        {
+            /* We have a match, get the ordinal number from here */
+            Ordinal = OrdinalTable[Hint];
+        }
+        else
+        {
+            /* Do a binary search */
+            High = (ExportDirectory->NumberOfNames - 1);
+
+            while (High >= Low)
+            {
+                /* Get new middle value */
+                Mid = ((Low + High) >> 1);
+
+                /* Compare name */
+                Ret = strcmp((PCHAR)NameImport->Name, (PCHAR)DllBase + NameTable[Mid]);
+
+                if (Ret < 0)
+                    /* Update high */
+                    High = (Mid - 1);
+                else if (Ret > 0)
+                    /* Update low */
+                    Low = (Mid + 1);
+                else
+                    /* We got it */
+                    break;
+            }
+
+            /* Check if we couldn't find it */
+            if (High < Low)
+            {
+                DPRINT1("Warning: Driver failed to load, %s not found\n", NameImport->Name);
+                return STATUS_DRIVER_ENTRYPOINT_NOT_FOUND;
+            }
+
+            /* Otherwise, this is the ordinal */
+            Ordinal = OrdinalTable[Mid];
+        }
+    }
+
+    /* Check if the ordinal is invalid */
+    if (Ordinal >= ExportDirectory->NumberOfFunctions)
+    {
+        DPRINT1("MiSnapThunk: STATUS_DRIVER_ORDINAL_NOT_FOUND\n");
+        return STATUS_DRIVER_ORDINAL_NOT_FOUND;
+    }
+
+    /* In case the forwarder is missing */
+    MissingForwarder = NameBuffer;
+
+    /* Resolve the address and write it */
+    ExportTable = (PULONG)((ULONG_PTR)DllBase +ExportDirectory->AddressOfFunctions);
+    Address->u1.Function = (ULONG_PTR)DllBase + ExportTable[Ordinal];
+
+    /* Check if the function is actually a forwarder */
+    if (Address->u1.Function <= (ULONG_PTR)ExportDirectory ||
+        Address->u1.Function >= ((ULONG_PTR)ExportDirectory + ExportSize))
+    {
+        return STATUS_SUCCESS;
+    }
+
+    /* Now assume failure in case the forwarder doesn't exist */
+    Status = STATUS_DRIVER_ENTRYPOINT_NOT_FOUND;
+
+    /* Build the forwarder name */
+    DllName.Length = (USHORT)((strchr(DllName.Buffer, '.') - DllName.Buffer) + sizeof(ANSI_NULL));
+    DllName.MaximumLength = DllName.Length;
+    DllName.Buffer = (PCHAR)Address->u1.Function;
+
+    /* Convert it */
+    if (!NT_SUCCESS(RtlAnsiStringToUnicodeString(&ForwarderName, &DllName, TRUE)))
+    {
+        /* We failed, just return an error */
+        DPRINT1("MiSnapThunk: return Status %X\n", Status);
+        return Status;
+    }
+
+    /* Loop the module list */
+    for (NextEntry = PsLoadedModuleList.Flink;
+         NextEntry != &PsLoadedModuleList;
+         NextEntry = NextEntry->Flink)
+    {
+        /* Get the loader entry */
+        LdrEntry = CONTAINING_RECORD(NextEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+        /* Check if it matches */
+        if (RtlPrefixUnicodeString(&ForwarderName, &LdrEntry->BaseDllName, TRUE))
+        {
+            /* Get the forwarder export directory */
+            ForwardExportDirectory = RtlImageDirectoryEntryToData(LdrEntry->DllBase,
+                                                                  TRUE,
+                                                                  IMAGE_DIRECTORY_ENTRY_EXPORT,
+                                                                  &ForwardExportSize);
+            if (!ForwardExportDirectory)
+                break;
+
+            /* Allocate a name entry */
+            ForwardLength = (strlen(DllName.Buffer + DllName.Length) + sizeof(ANSI_NULL));
+
+            ForwardName = ExAllocatePoolWithTag(PagedPool, (sizeof(*ForwardName) + ForwardLength), TAG_LDR_WSTR);
+            if (!ForwardName)
+            {
+                DPRINT1("MiSnapThunk: ExAllocatePoolWithTag() failed\n");
+                break;
+            }
+
+            /* Copy the data */
+            RtlCopyMemory(&ForwardName->Name[0], (DllName.Buffer + DllName.Length), ForwardLength);
+            ForwardName->Hint = 0;
+
+            /* Set the new address */
+            ForwardThunk.u1.AddressOfData = (ULONG_PTR)ForwardName;
+
+            /* Snap the forwarder */
+            Status = MiSnapThunk(LdrEntry->DllBase,
+                                 ImageBase,
+                                 &ForwardThunk,
+                                 &ForwardThunk,
+                                 ForwardExportDirectory,
+                                 ForwardExportSize,
+                                 TRUE,
+                                 &MissingForwarder);
+
+            /* Free the forwarder name and set the thunk */
+            ExFreePoolWithTag(ForwardName, TAG_LDR_WSTR);
+            Address->u1 = ForwardThunk.u1;
+
+            break;
+        }
+    }
+
+    /* Free the name */
+    RtlFreeUnicodeString(&ForwarderName);
+
+    /* Return status */
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 MiResolveImageReferences(
     _In_ PVOID ImageBase,
     _In_ PUNICODE_STRING ImageFileDirectory,
