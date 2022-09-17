@@ -3339,6 +3339,63 @@ MiGetImageProtection(
     return MmImageProtectionArray[Index];
 }
 
+VOID
+NTAPI
+MiInitializeTransitionPfn(
+    _In_ PFN_NUMBER PageNumber,
+    _In_ OUT PMMPTE SectionProto)
+{
+    PMMPTE ProtoPte;
+    MMPTE TempPte;
+    PMMPFN Pfn;
+    PFN_NUMBER ProtoPtePageNumber;
+
+    DPRINT("MiInitializeTransitionPfn: PageNumber %X, SectionProto %p\n", PageNumber, SectionProto);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    Pfn = MI_PFN_ELEMENT(PageNumber);
+    Pfn->u1.Event = NULL;
+    Pfn->PteAddress = SectionProto;
+    Pfn->OriginalPte.u.Long = SectionProto->u.Long;
+
+    ASSERT(!((Pfn->OriginalPte.u.Soft.Prototype == 0) &&
+             (Pfn->OriginalPte.u.Soft.Transition == 1)));
+
+    Pfn->u3.e1.PrototypePte = 1;
+    Pfn->u3.e1.PageLocation = TransitionPage;
+    Pfn->u2.ShareCount = 0;
+
+    ProtoPte = MiAddressToPte(SectionProto);
+
+    if (!ProtoPte->u.Hard.Valid)
+    {
+        if (!NT_SUCCESS(MiCheckPdeForPagedPool(SectionProto)))
+        {
+            DPRINT1("KeBugCheckEx()\n");
+            ASSERT(FALSE);
+            KeBugCheckEx(0x1A,
+                         0x61940,
+                         (ULONG_PTR)SectionProto,
+                         ProtoPte->u.Long,
+                         (ULONG_PTR)MiPteToAddress(SectionProto));
+        }
+    }
+
+    ProtoPtePageNumber = ProtoPte->u.Hard.PageFrameNumber;
+
+    Pfn->u4.PteFrame = ProtoPtePageNumber;
+
+    MI_MAKE_TRANSITION_PTE(&TempPte, PageNumber, SectionProto->u.Soft.Protection);
+    MI_WRITE_INVALID_PTE(SectionProto, TempPte);
+
+    DPRINT("MiInitializeTransitionPfn: SectionProto %X, [%p]\n", SectionProto, SectionProto->u.Long);
+
+    ASSERT(ProtoPtePageNumber != 0);
+    MI_PFN_ELEMENT(ProtoPtePageNumber)->u2.ShareCount++;
+}
+
 NTSTATUS
 NTAPI
 MiCreateImageFileMap(
