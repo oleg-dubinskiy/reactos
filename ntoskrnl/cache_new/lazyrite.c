@@ -20,6 +20,7 @@ LIST_ENTRY CcFastTeardownWorkQueue;
 LIST_ENTRY CcPostTickWorkQueue;
 LIST_ENTRY CcRegularWorkQueue;
 LIST_ENTRY CcExpressWorkQueue;
+LIST_ENTRY CcIdleWorkerThreadList;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -78,6 +79,71 @@ CcScanDpc(
     _In_ PVOID DeferredContext,
     _In_ PVOID SystemArgument1,
     _In_ PVOID SystemArgument2)
+{
+    PKPRCB Prcb = KeGetCurrentPrcb();
+    PGENERAL_LOOKASIDE LookasideList;
+    PWORK_QUEUE_ENTRY WorkItem;
+    PLIST_ENTRY WorkQueue;
+    KIRQL OldIrql;
+
+    DPRINT("CcScanDpc: Dpc %X\n", Dpc);
+
+    /* Allocate a work item */
+    LookasideList = Prcb->PPLookasideList[5].P;
+    LookasideList->TotalAllocates++;
+
+    WorkItem = (PWORK_QUEUE_ENTRY)InterlockedPopEntrySList(&LookasideList->ListHead);
+    if (!WorkItem)
+    {
+        LookasideList->AllocateMisses++;
+        LookasideList = Prcb->PPLookasideList[5].L;
+        LookasideList->TotalAllocates++;
+
+        WorkItem = (PWORK_QUEUE_ENTRY)InterlockedPopEntrySList(&LookasideList->ListHead);
+        if (!WorkItem)
+        {
+            LookasideList->AllocateMisses++;
+            WorkItem = (PWORK_QUEUE_ENTRY)LookasideList->Allocate(LookasideList->Type,
+                                                                  LookasideList->Size,
+                                                                  LookasideList->Tag);
+        }
+    }
+
+    if (!WorkItem)
+    {
+        DPRINT1("CcScanDpc: WorkQueue is NULL!\n");
+
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+        LazyWriter.ScanActive = FALSE;
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        return;
+    }
+
+    WorkItem->Function = LazyWriteScan;
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    if (LazyWriter.PendingTeardown)
+    {
+        WorkQueue = &CcFastTeardownWorkQueue;
+        LazyWriter.PendingTeardown = 0;
+    }
+    else
+    {
+        WorkQueue = &CcRegularWorkQueue;
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+    /* And post it, it will be for lazy write */
+    CcPostWorkQueue(WorkItem, WorkQueue);
+}
+
+VOID
+NTAPI
+CcWorkerThread(
+    _In_ PVOID Parameter)
 {
     UNIMPLEMENTED_DBGBREAK();
 }
