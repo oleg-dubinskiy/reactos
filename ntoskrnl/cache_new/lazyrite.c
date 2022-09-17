@@ -15,6 +15,8 @@ LARGE_INTEGER CcCollisionDelay = RTL_CONSTANT_LARGE_INTEGER(-10000LL * 100);  //
 
 LAZY_WRITER LazyWriter;
 ULONG CcTotalDirtyPages = 0;
+ULONG CcNumberActiveWorkerThreads = 0;
+BOOLEAN CcQueueThrottle = FALSE;
 
 LIST_ENTRY CcFastTeardownWorkQueue;
 LIST_ENTRY CcPostTickWorkQueue;
@@ -30,7 +32,38 @@ CcPostWorkQueue(
     _In_ PWORK_QUEUE_ENTRY WorkItem,
     _In_ PLIST_ENTRY WorkQueue)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PWORK_QUEUE_ITEM ThreadToSpawn = NULL;
+    PLIST_ENTRY ListEntry;
+    KIRQL OldIrql;
+
+    /* First of all, insert the item in the queue */
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueWorkQueueLock);
+    InsertTailList(WorkQueue, &WorkItem->WorkQueueLinks);
+
+    /* Now, define whether we have to spawn a new work thread.
+       We will spawn a new one if:
+       - There's no throttle in action
+       - There's still at least one idle thread
+    */
+    if (!CcQueueThrottle && !IsListEmpty(&CcIdleWorkerThreadList))
+    {
+        /* Get the idle thread */
+        ListEntry = RemoveHeadList(&CcIdleWorkerThreadList);
+        ThreadToSpawn = CONTAINING_RECORD(ListEntry, WORK_QUEUE_ITEM, List);
+
+        /* We're going to have one more! */
+        CcNumberActiveWorkerThreads++;
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueWorkQueueLock, OldIrql);
+
+    /* If we have a thread to spawn, do it! */
+    if (ThreadToSpawn)
+    {
+        /* We NULLify it to be consistent with initialization */
+        ThreadToSpawn->List.Flink = NULL;
+        ExQueueWorkItem(ThreadToSpawn, CriticalWorkQueue);
+    }
 }
 
 VOID
