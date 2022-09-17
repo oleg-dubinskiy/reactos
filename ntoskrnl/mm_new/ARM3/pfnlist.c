@@ -1433,7 +1433,7 @@ MiUnlinkPageFromList(
 
     /* We are not on a list anymore */
     Pfn->u1.Flink = 0;
-    Pfn->u1.Flink = 0;
+    Pfn->u2.Blink = 0;
 
     /* Remove one entry from the list */
     ListHead->Total--;
