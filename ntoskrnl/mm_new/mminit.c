@@ -90,7 +90,7 @@ MmpDeleteSection(
     _In_ PVOID ObjectBody)
 {
     PSECTION Section = ObjectBody;
-    //PCONTROL_AREA ControlArea;
+    PCONTROL_AREA ControlArea;
 
     DPRINT("MmpDeleteSection: Section %p\n", Section);
 
@@ -100,16 +100,17 @@ MmpDeleteSection(
         return;
     }
 
-    DPRINT1("MmpDeleteSection: FIXME! Section %p\n", Section);
-    ASSERT(FALSE);
-#if 0
     ControlArea = Section->Segment->ControlArea;
 
     if (Section->Address.StartingVpn)
     {
+        DPRINT1("MmpDeleteSection: FIXME! Section %p\n", Section);
+        ASSERT(FALSE);
+#if 0
         KeAcquireGuardedMutex(&MmSectionBasedMutex);
         MiRemoveNode(&Section->Address, &MmSectionBasedRoot);
         KeReleaseGuardedMutex(&MmSectionBasedMutex);
+#endif
     }
 
     if (Section->u.Flags.UserWritable &&
@@ -121,7 +122,6 @@ MmpDeleteSection(
     }
 
     MiDereferenceControlAreaBySection(ControlArea, Section->u.Flags.UserReference);
-#endif
 }
 
 VOID

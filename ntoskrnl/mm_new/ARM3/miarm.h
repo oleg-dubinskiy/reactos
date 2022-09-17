@@ -1925,6 +1925,13 @@ MiUnmapViewOfSection(
     _In_ ULONG Flags
 );
 
+VOID
+NTAPI
+MiDereferenceControlAreaBySection(
+    _In_ PCONTROL_AREA ControlArea,
+    _In_ ULONG UserReference
+);
+
 /* ARM3\session.c */
 VOID
 NTAPI
