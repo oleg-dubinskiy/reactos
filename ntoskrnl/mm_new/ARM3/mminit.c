@@ -1707,7 +1707,7 @@ MmArmInitSystem(
     }
     else if (Phase == 2)
     {
-        DPRINT1("MmInitSystem: FIXME MiEnablePagingTheExecutive\n");
+        DPRINT1("MmArmInitSystem: FIXME MiEnablePagingTheExecutive\n");
         //MiEnablePagingTheExecutive();
         return TRUE;
     }
