@@ -1952,9 +1952,6 @@ MiResolveProtoPteFault(
         /* Call it a transition */
         InterlockedIncrement(&KeGetCurrentPrcb()->MmTransitionCount);
 
-        DPRINT1("MiResolveProtoPteFault: FIXME\n");
-        ASSERT(FALSE);
-
         /* Complete the prototype PTE fault -- this will release the PFN lock */
         Status = MiCompleteProtoPteFault(StoreInstruction, Address, Pte, SectionProto, OldIrql, LockedProtoPfn);
         return Status;
@@ -2032,15 +2029,33 @@ MiResolveProtoPteFault(
     /* Check for writing copy on write page */
     if (!MI_IS_MAPPED_PTE(&TempProto) && ((Protection & MM_WRITECOPY) == MM_WRITECOPY))
     {
-        DPRINT1("MiResolveProtoPteFault: DemandZero page with Protection protection\n");
+        MMPTE NewPte;
+
+        DPRINT("MiResolveProtoPteFault: DemandZero page with Protection protection\n");
 
         ASSERT(Process != NULL);
         MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
-        DPRINT1("MiResolveProtoPteFault: FIXME\n");
-        ASSERT(FALSE);
+        NewPte = DemandZeroPte;
 
-        //DPRINT("MiResolveProtoPteFault: Status %X\n", Status);
+        ASSERT(TempPte.u.Hard.Valid == 0);
+
+        if (TempPte.u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)
+        {
+            if (TempPte.u.Soft.Protection & MM_EXECUTE)
+                NewPte.u.Soft.Protection = MM_EXECUTE_READWRITE;
+        }
+        else
+        {
+            if (TempProto.u.Soft.Protection & MM_EXECUTE)
+                NewPte.u.Soft.Protection = MM_EXECUTE_READWRITE;
+        }
+
+        Pte->u.Long = NewPte.u.Long;
+
+        Status = MiResolveDemandZeroFault(Address, Pte, Protection, Process, MM_NOIRQL);
+
+        DPRINT("MiResolveProtoPteFault: Status %X\n", Status);
         return Status;
     }
 
