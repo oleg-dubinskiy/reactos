@@ -554,6 +554,27 @@ MiCheckControlArea(
     ASSERT(FALSE);
 }
 
+VOID
+NTAPI
+MiDereferenceControlAreaBySection(
+    _In_ PCONTROL_AREA ControlArea,
+    _In_ ULONG UserReference)
+{
+    KIRQL OldIrql;
+
+    DPRINT("MiDereferenceControlAreaBySection: %p, %X\n", ControlArea, UserReference);
+
+    //ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    /* Lock the PFN database */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    ControlArea->NumberOfSectionReferences--;
+    ControlArea->NumberOfUserReferences -= UserReference;
+
+    MiCheckControlArea(ControlArea, OldIrql);
+}
+
 PMMPTE
 NTAPI
 MiGetProtoPteAddressExtended(
