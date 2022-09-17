@@ -2404,8 +2404,68 @@ MiLocateSubsection(
     _In_ PMMVAD Vad,
     _In_ ULONG_PTR Vpn)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PSUBSECTION Subsection;
+    PCONTROL_AREA ControlArea;
+    ULONG_PTR PteOffset;
+
+    //DPRINT("MiLocateSubsection: Vad %p, Vpn %p\n", Vad, Vpn);
+
+    /* Get the control area */
+    ControlArea = Vad->ControlArea;
+
+    /* Get the subsection */
+    if (ControlArea->u.Flags.Rom)
+        Subsection = (PSUBSECTION)&((PLARGE_CONTROL_AREA)ControlArea)[1];
+    else
+        Subsection = (PSUBSECTION)&ControlArea[1];
+
+    if (ControlArea->u.Flags.Image)
+    {
+        if (ControlArea->u.Flags.GlobalOnlyPerSession)
+            Subsection = (PSUBSECTION)&((PLARGE_CONTROL_AREA)ControlArea)[1];
+
+        return Subsection;
+    }
+
+    ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 0);
+
+    while (TRUE)
+    {
+        if (Subsection->SubsectionBase &&
+            Vad->FirstPrototypePte >= Subsection->SubsectionBase &&
+            Vad->FirstPrototypePte < &Subsection->SubsectionBase[Subsection->PtesInSubsection])
+        {
+            break;
+        }
+
+        Subsection = Subsection->NextSubsection;
+        if (!Subsection)
+            return NULL;
+    }
+
+    ASSERT(Subsection->SubsectionBase != NULL);
+
+    /* Compute the PTE offset */
+    PteOffset = (Vpn - Vad->StartingVpn);
+    PteOffset += (Vad->FirstPrototypePte - Subsection->SubsectionBase);
+
+    ASSERT(PteOffset < 0xF0000000);
+
+    while (PteOffset >= Subsection->PtesInSubsection)
+    {
+        PteOffset -= Subsection->PtesInSubsection;
+
+        Subsection = Subsection->NextSubsection;
+        if (!Subsection)
+            return NULL;
+
+        ASSERT(Subsection->SubsectionBase != NULL);
+    }
+
+    ASSERT(Subsection->SubsectionBase != NULL);
+
+    /* Return the subsection */
+    return Subsection;
 }
 
 VOID
