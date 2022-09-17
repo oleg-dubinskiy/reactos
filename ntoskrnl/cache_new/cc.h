@@ -158,6 +158,12 @@ CcScanDpc(
     _In_ PVOID SystemArgument2
 );
 
+VOID
+NTAPI
+CcWorkerThread(
+    _In_ PVOID Parameter
+);
+
 BOOLEAN
 NTAPI
 CcUnmapVacbArray(

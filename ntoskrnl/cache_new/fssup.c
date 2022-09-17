@@ -11,7 +11,8 @@
 SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
 SHARED_CACHE_MAP_LIST_CURSOR CcLazyWriterCursor;
 GENERAL_LOOKASIDE CcTwilightLookasideList;
-
+MM_SYSTEMSIZE CcCapturedSystemSize;
+ULONG CcNumberWorkerThreads;
 LIST_ENTRY CcCleanSharedCacheMapList;
 
 extern LIST_ENTRY CcRegularWorkQueue;
@@ -20,6 +21,7 @@ extern LIST_ENTRY CcFastTeardownWorkQueue;
 extern LIST_ENTRY CcPostTickWorkQueue;
 extern LARGE_INTEGER CcCollisionDelay;
 extern LAZY_WRITER LazyWriter;
+extern LIST_ENTRY CcIdleWorkerThreadList;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -960,6 +962,12 @@ BOOLEAN
 NTAPI
 CcInitializeCacheManager(VOID)
 {
+    PGENERAL_LOOKASIDE LookasideList;
+    PWORK_QUEUE_ITEM WorkItem;
+    PKPRCB Prcb;
+    ULONG ix;
+    USHORT MaximumDepth;
+
     DPRINT("CcInitializeCacheManager()\n");
 
     InitializeListHead(&CcCleanSharedCacheMapList);
@@ -970,10 +978,27 @@ CcInitializeCacheManager(VOID)
     InsertTailList(&CcDirtySharedCacheMapList.SharedCacheMapLinks, &CcLazyWriterCursor.SharedCacheMapLinks);
     CcLazyWriterCursor.Flags = 0x800;
 
+    InitializeListHead(&CcIdleWorkerThreadList);
     InitializeListHead(&CcFastTeardownWorkQueue);
     InitializeListHead(&CcExpressWorkQueue);
     InitializeListHead(&CcRegularWorkQueue);
     InitializeListHead(&CcPostTickWorkQueue);
+
+    CcCapturedSystemSize = MmQuerySystemSize();
+
+
+    for (ix = 0; ix < CcNumberWorkerThreads; ix++)
+    {
+        WorkItem = ExAllocatePoolWithTag(NonPagedPool, sizeof(*WorkItem), 'qWcC');
+        if (!WorkItem)
+        {
+            ASSERT(FALSE);
+            KeBugCheckEx(0x34, 0x400E0, 0, 0, 0); //? (0x40000 | __LINE__)
+        }
+
+        ExInitializeWorkItem(WorkItem, CcWorkerThread, WorkItem);
+        InsertTailList(&CcIdleWorkerThreadList, &WorkItem->List);
+    }
 
     RtlZeroMemory(&LazyWriter, sizeof(LazyWriter));
 
@@ -981,6 +1006,48 @@ CcInitializeCacheManager(VOID)
     KeInitializeDpc(&LazyWriter.ScanDpc, CcScanDpc, NULL);
     KeInitializeTimer(&LazyWriter.ScanTimer);
 
+    if (CcCapturedSystemSize == MmSmallSystem)
+    {
+        MaximumDepth = 0x20;
+    }
+    else if (CcCapturedSystemSize == MmMediumSystem)
+    {
+        MaximumDepth = 0x40;
+    }
+    else if (CcCapturedSystemSize == MmLargeSystem)
+    {
+        if (MmIsThisAnNtAsSystem())
+            MaximumDepth = 0x100;
+        else
+            MaximumDepth = 0x80;
+    }
+
+    ExInitializeSystemLookasideList(&CcTwilightLookasideList,
+                                    NonPagedPool,
+                                    0x10,
+                                    'kWcC',
+                                    MaximumDepth,
+                                    &ExSystemLookasideListHead);
+
+    for (ix = 0; ix < KeNumberProcessors; ix++)
+    {
+        Prcb = KiProcessorBlock[ix];
+        Prcb->PPLookasideList[5].L = &CcTwilightLookasideList;
+
+        LookasideList = ExAllocatePoolWithTag(NonPagedPool, sizeof(*LookasideList), 'KWcC');
+
+        if (LookasideList)
+            ExInitializeSystemLookasideList(LookasideList,
+                                            NonPagedPool,
+                                            0x10,
+                                            'KWcC',
+                                            MaximumDepth,
+                                            &ExSystemLookasideListHead);
+        else
+            LookasideList = &CcTwilightLookasideList;
+
+        Prcb->PPLookasideList[5].P = LookasideList;
+    }
 
     CcInitializeVacbs();
 
