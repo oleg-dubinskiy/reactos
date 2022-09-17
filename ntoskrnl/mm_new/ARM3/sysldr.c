@@ -1034,7 +1034,25 @@ MiProcessLoaderEntry(
     _In_ PLDR_DATA_TABLE_ENTRY LdrEntry,
     _In_ BOOLEAN Insert)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    KIRQL OldIrql;
+
+    /* Acquire module list lock */
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(&PsLoadedModuleResource, TRUE);
+
+    /* Acquire the spinlock too as we will insert or remove the entry */
+    OldIrql = KeAcquireSpinLockRaiseToSynch(&PsLoadedModuleSpinLock);
+
+    /* Insert or remove from the list */
+    if (Insert)
+        InsertTailList(&PsLoadedModuleList, &LdrEntry->InLoadOrderLinks);
+    else
+        RemoveEntryList(&LdrEntry->InLoadOrderLinks);
+
+    /* Release locks */
+    KeReleaseSpinLock(&PsLoadedModuleSpinLock, OldIrql);
+    ExReleaseResourceLite(&PsLoadedModuleResource);
+    KeLeaveCriticalRegion();
 }
 
 BOOLEAN
