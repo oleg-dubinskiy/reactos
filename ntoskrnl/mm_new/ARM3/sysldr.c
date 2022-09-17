@@ -38,6 +38,8 @@ extern MMPTE DemandZeroPte;
 extern BOOLEAN MiLargePageAllDrivers;
 extern LIST_ENTRY MiLargePageDriverList;
 extern UCHAR MmDisablePagingExecutive;
+extern PVOID MiSessionImageStart;
+extern PVOID MiSessionImageEnd;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -3065,6 +3067,39 @@ MiWriteProtectSystemImage(
                 ImageBase, NtHeaders->OptionalHeader.SizeOfImage, ix,
                 Section->VirtualAddress, Section->SizeOfRawData, Section->Misc.VirtualSize);
     }
+}
+
+PLDR_DATA_TABLE_ENTRY
+NTAPI
+MiLookupDataTableEntry(
+    _In_ PVOID Address)
+{
+    PLDR_DATA_TABLE_ENTRY LdrEntry;
+    PLDR_DATA_TABLE_ENTRY FoundEntry = NULL;
+    PLIST_ENTRY NextEntry;
+
+    PAGED_CODE();
+
+    /* Loop entries */
+    for (NextEntry = PsLoadedModuleList.Flink;
+         NextEntry != &PsLoadedModuleList;
+         NextEntry = NextEntry->Flink)
+    {
+        /* Get the loader entry */
+        LdrEntry =  CONTAINING_RECORD(NextEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+        /* Check if the address matches */
+        if (Address >= LdrEntry->DllBase &&
+            Address < (PVOID)((ULONG_PTR)LdrEntry->DllBase + LdrEntry->SizeOfImage))
+        {
+            /* Found a match */
+            FoundEntry = LdrEntry;
+            break;
+        }
+    }
+
+    /* Return the entry */
+    return FoundEntry;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
