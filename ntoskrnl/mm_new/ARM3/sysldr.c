@@ -94,15 +94,6 @@ MiAllocatePfn(
 
 NTSTATUS
 NTAPI
-MmUnloadSystemImage(
-    _In_ PVOID ImageHandle)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-NTSTATUS
-NTAPI
 MiSnapThunk(
     _In_ PVOID DllBase,
     _In_ PVOID ImageBase,
@@ -1271,6 +1262,93 @@ MiClearImports(
     ExFreePoolWithTag(LdrEntry->LoadedImports, TAG_LDR_IMPORTS);
 
     LdrEntry->LoadedImports = MM_SYSLDR_BOOT_LOADED;
+}
+
+NTSTATUS
+NTAPI
+MmUnloadSystemImage(
+    _In_ PVOID ImageHandle)
+{
+    PLDR_DATA_TABLE_ENTRY LdrEntry = ImageHandle;
+    PVOID BaseAddress = LdrEntry->DllBase;
+    STRING TempName;
+    BOOLEAN HadEntry = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("MmUnloadSystemImage: ImageHandle %p, BaseAddress %p\n", ImageHandle, BaseAddress);
+
+    /* Acquire the loader lock */
+    KeEnterCriticalRegion();
+
+    KeWaitForSingleObject(&MmSystemLoadLock, WrVirtualMemory, KernelMode, FALSE, NULL);
+
+    /* Check if this driver was loaded at boot and didn't get imports parsed */
+    if (LdrEntry->LoadedImports == MM_SYSLDR_BOOT_LOADED)
+        goto Done;
+
+    /* We should still be alive */
+    ASSERT(LdrEntry->LoadCount != 0);
+    LdrEntry->LoadCount--;
+
+    /* Check if we're still loaded */
+    if (LdrEntry->LoadCount)
+        goto Done;
+
+    /* We should cleanup... are symbols loaded */
+    if (LdrEntry->Flags & LDRP_DEBUG_SYMBOLS_LOADED)
+    {
+        /* Create the ANSI name */
+        Status = RtlUnicodeStringToAnsiString(&TempName, &LdrEntry->BaseDllName, TRUE);
+        if (NT_SUCCESS(Status))
+        {
+            /* Unload the symbols */
+            DbgUnLoadImageSymbols(&TempName, BaseAddress, (ULONG_PTR)PsGetCurrentProcessId());
+            RtlFreeAnsiString(&TempName);
+        }
+    }
+
+    /* FIXME: Free the driver */
+    DPRINT1("Leaking driver: %wZ\n", &LdrEntry->BaseDllName);
+    //MmFreeSection(LdrEntry->DllBase);
+
+    /* Check if we're linked in */
+    if (LdrEntry->InLoadOrderLinks.Flink)
+    {
+        /* Remove us */
+        MiProcessLoaderEntry(LdrEntry, FALSE);
+        HadEntry = TRUE;
+    }
+
+    /* Dereference and clear the imports */
+    MiDereferenceImports(LdrEntry->LoadedImports);
+    MiClearImports(LdrEntry);
+
+    /* Check if the entry needs to go away */
+    if (!HadEntry)
+        goto Done;
+
+    /* Check if it had a name */
+    if (LdrEntry->FullDllName.Buffer)
+        /* Free it */
+        //ExFreePoolWithTag(LdrEntry->FullDllName.Buffer, TAG_LDR_WSTR);
+        ExFreePool(LdrEntry->FullDllName.Buffer);
+
+    /* Check if we had a section */
+    if (LdrEntry->SectionPointer)
+        /* Dereference it */
+        ObDereferenceObject(LdrEntry->SectionPointer);
+
+    /* Free the entry */
+    //ExFreePoolWithTag(LdrEntry, TAG_MODULE_OBJECT);
+    ExFreePool(LdrEntry);
+
+Done:
+
+    /* Release the system lock and return */
+    KeReleaseMutant(&MmSystemLoadLock, 1, FALSE, FALSE);
+    KeLeaveCriticalRegion();
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
