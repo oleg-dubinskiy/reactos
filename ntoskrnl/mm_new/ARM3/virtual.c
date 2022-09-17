@@ -245,15 +245,146 @@ MiMakePdeExistAndMakeValid(
 
 ULONG
 NTAPI
-MiDeletePte(IN PMMPTE PointerPte,
-            IN PVOID VirtualAddress,
-            IN PEPROCESS CurrentProcess,
-            IN PMMPTE PrototypePte,
-            IN PMMPTE_FLUSH_LIST PteFlushList,
-            IN KIRQL OldIrql)
+MiDeletePte(
+    _In_ PMMPTE Pte,
+    _In_ PVOID Va,
+    _In_ PEPROCESS CurrentProcess,
+    _In_ PMMPTE Proto,
+    _In_ PMMPTE_FLUSH_LIST FlushList,
+    _In_ KIRQL OldIrql)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    PMMPFN Pfn;
+    PMMPDE Pde = NULL;
+    MMPTE TempPte;
+    PFN_NUMBER PageFrameIndex;
+    PFN_NUMBER PageNumber;
+
+    DPRINT("MiDeletePte: Pte %p [%p], Va %p, Proto %p [%p], OldIrql %X\n",
+           Pte, (Pte ? Pte->u.Long : 0), Va, Proto, (Proto ? Proto->u.Long : 0), OldIrql);
+
+    /* PFN lock must be held */
+    MI_ASSERT_PFN_LOCK_HELD();
+
+    /* Capture the PTE */
+    TempPte = *Pte;
+
+    /* See if the PTE is valid */
+    if (TempPte.u.Hard.Valid)
+    {
+        /* Get the PFN entry */
+        PageFrameIndex = PFN_FROM_PTE(&TempPte);
+        Pfn = MiGetPfnEntry(PageFrameIndex);
+
+        /* Check if this is a valid, prototype PTE */
+        if (Pfn->u3.e1.PrototypePte)
+        {
+            ASSERT(KeGetCurrentIrql() > APC_LEVEL);
+
+            if (!Pfn->u3.e1.Modified && Pte->u.Hard.Dirty)
+            {
+                ASSERT(Pfn->u3.e1.Rom == 0);
+                Pfn->u3.e1.Modified = 1;
+
+                if (!Pfn->OriginalPte.u.Soft.Prototype && !Pfn->u3.e1.WriteInProgress)
+                {
+                    DPRINT1("MiDeletePte: FIXME\n");
+                    ASSERT(FALSE);
+                }
+            }
+
+            /* Get the PDE and make sure it's faulted in */
+            Pde = MiPteToPde(Pte);
+
+            /* Could be paged pool access from a new process -- synchronize the page directories */
+            if (!Pde->u.Hard.Valid && !NT_SUCCESS(MiCheckPdeForPagedPool(Va)))
+            {
+                /* The PDE must be valid at this point */
+                KeBugCheckEx(MEMORY_MANAGEMENT, 0x61940, (ULONG_PTR)Pte, Pte->u.Long, (ULONG_PTR)Va);
+            }
+
+            /* Drop the share count on the page table */
+            PageNumber = Pde->u.Hard.PageFrameNumber;
+            DPRINT("MiDeletePte: Pde %p, PageNumber %X\n", Pde, PageNumber);
+
+            MiDecrementShareCount(MiGetPfnEntry(PageNumber), PageNumber);
+
+            /* Drop the share count */
+            MiDecrementShareCount(Pfn, PageFrameIndex);
+
+            /* Either a fork, or this is the shared user data page */
+            if (Pte <= MiHighestUserPte && Proto != Pfn->PteAddress)
+            {
+                /* If it's not the shared user page, then crash, since there's no fork() yet */
+                if (PAGE_ALIGN(Va) != (PVOID)USER_SHARED_DATA ||
+                    MmHighestUserAddress <= (PVOID)USER_SHARED_DATA)
+                {
+                    /* Must be some sort of memory corruption */
+                    KeBugCheckEx(MEMORY_MANAGEMENT, 0x400, (ULONG_PTR)Pte, (ULONG_PTR)Proto, (ULONG_PTR)Pfn->PteAddress);
+                }
+            }
+        }
+        else
+        {
+            /* Make sure the saved PTE address is valid */
+            if ((PMMPTE)((ULONG_PTR)Pfn->PteAddress & ~0x1) != Pte)
+            {
+                /* The PFN entry is illegal, or invalid */
+                KeBugCheckEx(MEMORY_MANAGEMENT, 0x401, (ULONG_PTR)Pte, Pte->u.Long, (ULONG_PTR)Pfn->PteAddress);
+            }
+
+            /* There should only be 1 shared reference count */
+            ASSERT(Pfn->u2.ShareCount == 1);
+    
+            /* Drop the reference on the page table. */
+            DPRINT("MiDeletePte: Pfn->u4.PteFrame %X\n", Pfn->u4.PteFrame);
+            MiDecrementShareCount(MiGetPfnEntry(Pfn->u4.PteFrame), Pfn->u4.PteFrame);
+    
+            /* Mark the PFN for deletion and dereference what should be the last ref */
+            MI_SET_PFN_DELETED(Pfn);
+            MiDecrementShareCount(Pfn, PageFrameIndex);
+
+            /* We should eventually do this */
+            //Process->NumberOfPrivatePages--;
+        }
+
+        /* Erase it */
+        MI_ERASE_PTE(Pte);
+
+        if (!FlushList)
+        {
+            /* Flush the TLB */
+            //FIXME: Use KeFlushSingleTb(Va, 0) instead
+            KeFlushCurrentTb();
+        }
+        else
+        {
+            DPRINT1("MiDeletePte: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else if (TempPte.u.Soft.Prototype)
+    {
+        DPRINT1("MiDeletePte: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (TempPte.u.Soft.Transition)
+    {
+        DPRINT1("MiDeletePte: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        if (TempPte.u.Soft.PageFileHigh != 0xFFFFF)
+        {
+            DPRINT1("MiDeletePte: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        MI_ERASE_PTE(Pte);
+    }
+
+    DPRINT("MiDeletePte: return 0\n");
+    return 0; // FIXME
 }
 
 VOID
