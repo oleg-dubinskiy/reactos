@@ -219,8 +219,8 @@ MiSnapThunk(
     MissingForwarder = NameBuffer;
 
     /* Resolve the address and write it */
-    ExportTable = (PULONG)((ULONG_PTR)DllBase +ExportDirectory->AddressOfFunctions);
-    Address->u1.Function = (ULONG_PTR)DllBase + ExportTable[Ordinal];
+    ExportTable = (PULONG)((ULONG_PTR)DllBase + ExportDirectory->AddressOfFunctions);
+    Address->u1.Function = ((ULONG_PTR)DllBase + ExportTable[Ordinal]);
 
     /* Check if the function is actually a forwarder */
     if (Address->u1.Function <= (ULONG_PTR)ExportDirectory ||
@@ -229,21 +229,21 @@ MiSnapThunk(
         return STATUS_SUCCESS;
     }
 
-    /* Now assume failure in case the forwarder doesn't exist */
-    Status = STATUS_DRIVER_ENTRYPOINT_NOT_FOUND;
-
     /* Build the forwarder name */
-    DllName.Length = (USHORT)((strchr(DllName.Buffer, '.') - DllName.Buffer) + sizeof(ANSI_NULL));
-    DllName.MaximumLength = DllName.Length;
     DllName.Buffer = (PCHAR)Address->u1.Function;
+    DllName.Length = (USHORT)(strchr(DllName.Buffer, '.') - DllName.Buffer) + sizeof(ANSI_NULL);
+    DllName.MaximumLength = DllName.Length;
 
     /* Convert it */
     if (!NT_SUCCESS(RtlAnsiStringToUnicodeString(&ForwarderName, &DllName, TRUE)))
     {
         /* We failed, just return an error */
-        DPRINT1("MiSnapThunk: return Status %X\n", Status);
-        return Status;
+        DPRINT1("MiSnapThunk: STATUS_DRIVER_ENTRYPOINT_NOT_FOUND\n");
+        return STATUS_DRIVER_ENTRYPOINT_NOT_FOUND;
     }
+
+    /* Now assume failure in case the forwarder doesn't exist */
+    Status = STATUS_DRIVER_ENTRYPOINT_NOT_FOUND;
 
     /* Loop the module list */
     for (NextEntry = PsLoadedModuleList.Flink;
@@ -1852,12 +1852,69 @@ MmChangeKernelResourceSectionProtection(
     return TRUE;
 }
 
+/* Note: This function assumes that all discardable sections are at the end of the PE file.
+   It searches backwards until it finds the non-discardable section
+*/
 VOID
 NTAPI
 MmFreeDriverInitialization(
     _In_ PVOID DriverSection)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PLDR_DATA_TABLE_ENTRY LdrEntry = DriverSection;
+    PIMAGE_NT_HEADERS NtHeader;
+    PIMAGE_SECTION_HEADER Section;
+    PIMAGE_SECTION_HEADER DiscardSection;
+    PMMPTE StartPte;
+    PMMPTE EndPte;
+    PVOID DllBase;
+    PFN_NUMBER PageCount;
+    ULONG ix;
+
+    /* Get the base address and the page count */
+    DllBase = LdrEntry->DllBase;
+    PageCount = LdrEntry->SizeOfImage >> PAGE_SHIFT;
+
+    /* Get the last PTE in this image */
+    EndPte = MiAddressToPte(DllBase) + PageCount;
+
+    /* Get the NT header */
+    NtHeader = RtlImageNtHeader(DllBase);
+    if (!NtHeader)
+        return;
+
+    /* Get the last section and loop each section backwards */
+    Section = (IMAGE_FIRST_SECTION(NtHeader) + NtHeader->FileHeader.NumberOfSections);
+    DiscardSection = NULL;
+
+    for (ix = 0; ix < NtHeader->FileHeader.NumberOfSections; ix++)
+    {
+        /* Go back a section and check if it's discardable */
+        Section--;
+
+        if (Section->Characteristics & IMAGE_SCN_MEM_DISCARDABLE)
+            /* It is, select it for freeing */
+            DiscardSection = Section;
+        else
+            /* No more discardable sections exist, bail out */
+            break;
+    }
+
+    /* Bail out if there's nothing to free */
+    if (!DiscardSection)
+        return;
+
+    /* Push the DLL base to the first disacrable section, and get its PTE */
+    DllBase = (PVOID)ROUND_TO_PAGES((ULONG_PTR)DllBase + DiscardSection->VirtualAddress);
+    ASSERT(MI_IS_PHYSICAL_ADDRESS(DllBase) == FALSE);
+    StartPte = MiAddressToPte(DllBase);
+
+    /* Check how many pages to free total */
+    PageCount = (PFN_NUMBER)(EndPte - StartPte);
+    if (!PageCount)
+        return;
+
+    /* Delete this many PTEs */
+    MiDeleteSystemPageableVm(StartPte, PageCount, 0, NULL);
 }
 
 PVOID
