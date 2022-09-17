@@ -140,6 +140,7 @@ extern MMPDE ValidKernelPde;
 extern PFN_NUMBER MmAvailablePages;
 extern ULONG MmSecondaryColorMask;
 extern SIZE_T MmAllocationFragment;
+extern ULONG MmVirtualBias;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1261,6 +1262,16 @@ MiInsertPhysicalViewAndRefControlArea(
 
 NTSTATUS
 NTAPI
+MiSetPageModified(
+    _In_ PMMVAD Vad,
+    _In_ PVOID Address)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 MiMapViewOfPhysicalSection(
     _In_ PCONTROL_AREA ControlArea,
     _In_ PEPROCESS Process,
@@ -1272,7 +1283,6 @@ MiMapViewOfPhysicalSection(
     _In_ ULONG AllocationType)
 {
     PMM_PHYSICAL_VIEW PhysicalView;
-    PMMADDRESS_NODE Parent;
     PETHREAD Thread;
     PMMVAD_LONG VadLong;
     ULONG_PTR StartingAddress;
@@ -1352,8 +1362,7 @@ MiMapViewOfPhysicalSection(
                                                      HighestAddress,
                                                      MM_ALLOCATION_GRANULARITY,
                                                      &Process->VadRoot,
-                                                     &TmpStartingAddress,
-                                                     &Parent);
+                                                     &TmpStartingAddress);
         }
         else
         {
@@ -1571,8 +1580,289 @@ MiMapViewOfImageSection(
     _In_ ULONG AllocationType,
     _In_ SIZE_T ImageCommitment)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    //PSECTION_IMAGE_INFORMATION ImageInfo;
+    PSUBSECTION Subsection;
+    PSUBSECTION CurrentSubsection;
+    PVOID BasedAddress;
+    PETHREAD Thread;
+    PMMVAD Vad;
+    ULONG_PTR StartingAddress;
+    ULONG_PTR EndingAddress;
+    ULONG_PTR BoundaryAddress;
+    SIZE_T ViewSize;
+    BOOLEAN IsConflictingVad;
+    BOOLEAN IsLargePages;
+    NTSTATUS status;
+    NTSTATUS Status;
+
+    DPRINT("MiMapViewOfImageSection: %p, %p, [%p], [%I64X], [%p], %p, %X, %X, %X\n",
+           ControlArea, Process, (OutBaseAddress?*OutBaseAddress:0), (OutSectionOffset?OutSectionOffset->QuadPart:0),
+           (OutViewSize?*OutViewSize:0), Section, ZeroBits, AllocationType, ImageCommitment);
+
+    if (ControlArea->u.Flags.GlobalOnlyPerSession || ControlArea->u.Flags.Rom)
+        Subsection = (PSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+    else
+        Subsection = (PSUBSECTION)(ControlArea + 1);
+
+    status = MiCheckPurgeAndUpMapCount(ControlArea, 1);
+    if (!NT_SUCCESS(status))
+    {
+        DPRINT1("MiMapViewOfImageSection: status %X\n", status);
+        return status;
+    }
+
+    BasedAddress = ControlArea->Segment->BasedAddress;
+
+    if (!(*OutViewSize))
+        *OutViewSize = (SIZE_T)(Section->SizeOfSection.QuadPart - OutSectionOffset->QuadPart);
+
+    IsLargePages = FALSE;
+
+    if ((AllocationType & MEM_LARGE_PAGES) &&
+        !OutSectionOffset->QuadPart &&
+        (KeFeatureBits & KF_LARGE_PAGE) &&
+        SeSinglePrivilegeCheck(SeLockMemoryPrivilege, KeGetPreviousMode()))
+    {
+        CurrentSubsection = Subsection;
+
+        do
+        {
+            if (CurrentSubsection->u.SubsectionFlags.GlobalMemory)
+                break;
+
+            CurrentSubsection = CurrentSubsection->NextSubsection;
+        }
+        while (CurrentSubsection);
+
+        if (!CurrentSubsection)
+            IsLargePages = TRUE;
+    }
+
+    while (TRUE)
+    {
+        Status = STATUS_SUCCESS;
+
+        if (!(*OutBaseAddress))
+        {
+            if ((PVOID)*OutViewSize > MM_HIGHEST_VAD_ADDRESS)
+            {
+                MiDereferenceControlArea(ControlArea);
+                return STATUS_NO_MEMORY;
+            }
+
+            StartingAddress = (ULONG_PTR)BasedAddress + (OutSectionOffset->LowPart & ~(MM_ALLOCATION_GRANULARITY - 1));
+            EndingAddress = (StartingAddress + *OutViewSize - 1) | (PAGE_SIZE - 1);
+
+            if (IsLargePages)
+            {
+                DPRINT1("MiMapViewOfImageSection: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            IsConflictingVad = TRUE;
+
+            if (StartingAddress >= MM_ALLOCATION_GRANULARITY &&
+                StartingAddress <= (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS &&
+                ((ULONG_PTR)MM_HIGHEST_VAD_ADDRESS - StartingAddress + 1) >= *OutViewSize &&
+                EndingAddress <= (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS)
+            {
+                IsConflictingVad = MiCheckForConflictingVadExistence(Process, StartingAddress, EndingAddress);
+            }
+
+            if (IsConflictingVad)
+            {
+                if (MmVirtualBias)
+                {
+                    DPRINT1("MiMapViewOfImageSection: FIXME\n");
+                    ASSERT(MmVirtualBias == 0);
+
+                    if (ZeroBits)
+                        ZeroBits = 1;
+                }
+
+                Status = STATUS_IMAGE_NOT_AT_BASE;
+
+                if (Process->VmTopDown)
+                {
+                    if (!ZeroBits)
+                    {
+                        BoundaryAddress = (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS;
+                    }
+                    else
+                    {
+                        BoundaryAddress = ((ULONG_PTR)MI_HIGHEST_SYSTEM_ADDRESS >> ZeroBits);
+
+                        if (BoundaryAddress > (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS)
+                            BoundaryAddress = (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS;
+                    }
+
+                    status = MiFindEmptyAddressRangeDownTree(*OutViewSize,
+                                                             BoundaryAddress,
+                                                             MM_ALLOCATION_GRANULARITY,
+                                                             &Process->VadRoot,
+                                                             &StartingAddress);
+                }
+                else
+                {
+                    status = MiFindEmptyAddressRange(*OutViewSize,
+                                                     MM_ALLOCATION_GRANULARITY,
+                                                     ZeroBits,
+                                                     (PULONG_PTR)&StartingAddress);
+                }
+
+                if (!NT_SUCCESS(status))
+                {
+                    MiDereferenceControlArea(ControlArea);
+                    return status;
+                }
+
+                EndingAddress = (StartingAddress + *OutViewSize - 1) | (PAGE_SIZE - 1);
+            }
+        }
+        else
+        {
+            DPRINT1("MiMapViewOfImageSection: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        Thread = PsGetCurrentThread();
+
+        Vad = ExAllocatePoolWithTag(NonPagedPool, sizeof(MMVAD), ' daV');
+        if (!Vad)
+        {
+            if (IsLargePages)
+            {
+                DPRINT1("MiMapViewOfImageSection: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            MiDereferenceControlArea(ControlArea);
+
+            DPRINT1("MiMapViewOfImageSection: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlZeroMemory(Vad, sizeof(MMVAD));
+
+        Vad->StartingVpn = (StartingAddress / PAGE_SIZE);
+        Vad->EndingVpn = (EndingAddress / PAGE_SIZE);
+
+        Vad->u2.VadFlags2.Inherit = (InheritDisposition == ViewShare);
+        Vad->u.VadFlags.VadType = VadImageMap;
+        Vad->u.VadFlags.Protection = MM_EXECUTE_WRITECOPY;
+
+        Vad->ControlArea = ControlArea;
+
+        OutSectionOffset->LowPart &= ~(MM_ALLOCATION_GRANULARITY - 1);
+
+        Vad->FirstPrototypePte = &Subsection->SubsectionBase[OutSectionOffset->QuadPart / PAGE_SIZE];
+        Vad->LastContiguousPte = (PMMPTE)-4;
+
+        Vad->u.VadFlags.CommitCharge = ImageCommitment;
+        ASSERT(Vad->FirstPrototypePte <= Vad->LastContiguousPte);
+
+        status = MiInsertVadCharges(Vad, Process);
+        if (!NT_SUCCESS(status))
+        {
+            DPRINT1("MiMapViewOfImageSection: status %X\n", status);
+            MiDereferenceControlArea(ControlArea);
+
+            if (IsLargePages)
+            {
+                DPRINT1("MiMapViewOfImageSection: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            ExFreePoolWithTag(Vad, ' daV');
+            return status;
+        }
+
+        MiLockProcessWorkingSetUnsafe(Process, Thread);
+        MiInsertVad(Vad, &Process->VadRoot);
+        MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+
+        ViewSize = (EndingAddress - StartingAddress + 1);
+        Process->VirtualSize += ViewSize;
+
+        if (Process->VirtualSize > Process->PeakVirtualSize)
+            Process->PeakVirtualSize = Process->VirtualSize;
+
+        if (!IsLargePages)
+        {
+            if (ControlArea->u.Flags.FloppyMedia)
+            {
+                PMMPTE proto = Vad->FirstPrototypePte;
+                ULONG_PTR address = StartingAddress;
+
+                while (address < EndingAddress)
+                {
+                    if (proto->u.Hard.Valid ||
+                        ((proto->u.Soft.Prototype || proto->u.Soft.Transition) && (proto->u.Soft.Protection != MM_NOACCESS)))
+                    {
+                        status = MiSetPageModified(Vad, (PVOID)address);
+
+                        if (!NT_SUCCESS(status) && ControlArea->u.Flags.Networked)
+                        {
+                            DPRINT1("MiMapViewOfImageSection: FIXME MiUnmapViewOfSection()\n");
+                            ASSERT(FALSE);
+
+                            return status;
+                        }
+                    }
+
+                    proto++;
+                    address += PAGE_SIZE;
+                }
+            }
+
+            break;
+        }
+        else
+        {
+            DPRINT1("MiMapViewOfImageSection: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    *OutViewSize = ViewSize;
+    *OutBaseAddress = (PVOID)StartingAddress;
+
+    DPRINT("MiMapViewOfImageSection: %p, %p, %I64X, %IX\n",
+           Section, *OutBaseAddress, (OutSectionOffset?OutSectionOffset->QuadPart:0), *OutViewSize);
+
+    ASSERT(NT_SUCCESS(Status));
+
+    DPRINT("MiMapViewOfImageSection: FIXME\n");
+    //ImageInfo = ControlArea->Segment->u2.ImageInformation;
+    //...
+
+    if (PsImageNotifyEnabled &&
+        StartingAddress < (ULONG_PTR)MmHighestUserAddress &&
+        Process->UniqueProcessId &&
+        Process != PsInitialSystemProcess)
+    {
+        DPRINT("MiMapViewOfImageSection: FIXME PsCallImageNotifyRoutines\n");
+        //ASSERT(FALSE);
+    }
+
+    ASSERT(ControlArea->u.Flags.Image);
+
+    if ((NtGlobalFlag & FLG_ENABLE_KDEBUG_SYMBOL_LOAD) &&
+        Status != STATUS_IMAGE_NOT_AT_BASE &&
+        !ControlArea->u.Flags.DebugSymbolsLoaded)
+    {
+        DPRINT("MiMapViewOfImageSection: FIXME load user symbols\n");
+
+      #if 0
+        if (MiCacheImageSymbols(StartingAddress))
+        {
+            MiSetControlAreaSymbolsLoaded(ControlArea);
+            MiLoadUserSymbols(ControlArea, StartingAddress, Process);
+        }
+      #endif
+    }
+
+    return Status;
 }
 
 NTSTATUS
@@ -1593,7 +1883,6 @@ MiMapViewOfDataSection(
     PSEGMENT Segment = ControlArea->Segment;
     PMMEXTEND_INFO ExtendInfo;
     PSUBSECTION Subsection;
-    PMMADDRESS_NODE Parent;
     PETHREAD Thread;
     PMMVAD Vad;
     PMMPTE Pte;
@@ -1788,7 +2077,11 @@ MiMapViewOfDataSection(
                 DPRINT1("MiMapViewOfDataSection: FIXME. IsLargePages TRUE\n");
                 ASSERT(FALSE);
 
-                Status = MiFindEmptyAddressRangeDownTree(*ViewSize, HighestAddress, 0x400000, &Process->VadRoot, &StartAddress, &Parent);
+                Status = MiFindEmptyAddressRangeDownTree(*ViewSize,
+                                                         HighestAddress,
+                                                         0x400000,
+                                                         &Process->VadRoot,
+                                                         &StartAddress);
 
                 if (!NT_SUCCESS(Status))
                 {
@@ -1803,7 +2096,11 @@ MiMapViewOfDataSection(
 
             if (IsFindEnabled)
             {
-                Status = MiFindEmptyAddressRangeDownTree(*ViewSize, HighestAddress, Granularity, &Process->VadRoot, &StartAddress, &Parent);
+                Status = MiFindEmptyAddressRangeDownTree(*ViewSize,
+                                                         HighestAddress,
+                                                         Granularity,
+                                                         &Process->VadRoot,
+                                                         &StartAddress);
                 if (!NT_SUCCESS(Status))
                 {
                     DPRINT1("MiMapViewOfDataSection: Status %X\n", Status);

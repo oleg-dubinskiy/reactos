@@ -2053,8 +2053,7 @@ MiFindEmptyAddressRangeDownTree(
     _In_ ULONG_PTR BoundaryAddress,
     _In_ ULONG_PTR Alignment,
     _In_ PMM_AVL_TABLE Table,
-    _Out_ PULONG_PTR Base,
-    _Out_ PMMADDRESS_NODE* Parent
+    _Out_ PULONG_PTR Base
 );
 
 NTSTATUS
