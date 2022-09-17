@@ -5821,8 +5821,10 @@ MmCreateSection(
 
         if (AllocationAttributes & SEC_IMAGE)
         {
-            /* Image-file backed section*/
-            ASSERT(FALSE);
+            /* Image-file backed section */
+            MiRemoveImageSectionObject(File, (PLARGE_CONTROL_AREA)NewControlArea);
+            ControlArea = NewSegment->ControlArea;
+            MiInsertImageSectionObject(File, (PLARGE_CONTROL_AREA)ControlArea);
         }
         else if (NewSegment->ControlArea->u.Flags.Rom)
         {
@@ -5847,7 +5849,9 @@ MmCreateSection(
     /* Check if we locked the file earlier */
     if (FileLock)
     {
-        ASSERT(FALSE);
+        /* Reset the top-level IRP and release the lock */
+        IoSetTopLevelIrp(NULL);
+        FileLock = FALSE;
     }
 
     /* Set the initial section object data */
