@@ -1251,6 +1251,28 @@ MiEnablePagingOfDriver(
         MiSetPagingOfDriver(Pte, LastPte);
 }
 
+VOID
+NTAPI
+MiClearImports(
+    _In_ PLDR_DATA_TABLE_ENTRY LdrEntry)
+{
+    PAGED_CODE();
+
+    /* Check if there's no imports or we're a boot driver or only one entry */
+    if (LdrEntry->LoadedImports == MM_SYSLDR_BOOT_LOADED ||
+        LdrEntry->LoadedImports == MM_SYSLDR_NO_IMPORTS ||
+        ((ULONG_PTR)LdrEntry->LoadedImports & MM_SYSLDR_SINGLE_ENTRY))
+    {
+        /* Nothing to do */
+        return;
+    }
+
+    /* Otherwise, free the import list */
+    ExFreePoolWithTag(LdrEntry->LoadedImports, TAG_LDR_IMPORTS);
+
+    LdrEntry->LoadedImports = MM_SYSLDR_BOOT_LOADED;
+}
+
 NTSTATUS
 NTAPI
 MmLoadSystemImage(
