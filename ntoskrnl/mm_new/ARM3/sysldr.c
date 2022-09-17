@@ -305,6 +305,95 @@ MiSnapThunk(
     return Status;
 }
 
+BOOLEAN
+NTAPI
+MiCallDllUnloadAndUnloadDll(
+    _In_ PLDR_DATA_TABLE_ENTRY LdrEntry)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+NTSTATUS
+NTAPI
+MiDereferenceImports(
+    _In_ PLOAD_IMPORTS ImportList)
+{
+    LOAD_IMPORTS SingleEntry;
+    PLDR_DATA_TABLE_ENTRY LdrEntry;
+    PVOID CurrentImports;
+    SIZE_T ix;
+
+    PAGED_CODE();
+
+    /* Check if there's no imports or if we're a boot driver */
+    if (ImportList == MM_SYSLDR_NO_IMPORTS ||
+        ImportList == MM_SYSLDR_BOOT_LOADED ||
+        !ImportList->Count)
+    {
+        /* Then there's nothing to do */
+        return STATUS_SUCCESS;
+    }
+
+    /* Check for single-entry */
+    if ((ULONG_PTR)ImportList & MM_SYSLDR_SINGLE_ENTRY)
+    {
+        /* Set it up */
+        SingleEntry.Count = 1;
+        SingleEntry.Entry[0] = (PVOID)((ULONG_PTR)ImportList &~ MM_SYSLDR_SINGLE_ENTRY);
+
+        /* Use this as the import list */
+        ImportList = &SingleEntry;
+    }
+
+    /* Loop the import list */
+    for (ix = 0; ix < ImportList->Count && ImportList->Entry[ix]; ix++)
+    {
+        /* Get the entry */
+        LdrEntry = ImportList->Entry[ix];
+        DPRINT1("%wZ <%wZ>\n", &LdrEntry->FullDllName, &LdrEntry->BaseDllName);
+
+        /* Skip boot loaded images */
+        if (LdrEntry->LoadedImports == MM_SYSLDR_BOOT_LOADED)
+            continue;
+
+        /* Dereference the entry */
+        ASSERT(LdrEntry->LoadCount >= 1);
+
+        if (--LdrEntry->LoadCount)
+            continue;
+
+        /* Save the import data in case unload fails */
+        CurrentImports = LdrEntry->LoadedImports;
+
+        /* This is the last entry */
+        LdrEntry->LoadedImports = MM_SYSLDR_NO_IMPORTS;
+
+        if (MiCallDllUnloadAndUnloadDll(LdrEntry))
+        {
+            /* Unloading worked, parse this DLL's imports too */
+            MiDereferenceImports(CurrentImports);
+
+            /* Check if we had valid imports */
+            if (CurrentImports != MM_SYSLDR_BOOT_LOADED &&
+                CurrentImports != MM_SYSLDR_NO_IMPORTS &&
+                !((ULONG_PTR)CurrentImports & MM_SYSLDR_SINGLE_ENTRY))
+            {
+                /* Free them */
+                ExFreePoolWithTag(CurrentImports, TAG_LDR_IMPORTS);
+            }
+        }
+        else
+        {
+            /* Unload failed, restore imports */
+            LdrEntry->LoadedImports = CurrentImports;
+        }
+    }
+
+    /* Done */
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS
 NTAPI
 MiResolveImageReferences(
