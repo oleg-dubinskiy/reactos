@@ -2150,6 +2150,13 @@ MiDeleteVirtualAddresses(
     _In_ PMMVAD Vad
 );
 
+ULONG
+NTAPI
+MiMakeSystemAddressValidPfn(
+    _In_ PVOID VirtualAddress,
+    _In_ KIRQL OldIrql
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION

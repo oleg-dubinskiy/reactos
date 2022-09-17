@@ -3396,6 +3396,49 @@ MiInitializeTransitionPfn(
     MI_PFN_ELEMENT(ProtoPtePageNumber)->u2.ShareCount++;
 }
 
+VOID
+NTAPI
+MiUpdateImageHeaderPage(
+    _In_ PMMPTE SectionProto,
+    _In_ PFN_NUMBER PageNumber,
+    _In_ PCONTROL_AREA ControlArea,
+    _In_ BOOLEAN IsModified)
+{
+    PMMPFN Pfn;
+    PMMPTE ProtoPte;
+    KIRQL OldIrql;
+
+    DPRINT("MiUpdateImageHeaderPage: SectionProto %p, PageNumber %X\n", SectionProto, PageNumber);
+
+    Pfn = MI_PFN_ELEMENT(PageNumber);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    ProtoPte = MiAddressToPte(SectionProto);
+
+    if (!ProtoPte->u.Hard.Valid)
+    {
+        DPRINT("MiUpdateImageHeaderPage: FIXME MiMakeSystemAddressValidPfn()\n");
+        ASSERT(FALSE);
+        //MiMakeSystemAddressValidPfn(SectionProto, OldIrql);
+    }
+
+    MiInitializeTransitionPfn(PageNumber, SectionProto);
+
+    if (IsModified)
+    {
+        ASSERT((Pfn)->u3.e1.Rom == 0);
+        Pfn->u3.e1.Modified = 1;
+    }
+
+    if (Pfn->OriginalPte.u.Soft.Prototype)
+        ControlArea->NumberOfPfnReferences++;
+
+    MiDecrementReferenceCount(Pfn, PageNumber);
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+}
+
 NTSTATUS
 NTAPI
 MiCreateImageFileMap(

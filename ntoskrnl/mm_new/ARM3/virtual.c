@@ -439,6 +439,16 @@ MiDeleteVirtualAddresses(
     }
 }
 
+ULONG
+NTAPI
+MiMakeSystemAddressValidPfn(
+    _In_ PVOID VirtualAddress,
+    _In_ KIRQL OldIrql)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS
