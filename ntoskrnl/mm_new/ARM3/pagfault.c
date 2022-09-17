@@ -32,6 +32,7 @@ extern PVOID MmNonPagedPoolStart;
 extern SIZE_T MmSizeOfNonPagedPoolInBytes;
 extern PVOID MmNonPagedPoolExpansionStart;
 extern MMPTE PrototypePte;
+extern MMPTE DemandZeroPte;
 extern MMPDE DemandZeroPde;
 extern PMMPTE MmSharedUserDataPte;
 extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
@@ -2550,8 +2551,16 @@ Finish:
     {
         if (LockedProtoPfn)
         {
-            DPRINT1("MiDispatchFault: FIXME! LockedProtoPfn %X\n", LockedProtoPfn);
-            ASSERT(FALSE);
+            ASSERT(SectionProto != NULL);
+
+            /* Lock the PFN database */
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+
+            ASSERT(LockedProtoPfn->u3.e2.ReferenceCount >= 1);
+            MiDereferencePfnAndDropLockCount(LockedProtoPfn);
+
+            /* Unlock the PFN database */
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
         }
 
         if (SessionWs)
