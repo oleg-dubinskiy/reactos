@@ -3182,8 +3182,36 @@ NTAPI
 MmPageEntireDriver(
     _In_ PVOID AddressWithinSection)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PLDR_DATA_TABLE_ENTRY LdrEntry;
+    PMMPTE StartPte;
+    PMMPTE EndPte;
+
+    PAGED_CODE();
+
+    /* Get the loader entry */
+    LdrEntry = MiLookupDataTableEntry(AddressWithinSection);
+    if (!LdrEntry)
+        return NULL;
+
+    /* Check if paging of kernel mode is disabled or if the driver is mapped as an image */
+    if (MmDisablePagingExecutive || LdrEntry->SectionPointer)
+        /* Don't do anything, just return the base address */
+        return LdrEntry->DllBase;
+
+    /* Wait for active DPCs to finish before we page out the driver */
+    KeFlushQueuedDpcs();
+
+    /* Get the PTE range for the whole driver image */
+    StartPte = MiAddressToPte((ULONG_PTR)LdrEntry->DllBase);
+    EndPte = MiAddressToPte((ULONG_PTR)LdrEntry->DllBase + LdrEntry->SizeOfImage);
+
+    /* Enable paging for the PTE range */
+    ASSERT(MI_IS_SESSION_IMAGE_ADDRESS(AddressWithinSection) == FALSE);
+
+    MiSetPagingOfDriver(StartPte, EndPte);
+
+    /* Return the base address */
+    return LdrEntry->DllBase;
 }
 
 VOID
