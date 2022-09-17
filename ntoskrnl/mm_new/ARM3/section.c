@@ -360,7 +360,44 @@ MiRemoveImageSectionObject(
     _In_ PFILE_OBJECT FileObject,
     _In_ PLARGE_CONTROL_AREA ControlArea)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PLARGE_CONTROL_AREA Current;
+    PLARGE_CONTROL_AREA Next;
+
+    DPRINT("MiRemoveImageSectionObject: FileObject %p, ControlArea %p\n", FileObject, ControlArea);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    Current = FileObject->SectionObjectPointer->ImageSectionObject;
+
+    if (!Current->u.Flags.GlobalOnlyPerSession)
+    {
+        ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 0);
+        FileObject->SectionObjectPointer->ImageSectionObject = NULL;
+        return;
+    }
+
+    if (Current != ControlArea)
+    {
+        RemoveEntryList(&ControlArea->UserGlobalList);
+        return;
+    }
+
+    if (IsListEmpty(&Current->UserGlobalList))
+    {
+        Next = NULL;
+    }
+    else
+    {
+        Next = CONTAINING_RECORD(Current->UserGlobalList.Flink, LARGE_CONTROL_AREA, UserGlobalList);
+        ASSERT(Next->u.Flags.GlobalOnlyPerSession == 1);
+
+        RemoveEntryList(&Current->UserGlobalList);
+    }
+
+    FileObject->SectionObjectPointer->ImageSectionObject = Next;
+
+    return;
 }
 
 VOID
