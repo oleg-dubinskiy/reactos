@@ -404,8 +404,421 @@ MiResolveImageReferences(
     _Out_ PWCHAR* MissingDriver,
     _Out_ PLOAD_IMPORTS* LoadImports)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    static UNICODE_STRING DriversFolderName = RTL_CONSTANT_STRING(L"drivers\\");
+    PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor;
+    PIMAGE_IMPORT_DESCRIPTOR CurrentImport;
+    PIMAGE_EXPORT_DIRECTORY ExportDirectory;
+    PLDR_DATA_TABLE_ENTRY LdrEntry = NULL;
+    PLDR_DATA_TABLE_ENTRY ImportEntry = NULL;
+    PLDR_DATA_TABLE_ENTRY DllEntry;
+    PIMAGE_THUNK_DATA OrigThunk;
+    PIMAGE_THUNK_DATA FirstThunk;
+    PLOAD_IMPORTS LoadedImports;
+    PLOAD_IMPORTS NewImports;
+    PCHAR MissingApiBuffer = *MissingApi;
+    PLIST_ENTRY NextEntry;
+    PCHAR ImportName;
+    PVOID ImportBase;
+    PVOID DllBase;
+    UNICODE_STRING NameString, DllName;
+    ANSI_STRING TempString;
+    ULONG ImportSize;
+    ULONG ImportCount = 0;
+    ULONG LoadedImportsSize;
+    ULONG ExportSize;
+    ULONG GdiLink;
+    ULONG NormalLink;
+    ULONG ix;
+    BOOLEAN ReferenceNeeded;
+    BOOLEAN Loaded;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("MiResolveImageReferences: Image %p, '%wZ'\n", ImageBase, ImageFileDirectory);
+
+    /* No name string buffer yet */
+    NameString.Buffer = NULL;
+
+    /* Assume no imports */
+    *LoadImports = MM_SYSLDR_NO_IMPORTS;
+
+    /* Get the import descriptor */
+    ImportDescriptor = RtlImageDirectoryEntryToData(ImageBase,
+                                                    TRUE,
+                                                    IMAGE_DIRECTORY_ENTRY_IMPORT,
+                                                    &ImportSize);
+    if (!ImportDescriptor)
+        return STATUS_SUCCESS;
+
+    /* Loop all imports to count them */
+    for (CurrentImport = ImportDescriptor;
+         (CurrentImport->Name) && (CurrentImport->OriginalFirstThunk);
+         CurrentImport++)
+    {
+        /* One more */
+        ImportCount++;
+    }
+
+    /* Make sure we have non-zero imports */
+    if (ImportCount)
+    {
+        /* Calculate and allocate the list we'll need */
+        LoadedImportsSize = ((ImportCount * sizeof(PVOID)) + sizeof(SIZE_T));
+
+        LoadedImports = ExAllocatePoolWithTag(PagedPool, LoadedImportsSize, TAG_LDR_IMPORTS);
+        if (LoadedImports)
+        {
+            /* Zero it */
+            RtlZeroMemory(LoadedImports, LoadedImportsSize);
+            LoadedImports->Count = ImportCount;
+        }
+    }
+    else
+    {
+        /* No table */
+        LoadedImports = NULL;
+    }
+
+    /* Reset the import count and loop descriptors again */
+    ImportCount = GdiLink = NormalLink = 0;
+
+    while (ImportDescriptor->Name && ImportDescriptor->OriginalFirstThunk)
+    {
+        /* Get the name */
+        ImportName = (PCHAR)((ULONG_PTR)ImageBase + ImportDescriptor->Name);
+
+        /* Check if this is a GDI driver */
+        GdiLink |= !(_strnicmp(ImportName, "win32k", sizeof("win32k") - 1));
+
+        /* We can also allow dxapi (for Windows compat, allow IRT and coverage) */
+        NormalLink |= ((_strnicmp(ImportName, "win32k", sizeof("win32k") - 1)) &&
+                       (_strnicmp(ImportName, "dxapi", sizeof("dxapi") - 1)) &&
+                       (_strnicmp(ImportName, "coverage", sizeof("coverage") - 1)) &&
+                       (_strnicmp(ImportName, "irt", sizeof("irt") - 1)));
+
+        /* Check if this is a valid GDI driver */
+        if (GdiLink && NormalLink)
+        {
+            /* It's not, it's importing stuff it shouldn't be! */
+            Status = STATUS_PROCEDURE_NOT_FOUND;
+            goto Failure;
+        }
+
+        /* Check for user-mode printer or video card drivers, which don't belong */
+        if (!(_strnicmp(ImportName, "ntdll", sizeof("ntdll") - 1)) ||
+            !(_strnicmp(ImportName, "winsrv", sizeof("winsrv") - 1)) ||
+            !(_strnicmp(ImportName, "advapi32", sizeof("advapi32") - 1)) ||
+            !(_strnicmp(ImportName, "kernel32", sizeof("kernel32") - 1)) ||
+            !(_strnicmp(ImportName, "user32", sizeof("user32") - 1)) ||
+            !(_strnicmp(ImportName, "gdi32", sizeof("gdi32") - 1)))
+        {
+            /* This is not kernel code */
+            Status = STATUS_PROCEDURE_NOT_FOUND;
+            goto Failure;
+        }
+
+        /* Check if this is a "core" import, which doesn't get referenced */
+        if (!(_strnicmp(ImportName, "ntoskrnl", sizeof("ntoskrnl") - 1)) ||
+            !(_strnicmp(ImportName, "win32k", sizeof("win32k") - 1)) ||
+            !(_strnicmp(ImportName, "hal", sizeof("hal") - 1)))
+        {
+            /* Don't reference this */
+            ReferenceNeeded = FALSE;
+        }
+        else
+        {
+            /* Reference these modules */
+            ReferenceNeeded = TRUE;
+        }
+
+        /* Now setup a unicode string for the import */
+        RtlInitAnsiString(&TempString, ImportName);
+
+        Status = RtlAnsiStringToUnicodeString(&NameString, &TempString, TRUE);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MiResolveImageReferences: Status %X\n", Status);
+            goto Failure;
+        }
+
+        /* We don't support name prefixes yet */
+        if (NamePrefix)
+        {
+            DPRINT1("Name Prefix not yet supported!\n");
+        }
+
+CheckDllState:
+
+        /* Remember that we haven't loaded the import at this point */
+        Loaded = FALSE;
+        ImportBase = NULL;
+
+        /* Loop the driver list */
+        for (NextEntry = PsLoadedModuleList.Flink;
+             NextEntry != &PsLoadedModuleList;
+             NextEntry = NextEntry->Flink)
+        {
+            /* Get the loader entry and compare the name */
+            LdrEntry = CONTAINING_RECORD(NextEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+            if (RtlEqualUnicodeString(&NameString, &LdrEntry->BaseDllName, TRUE))
+            {
+                /* Get the base address */
+                ImportBase = LdrEntry->DllBase;
+
+                /* Check if we haven't loaded yet, and we need references and not already loading */
+                if (!Loaded && ReferenceNeeded && !(LdrEntry->Flags & LDRP_LOAD_IN_PROGRESS))
+                {
+                    /* Increase the load count */
+                    LdrEntry->LoadCount++;
+                }
+
+                /* Done, break out */
+                break;
+            }
+        }
+
+        /* Check if we haven't loaded the import yet */
+        if (!ImportBase)
+        {
+            /* Setup the import DLL name */
+            DllName.MaximumLength = (NameString.Length + ImageFileDirectory->Length + sizeof(UNICODE_NULL));
+
+            DllName.Buffer = ExAllocatePoolWithTag(NonPagedPool, DllName.MaximumLength, TAG_LDR_WSTR);
+            if (!DllName.Buffer)
+            {
+                /* We're out of resources */
+                DPRINT1("MiResolveImageReferences: STATUS_INSUFFICIENT_RESOURCES\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto Failure;
+            }
+
+            /* Add the import name to the base directory */
+            RtlCopyUnicodeString(&DllName, ImageFileDirectory);
+            RtlAppendUnicodeStringToString(&DllName, &NameString);
+
+            /* Load the image */
+            Status = MmLoadSystemImage(&DllName,
+                                       NamePrefix,
+                                       NULL,
+                                       FALSE,
+                                       (PVOID *)&DllEntry,
+                                       &DllBase);
+
+            /* win32k / GDI drivers can also import from system32 folder */
+            if (Status == STATUS_OBJECT_NAME_NOT_FOUND &&
+                (MI_IS_SESSION_ADDRESS(ImageBase) || 1)) // HACK
+            {
+                /* Free the old name buffer */
+                ExFreePoolWithTag(DllName.Buffer, TAG_LDR_WSTR);
+
+                /* Calculate size for a string the adds 'drivers\' */
+                DllName.MaximumLength += DriversFolderName.Length;
+
+                /* Allocate the new buffer */
+                DllName.Buffer = ExAllocatePoolWithTag(NonPagedPool, DllName.MaximumLength, TAG_LDR_WSTR);
+                if (!DllName.Buffer)
+                {
+                    /* We're out of resources */
+                    DPRINT1("MiResolveImageReferences: STATUS_INSUFFICIENT_RESOURCES\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto Failure;
+                }
+
+                /* Copy image directory and append 'drivers\' folder name */
+                RtlCopyUnicodeString(&DllName, ImageFileDirectory);
+                RtlAppendUnicodeStringToString(&DllName, &DriversFolderName);
+
+                /* Now add the import name */
+                RtlAppendUnicodeStringToString(&DllName, &NameString);
+
+                /* Try once again to load the image */
+                Status = MmLoadSystemImage(&DllName,
+                                           NamePrefix,
+                                           NULL,
+                                           FALSE,
+                                           (PVOID *)&DllEntry,
+                                           &DllBase);
+            }
+
+            if (!NT_SUCCESS(Status))
+            {
+                /* Fill out the information for the error */
+                *MissingDriver = DllName.Buffer;
+                *(PULONG)MissingDriver |= 1;
+                *MissingApi = NULL;
+
+                DPRINT1("Failed to load dependency: '%wZ'\n", &DllName);
+
+                /* Don't free the name */
+                DllName.Buffer = NULL;
+
+                /* Cleanup and return */
+                goto Failure;
+            }
+
+            /* We can free the DLL Name */
+            ExFreePoolWithTag(DllName.Buffer, TAG_LDR_WSTR);
+            DllName.Buffer = NULL;
+
+            /* We're now loaded */
+            Loaded = TRUE;
+
+            /* Sanity check */
+            ASSERT(DllBase == DllEntry->DllBase);
+
+            /* Call the initialization routines */
+            Status = MmCallDllInitialize(DllEntry, &PsLoadedModuleList);
+            if (!NT_SUCCESS(Status))
+            {
+                /* We failed, unload the image */
+                MmUnloadSystemImage(DllEntry);
+                ERROR_DBGBREAK("MmCallDllInitialize: Status %X\n", Status);
+                Loaded = FALSE;
+            }
+
+            /* Loop again to make sure that everything is OK */
+            goto CheckDllState;
+        }
+
+        /* Check if we're support to reference this import and not already loading*/
+        if (ReferenceNeeded && LoadedImports && !(LdrEntry->Flags & LDRP_LOAD_IN_PROGRESS))
+        {
+            /* Add the entry */
+            LoadedImports->Entry[ImportCount] = LdrEntry;
+            ImportCount++;
+        }
+
+        /* Free the import name */
+        RtlFreeUnicodeString(&NameString);
+
+        /* Set the missing driver name and get the export directory */
+        *MissingDriver = LdrEntry->BaseDllName.Buffer;
+
+        ExportDirectory = RtlImageDirectoryEntryToData(ImportBase,
+                                                       TRUE,
+                                                       IMAGE_DIRECTORY_ENTRY_EXPORT,
+                                                       &ExportSize);
+        if (!ExportDirectory)
+        {
+            /* Cleanup and return */
+            DPRINT1("Warning: Driver failed to load, %S not found\n", *MissingDriver);
+            Status = STATUS_DRIVER_ENTRYPOINT_NOT_FOUND;
+            goto Failure;
+        }
+
+        /* Make sure we have an IAT */
+        if (ImportDescriptor->OriginalFirstThunk)
+        {
+            /* Get the first thunks */
+            OrigThunk = (PVOID)((ULONG_PTR)ImageBase + ImportDescriptor->OriginalFirstThunk);
+            FirstThunk = (PVOID)((ULONG_PTR)ImageBase + ImportDescriptor->FirstThunk);
+
+            /* Loop the IAT */
+            while (OrigThunk->u1.AddressOfData)
+            {
+                /* Snap thunk */
+                Status = MiSnapThunk(ImportBase,
+                                     ImageBase,
+                                     OrigThunk++,
+                                     FirstThunk++,
+                                     ExportDirectory,
+                                     ExportSize,
+                                     FALSE,
+                                     MissingApi);
+
+                if (!NT_SUCCESS(Status))
+                {
+                    /* Cleanup and return */
+                    goto Failure;
+                }
+
+                /* Reset the buffer */
+                *MissingApi = MissingApiBuffer;
+            }
+        }
+
+        /* Go to the next import */
+        ImportDescriptor++;
+    }
+
+    /* Check if we have an import list */
+    if (!LoadedImports)
+        return STATUS_SUCCESS;
+
+    /* Reset the count again, and loop entries */
+    ImportCount = 0;
+
+    for (ix = 0; ix < LoadedImports->Count; ix++)
+    {
+        if (LoadedImports->Entry[ix])
+        {
+            /* Got an entry, OR it with 1 in case it's the single entry */
+            ImportEntry = (PVOID)((ULONG_PTR)LoadedImports->Entry[ix] | MM_SYSLDR_SINGLE_ENTRY);
+            ImportCount++;
+        }
+    }
+
+    /* Check if we had no imports */
+    if (!ImportCount)
+    {
+        /* Free the list and set it to no imports */
+        ExFreePoolWithTag(LoadedImports, TAG_LDR_IMPORTS);
+        LoadedImports = MM_SYSLDR_NO_IMPORTS;
+    }
+    else if (ImportCount == 1)
+    {
+        /* Just one entry, we can free the table and only use our entry */
+        ExFreePoolWithTag(LoadedImports, TAG_LDR_IMPORTS);
+        LoadedImports = (PLOAD_IMPORTS)ImportEntry;
+    }
+    else if (ImportCount != LoadedImports->Count)
+    {
+        /* Allocate a new list */
+        LoadedImportsSize = ((ImportCount * sizeof(PVOID)) + sizeof(SIZE_T));
+
+        NewImports = ExAllocatePoolWithTag(PagedPool, LoadedImportsSize, TAG_LDR_IMPORTS);
+        if (NewImports)
+        {
+            /* Set count */
+            NewImports->Count = 0;
+
+            /* Loop all the imports */
+            for (ix = 0; ix < LoadedImports->Count; ix++)
+            {
+                /* Make sure it's valid */
+                if (LoadedImports->Entry[ix])
+                {
+                    /* Copy it */
+                    NewImports->Entry[NewImports->Count] = LoadedImports->Entry[ix];
+                    NewImports->Count++;
+                }
+            }
+
+            /* Free the old copy */
+            ExFreePoolWithTag(LoadedImports, TAG_LDR_IMPORTS);
+            LoadedImports = NewImports;
+        }
+    }
+
+    /* Return the list */
+    *LoadImports = LoadedImports;
+
+    /* Return success */
+    return STATUS_SUCCESS;
+
+Failure:
+
+    /* Cleanup and return */
+    RtlFreeUnicodeString(&NameString);
+
+    if (LoadedImports)
+    {
+        MiDereferenceImports(LoadedImports);
+        ExFreePoolWithTag(LoadedImports, TAG_LDR_IMPORTS);
+    }
+
+    return Status;
 }
 
 NTSTATUS
