@@ -38,6 +38,9 @@ extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
 extern RTL_BITMAP MiPfnBitMap;
 extern SLIST_HEADER MmInPageSupportSListHead;
 extern SIZE_T MmTotalCommittedPages;
+extern PVOID MmPagedPoolEnd;
+extern PVOID MmSpecialPoolStart;
+extern PVOID MmSpecialPoolEnd;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1601,6 +1604,309 @@ MiFreeInPageSupportBlock(
     InterlockedPushEntrySList(&MmInPageSupportSListHead, &Support->ListEntry);
 }
 
+VOID
+FASTCALL
+MiRestoreTransitionPte(
+    _In_ PMMPFN Pfn)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+MiResolveTransitionFault(
+    _In_ PVOID Address,
+    _In_ PMMPTE Pte,
+    _In_ PEPROCESS CurrentProcess,
+    _In_ KIRQL OldIrql,
+    _Out_ PMI_PAGE_SUPPORT_BLOCK* OutPageBlock)
+{
+    PMMPFN Pfn;
+    MMPTE TempPte;
+    PFN_NUMBER PageFrameIndex;
+    BOOLEAN IsNeedUnlock;
+    BOOLEAN IsNeedUnlockThread = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("MiResolveTransitionFault: Address %p, PTE %p [%p], Process %s\n",
+           Address, Pte, Pte->u.Long, ((CurrentProcess > (PEPROCESS)2) ? CurrentProcess->ImageFileName : " "));
+
+    /* Windowss does this check */
+    if (OutPageBlock && *OutPageBlock)
+    {
+        DPRINT1("MiResolveTransitionFault: OutPageBlock %p [%p]\n", OutPageBlock, *OutPageBlock);
+        ASSERT(*OutPageBlock == NULL);
+    }
+
+    /* Capture the PTE and make sure it's in transition format */
+    if (OldIrql != MM_NOIRQL)
+    {
+        IsNeedUnlock = FALSE;
+
+        /* Capture the PTE and make sure it's in transition format */
+        TempPte.u.Long = Pte->u.Long;
+
+        ASSERT((TempPte.u.Soft.Valid == 0) &&
+               (TempPte.u.Soft.Prototype == 0) &&
+               (TempPte.u.Soft.Transition == 1));
+
+        /* Get the PFN and the PFN entry */
+        PageFrameIndex = TempPte.u.Trans.PageFrameNumber;
+        Pfn = MiGetPfnEntry(PageFrameIndex);
+    }
+    else
+    {
+        //MMPTE tempPte;
+
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+        IsNeedUnlock = TRUE;
+
+        /* Capture the temp PTE */
+        DPRINT1("MiResolveTransitionFault: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    /* One more transition fault! */
+    InterlockedIncrement(&KeGetCurrentPrcb()->MmTransitionCount);
+
+    if (Pfn->u4.InPageError)
+    {
+        DPRINT1("MiResolveTransitionFault: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    /* See if we should wait before terminating the fault */
+    if (Pfn->u3.e1.ReadInProgress)
+    {
+        PETHREAD Thread = PsGetCurrentThread();
+        PKTHREAD _Thread = &Thread->Tcb;
+        PMI_PAGE_SUPPORT_BLOCK PageBlock;
+
+        PageBlock = CONTAINING_RECORD(Pfn->u1.Event, MI_PAGE_SUPPORT_BLOCK, Event);
+
+        if (PageBlock->CurrentThread == Thread)
+        {
+            ASSERT(Thread->ActiveFaultCount >= 1);
+            Thread->ApcNeeded = 1;
+
+            if (IsNeedUnlock)
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+            return STATUS_MULTIPLE_FAULT_VIOLATION;
+        }
+
+        ASSERT(Pfn->u2.ShareCount == 0);
+        ASSERT(Pfn->u3.e2.ReferenceCount != 0);
+
+        InterlockedIncrement16((PSHORT)&Pfn->u3.e2.ReferenceCount);
+        InterlockedIncrement((PLONG)&PageBlock->WaitCount);
+
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        Thread->ActiveFaultCount++;
+
+        if (CurrentProcess != HYDRA_PROCESS)
+        {
+            if (CurrentProcess)
+            {
+                KeEnterCriticalRegionThread(_Thread);
+                MiUnlockWorkingSet(Thread, &CurrentProcess->Vm);
+                IsNeedUnlockThread = TRUE;
+            }
+            else
+            {
+                MiUnlockWorkingSet(Thread, &MmSystemCacheWs);
+            }
+        }
+        else
+        {
+            MiUnlockWorkingSet(Thread, &MmSessionSpace->GlobalVirtualAddress->Vm);
+        }
+
+        *OutPageBlock = PageBlock;
+
+        Status = MiWaitForInPageComplete(Pfn, Pte, (PVOID)Address, &TempPte, PageBlock, CurrentProcess);
+
+        Thread->ActiveFaultCount--;
+        ASSERT(Pfn->u3.e1.ReadInProgress == 0);
+
+        if (IsNeedUnlockThread)
+            KeLeaveCriticalRegionThread(_Thread);
+
+        if (Status != STATUS_SUCCESS)
+        {
+            NTSTATUS ReadStatus = Pfn->u1.ReadStatus;
+
+            MiDereferencePfnAndDropLockCount(Pfn);
+
+            if (Pfn->u4.InPageError)
+            {
+                ASSERT(!NT_SUCCESS(ReadStatus));
+
+                if (!Pfn->u3.e2.ReferenceCount)
+                {
+                    Pfn->u4.InPageError = 0;
+
+                    if (Pfn->u3.e1.PageLocation != FreePageList)
+                    {
+                        ASSERT(Pfn->u3.e1.PageLocation == StandbyPageList);
+                        MiUnlinkPageFromList(Pfn);
+
+                        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+
+                        MiRestoreTransitionPte(Pfn);
+                        MiInsertPageInFreeList(PageFrameIndex);
+                    }
+                }
+            }
+
+            if (IsNeedUnlock)
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+            DPRINT("MiResolveTransitionFault: 0xC7303001\n");
+            return 0xC7303001;
+        }
+    }
+    else
+    {
+        ASSERT((SPFN_NUMBER)MmAvailablePages >= 0);
+
+        if (MmAvailablePages < 0x80)
+        {
+            if (!MmAvailablePages)
+            {
+                DPRINT1("MiResolveTransitionFault: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            if (!(PsGetCurrentThread()->MemoryMaker))
+            {
+                DPRINT1("MiResolveTransitionFault: FIXME\n");
+                ASSERT(FALSE);
+            }
+        }
+
+        ASSERT(Pfn->u4.InPageError == 0);
+
+        /* Was this a transition page in the valid list, or free/zero list? */
+        if (Pfn->u3.e1.PageLocation == ActiveAndValid)
+        {
+            /* All Windows does here is a bunch of sanity checks */
+            ASSERT(((Pfn->PteAddress >= MiAddressToPte(MmPagedPoolStart)) &&
+                    (Pfn->PteAddress <= MiAddressToPte(MmPagedPoolEnd))) ||
+                   ((Pfn->PteAddress >= MiAddressToPte(MmSpecialPoolStart)) &&
+                    (Pfn->PteAddress <= MiAddressToPte(MmSpecialPoolEnd))));
+
+            ASSERT(Pfn->u2.ShareCount != 0);
+            ASSERT(Pfn->u3.e2.ReferenceCount != 0);
+        }
+        else
+        {
+            USHORT NewRefCount;
+            BOOLEAN IsCommit = FALSE;
+
+            /* Otherwise, the page is removed from its list */
+            MiUnlinkPageFromList(Pfn);
+
+            // ? MiReferenceUnusedPageAndBumpLockCount(Pfn);
+
+            /* Make sure the page isn't used yet */
+            ASSERT(Pfn->u2.ShareCount == 0);
+            ASSERT(Pfn->u3.e1.PageLocation != ActiveAndValid);
+
+            /* Is it a prototype PTE? */
+            if (Pfn->u3.e1.PrototypePte && Pfn->OriginalPte.u.Soft.Prototype)
+            {
+                /* FIXME: We should charge commit */
+                //MiLockedCommit++;
+                IsCommit = TRUE;
+                InterlockedIncrementSizeT(&MmTotalCommittedPages);
+            }
+            else
+            {
+                IsCommit = FALSE;
+            }
+
+            /* More locked pages! */
+            InterlockedIncrementSizeT(&MmSystemLockPagesCount);
+
+            /* Update the reference count */
+            NewRefCount = InterlockedIncrement16((PSHORT)&Pfn->u3.e2.ReferenceCount);
+            if (NewRefCount != 1)
+            {
+                /* Someone had already locked the page, so undo our bump */
+                ASSERT(NewRefCount < 2500);
+
+                InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+
+                if (IsCommit)
+                {
+                    ASSERT(MmTotalCommittedPages >= 1);
+                    InterlockedDecrementSizeT(&MmTotalCommittedPages);
+                }
+            }
+        }
+    }
+
+    /* At this point, there should no longer be any in-page errors */
+    ASSERT(Pfn->u4.InPageError == 0);
+
+    /* Check if this was a PFN with no more share references */
+    if (!Pfn->u2.ShareCount)
+        MiDropLockCount(Pfn);
+
+    /* Bump the share count and make the page valid */
+    Pfn->u2.ShareCount++;
+    Pfn->u3.e1.PageLocation = ActiveAndValid;
+
+    if (Address >= MmSystemRangeStart)
+    {
+        /* Check if this is a paged pool PTE in transition state */
+        TempPte = *(MiAddressToPte(Pte));
+
+        if (!TempPte.u.Hard.Valid && TempPte.u.Soft.Transition)
+        {
+            /* This isn't yet supported */
+            DPRINT1("MiResolveTransitionFault: Double transition fault not yet supported\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    /* Build the final PTE */
+    ASSERT(Pte->u.Hard.Valid == 0);
+    ASSERT(Pte->u.Trans.Prototype == 0);
+    ASSERT(Pte->u.Trans.Transition == 1);
+
+    TempPte.u.Long = (Pte->u.Long & ~0xFFF) |
+                     (MmProtectToPteMask[Pte->u.Trans.Protection]) |
+                     MiDetermineUserGlobalPteMask(Pte);
+
+    /* Is the PTE writeable? */
+    if (Pfn->u3.e1.Modified && MI_IS_PAGE_WRITEABLE(&TempPte) && !MI_IS_PAGE_COPY_ON_WRITE(&TempPte))
+        /* Make it dirty */
+        MI_MAKE_DIRTY_PAGE(&TempPte);
+    else
+        /* Make it clean */
+        MI_MAKE_CLEAN_PAGE(&TempPte);
+
+    /* Write the valid PTE */
+    MI_WRITE_VALID_PTE(Pte, TempPte);
+
+    if (IsNeedUnlock)
+    {
+        ASSERT(Pfn->u3.e1.PrototypePte == 0);
+
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        DPRINT1("MiResolveTransitionFault: FIXME MiAddValidPageToWorkingSet()\n");
+        ASSERT(FALSE);
+    }
+
+    /* Return success */
+    DPRINT("MiResolveTransitionFault: STATUS_PAGE_FAULT_TRANSITION\n");
+    return STATUS_PAGE_FAULT_TRANSITION;
+}
+
 NTSTATUS
 NTAPI
 MiResolveProtoPteFault(
@@ -1753,13 +2059,10 @@ MiResolveProtoPteFault(
     }
     else if (TempProto.u.Soft.Transition)
     {
-        DPRINT1("MiResolveProtoPteFault: FIXME\n");
-        ASSERT(FALSE);
-
         ASSERT(OldIrql != MM_NOIRQL);
 
         /* Resolve the transition fault */
-        Status = STATUS_NOT_IMPLEMENTED;//MiResolveTransitionFault(Address, SectionProto, Process, OldIrql, &PageBlock);
+        Status = MiResolveTransitionFault(Address, SectionProto, Process, OldIrql, &PageBlock);
     }
     else if (TempProto.u.Soft.PageFileHigh)
     {
