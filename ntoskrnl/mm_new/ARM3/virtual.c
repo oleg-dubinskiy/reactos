@@ -2102,6 +2102,341 @@ Exit:
     return State;
 }
 
+NTSTATUS
+NTAPI
+MiQueryMemoryBasicInformation(
+    _In_ HANDLE ProcessHandle,
+    _In_ PVOID BaseAddress,
+    _Out_ PVOID MemoryInformation,
+    _In_ SIZE_T MemoryInformationLength,
+    _Out_ SIZE_T* ReturnLength)
+{
+    KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
+    MEMORY_BASIC_INFORMATION MemoryInfo;
+    PEPROCESS TargetProcess;
+    PMMVAD Vad = NULL;
+    PVOID Address;
+    PVOID NextAddress;
+    ULONG_PTR BaseVpn;
+    ULONG NewProtect;
+    ULONG NewState;
+    KAPC_STATE ApcState;
+    BOOLEAN Found = FALSE;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("MiQueryMemoryBasicInformation: BaseAddress %p\n", BaseAddress);
+
+    /* Check for illegal addresses in user-space, or the shared memory area */
+    if (BaseAddress > MM_HIGHEST_VAD_ADDRESS ||
+        PAGE_ALIGN(BaseAddress) == (PVOID)MM_SHARED_USER_DATA_VA)
+    {
+        Address = PAGE_ALIGN(BaseAddress);
+
+        /* Make up an info structure describing this range */
+        MemoryInfo.BaseAddress = Address;
+        MemoryInfo.AllocationProtect = PAGE_READONLY;
+        MemoryInfo.Type = MEM_PRIVATE;
+
+        /* Special case for shared data */
+        if (Address == (PVOID)MM_SHARED_USER_DATA_VA)
+        {
+            MemoryInfo.AllocationBase = (PVOID)MM_SHARED_USER_DATA_VA;
+            MemoryInfo.State = MEM_COMMIT;
+            MemoryInfo.Protect = PAGE_READONLY;
+            MemoryInfo.RegionSize = PAGE_SIZE;
+        }
+        else
+        {
+            MemoryInfo.AllocationBase = ((PCHAR)MM_HIGHEST_VAD_ADDRESS + 1);
+            MemoryInfo.State = MEM_RESERVE;
+            MemoryInfo.Protect = PAGE_NOACCESS;
+            MemoryInfo.RegionSize = ((ULONG_PTR)MM_HIGHEST_USER_ADDRESS + 1 - (ULONG_PTR)Address);
+        }
+
+        /* Return the data, NtQueryInformation already probed it*/
+        if (PreviousMode != KernelMode)
+        {
+            _SEH2_TRY
+            {
+                *(PMEMORY_BASIC_INFORMATION)MemoryInformation = MemoryInfo;
+
+                if (ReturnLength)
+                    *ReturnLength = sizeof(MEMORY_BASIC_INFORMATION);
+            }
+             _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            {
+                Status = _SEH2_GetExceptionCode();
+            }
+            _SEH2_END;
+        }
+        else
+        {
+            *(PMEMORY_BASIC_INFORMATION)MemoryInformation = MemoryInfo;
+
+            if (ReturnLength)
+                *ReturnLength = sizeof(MEMORY_BASIC_INFORMATION);
+        }
+
+        return Status;
+    }
+
+    /* Check if this is for a local or remote process */
+    if (ProcessHandle == NtCurrentProcess())
+    {
+        TargetProcess = PsGetCurrentProcess();
+    }
+    else
+    {
+        /* Reference the target process */
+        Status = ObReferenceObjectByHandle(ProcessHandle,
+                                           PROCESS_QUERY_INFORMATION,
+                                           PsProcessType,
+                                           ExGetPreviousMode(),
+                                           (PVOID *)&TargetProcess,
+                                           NULL);
+        if (!NT_SUCCESS(Status))
+            return Status;
+
+        /* Attach to it now */
+        KeStackAttachProcess(&TargetProcess->Pcb, &ApcState);
+    }
+
+    /* Lock the address space and make sure the process isn't already dead */
+    MmLockAddressSpace(&TargetProcess->Vm);
+
+    if (TargetProcess->VmDeleted)
+    {
+        /* Unlock the address space of the process */
+        MmUnlockAddressSpace(&TargetProcess->Vm);
+
+        /* Check if we were attached */
+        if (ProcessHandle != NtCurrentProcess())
+        {
+            /* Detach and dereference the process */
+            KeUnstackDetachProcess(&ApcState);
+            ObDereferenceObject(TargetProcess);
+        }
+
+        /* Bail out */
+        DPRINT1("Process is dying\n");
+        return STATUS_PROCESS_IS_TERMINATING;
+    }
+
+    /* Loop the VADs */
+    ASSERT(TargetProcess->VadRoot.NumberGenericTableElements);
+
+    if (TargetProcess->VadRoot.NumberGenericTableElements)
+    {
+        /* Scan on the right */
+        Vad = (PMMVAD)TargetProcess->VadRoot.BalancedRoot.RightChild;
+        BaseVpn = ((ULONG_PTR)BaseAddress / PAGE_SIZE);
+
+        while (Vad)
+        {
+            /* Check if this VAD covers the allocation range */
+            if (BaseVpn >= Vad->StartingVpn && BaseVpn <= Vad->EndingVpn)
+            {
+                /* We're done */
+                Found = TRUE;
+                break;
+            }
+
+            /* Check if this VAD is too high */
+            if (BaseVpn < Vad->StartingVpn)
+            {
+                /* Stop if there is no left child */
+                if (!Vad->LeftChild)
+                    break;
+
+                /* Search on the left next */
+                Vad = Vad->LeftChild;
+            }
+            else
+            {
+                /* Then this VAD is too low, keep searching on the right */
+                ASSERT(BaseVpn > Vad->EndingVpn);
+
+                /* Stop if there is no right child */
+                if (!Vad->RightChild)
+                    break;
+
+                /* Search on the right next */
+                Vad = Vad->RightChild;
+            }
+        }
+    }
+
+    /* Was a VAD found? */
+    if (!Found)
+    {
+        Address = PAGE_ALIGN(BaseAddress);
+
+        /* Calculate region size */
+        if (Vad)
+        {
+            if (Vad->StartingVpn >= BaseVpn)
+            {
+                /* Region size is the free space till the start of that VAD */
+                MemoryInfo.RegionSize = ((ULONG_PTR)(Vad->StartingVpn * PAGE_SIZE) - (ULONG_PTR)Address);
+            }
+            else
+            {
+                /* Get the next VAD */
+                Vad = (PMMVAD)MiGetNextNode((PMMADDRESS_NODE)Vad);
+
+                if (Vad)
+                {
+                    /* Region size is the free space till the start of that VAD */
+                    MemoryInfo.RegionSize = ((ULONG_PTR)(Vad->StartingVpn * PAGE_SIZE) - (ULONG_PTR)Address);
+                }
+                else
+                {
+                    /* Maximum possible region size with that base address */
+                    MemoryInfo.RegionSize = ((PCHAR)MM_HIGHEST_VAD_ADDRESS + 1 - (PCHAR)Address);
+                }
+            }
+        }
+        else
+        {
+            /* Maximum possible region size with that base address */
+            MemoryInfo.RegionSize = ((PCHAR)MM_HIGHEST_VAD_ADDRESS + 1 - (PCHAR)Address);
+        }
+
+        /* Unlock the address space of the process */
+        MmUnlockAddressSpace(&TargetProcess->Vm);
+
+        /* Check if we were attached */
+        if (ProcessHandle != NtCurrentProcess())
+        {
+            /* Detach and derefernece the process */
+            KeUnstackDetachProcess(&ApcState);
+            ObDereferenceObject(TargetProcess);
+        }
+
+        /* Build the rest of the initial information block */
+        MemoryInfo.BaseAddress = Address;
+        MemoryInfo.AllocationBase = NULL;
+        MemoryInfo.AllocationProtect = 0;
+        MemoryInfo.State = MEM_FREE;
+        MemoryInfo.Protect = PAGE_NOACCESS;
+        MemoryInfo.Type = 0;
+
+        /* Return the data, NtQueryInformation already probed it*/
+        if (PreviousMode != KernelMode)
+        {
+            _SEH2_TRY
+            {
+                *(PMEMORY_BASIC_INFORMATION)MemoryInformation = MemoryInfo;
+
+                if (ReturnLength)
+                    *ReturnLength = sizeof(MEMORY_BASIC_INFORMATION);
+            }
+             _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            {
+                Status = _SEH2_GetExceptionCode();
+            }
+            _SEH2_END;
+        }
+        else
+        {
+            *(PMEMORY_BASIC_INFORMATION)MemoryInformation = MemoryInfo;
+
+            if (ReturnLength)
+                *ReturnLength = sizeof(MEMORY_BASIC_INFORMATION);
+        }
+
+        return Status;
+    }
+
+    /* Set the correct memory type based on what kind of VAD this is */
+    if (Vad->u.VadFlags.PrivateMemory || Vad->u.VadFlags.VadType == VadRotatePhysical)
+        MemoryInfo.Type = MEM_PRIVATE;
+    else if (Vad->u.VadFlags.VadType == VadImageMap)
+        MemoryInfo.Type = MEM_IMAGE;
+    else
+        MemoryInfo.Type = MEM_MAPPED;
+
+    /* Build the initial information block */
+    Address = PAGE_ALIGN(BaseAddress);
+    MemoryInfo.BaseAddress = Address;
+    MemoryInfo.AllocationBase = (PVOID)(Vad->StartingVpn * PAGE_SIZE);
+    MemoryInfo.AllocationProtect = MmProtectToValue[Vad->u.VadFlags.Protection];
+    MemoryInfo.Type = MEM_PRIVATE;
+
+    /* Acquire the working set lock (shared is enough) */
+    MiLockProcessWorkingSetShared(TargetProcess, PsGetCurrentThread());
+
+    /* Find the largest chunk of memory which has the same state and protection mask */
+    MemoryInfo.State = MiQueryAddressState(Address,
+                                           Vad,
+                                           TargetProcess,
+                                           &MemoryInfo.Protect,
+                                           &NextAddress);
+    for (Address = NextAddress;
+         ((ULONG_PTR)Address / PAGE_SIZE) <= Vad->EndingVpn;
+         Address = NextAddress)
+    {
+        /* Keep going unless the state or protection mask changed */
+        NewState = MiQueryAddressState(Address, Vad, TargetProcess, &NewProtect, &NextAddress);
+
+        if (NewState != MemoryInfo.State || NewProtect != MemoryInfo.Protect)
+            break;
+    }
+
+    /* Release the working set lock */
+    MiUnlockProcessWorkingSetShared(TargetProcess, PsGetCurrentThread());
+
+    /* Check if we went outside of the VAD */
+     if (((ULONG_PTR)Address / PAGE_SIZE) > Vad->EndingVpn)
+        /* Set the end of the VAD as the end address */
+        Address = (PVOID)((Vad->EndingVpn + 1) * PAGE_SIZE);
+
+    /* Now that we know the last VA address, calculate the region size */
+    MemoryInfo.RegionSize = ((ULONG_PTR)Address - (ULONG_PTR)MemoryInfo.BaseAddress);
+
+    /* Unlock the address space of the process */
+    MmUnlockAddressSpace(&TargetProcess->Vm);
+
+    /* Check if we were attached */
+    if (ProcessHandle != NtCurrentProcess())
+    {
+        /* Detach and derefernece the process */
+        KeUnstackDetachProcess(&ApcState);
+        ObDereferenceObject(TargetProcess);
+    }
+
+    /* Return the data, NtQueryInformation already probed it */
+    if (PreviousMode != KernelMode)
+    {
+        _SEH2_TRY
+        {
+            *(PMEMORY_BASIC_INFORMATION)MemoryInformation = MemoryInfo;
+
+            if (ReturnLength)
+                *ReturnLength = sizeof(MEMORY_BASIC_INFORMATION);
+        }
+         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            Status = _SEH2_GetExceptionCode();
+        }
+        _SEH2_END;
+    }
+    else
+    {
+        *(PMEMORY_BASIC_INFORMATION)MemoryInformation = MemoryInfo;
+
+        if (ReturnLength)
+            *ReturnLength = sizeof(MEMORY_BASIC_INFORMATION);
+    }
+
+    /* All went well */
+    DPRINT("Base %p, AllocBase %p, AllocProtect %X, Protect %X, State %X, Type %X, Size %X\n",
+           MemoryInfo.BaseAddress, MemoryInfo.AllocationBase, MemoryInfo.AllocationProtect,
+           MemoryInfo.Protect, MemoryInfo.State, MemoryInfo.Type, MemoryInfo.RegionSize);
+
+    return Status;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS
