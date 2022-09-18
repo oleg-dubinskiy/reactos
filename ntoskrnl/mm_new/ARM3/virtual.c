@@ -8,6 +8,10 @@
 
 /* GLOBALS ********************************************************************/
 
+#define MI_MAPPED_COPY_PAGES  0xE // 14
+#define MI_POOL_COPY_BYTES    0x200
+#define MI_MAX_TRANSFER_SIZE  (0x40 * _1KB) // 64 Kb
+
 extern PVOID MmPagedPoolEnd;
 extern KGUARDED_MUTEX MmSectionCommitMutex;
 extern SIZE_T MmSharedCommit;
@@ -47,6 +51,193 @@ MiGetExceptionInfo(
 
     /* Continue executing the next handler */
     return EXCEPTION_EXECUTE_HANDLER;
+}
+
+NTSTATUS
+NTAPI
+MiDoMappedCopy(
+    _In_ PEPROCESS SourceProcess,
+    _In_ PVOID SourceAddress,
+    _In_ PEPROCESS TargetProcess,
+    _Out_ PVOID TargetAddress,
+    _In_ SIZE_T BufferSize,
+    _In_ KPROCESSOR_MODE PreviousMode,
+    _Out_ PSIZE_T ReturnSize)
+{
+    PFN_NUMBER MdlBuffer[(sizeof(MDL) / sizeof(PFN_NUMBER)) + MI_MAPPED_COPY_PAGES + 1];
+    PMDL Mdl = (PMDL)MdlBuffer;
+    volatile PVOID MdlAddress = NULL;
+    PVOID CurrentAddress = SourceAddress;
+    PVOID CurrentTargetAddress = TargetAddress;
+    ULONG_PTR BadAddress;
+    SIZE_T TotalSize;
+    SIZE_T CurrentSize;
+    SIZE_T RemainingSize;
+    KAPC_STATE ApcState;
+    BOOLEAN HaveBadAddress;
+    volatile BOOLEAN FailedInProbe = FALSE;
+    volatile BOOLEAN PagesLocked = FALSE;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    PAGED_CODE();
+
+    /* Calculate the maximum amount of data to move */
+    TotalSize = (MI_MAPPED_COPY_PAGES * PAGE_SIZE);
+
+    if (BufferSize <= TotalSize)
+        TotalSize = BufferSize;
+
+    CurrentSize = TotalSize;
+    RemainingSize = BufferSize;
+
+    /* Loop as long as there is still data */
+    while (RemainingSize > 0)
+    {
+        /* Check if this transfer will finish everything off */
+        if (RemainingSize < CurrentSize)
+            CurrentSize = RemainingSize;
+
+        /* Attach to the source address space */
+        KeStackAttachProcess(&SourceProcess->Pcb, &ApcState);
+
+        /* Check state for this pass */
+        ASSERT(MdlAddress == NULL);
+        ASSERT(PagesLocked == FALSE);
+        ASSERT(FailedInProbe == FALSE);
+
+        /* Protect user-mode copy */
+        _SEH2_TRY
+        {
+            /* If this is our first time, probe the buffer */
+            if (CurrentAddress == SourceAddress && PreviousMode != KernelMode)
+            {
+                /* Catch a failure here */
+                FailedInProbe = TRUE;
+
+                /* Do the probe */
+                ProbeForRead(SourceAddress, BufferSize, sizeof(CHAR));
+
+                /* Passed */
+                FailedInProbe = FALSE;
+            }
+
+            /* Initialize and probe and lock the MDL */
+            MmInitializeMdl(Mdl, CurrentAddress, CurrentSize);
+            MmProbeAndLockPages(Mdl, PreviousMode, IoReadAccess);
+
+            PagesLocked = TRUE;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            Status = _SEH2_GetExceptionCode();
+        }
+        _SEH2_END
+
+        /* Detach from source process */
+        KeUnstackDetachProcess(&ApcState);
+
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("MiDoMappedCopy: Status %X\n", Status);
+            goto Exit;
+        }
+
+        /* Now map the pages */
+        MdlAddress = MmMapLockedPagesSpecifyCache(Mdl,
+                                                  KernelMode,
+                                                  MmCached,
+                                                  NULL,
+                                                  FALSE,
+                                                  HighPagePriority);
+        if (!MdlAddress)
+        {
+            DPRINT1("MiDoMappedCopy: STATUS_INSUFFICIENT_RESOURCES\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto Exit;
+        }
+
+        /* Grab to the target process */
+        KeStackAttachProcess(&TargetProcess->Pcb, &ApcState);
+
+        _SEH2_TRY
+        {
+            /* Check if this is our first time through */
+            if (CurrentTargetAddress == TargetAddress && PreviousMode != KernelMode)
+            {
+                /* Catch a failure here */
+                FailedInProbe = TRUE;
+
+                /* Do the probe */
+                ProbeForWrite(TargetAddress, BufferSize, sizeof(CHAR));
+
+                /* Passed */
+                FailedInProbe = FALSE;
+            }
+
+            /* Now do the actual move */
+            RtlCopyMemory(CurrentTargetAddress, MdlAddress, CurrentSize);
+        }
+        _SEH2_EXCEPT(MiGetExceptionInfo(_SEH2_GetExceptionInformation(),
+                                        &HaveBadAddress,
+                                        &BadAddress))
+        {
+            *ReturnSize = BufferSize - RemainingSize;
+
+            /* Check if we failed during the probe */
+            if (FailedInProbe)
+            {
+                /* Exit */
+                Status = _SEH2_GetExceptionCode();
+            }
+            else
+            {
+                /* Othewise we failed during the move.
+                   Check if we know exactly where we stopped copying
+                */
+                if (HaveBadAddress)
+                    /* Return the exact number of bytes copied */
+                    *ReturnSize = (BadAddress - (ULONG_PTR)SourceAddress);
+
+                /* Return partial copy */
+                Status = STATUS_PARTIAL_COPY;
+            }
+        }
+        _SEH2_END;
+
+        /* Detach from target process */
+        KeUnstackDetachProcess(&ApcState);
+
+        /* Check for SEH status */
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("MiDoMappedCopy: Status %X\n", Status);
+            goto Exit;
+        }
+
+        /* Unmap and unlock */
+        MmUnmapLockedPages(MdlAddress, Mdl);
+        MdlAddress = NULL;
+        MmUnlockPages(Mdl);
+        PagesLocked = FALSE;
+
+        /* Update location and size */
+        RemainingSize -= CurrentSize;
+        CurrentAddress = (PVOID)((ULONG_PTR)CurrentAddress + CurrentSize);
+        CurrentTargetAddress = (PVOID)((ULONG_PTR)CurrentTargetAddress + CurrentSize);
+    }
+
+Exit:
+    if (MdlAddress)
+        MmUnmapLockedPages(MdlAddress, Mdl);
+
+    if (PagesLocked)
+        MmUnlockPages(Mdl);
+
+    /* All bytes read */
+    if (Status == STATUS_SUCCESS)
+        *ReturnSize = BufferSize;
+
+    return Status;
 }
 
 NTSTATUS
