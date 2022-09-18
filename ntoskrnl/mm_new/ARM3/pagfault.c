@@ -130,8 +130,28 @@ MiAccessCheck(
         /* Nothing to do */
         return STATUS_SUCCESS;
 
+    /* Attached processes can't expand their stack */
+    if (KeIsAttachedProcess())
+    {
+        DPRINT1("MiAccessCheck: STATUS_ACCESS_VIOLATION\n");
+        return STATUS_ACCESS_VIOLATION;
+    }
+
+    if (KeInvalidAccessAllowed(TrapFrame))
+    {
+        DPRINT1("MiAccessCheck: STATUS_ACCESS_VIOLATION\n");
+        return STATUS_ACCESS_VIOLATION;
+    }
+
+    if (!TempPte.u.Soft.Transition || TempPte.u.Soft.Prototype)
+        goto Exit;
+
     DPRINT1("MiAccessCheck: FIXME\n");
     ASSERT(FALSE);
+
+Exit:
+
+    Pte->u.Soft.Protection = (ProtectionMask & ~MM_GUARDPAGE);
 
     return STATUS_GUARD_PAGE_VIOLATION;
 }
