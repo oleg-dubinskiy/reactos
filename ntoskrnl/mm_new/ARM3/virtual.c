@@ -15,6 +15,40 @@ extern MMPTE MmDecommittedPte;
 
 /* FUNCTIONS ******************************************************************/
 
+LONG
+MiGetExceptionInfo(
+    _In_ PEXCEPTION_POINTERS ExceptionInfo,
+    _Out_ PBOOLEAN HaveBadAddress,
+    _Out_ PULONG_PTR BadAddress)
+{
+    PEXCEPTION_RECORD ExceptionRecord;
+
+    PAGED_CODE();
+
+    /* Assume default */
+    *HaveBadAddress = FALSE;
+
+    /* Get the exception record */
+    ExceptionRecord = ExceptionInfo->ExceptionRecord;
+
+    /* Look at the exception code */
+    if (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION ||
+        ExceptionRecord->ExceptionCode == STATUS_GUARD_PAGE_VIOLATION ||
+        ExceptionRecord->ExceptionCode == STATUS_IN_PAGE_ERROR)
+    {
+        /* We can tell the address if we have more than one parameter */
+        if (ExceptionRecord->NumberParameters > 1)
+        {
+            /* Return the address */
+            *HaveBadAddress = TRUE;
+            *BadAddress = ExceptionRecord->ExceptionInformation[1];
+        }
+    }
+
+    /* Continue executing the next handler */
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
 NTSTATUS
 NTAPI
 MmCopyVirtualMemory(
