@@ -916,4 +916,35 @@ MiPhysicalViewRemover(
     ExFreePoolWithTag(PhysicalView, 'vpmM');
 }
 
+PMMADDRESS_NODE
+NTAPI
+MiCheckForConflictingNode(
+    _In_ ULONG_PTR StartVpn,
+    _In_ ULONG_PTR EndVpn,
+    _In_ PMM_AVL_TABLE Table)
+{
+    PMMADDRESS_NODE CurrentNode;
+
+    DPRINT("MiCheckForConflictingNode: StartVpn %X, EndVpn %X, Table %p\n", StartVpn, EndVpn, Table);
+
+    if (!Table->NumberGenericTableElements)
+        return NULL;
+
+    CurrentNode = (PMMADDRESS_NODE)Table->BalancedRoot.RightChild;
+
+    ASSERT(CurrentNode != NULL);
+
+    while (CurrentNode)
+    {
+        if (StartVpn > CurrentNode->EndingVpn)
+            CurrentNode = CurrentNode->RightChild;
+        else if (EndVpn < CurrentNode->StartingVpn)
+            CurrentNode = CurrentNode->LeftChild;
+        else
+            return CurrentNode;
+    }
+
+    return NULL;
+}
+
 /* EOF */
