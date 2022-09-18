@@ -31,6 +31,7 @@ CHAR MmReadWrite[32] =
 
 extern ULONG MiLastVadBit;
 extern SIZE_T MmTotalCommittedPages;
+extern MM_AVL_TABLE MmSectionBasedRoot;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -341,10 +342,116 @@ MiFindEmptyAddressRangeDownTree(
     _In_ ULONG_PTR BoundaryAddress,
     _In_ ULONG_PTR Alignment,
     _In_ PMM_AVL_TABLE Table,
-    _Out_ PULONG_PTR Base)
+    _Out_ ULONG_PTR* OutBase)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    PMMADDRESS_NODE Node;
+    PMMADDRESS_NODE PreviousNode;
+    ULONG_PTR BaseVpn;
+    ULONG_PTR HighVpn;
+    ULONG_PTR LowVpn;
+    ULONG_PTR PagesForAlign;
+    ULONG_PTR AlignedEnd;
+    ULONG_PTR AlignedPreviousEnd;
+    ULONG_PTR Base;
+    ULONG_PTR AlignMask;
+    SIZE_T PageCount;
+
+    DPRINT("MiFindEmptyAddressRangeDownTree: %X, %X, %X, %p\n", Length, BoundaryAddress, Alignment, Table);
+
+    /* Sanity checks */
+    ASSERT(Table != &MmSectionBasedRoot);
+
+    /* Calculate length */
+    Length = (Length + (PAGE_SIZE - 1)) & ~(PAGE_SIZE - 1);
+
+    if ((BoundaryAddress + 1) < Length)
+        return STATUS_NO_MEMORY;
+
+    ASSERT(BoundaryAddress != 0);
+    ASSERT(BoundaryAddress <= ((ULONG_PTR)MmHighestUserAddress - 0x10000 + 1));
+
+    AlignMask = (Alignment - 1);
+
+    /* Calculate the initial upper margin */
+    HighVpn = (BoundaryAddress / PAGE_SIZE);
+    Base = ((BoundaryAddress - Length + 1) & ~AlignMask);
+
+    if (!Table->NumberGenericTableElements)
+    {
+        *OutBase = Base;
+        return STATUS_SUCCESS;
+    }
+
+    /* Starting from the root, follow the right children until we found a node that ends above the boundary */
+    for (Node = Table->BalancedRoot.RightChild;
+         Node->RightChild;
+         )
+    {
+        Node = Node->RightChild;
+    }
+
+    AlignedEnd = ((((Node->EndingVpn * PAGE_SIZE) | (PAGE_SIZE - 1)) + AlignMask) & ~AlignMask);
+
+    if (BoundaryAddress > AlignedEnd &&
+        (BoundaryAddress - AlignedEnd) > Length)
+    {
+        Base = ((BoundaryAddress - Length) & ~AlignMask);
+        *OutBase = Base;
+        return STATUS_SUCCESS;
+    }
+
+    BaseVpn = (Base / PAGE_SIZE);
+    PageCount = (Length / PAGE_SIZE);
+    PagesForAlign = (Alignment / PAGE_SIZE);
+
+    /* Now loop the Vad nodes */
+    while (TRUE)
+    {
+        PreviousNode = MiGetPreviousNode(Node);
+        if (!PreviousNode)
+            break;
+
+        if (BaseVpn > PreviousNode->EndingVpn)
+        {
+            AlignedPreviousEnd = ((PreviousNode->EndingVpn + PagesForAlign) & ~(PagesForAlign - 1));
+
+            /* Check if the current bounds are suitable */
+            if ((Node->StartingVpn - AlignedPreviousEnd) >= PageCount)
+            {
+                if (Node->StartingVpn > HighVpn)
+                {
+                    *OutBase = Base;
+                    return STATUS_SUCCESS;
+                }
+
+                if (Node->StartingVpn > AlignedPreviousEnd)
+                {
+                    *OutBase = (((Node->StartingVpn * PAGE_SIZE) - Length) & ~AlignMask);
+                    return STATUS_SUCCESS;
+                }
+            }
+        }
+
+        /* Remember the current node and go to the previous node */
+        Node = PreviousNode;
+    }
+
+    /* Check if there's enough space before the lowest Vad */
+    LowVpn = ((ULONG_PTR)MI_LOWEST_VAD_ADDRESS / PAGE_SIZE);
+
+    if (Node->StartingVpn > LowVpn &&
+        (Node->StartingVpn - PageCount) >= LowVpn)
+    {
+        if (Node->StartingVpn > HighVpn)
+            *OutBase = Base;
+        else
+            *OutBase = (((Node->StartingVpn * PAGE_SIZE) - Length) & ~AlignMask);
+
+        return STATUS_SUCCESS;
+    }
+
+    /* No address space left at all */
+    return STATUS_NO_MEMORY;
 }
 
 NTSTATUS
