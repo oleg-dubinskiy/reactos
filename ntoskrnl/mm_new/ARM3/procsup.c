@@ -410,6 +410,135 @@ Exit:
 
 NTSTATUS
 NTAPI
+MiCreatePebOrTeb(
+    _In_ PEPROCESS Process,
+    _In_ ULONG Size,
+    _Out_ PULONG_PTR BaseAddress)
+{
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    PMMVAD_LONG Vad;
+    LARGE_INTEGER CurrentTime;
+    ULONG_PTR StartingAddress;
+    ULONG_PTR HighestAddress;
+    ULONG_PTR RandomBase;
+    BOOLEAN Result;
+    NTSTATUS Status;
+
+    DPRINT("MiCreatePebOrTeb: Process %p, Size %X\n", Process, Size);
+
+    /* Allocate a VAD */
+    Vad = ExAllocatePoolWithTag(NonPagedPool, sizeof(MMVAD_LONG), 'ldaV');
+    if (!Vad)
+    {
+        DPRINT1("MiCreatePebOrTeb: STATUS_NO_MEMORY\n");
+        return STATUS_NO_MEMORY;
+    }
+
+    /* Setup the primary flags with the size, and make it commited, private, RW */
+    Vad->u.LongFlags = 0;
+    Vad->u.VadFlags.CommitCharge = BYTES_TO_PAGES(Size);
+    Vad->u.VadFlags.MemCommit = TRUE;
+    Vad->u.VadFlags.PrivateMemory = TRUE;
+    Vad->u.VadFlags.Protection = MM_READWRITE;
+    Vad->u.VadFlags.NoChange = TRUE;
+    Vad->u1.Parent = NULL;
+
+    /* Setup the secondary flags to make it a secured, writable, long VAD */
+    Vad->u2.LongFlags2 = 0;
+    Vad->u2.VadFlags2.OneSecured = TRUE;
+    Vad->u2.VadFlags2.LongVad = TRUE;
+    Vad->u2.VadFlags2.ReadOnly = FALSE;
+
+    Vad->ControlArea = NULL; // For Memory-Area hack
+    Vad->FirstPrototypePte = NULL;
+
+    /* Check if this is a PEB creation */
+    ASSERT(sizeof(TEB) != sizeof(PEB));
+
+    /* Acquire the address creation lock and make sure the process is alive */
+    KeAcquireGuardedMutex(&Process->AddressCreationLock);
+
+    if (Size == sizeof(PEB))
+    {
+        /* Create a random value to select one page in a 64k region */
+        KeQueryTickCount(&CurrentTime);
+
+        /* Calculate a random base address */
+        RandomBase = (CurrentTime.LowPart & 0xF);
+
+        if (RandomBase <= 1)
+            RandomBase = 2;
+
+        CurrentTime.LowPart = RandomBase;
+
+        /* Calculate the highest allowed address */
+        HighestAddress = ((ULONG_PTR)MM_HIGHEST_VAD_ADDRESS + 1);
+        StartingAddress = (HighestAddress - (RandomBase * PAGE_SIZE));
+
+        Result = MiCheckForConflictingVadExistence(Process, StartingAddress, (StartingAddress + (PAGE_SIZE - 1)));
+    }
+    else
+    {
+        Result = TRUE;
+    }
+
+    *BaseAddress = 0;
+
+    if (Result)
+    {
+        Status = MiFindEmptyAddressRangeDownTree(ROUND_TO_PAGES(Size),
+                                                 ((ULONG_PTR)MM_HIGHEST_VAD_ADDRESS + 1),
+                                                 PAGE_SIZE,
+                                                 &Process->VadRoot,
+                                                 BaseAddress);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MiCreatePebOrTeb: Status %X\n", Status);
+            KeReleaseGuardedMutex(&Process->AddressCreationLock);
+            ExFreePoolWithTag(Vad, 'ldaV');
+            return Status;
+        }
+    }
+    else
+    {
+        *BaseAddress = StartingAddress;
+    }
+
+    Vad->StartingVpn = (*BaseAddress / PAGE_SIZE);
+    Vad->EndingVpn = ((*BaseAddress + Size - 1) / PAGE_SIZE);
+
+    Vad->u3.Secured.StartVpn = *BaseAddress;
+    Vad->u3.Secured.EndVpn = ((Vad->EndingVpn * PAGE_SIZE) | (PAGE_SIZE - 1));
+
+    Status = MiInsertVadCharges((PMMVAD)Vad, Process);
+
+    if (NT_SUCCESS(Status))
+    {
+        MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+        Process->VadRoot.NodeHint = Vad;
+        MiInsertVad((PMMVAD)Vad, &Process->VadRoot);
+
+        DPRINT1("MiCreatePebOrTeb: MiInsertVad return %X\n", Result);
+
+        MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+        KeReleaseGuardedMutex(&Process->AddressCreationLock);
+
+        /* Success */
+        return Status;
+    }
+
+    DPRINT1("MiCreatePebOrTeb: Status %X\n", Status);
+
+    KeReleaseGuardedMutex(&Process->AddressCreationLock);
+    ExFreePoolWithTag(Vad, 'ldaV');
+
+    /* Fail */
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 MmCreatePeb(
     _In_ PEPROCESS Process,
     _In_ PINITIAL_PEB InitialPeb,
