@@ -11,6 +11,7 @@
 SLIST_HEADER MmDeadStackSListHead;
 PMMWSL MmWorkingSetList;
 ULONG MmMaximumDeadKernelStacks = 5;
+ULONG MmProcessColorSeed = 0x12345678;
 
 extern MMPTE DemandZeroPte;
 extern ULONG MmVirtualBias;
@@ -68,17 +69,6 @@ MmSetMemoryPriorityProcess(
 
     /* Return the old priority */
     return OldPriority;
-}
-
-BOOLEAN
-NTAPI
-MmCreateProcessAddressSpace(
-    _In_ ULONG MinWs,
-    _In_ PEPROCESS Process,
-    _Out_ PULONG_PTR DirectoryTableBase)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
 }
 
 INIT_FUNCTION

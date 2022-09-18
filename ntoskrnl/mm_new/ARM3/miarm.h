@@ -1997,6 +1997,12 @@ MiInitializeSessionIds(
     VOID
 );
 
+VOID
+NTAPI
+MiSessionAddProcess(
+    _In_ PEPROCESS NewProcess
+);
+
 /* ARM3\special.c */
 PVOID
 NTAPI
@@ -2224,6 +2230,14 @@ VOID
 NTAPI
 MmInitGlobalKernelPageDirectory(
     VOID
+);
+
+BOOLEAN
+NTAPI
+MmCreateProcessAddressSpace(
+    _In_ ULONG MinWs,
+    _In_ PEPROCESS Dest,
+    _In_ PULONG_PTR DirectoryTableBase
 );
 
 /* balance.c */

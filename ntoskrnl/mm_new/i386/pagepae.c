@@ -34,5 +34,15 @@ MmInitGlobalKernelPageDirectory(VOID)
     ASSERT(FALSE);
 }
 
+BOOLEAN
+NTAPI
+MmCreateProcessAddressSpace(
+    _In_ ULONG MinWs,
+    _In_ PEPROCESS Process,
+    _Out_ PULONG_PTR DirectoryTableBase)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
 
 /* EOF */
