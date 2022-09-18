@@ -412,7 +412,7 @@ ExpLoadInitialProcess(IN PINIT_BUFFER InitBuffer,
                                      (PVOID*)&ProcessParams,
                                      0,
                                      &Size,
-                                     MEM_RESERVE | MEM_COMMIT,
+                                     MEM_COMMIT,
                                      PAGE_READWRITE);
     if (!NT_SUCCESS(Status))
     {
@@ -440,7 +440,7 @@ ExpLoadInitialProcess(IN PINIT_BUFFER InitBuffer,
                                      &EnvironmentPtr,
                                      0,
                                      &Size,
-                                     MEM_RESERVE | MEM_COMMIT,
+                                     MEM_COMMIT,
                                      PAGE_READWRITE);
     if (!NT_SUCCESS(Status))
     {
