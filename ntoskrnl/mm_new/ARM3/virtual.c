@@ -1180,8 +1180,83 @@ NtWriteVirtualMemory(
     _In_ SIZE_T NumberOfBytesToWrite,
     _Out_ PSIZE_T NumberOfBytesWritten OPTIONAL)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
+    PEPROCESS Process;
+    SIZE_T BytesWritten = 0;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    PAGED_CODE();
+
+    /* Check if we came from user mode */
+    if (PreviousMode != KernelMode)
+    {
+        /* Validate the read addresses */
+        if ((((ULONG_PTR)BaseAddress + NumberOfBytesToWrite) < (ULONG_PTR)BaseAddress) ||
+            (((ULONG_PTR)Buffer + NumberOfBytesToWrite) < (ULONG_PTR)Buffer) ||
+            (((ULONG_PTR)BaseAddress + NumberOfBytesToWrite) > MmUserProbeAddress) ||
+            (((ULONG_PTR)Buffer + NumberOfBytesToWrite) > MmUserProbeAddress))
+        {
+            /* Don't allow to write into kernel space */
+            return STATUS_ACCESS_VIOLATION;
+        }
+
+        /* Enter SEH for probe */
+        _SEH2_TRY
+        {
+            /* Probe the output value */
+            if (NumberOfBytesWritten)
+                ProbeForWriteSize_t(NumberOfBytesWritten);
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Get exception code */
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+    }
+
+    /* Don't do zero-byte transfers */
+    if (NumberOfBytesToWrite)
+    {
+        /* Reference the process */
+        Status = ObReferenceObjectByHandle(ProcessHandle,
+                                           PROCESS_VM_WRITE,
+                                           PsProcessType,
+                                           PreviousMode,
+                                           (PVOID *)&Process,
+                                           NULL);
+        if (NT_SUCCESS(Status))
+        {
+            /* Do the copy */
+            Status = MmCopyVirtualMemory(PsGetCurrentProcess(),
+                                         Buffer,
+                                         Process,
+                                         BaseAddress,
+                                         NumberOfBytesToWrite,
+                                         PreviousMode,
+                                         &BytesWritten);
+
+            /* Dereference the process */
+            ObDereferenceObject(Process);
+        }
+    }
+
+    /* Check if the caller sent this parameter */
+    if (NumberOfBytesWritten)
+    {
+        /* Enter SEH to guard write */
+        _SEH2_TRY
+        {
+            /* Return the number of bytes written */
+            *NumberOfBytesWritten = BytesWritten;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+        }
+        _SEH2_END;
+    }
+
+    return Status;
 }
 
 NTSTATUS
