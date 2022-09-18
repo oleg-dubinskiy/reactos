@@ -3377,6 +3377,39 @@ MiCheckProtoPtePageState(
     return TRUE;
 }
 
+BOOLEAN
+NTAPI
+MiReferenceSubsection(
+    _In_ PMSUBSECTION MappedSubsection)
+{
+    DPRINT("MiReferenceSubsection: %p, %p\n", MappedSubsection, MappedSubsection->SubsectionBase);
+
+    ASSERT((MappedSubsection->ControlArea->u.Flags.Image == 0) &&
+           (MappedSubsection->ControlArea->FilePointer != NULL) &&
+           (MappedSubsection->ControlArea->u.Flags.PhysicalMemory == 0));
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    if (!MappedSubsection->SubsectionBase)
+        return FALSE;
+
+    MappedSubsection->NumberOfMappedViews++;
+
+    if (!MappedSubsection->DereferenceList.Flink)
+        goto Exit;
+
+    RemoveEntryList(&MappedSubsection->DereferenceList);
+    AlloccatePoolForSubsectionPtes(MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
+
+    MappedSubsection->DereferenceList.Flink = NULL;
+
+Exit:
+
+    MappedSubsection->u2.SubsectionFlags2.SubsectionAccessed = 1;
+    return TRUE;
+}
+
 NTSTATUS
 NTAPI 
 MmFlushSection(
@@ -5133,39 +5166,6 @@ Exit:
 
     DPRINT("MiCanFileBeTruncatedInternal: return FALSE\n");
     return FALSE;
-}
-
-BOOLEAN
-NTAPI
-MiReferenceSubsection(
-    _In_ PMSUBSECTION MappedSubsection)
-{
-    DPRINT("MiReferenceSubsection: %p, %p\n", MappedSubsection, MappedSubsection->SubsectionBase);
-
-    ASSERT((MappedSubsection->ControlArea->u.Flags.Image == 0) &&
-           (MappedSubsection->ControlArea->FilePointer != NULL) &&
-           (MappedSubsection->ControlArea->u.Flags.PhysicalMemory == 0));
-
-    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-    ASSERT(MmPfnOwner == KeGetCurrentThread());
-
-    if (!MappedSubsection->SubsectionBase)
-        return FALSE;
-
-    MappedSubsection->NumberOfMappedViews++;
-
-    if (!MappedSubsection->DereferenceList.Flink)
-        goto Exit;
-
-    RemoveEntryList(&MappedSubsection->DereferenceList);
-    AlloccatePoolForSubsectionPtes(MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
-
-    MappedSubsection->DereferenceList.Flink = NULL;
-
-Exit:
-
-    MappedSubsection->u2.SubsectionFlags2.SubsectionAccessed = 1;
-    return TRUE;
 }
 
 BOOLEAN
