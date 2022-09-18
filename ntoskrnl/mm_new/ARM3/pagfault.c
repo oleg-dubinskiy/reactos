@@ -3247,8 +3247,12 @@ UserFault:
 
     if (TempPte.u.Long == (MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS))
     {
-        DPRINT1("MmAccessFault: FIXME\n");
-        ASSERT(FALSE);
+        /* Resolve the fault */
+        MiResolveDemandZeroFault(Address, Pte, MM_READWRITE, CurrentProcess, MM_NOIRQL);
+
+        /* Return the status */
+        DPRINT("MmAccessFault: return STATUS_PAGE_FAULT_DEMAND_ZERO\n");
+        Status = STATUS_PAGE_FAULT_DEMAND_ZERO;
         goto Exit3;
     }
 
