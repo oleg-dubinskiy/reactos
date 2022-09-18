@@ -1898,6 +1898,210 @@ ErrorExit:
     return Status;
 }
 
+ULONG
+NTAPI
+MiQueryAddressState(
+    _In_ PVOID Va,
+    _In_ PMMVAD Vad,
+    _In_ PEPROCESS TargetProcess,
+    _Out_ ULONG* ReturnedProtect,
+    _Out_ PVOID* NextVa)
+{
+    PMMPTE Pte;
+    PMMPTE Proto;
+    PMMPDE Pde;
+    MMPTE TempPte;
+    MMPTE TempProto;
+    ULONG State = MEM_RESERVE;
+    ULONG Protect = 0;
+    BOOLEAN DemandZeroPte = TRUE;
+    BOOLEAN ValidPte = FALSE;
+    KIRQL OldIrql;
+
+    ASSERT((Vad->StartingVpn <= ((ULONG_PTR)Va >> PAGE_SHIFT)) &&
+           (Vad->EndingVpn >= ((ULONG_PTR)Va >> PAGE_SHIFT)));
+
+    DPRINT("MiQueryAddressState: Va %p, Vad %p, VadType %X\n", Va, Vad, Vad->u.VadFlags.VadType);
+
+    /* Get the PDE and PTE for the address */
+    Pde = MiAddressToPde(Va);
+    Pte = MiAddressToPte(Va);
+
+    /* Return the next range */
+    *NextVa = (PVOID)((ULONG_PTR)Va + PAGE_SIZE);
+
+    do
+    {
+        /* Does the PDE exist? */
+        if (!Pde->u.Long)
+        {
+            /* It does not, next range starts at the next PDE */
+            *NextVa = MiPdeToAddress(Pde + 1);
+            break;
+        }
+
+        /* Is the PDE valid? */
+        if (!Pde->u.Hard.Valid)
+            /* Is isn't, fault it in (make the PTE accessible) */
+            MiMakeSystemAddressValid(Pte, TargetProcess);
+
+        /* We have a PTE that we can access now! */
+        ValidPte = TRUE;
+
+    } while (FALSE);
+
+    /* Is it safe to try reading the PTE? */
+    if (ValidPte)
+    {
+        /* FIXME: watch out for large pages */
+        ASSERT(Pde->u.Hard.LargePage == FALSE);
+
+        /* Capture the PTE */
+        TempPte = *Pte;
+        if (TempPte.u.Long)
+        {
+            /* The PTE is valid, so it's not zeroed out */
+            DemandZeroPte = FALSE;
+
+            /* Is it a decommited, invalid, or faulted PTE? */
+            if (TempPte.u.Soft.Protection == MM_DECOMMIT &&
+                !TempPte.u.Hard.Valid &&
+                (!TempPte.u.Soft.Prototype || TempPte.u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED))
+            {
+                /* Otherwise our defaults should hold */
+                ASSERT(Protect == 0);
+                ASSERT(State == MEM_RESERVE);
+            }
+            else
+            {
+                /* This means it's committed */
+                State = MEM_COMMIT;
+
+                /* We don't support these */
+                ASSERT(Vad->u.VadFlags.VadType != VadDevicePhysicalMemory);
+                ASSERT(Vad->u.VadFlags.VadType != VadRotatePhysical);
+                ASSERT(Vad->u.VadFlags.VadType != VadAwe);
+
+                /* Get protection state of this page */
+                Protect = MiGetPageProtection(Pte);
+
+                /* Check if this is an image-backed VAD */
+                if (!TempPte.u.Soft.Valid &&
+                    TempPte.u.Soft.Prototype &&
+                    !Vad->u.VadFlags.PrivateMemory &&
+                    Vad->ControlArea)
+                {
+                    Proto = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, ((ULONG_PTR)Va / PAGE_SIZE));
+
+                    if (Proto)
+                    {
+                        PETHREAD Thread = PsGetCurrentThread();
+
+                        MiUnlockProcessWorkingSetShared(TargetProcess, Thread);
+                        TempProto = *Proto;
+                        MiLockProcessWorkingSetShared(TargetProcess, Thread);
+                    }
+                    else
+                    {
+                        TempProto.u.Long = 0;
+                    }
+
+                    if (!TempProto.u.Long)
+                    {
+                        State = MEM_RESERVE;
+                        Protect = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    /* Check if this was a demand-zero PTE, since we need to find the state */
+    if (!DemandZeroPte)
+        goto Exit;
+
+    /* Not yet handled */
+    ASSERT(Vad->u.VadFlags.VadType != VadDevicePhysicalMemory);
+    ASSERT(Vad->u.VadFlags.VadType != VadAwe);
+
+    /* Check if this is private commited memory, or an section-backed VAD */
+    if (Vad->u.VadFlags.PrivateMemory || !Vad->ControlArea)
+    {
+        if (!Vad->u.VadFlags.MemCommit)
+        {
+            /* This is committed memory */
+            State = MEM_COMMIT;
+
+            /* Convert the protection */
+            Protect = MmProtectToValue[Vad->u.VadFlags.Protection];
+        }
+
+        goto Exit;
+    }
+
+    /* Tell caller about the next range */
+    *NextVa = (PVOID)((ULONG_PTR)Va + PAGE_SIZE);
+
+    /* Get the prototype PTE for this VAD */
+    Proto = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, (ULONG_PTR)Va >> PAGE_SHIFT);
+    if (!Proto)
+        goto Exit;
+
+    /* We should unlock the working set, but it's not being held! */
+
+    /* Is the prototype PTE actually valid (committed)? */
+    TempProto = *Proto;
+    if (!TempProto.u.Long)
+        goto Exit;
+
+    /* Unless this is a memory-mapped file, handle it like private VAD */
+    State = MEM_COMMIT;
+
+    if (Vad->u.VadFlags.VadType != VadImageMap)
+    {
+        Protect = MmProtectToValue[Vad->u.VadFlags.Protection];
+        goto Exit;
+    }
+
+    if (!TempProto.u.Hard.Valid)
+    {
+        Protect = MmProtectToValue[TempProto.u.Soft.Protection];
+        goto Exit;
+    }
+
+    Pde = MiAddressToPde(Proto);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (!Pde->u.Hard.Valid)
+        MiMakeSystemAddressValidPfn(Proto, OldIrql);
+
+    TempProto = *Proto;
+    ASSERT(TempProto.u.Long != 0);
+
+    if (TempProto.u.Hard.Valid)
+    {
+        PMMPFN pfn;
+
+        pfn = MI_PFN_ELEMENT(TempProto.u.Hard.PageFrameNumber);
+        Protect = MmProtectToValue[pfn->OriginalPte.u.Soft.Protection];
+    }
+    else
+    {
+        Protect = MmProtectToValue[TempProto.u.Soft.Protection];
+    }
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    /* We should re-lock the working set */
+
+Exit:
+
+    /* Return the protection code */
+    *ReturnedProtect = Protect;
+    return State;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS
