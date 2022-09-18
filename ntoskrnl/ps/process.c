@@ -689,9 +689,6 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
     if (Process->WorkingSetPage) memcpy(MiGetPfnEntry(Process->WorkingSetPage)->ProcessName, Process->ImageFileName, 16);
 #endif
 
-    /* Check if we have a section object and map the system DLL */
-    if (SectionObject) PspMapSystemDll(Process, NULL, FALSE);
-
     /* Create a handle for the Process */
     CidEntry.Object = Process;
     CidEntry.GrantedAccess = 0;
