@@ -729,7 +729,107 @@ NTAPI
 MmFreeLoaderBlock(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMEMORY_ALLOCATION_DESCRIPTOR MdBlock;
+    PPHYSICAL_MEMORY_RUN Buffer;
+    PPHYSICAL_MEMORY_RUN Entry;
+    PLIST_ENTRY NextMd;
+    PMMPFN Pfn;
+    PFN_NUMBER BasePage;
+    PFN_NUMBER LoaderPages;
+    ULONG_PTR ix;
+    KIRQL OldIrql;
+
+    /* Loop the descriptors in order to count them */
+    NextMd = LoaderBlock->MemoryDescriptorListHead.Flink;
+
+    for (ix = 0; NextMd != &LoaderBlock->MemoryDescriptorListHead; ix++)
+    {
+        MdBlock = CONTAINING_RECORD(NextMd, MEMORY_ALLOCATION_DESCRIPTOR, ListEntry);
+        NextMd = MdBlock->ListEntry.Flink;
+    }
+
+    /* Allocate a structure to hold the physical runs */
+    Buffer = ExAllocatePoolWithTag(NonPagedPool, (ix * sizeof(PHYSICAL_MEMORY_RUN)), 'lMmM');
+    ASSERT(Buffer != NULL);
+
+    Entry = Buffer;
+
+    /* Loop the descriptors again */
+    for (NextMd = LoaderBlock->MemoryDescriptorListHead.Flink;
+         NextMd != &LoaderBlock->MemoryDescriptorListHead;
+         NextMd = MdBlock->ListEntry.Flink)
+    {
+        /* Check what kind this was */
+        MdBlock = CONTAINING_RECORD(NextMd, MEMORY_ALLOCATION_DESCRIPTOR, ListEntry);
+
+        switch (MdBlock->MemoryType)
+        {
+            /* Registry, NLS, and heap data */
+            case LoaderRegistryData:
+            case LoaderOsloaderHeap:
+            case LoaderNlsData:
+                /* Are all a candidate for deletion */
+                Entry->BasePage = MdBlock->BasePage;
+                Entry->PageCount = MdBlock->PageCount;
+                Entry++;
+
+            /* We keep the rest */
+            default:
+                break;
+        }
+    }
+
+    /* Acquire the PFN lock */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    /* Loop the runs */
+    LoaderPages = 0;
+
+    while (--Entry >= Buffer)
+    {
+        /* See how many pages are in this run */
+        ix = Entry->PageCount;
+        BasePage = Entry->BasePage;
+
+        /* Loop each page */
+        Pfn = MiGetPfnEntry(BasePage);
+
+        while (ix--)
+        {
+            /* Check if it has references or is in any kind of list */
+            if (!Pfn->u3.e2.ReferenceCount && !Pfn->u1.Flink)
+            {
+                /* Set the new PTE address and put this page into the free list */
+                Pfn->PteAddress = (PMMPTE)(BasePage * PAGE_SIZE);
+                MiInsertPageInFreeList(BasePage);
+                LoaderPages++;
+            }
+            else if (BasePage)
+            {
+                /* It has a reference, so simply drop it */
+                ASSERT(MI_IS_PHYSICAL_ADDRESS(MiPteToAddress(Pfn->PteAddress)) == FALSE);
+
+                /* Drop a dereference on this page, which should delete it */
+                Pfn->PteAddress->u.Long = 0;
+                MI_SET_PFN_DELETED(Pfn);
+                MiDecrementShareCount(Pfn, BasePage);
+                LoaderPages++;
+            }
+
+            /* Move to the next page */
+            Pfn++;
+            BasePage++;
+        }
+    }
+
+    DPRINT("Loader pages freed: %lx\n", LoaderPages);
+
+    /* Release the PFN lock and flush the TLB */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    KeFlushCurrentTb();
+
+    /* Free our run structure */
+    ExFreePoolWithTag(Buffer, 'lMmM');
 }
 
 INIT_FUNCTION
