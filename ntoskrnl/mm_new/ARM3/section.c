@@ -7236,6 +7236,26 @@ NtExtendSection(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+/* Queries the information of a section object.
+ 
+   SectionHandle
+         Handle to the section object. It must be opened with SECTION_QUERY access.
+
+   SectionInformationClass
+         Index to a certain information structure.
+         Can be either SectionBasicInformation or SectionImageInformation.
+         The latter is valid only for sections that were created with the SEC_IMAGE flag.
+
+   SectionInformation
+         Caller supplies storage for resulting information.
+
+   Length
+         Size of the supplied storage.
+
+   ResultLength
+         Data written.
+
+*/
 NTSTATUS
 NTAPI
 NtQuerySection(
@@ -7245,8 +7265,128 @@ NtQuerySection(
     _In_ SIZE_T SectionInformationLength,
     _Out_opt_ PSIZE_T ResultLength)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
+    SECTION_BASIC_INFORMATION Sbi;
+    PSECTION Section;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("NtQuerySection: %p, %X, %X\n", SectionHandle, SectionInformationClass, SectionInformationLength);
+
+    if (PreviousMode != KernelMode)
+    {
+        _SEH2_TRY
+        {
+            ProbeForWrite(SectionInformation, SectionInformationLength, __alignof(ULONG));
+
+            if (ResultLength)
+                ProbeForWrite(ResultLength, sizeof(*ResultLength), __alignof(SIZE_T));
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+    }
+
+    if (SectionInformationClass == SectionBasicInformation)
+    {
+        if (SectionInformationLength < sizeof(SECTION_BASIC_INFORMATION))
+        {
+            DPRINT1("NtQuerySection: STATUS_INFO_LENGTH_MISMATCH\n");
+            return STATUS_INFO_LENGTH_MISMATCH;
+        }
+    }
+    else if (SectionInformationClass == SectionImageInformation)
+    {
+        if (SectionInformationLength < sizeof(SECTION_IMAGE_INFORMATION))
+        {
+            DPRINT1("NtQuerySection: STATUS_INFO_LENGTH_MISMATCH\n");
+            return STATUS_INFO_LENGTH_MISMATCH;
+        }
+    }
+    else
+    {
+        DPRINT1("NtQuerySection: STATUS_INVALID_INFO_CLASS\n");
+        return STATUS_INVALID_INFO_CLASS;
+    }
+
+    Status = ObReferenceObjectByHandle(SectionHandle,
+                                       SECTION_QUERY,
+                                       MmSectionObjectType,
+                                       PreviousMode,
+                                       (PVOID *)&Section,
+                                       NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("NtQuerySection: Failed to reference section. %X\n", Status);
+        return Status;
+    }
+
+    switch(SectionInformationClass)
+    {
+        case SectionBasicInformation:
+        {
+            Sbi.Size = Section->SizeOfSection;
+            Sbi.Attributes = 0;
+            Sbi.BaseAddress = (PVOID)Section->Address.StartingVpn;
+
+            if (Section->u.Flags.Image)
+                Sbi.Attributes |= SEC_IMAGE;
+            if (Section->u.Flags.Commit)
+                Sbi.Attributes |= SEC_COMMIT;
+            if (Section->u.Flags.Reserve)
+                Sbi.Attributes |= SEC_RESERVE;
+            if (Section->u.Flags.File)
+                Sbi.Attributes |= SEC_FILE;
+            if (Section->u.Flags.Image)
+                Sbi.Attributes |= SEC_IMAGE;
+            if (Section->u.Flags.Based)
+                Sbi.Attributes |= SEC_BASED;
+            if (Section->u.Flags.NoCache) 
+                Sbi.Attributes |= SEC_NOCACHE;
+            if (Section->Segment->ControlArea->u.Flags.GlobalMemory)
+                Sbi.Attributes |= 0x20000000; /* FIXME */
+
+            _SEH2_TRY
+            {
+                *((SECTION_BASIC_INFORMATION*)SectionInformation) = Sbi;
+
+                if (ResultLength)
+                    *ResultLength = sizeof(Sbi);
+            }
+            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            {
+                Status = _SEH2_GetExceptionCode();
+            }
+            _SEH2_END;
+
+            break;
+        }
+        case SectionImageInformation:
+        {
+            if (!Section->u.Flags.Image)
+            {
+                DPRINT1("NtQuerySection: STATUS_SECTION_NOT_IMAGE\n");
+                Status = STATUS_SECTION_NOT_IMAGE;
+                break;
+            }
+
+            /* Copy image information */
+            RtlCopyMemory(SectionInformation,
+                          Section->Segment->u2.ImageInformation,
+                          sizeof(SECTION_IMAGE_INFORMATION));
+
+            if (ResultLength)
+                *ResultLength = sizeof(SECTION_IMAGE_INFORMATION);
+
+            break;
+        }
+    }
+
+    ObDereferenceObject(Section);
+
+    return(Status);
 }
 
 /* EOF */
