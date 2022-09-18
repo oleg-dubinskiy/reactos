@@ -18,6 +18,8 @@ extern ULONG MmVirtualBias;
 extern MM_SYSTEMSIZE MmSystemSize;
 extern ULONG MmLargeStackSize;
 extern ULONG MmSecondaryColorMask;
+extern LARGE_INTEGER MmCriticalSectionTimeout;
+extern SIZE_T MmMinimumStackCommitInBytes;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -544,8 +546,181 @@ MmCreatePeb(
     _In_ PINITIAL_PEB InitialPeb,
     _Out_ PPEB* BasePeb)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIMAGE_LOAD_CONFIG_DIRECTORY ImageConfigData;
+    KAFFINITY ProcessAffinityMask = 0;
+    PIMAGE_NT_HEADERS NtHeaders;
+    LARGE_INTEGER SectionOffset;
+    PPEB Peb = NULL;
+    PVOID TableBase = NULL;
+    SIZE_T ViewSize = 0;
+    USHORT Characteristics;
+    NTSTATUS Status;
+
+    SectionOffset.QuadPart = 0;
+    *BasePeb = NULL;
+
+    /* Attach to Process */
+    KeAttachProcess(&Process->Pcb);
+
+    /* Map NLS Tables */
+    Status = MmMapViewOfSection(ExpNlsSectionPointer,
+                                (PEPROCESS)Process,
+                                &TableBase,
+                                0,
+                                0,
+                                &SectionOffset,
+                                &ViewSize,
+                                ViewShare,
+                                MEM_TOP_DOWN,
+                                PAGE_READONLY);
+
+    DPRINT("NLS Tables at: %p\n", TableBase);
+
+    if (!NT_SUCCESS(Status))
+    {
+        /* Cleanup and exit */
+        KeDetachProcess();
+        return Status;
+    }
+
+    /* Allocate the PEB */
+    Status = MiCreatePebOrTeb(Process, sizeof(PEB), (PULONG_PTR)&Peb);
+    DPRINT("PEB at: %p\n", Peb);
+    if (!NT_SUCCESS(Status))
+    {
+        /* Cleanup and exit */
+        KeDetachProcess();
+        return Status;
+    }
+
+    /* Use SEH in case we can't load the PEB */
+    _SEH2_TRY
+    {
+        /* Initialize the PEB */
+        RtlZeroMemory(Peb, sizeof(PEB));
+
+        /* Set up data */
+        Peb->ImageBaseAddress = Process->SectionBaseAddress;
+        Peb->InheritedAddressSpace = InitialPeb->InheritedAddressSpace;
+        Peb->Mutant = InitialPeb->Mutant;
+        Peb->ImageUsesLargePages = InitialPeb->ImageUsesLargePages;
+
+        /* NLS */
+        Peb->AnsiCodePageData = ((PCHAR)TableBase + ExpAnsiCodePageDataOffset);
+        Peb->OemCodePageData = ((PCHAR)TableBase + ExpOemCodePageDataOffset);
+        Peb->UnicodeCaseTableData = ((PCHAR)TableBase + ExpUnicodeCaseTableDataOffset);
+
+        /* Default Version Data (could get changed below) */
+        Peb->OSMajorVersion = NtMajorVersion;
+        Peb->OSMinorVersion = NtMinorVersion;
+        Peb->OSBuildNumber = (USHORT)(NtBuildNumber & 0x3FFF);
+        Peb->OSPlatformId = VER_PLATFORM_WIN32_NT;
+        Peb->OSCSDVersion = (USHORT)CmNtCSDVersion;
+
+        /* Heap and Debug Data */
+        Peb->NumberOfProcessors = KeNumberProcessors;
+        Peb->BeingDebugged = (BOOLEAN)(Process->DebugPort != NULL);
+        Peb->NtGlobalFlag = NtGlobalFlag;
+        Peb->HeapSegmentReserve = MmHeapSegmentReserve;
+        Peb->HeapSegmentCommit = MmHeapSegmentCommit;
+        Peb->HeapDeCommitTotalFreeThreshold = MmHeapDeCommitTotalFreeThreshold;
+        Peb->HeapDeCommitFreeBlockThreshold = MmHeapDeCommitFreeBlockThreshold;
+        Peb->CriticalSectionTimeout = MmCriticalSectionTimeout;
+        Peb->MinimumStackCommit = MmMinimumStackCommitInBytes;
+        Peb->MaximumNumberOfHeaps = ((PAGE_SIZE - sizeof(PEB)) / sizeof(PVOID));
+        Peb->ProcessHeaps = (PVOID *)(Peb + 1);
+
+        /* Session ID */
+        if (Process->Session)
+            Peb->SessionId = MmGetSessionId(Process);
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        /* Fail */
+        KeDetachProcess();
+        _SEH2_YIELD(return _SEH2_GetExceptionCode());
+    }
+    _SEH2_END;
+
+    /* Use SEH in case we can't load the image */
+    _SEH2_TRY
+    {
+        /* Get NT Headers */
+        NtHeaders = RtlImageNtHeader(Peb->ImageBaseAddress);
+        Characteristics = NtHeaders->FileHeader.Characteristics;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        /* Fail */
+        KeDetachProcess();
+        _SEH2_YIELD(return STATUS_INVALID_IMAGE_PROTECT);
+    }
+    _SEH2_END;
+
+    /* Parse the headers */
+    if (NtHeaders)
+    {
+        /* Use SEH in case we can't load the headers */
+        _SEH2_TRY
+        {
+            /* Get the Image Config Data too */
+            ImageConfigData = RtlImageDirectoryEntryToData(Peb->ImageBaseAddress,
+                                                           TRUE,
+                                                           IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG,
+                                                           (PULONG)&ViewSize);
+            if (ImageConfigData)
+                /* Probe it */
+                ProbeForRead(ImageConfigData, sizeof(IMAGE_LOAD_CONFIG_DIRECTORY), sizeof(ULONG));
+
+            /* Write subsystem data */
+            Peb->ImageSubsystem = NtHeaders->OptionalHeader.Subsystem;
+            Peb->ImageSubsystemMajorVersion = NtHeaders->OptionalHeader.MajorSubsystemVersion;
+            Peb->ImageSubsystemMinorVersion = NtHeaders->OptionalHeader.MinorSubsystemVersion;
+
+            /* Check for version data */
+            if (NtHeaders->OptionalHeader.Win32VersionValue)
+            {
+                /* Extract values and write them */
+                Peb->OSMajorVersion = (NtHeaders->OptionalHeader.Win32VersionValue & (0x100 - 1));
+                Peb->OSMinorVersion = ((NtHeaders->OptionalHeader.Win32VersionValue >> 8) & (0x100 - 1));
+                Peb->OSBuildNumber = ((NtHeaders->OptionalHeader.Win32VersionValue >> 16) & (0x4000 - 1));
+                Peb->OSPlatformId = ((NtHeaders->OptionalHeader.Win32VersionValue >> 30) ^ 2);
+
+                /* Process CSD version override */
+                if (ImageConfigData && ImageConfigData->CSDVersion)
+                    /* Take the value from the image configuration directory */
+                    Peb->OSCSDVersion = ImageConfigData->CSDVersion;
+            }
+
+            /* Process optional process affinity mask override */
+            if (ImageConfigData && ImageConfigData->ProcessAffinityMask)
+                /* Take the value from the image configuration directory */
+                ProcessAffinityMask = ImageConfigData->ProcessAffinityMask;
+
+            /* Check if this is a UP image */
+            if (Characteristics & IMAGE_FILE_UP_SYSTEM_ONLY)
+                /* Force it to use CPU 0 */
+                /* FIXME: this should use the MmRotatingUniprocessorNumber */
+                Peb->ImageProcessAffinityMask = 0;
+            else
+                /* Whatever was configured */
+                Peb->ImageProcessAffinityMask = ProcessAffinityMask;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Fail */
+            KeDetachProcess();
+            _SEH2_YIELD(return STATUS_INVALID_IMAGE_PROTECT);
+        }
+        _SEH2_END;
+    }
+
+    /* Detach from the Process */
+    KeDetachProcess();
+
+    *BasePeb = Peb;
+
+    return STATUS_SUCCESS;
 }
 
 ULONG
