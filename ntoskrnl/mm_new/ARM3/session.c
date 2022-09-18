@@ -39,8 +39,25 @@ LCID
 NTAPI
 MmGetSessionLocaleId(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    PEPROCESS Process;
+
+    DPRINT("MmGetSessionLocaleId()\n");
+    PAGED_CODE();
+
+    /* Get the current process */
+    Process = PsGetCurrentProcess();
+
+    /* Check if it's NOT the Session Leader */
+    if (!Process->Vm.Flags.SessionLeader)
+    {
+        /* Make sure it has a valid Session */
+        if (Process->Session)
+            /* Get the Locale ID */
+            return ((PMM_SESSION_SPACE)Process->Session)->LocaleId;
+    }
+
+    /* Not a session leader, return the default */
+    return PsDefaultThreadLocaleId;
 }
 
 _IRQL_requires_max_(APC_LEVEL)
