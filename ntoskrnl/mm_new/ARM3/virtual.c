@@ -1486,6 +1486,82 @@ EndWriteCopy:
     return STATUS_SUCCESS;
 }
 
+BOOLEAN
+NTAPI
+MiIsEntireRangeCommitted(
+    _In_ ULONG_PTR StartingAddress,
+    _In_ ULONG_PTR EndingAddress,
+    _In_ PMMVAD Vad,
+    _In_ PEPROCESS Process)
+{
+    PMMPDE Pde;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    BOOLEAN OnBoundary = TRUE;
+
+    PAGED_CODE();
+
+    /* Get the PDE and PTE addresses */
+    Pde = MiAddressToPde(StartingAddress);
+    Pte = MiAddressToPte(StartingAddress);
+    LastPte = MiAddressToPte(EndingAddress);
+
+    /* Loop all the PTEs */
+    while (Pte <= LastPte)
+    {
+        /* Check if we've hit an new PDE boundary */
+        if (OnBoundary)
+        {
+            /* Is this PDE demand zero? */
+            Pde = MiPteToPde(Pte);
+
+            if (Pde->u.Long)
+            {
+                /* It isn't -- is it valid? */
+                if (!Pde->u.Hard.Valid)
+                    /* Nope, fault it in */
+                    MiMakeSystemAddressValid(Pte, Process);
+            }
+            else
+            {
+                /* The PTE was already valid, so move to the next one */
+                Pde++;
+                Pte = MiPdeToPte(Pde);
+
+                /* Is the entire VAD committed? If not, fail */
+                if (!Vad->u.VadFlags.MemCommit)
+                    return FALSE;
+
+                /* New loop iteration with our new, on-boundary PTE. */
+                continue;
+            }
+        }
+
+        /* Is the PTE demand zero? */
+        if (!Pte->u.Long)
+        {
+            /* Is the entire VAD committed? If not, fail */
+            if (!Vad->u.VadFlags.MemCommit)
+                return FALSE;
+        }
+        /* It isn't -- is it a decommited, invalid, or faulted PTE? */
+        else if (Pte->u.Soft.Protection == MM_DECOMMIT &&
+                 !Pte->u.Hard.Valid &&
+                 (!Pte->u.Soft.Prototype || Pte->u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED))
+        {
+            /* Then part of the range is decommitted, so fail */
+            return FALSE;
+        }
+
+        /* Move to the next PTE */
+        Pte++;
+        OnBoundary = MiIsPteOnPdeBoundary(Pte);
+    }
+
+    /* All PTEs seem valid, and no VAD checks failed, the range is okay */
+    return TRUE;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS
