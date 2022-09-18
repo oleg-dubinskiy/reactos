@@ -225,4 +225,44 @@ MiInitializeSessionIds(VOID)
     RtlClearAllBits(MiSessionIdBitmap);
 }
 
+VOID
+NTAPI
+MiSessionAddProcess(
+    _In_ PEPROCESS NewProcess)
+{
+    PMM_SESSION_SPACE SessionGlobal;
+    KIRQL OldIrql;
+
+    /* The current process must already be in a session */
+    if (!(PsGetCurrentProcess()->Flags & PSF_PROCESS_IN_SESSION_BIT))
+        return;
+
+    /* Sanity check */
+    ASSERT(MmIsAddressValid(MmSessionSpace) == TRUE);
+
+    /* Get the global session */
+    SessionGlobal = MmSessionSpace->GlobalVirtualAddress;
+
+    /* Increment counters */
+    InterlockedIncrement((PLONG)&SessionGlobal->ReferenceCount);
+    InterlockedIncrement(&SessionGlobal->ResidentProcessCount);
+    InterlockedIncrement(&SessionGlobal->ProcessReferenceToSession);
+
+    /* Set the session pointer */
+    ASSERT(NewProcess->Session == NULL);
+    NewProcess->Session = SessionGlobal;
+
+    /* Acquire the expansion lock while touching the session */
+    OldIrql = MiAcquireExpansionLock();
+
+    /* Insert it into the process list */
+    InsertTailList(&SessionGlobal->ProcessList, &NewProcess->SessionProcessLinks);
+
+    /* Release the lock again */
+    MiReleaseExpansionLock(OldIrql);
+
+    /* Set the flag */
+    PspSetProcessFlag(NewProcess, PSF_PROCESS_IN_SESSION_BIT);
+}
+
 /* EOF */
