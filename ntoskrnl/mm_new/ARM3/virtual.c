@@ -443,6 +443,7 @@ Exit:
 
     return Status;
 }
+
 NTSTATUS
 NTAPI
 MmCopyVirtualMemory(
@@ -454,8 +455,55 @@ MmCopyVirtualMemory(
     _In_ KPROCESSOR_MODE PreviousMode,
     _Out_ PSIZE_T ReturnSize)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+    PEPROCESS Process = SourceProcess;
+
+    /* Don't accept zero-sized buffers */
+    if (!BufferSize)
+        return STATUS_SUCCESS;
+
+    /* If we are copying from ourselves, lock the target instead */
+    if (SourceProcess == PsGetCurrentProcess())
+        Process = TargetProcess;
+
+    /* Acquire rundown protection */
+    if (!ExAcquireRundownProtection(&Process->RundownProtect))
+    {
+        /* Fail */
+        DPRINT1("MmCopyVirtualMemory: STATUS_PROCESS_IS_TERMINATING\n");
+        return STATUS_PROCESS_IS_TERMINATING;
+    }
+
+    /* See if we should use the pool copy */
+    if (BufferSize > MI_POOL_COPY_BYTES)
+    {
+        /* Use MDL-copy */
+        Status = MiDoMappedCopy(SourceProcess,
+                                SourceAddress,
+                                TargetProcess,
+                                TargetAddress,
+                                BufferSize,
+                                PreviousMode,
+                                ReturnSize);
+    }
+    else
+    {
+        *ReturnSize = 0;
+
+        /* Do pool copy */
+        Status = MiDoPoolCopy(SourceProcess,
+                              SourceAddress,
+                              TargetProcess,
+                              TargetAddress,
+                              BufferSize,
+                              PreviousMode,
+                              ReturnSize);
+    }
+
+    /* Release the lock */
+    ExReleaseRundownProtection(&Process->RundownProtect);
+
+    return Status;
 }
 
 PFN_COUNT
