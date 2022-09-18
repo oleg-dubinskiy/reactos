@@ -1678,6 +1678,13 @@ FreePoolForSubsectionPtes(
     MiUnusedSubsectionPagedPool += SubsectionPagedPool;
 }
 
+FORCEINLINE
+PMMSUPPORT
+MmGetCurrentAddressSpace(VOID)
+{
+    return &((PEPROCESS)KeGetCurrentThread()->ApcState.Process)->Vm;
+}
+
 /* ARM3\i386\init.c */
 INIT_FUNCTION
 VOID
@@ -1938,6 +1945,12 @@ MiDereferenceControlAreaBySection(
     _In_ ULONG UserReference
 );
 
+ULONG
+NTAPI
+MiMakeProtectionMask(
+    IN ULONG Protect
+);
+
 /* ARM3\session.c */
 VOID
 NTAPI
@@ -2134,6 +2147,14 @@ MiFindEmptyAddressRangeInTree(
     _In_ PMM_AVL_TABLE Table,
     _Out_ PMMADDRESS_NODE* PreviousVad,
     _Out_ PULONG_PTR Base
+);
+
+PMMADDRESS_NODE
+NTAPI
+MiCheckForConflictingNode(
+    _In_ ULONG_PTR StartVpn,
+    _In_ ULONG_PTR EndVpn,
+    _In_ PMM_AVL_TABLE Table
 );
 
 /* ARM3\virtual.c */

@@ -9,6 +9,9 @@
 /* GLOBALS ********************************************************************/
 
 extern PVOID MmPagedPoolEnd;
+extern KGUARDED_MUTEX MmSectionCommitMutex;
+extern SIZE_T MmSharedCommit;
+extern MMPTE MmDecommittedPte;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -580,6 +583,31 @@ MiMakeSystemAddressValidPfn(
     return 0;
 }
 
+ULONG
+NTAPI
+MiGetPageProtection(
+    _In_ PMMPTE Pte)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+NTSTATUS
+NTAPI
+MiSetProtectionOnSection(
+    _In_ PEPROCESS Process,
+    _In_ PMMVAD FoundVad,
+    _In_ ULONG_PTR StartingAddress,
+    _In_ ULONG_PTR EndingAddress,
+    _In_ ULONG NewProtect,
+    _Out_ ULONG* OutProtection,
+    _In_ ULONG DontCharge,
+    _Out_ BOOLEAN* OutLocked)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS
@@ -790,8 +818,939 @@ NtAllocateVirtualMemory(
     _In_ ULONG AllocationType,
     _In_ ULONG Protect)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    PEPROCESS CurrentProcess = PsGetCurrentProcess();
+    KPROCESSOR_MODE PreviousMode = KeGetPreviousMode();
+    PMMSUPPORT AddressSpace;
+    PEPROCESS Process;
+    ULONG ProtectionMask;
+    PVOID PBaseAddress;
+    PMMVAD Vad;
+    PMMVAD FoundVad;
+    PMMPDE Pde;
+    PMMPTE Pte;
+    PMMPTE StartPte;
+    PMMPTE LastPte;
+    PMMPTE EndVpnPte;
+    MMPTE TempPte;
+    ULONG_PTR PRegionSize;
+    ULONG_PTR StartingAddress;
+    ULONG_PTR EndingAddress;
+    ULONG_PTR HighestAddress = (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS;
+    ULONG_PTR Alignment;
+    SIZE_T CommitCharge = 0;
+    SIZE_T QuotaCharge = 0;
+    SIZE_T QuotaFree;
+    SIZE_T QuotaCopyOnWrite;
+    SIZE_T ExcessCharge = 0;
+    ULONG OldProtect;
+    KAPC_STATE ApcState;
+    BOOLEAN Attached = FALSE;
+    BOOLEAN IsReturnQuota = FALSE;
+    BOOLEAN IsChangeProtection = FALSE;
+    BOOLEAN Locked;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("NtAllocateVirtualMemory: Handle %p, Base %X, ZeroBits %X, Size %X, AllocType %X, Protect %X\n",
+           ProcessHandle, (UBaseAddress ? *UBaseAddress : 0), ZeroBits, (URegionSize ? *URegionSize : 0), AllocationType, Protect);
+
+    /* Check for valid Zero bits */
+    if (ZeroBits > MI_MAX_ZERO_BITS)
+    {
+        DPRINT1("NtAllocateVirtualMemory: Too many zero bits\n");
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    /* Check for valid Allocation Types */
+    if ((AllocationType & !(MEM_LARGE_PAGES | MEM_PHYSICAL | MEM_WRITE_WATCH | MEM_TOP_DOWN | MEM_RESET | MEM_RESERVE | MEM_COMMIT)))
+    {
+        DPRINT1("NtAllocateVirtualMemory: Invalid Allocation Type\n");
+        return STATUS_INVALID_PARAMETER_5;
+    }
+
+    /* Check for at least one of these Allocation Types to be set */
+    if (!(AllocationType & (MEM_COMMIT | MEM_RESERVE | MEM_RESET)))
+    {
+        DPRINT1("NtAllocateVirtualMemory: No memory allocation base type\n");
+        return STATUS_INVALID_PARAMETER_5;
+    }
+
+    /* MEM_RESET is an exclusive flag, make sure that is valid too */
+    if ((AllocationType & MEM_RESET) && (AllocationType != MEM_RESET))
+    {
+        DPRINT1("NtAllocateVirtualMemory: Invalid use of MEM_RESET\n");
+        return STATUS_INVALID_PARAMETER_5;
+    }
+
+    if (AllocationType & (MEM_LARGE_PAGES | MEM_PHYSICAL | MEM_WRITE_WATCH))
+    {
+        /* Check if large pages are being used */
+        if (AllocationType & MEM_LARGE_PAGES)
+        {
+            /* Large page allocations MUST be committed */
+            if (!(AllocationType & MEM_COMMIT))
+            {
+                DPRINT1("NtAllocateVirtualMemory: Must supply MEM_COMMIT with MEM_LARGE_PAGES\n");
+                return STATUS_INVALID_PARAMETER_5;
+            }
+
+            /* These flags are not allowed with large page allocations */
+            if (AllocationType & (MEM_PHYSICAL | MEM_RESET | MEM_WRITE_WATCH))
+            {
+                DPRINT1("NtAllocateVirtualMemory: Using illegal flags with MEM_LARGE_PAGES\n");
+                return STATUS_INVALID_PARAMETER_5;
+            }
+        }
+        /* Check for valid MEM_WRITE_WATCH usage */
+        else if (AllocationType & MEM_WRITE_WATCH)
+        {
+            if (AllocationType & MEM_PHYSICAL)
+            {
+                return STATUS_INVALID_PARAMETER_5;
+            }
+
+            if (!(AllocationType & MEM_RESERVE))
+            {
+                DPRINT1("NtAllocateVirtualMemory: MEM_WRITE_WATCH used without MEM_RESERVE\n");
+                return STATUS_INVALID_PARAMETER_5;
+            }
+        }
+        /* Check for valid MEM_PHYSICAL usage */
+        else if (AllocationType & MEM_PHYSICAL)
+        {
+            ASSERT((AllocationType & (MEM_LARGE_PAGES | MEM_WRITE_WATCH)) == 0);
+
+            /* MEM_PHYSICAL can only be used if MEM_RESERVE is also used */
+            if (!(AllocationType & MEM_RESERVE))
+            {
+                DPRINT1("NtAllocateVirtualMemory: MEM_PHYSICAL used without MEM_RESERVE\n");
+                return STATUS_INVALID_PARAMETER_5;
+            }
+
+            /* Only these flags are allowed with MEM_PHYSIAL */
+            if (AllocationType & ~(MEM_RESERVE | MEM_TOP_DOWN | MEM_PHYSICAL))
+            {
+                DPRINT1("NtAllocateVirtualMemory: Using illegal flags with MEM_PHYSICAL\n");
+                return STATUS_INVALID_PARAMETER_5;
+            }
+
+            /* Then make sure PAGE_READWRITE is used */
+            if (Protect != PAGE_READWRITE)
+            {
+                DPRINT1("NtAllocateVirtualMemory: MEM_PHYSICAL used without PAGE_READWRITE\n");
+                return STATUS_INVALID_PARAMETER_6;
+            }
+        }
+    }
+
+    /* Calculate the protection mask and make sure it's valid */
+    ProtectionMask = MiMakeProtectionMask(Protect);
+    if (ProtectionMask == MM_INVALID_PROTECTION)
+    {
+        DPRINT1("NtAllocateVirtualMemory: Invalid protection mask\n");
+        return STATUS_INVALID_PAGE_PROTECTION;
+    }
+
+    /* Enter SEH */
+    _SEH2_TRY
+    {
+        /* Check for user-mode parameters */
+        if (PreviousMode != KernelMode)
+        {
+            /* Make sure they are writable */
+            ProbeForWritePointer(UBaseAddress);
+            ProbeForWriteSize_t(URegionSize);
+        }
+
+        /* Capture their values */
+        PBaseAddress = *UBaseAddress;
+        PRegionSize = *URegionSize;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        /* Return the exception code */
+        _SEH2_YIELD(return _SEH2_GetExceptionCode());
+    }
+    _SEH2_END;
+
+    /* Make sure the allocation isn't past the VAD area */
+    if (PBaseAddress > MM_HIGHEST_VAD_ADDRESS)
+    {
+        DPRINT1("NtAllocateVirtualMemory: Virtual allocation base above User Space\n");
+        return STATUS_INVALID_PARAMETER_2;
+    }
+
+    /* Make sure the allocation wouldn't overflow past the VAD area */
+    if ((((ULONG_PTR)MM_HIGHEST_VAD_ADDRESS + 1) - (ULONG_PTR)PBaseAddress) < PRegionSize)
+    {
+        DPRINT1("NtAllocateVirtualMemory: Region size would overflow into kernel-memory\n");
+        return STATUS_INVALID_PARAMETER_4;
+    }
+
+    /* Make sure there's a size specified */
+    if (!PRegionSize)
+    {
+        DPRINT1("NtAllocateVirtualMemory: Region size is invalid (zero)\n");
+        return STATUS_INVALID_PARAMETER_4;
+    }
+
+    /* If this is for the current process, just use PsGetCurrentProcess */
+    if (ProcessHandle == NtCurrentProcess())
+    {
+        Process = CurrentProcess;
+    }
+    else
+    {
+        /* Otherwise, reference the process with VM rights and attach to it if this isn't the current process.
+           We must attach because we'll be touching PTEs and PDEs that belong to user-mode memory,
+           and also touching the Working Set which is stored in Hyperspace.
+        */
+        Status = ObReferenceObjectByHandle(ProcessHandle,
+                                           PROCESS_VM_OPERATION,
+                                           PsProcessType,
+                                           PreviousMode,
+                                           (PVOID *)&Process,
+                                           NULL);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("NtAllocateVirtualMemory: Status %X\n", Status);
+            return Status;
+        }
+
+    }
+
+    DPRINT("NtAllocateVirtualMemory: %p, %p, %X, %X, %X, %X\n",
+           Process, PBaseAddress, ZeroBits, PRegionSize, AllocationType, Protect);
+
+    /* Check for large page allocations and make sure that the required privilege is being held,
+       before attempting to handle them.
+    */
+    if ((AllocationType & MEM_LARGE_PAGES) && !SeSinglePrivilegeCheck(SeLockMemoryPrivilege, PreviousMode))
+    {
+        /* Fail without it */
+        DPRINT1("NtAllocateVirtualMemory: Privilege not held for MEM_LARGE_PAGES\n");
+        Status = STATUS_PRIVILEGE_NOT_HELD;
+        goto ErrorExit;
+    }
+
+    if (CurrentProcess != Process)
+    {
+        KeStackAttachProcess(&Process->Pcb, &ApcState);
+        Attached = TRUE;
+    }
+
+    /* Check if the caller is reserving memory, or committing memory and letting us pick the base address */
+    if (!PBaseAddress || (AllocationType & MEM_RESERVE))
+    {
+        /*  Do not allow COPY_ON_WRITE through this API */
+        if (Protect & (PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY))
+        {
+            DPRINT1("NtAllocateVirtualMemory: Copy on write not allowed through this path\n");
+            Status = STATUS_INVALID_PAGE_PROTECTION;
+            goto ErrorExit;
+        }
+
+        Alignment = 0x10000;
+
+        /* Does the caller have an address in mind, or is this a blind commit? */
+        if (!PBaseAddress)
+        {
+            /* This is a blind commit, all we need is the region size */
+            PRegionSize = ROUND_TO_PAGES(PRegionSize);
+
+            /* Check if ZeroBits were specified */
+            if (ZeroBits)
+            {
+                /* Calculate the highest address and check if it's valid */
+                HighestAddress = (MAXULONG_PTR >> ZeroBits);
+
+                if (HighestAddress > (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS)
+                {
+                    Status = STATUS_INVALID_PARAMETER_3;
+                    goto ErrorExit;
+                }
+            }
+
+            if (Process->VmTopDown)
+                AllocationType |= MEM_TOP_DOWN;
+
+            StartingAddress = 0;
+            EndingAddress = 0;
+
+            CommitCharge = BYTES_TO_PAGES(PRegionSize);
+
+            if (AllocationType & MEM_LARGE_PAGES)
+            {
+                DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+                Alignment = 0x400000;
+            }
+        }
+        else
+        {
+            /* This is a reservation, so compute the starting address on the expected 64KB granularity,
+               and see where the ending address will fall based on the aligned address and the passed in region size
+            */
+            EndingAddress = (((ULONG_PTR)PBaseAddress + PRegionSize - 1) | (PAGE_SIZE - 1));
+
+            if (AllocationType & MEM_LARGE_PAGES)
+            {
+                DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                StartingAddress = ((ULONG_PTR)PBaseAddress & ~(0x10000 - 1));
+            }
+
+            CommitCharge = BYTES_TO_PAGES(EndingAddress - StartingAddress);
+        }
+
+        /* Allocate and initialize the VAD */
+        Vad = ExAllocatePoolWithTag (NonPagedPool, sizeof(MMVAD_SHORT), 'SdaV');
+        if (!Vad)
+        {
+            DPRINT1("NtAllocateVirtualMemory: Failed to allocate a VAD!\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto ErrorExit;
+        }
+
+        Vad->u.LongFlags = 0;
+
+        if (AllocationType & MEM_COMMIT)
+            Vad->u.VadFlags.MemCommit = 1;
+
+        Vad->u.VadFlags.CommitCharge = CommitCharge;
+        Vad->u.VadFlags.Protection = ProtectionMask;
+        Vad->u.VadFlags.PrivateMemory = 1;
+
+        if (AllocationType & (MEM_PHYSICAL | MEM_LARGE_PAGES))
+        {
+            ASSERT((AllocationType & MEM_WRITE_WATCH) == 0);
+
+            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else if (AllocationType & MEM_WRITE_WATCH)
+        {
+            ASSERT(AllocationType & MEM_RESERVE);
+
+            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        /* Lock the address space and make sure the process isn't already dead */
+        AddressSpace = MmGetCurrentAddressSpace();
+        MmLockAddressSpace(AddressSpace);
+
+        if (Process->VmDeleted)
+        {
+            DPRINT1("NtAllocateVirtualMemory: STATUS_PROCESS_IS_TERMINATING. FIXME MiFreeAweInfo()\n");
+            Status = STATUS_PROCESS_IS_TERMINATING;
+            goto ErrorVadExit;
+        }
+
+        // FIXME ? MiInsertAweInfo()
+
+        if (!PBaseAddress)
+        {
+            if (AllocationType & 0x00100000)
+                Status = MiFindEmptyAddressRangeDownTree(PRegionSize, HighestAddress, Alignment, &Process->VadRoot, &StartingAddress);
+            else
+                Status = MiFindEmptyAddressRange(PRegionSize, Alignment, ZeroBits, &StartingAddress);
+
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("NtAllocateVirtualMemory: Status %X\n", Status);
+                goto ErrorVadExit;
+            }
+
+            EndingAddress = (StartingAddress + PRegionSize - 1) | (PAGE_SIZE - 1);
+
+            if (EndingAddress > HighestAddress)
+            {
+                DPRINT1("NtAllocateVirtualMemory: STATUS_NO_MEMORY. EndingAddress > HighestAddress!\n");
+                Status = STATUS_NO_MEMORY;
+                goto ErrorVadExit;
+            }
+        }
+        else
+        {
+            if (MiCheckForConflictingVadExistence(Process, StartingAddress, EndingAddress)) 
+            {
+                DPRINT1("NtAllocateVirtualMemory: STATUS_CONFLICTING_ADDRESSES\n");
+                Status = STATUS_CONFLICTING_ADDRESSES;
+                goto ErrorVadExit;
+            }
+        }
+
+        Vad->StartingVpn = (StartingAddress / PAGE_SIZE);
+        Vad->EndingVpn = (EndingAddress / PAGE_SIZE);
+
+        Status = MiInsertVadCharges(Vad, Process);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("NtAllocateVirtualMemory: Status %X\n", Status);
+            goto ErrorVadExit;
+        }
+
+        MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+        MiInsertVad(Vad, &Process->VadRoot);
+
+        if (AllocationType & (MEM_PHYSICAL | MEM_LARGE_PAGES))
+        {
+            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+        PRegionSize = (EndingAddress - StartingAddress + 1);
+        Process->VirtualSize += PRegionSize;
+
+        if (Process->VirtualSize > Process->PeakVirtualSize)
+            Process->PeakVirtualSize = Process->VirtualSize;
+
+        /* Unlock the address space */
+        MmUnlockAddressSpace(AddressSpace);
+
+        /* Detach and dereference the target process if it was different from the current process */
+        if (Attached)
+            KeUnstackDetachProcess(&ApcState);
+
+        if (ProcessHandle != NtCurrentProcess())
+            ObDereferenceObject(Process);
+
+        /* Use SEH to write back the base address and the region size.
+           In the case of an exception, we do not return back the exception code, as the memory *has* been allocated.
+           The caller would now have to call VirtualQuery or
+           do some other similar trick to actually find out where its memory allocation ended up
+        */
+        _SEH2_TRY
+        {
+            *URegionSize = PRegionSize;
+            *UBaseAddress = (PVOID)StartingAddress;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Ignore exception! */
+            DPRINT1("NtAllocateVirtualMemory: Ignore exception!\n");
+            //ASSERT(FALSE);
+        }
+        _SEH2_END;
+
+        DPRINT("NtAllocateVirtualMemory: Reserved %X bytes at %p\n", PRegionSize, StartingAddress);
+        return STATUS_SUCCESS;
+
+ErrorVadExit:
+
+        DPRINT1("NtAllocateVirtualMemory: ErrorVadExit\n");
+
+        MmUnlockAddressSpace(AddressSpace);
+        ExFreePool(Vad);
+
+        if (AllocationType & (MEM_PHYSICAL | MEM_LARGE_PAGES))
+        {
+            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else if (AllocationType & MEM_WRITE_WATCH)
+        {
+            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        goto ErrorExit;
+    }
+
+    /* This is a MEM_COMMIT on top of an existing address which must have been MEM_RESERVED already.
+       Compute the start and ending base addresses based on the user input,
+       and then compute the actual region size once all the alignments have been done.
+    */
+    if (AllocationType == MEM_RESET)
+    {
+        DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        StartingAddress = (ULONG_PTR)PAGE_ALIGN(PBaseAddress);
+        EndingAddress = (((ULONG_PTR)PBaseAddress + PRegionSize - 1) | (PAGE_SIZE - 1));
+    }
+
+    PRegionSize = (EndingAddress - StartingAddress + 1);
+
+    /* Lock the address space and make sure the process isn't already dead */
+    AddressSpace = MmGetCurrentAddressSpace();
+    MmLockAddressSpace(AddressSpace);
+
+    if (Process->VmDeleted)
+    {
+        DPRINT1("NtAllocateVirtualMemory: STATUS_PROCESS_IS_TERMINATING\n");
+        Status = STATUS_PROCESS_IS_TERMINATING;
+        goto ErrorExit1;
+    }
+
+    /* Get the VAD for this address range, and make sure it exists */
+    FoundVad = (PMMVAD)MiCheckForConflictingNode((StartingAddress / PAGE_SIZE),
+                                                 (EndingAddress / PAGE_SIZE),
+                                                 &Process->VadRoot);
+    if (!FoundVad)
+    {
+        DPRINT1("NtAllocateVirtualMemory: STATUS_CONFLICTING_ADDRESSES\n");
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto ErrorExit1;
+    }
+
+    DPRINT("NtAllocateVirtualMemory: FoundVad %p, Start %X, End %X\n", FoundVad, StartingAddress, EndingAddress);
+
+    /* These kinds of VADs are illegal for this Windows function when trying to commit an existing range */
+    if (FoundVad->u.VadFlags.VadType == VadAwe ||
+        FoundVad->u.VadFlags.VadType == VadDevicePhysicalMemory ||
+        FoundVad->u.VadFlags.VadType == VadLargePages)
+    {
+        DPRINT1("NtAllocateVirtualMemory: STATUS_CONFLICTING_ADDRESSES\n");
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto ErrorExit1;
+    }
+
+    /* Make sure that this address range actually fits within the VAD for it */
+    if ((StartingAddress / PAGE_SIZE) < FoundVad->StartingVpn ||
+        (EndingAddress / PAGE_SIZE) > FoundVad->EndingVpn)
+    {
+        DPRINT1("NtAllocateVirtualMemory: STATUS_CONFLICTING_ADDRESSES\n");
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto ErrorExit1;
+    }
+
+    if (FoundVad->u.VadFlags.CommitCharge == 0x7FFFF)
+    {
+        DPRINT("NtAllocateVirtualMemory: STATUS_CONFLICTING_ADDRESSES\n");
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto ErrorExit1;
+    }
+
+    if (AllocationType == MEM_RESET)
+    {
+        DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    /* Is this a previously reserved section being committed? If so, enter the special section path */
+    if (!FoundVad->u.VadFlags.PrivateMemory)
+    {
+        /* You cannot commit large page sections through this API */
+        if (FoundVad->u.VadFlags.VadType == VadLargePageSection)
+        {
+            DPRINT1("NtAllocateVirtualMemory: Large page sections cannot be VirtualAlloc'd\n");
+            Status = STATUS_INVALID_PAGE_PROTECTION;
+            goto ErrorExit1;
+        }
+
+        /* You can only use caching flags on a rotate VAD */
+        if ((Protect & (PAGE_NOCACHE | PAGE_WRITECOMBINE)) &&
+            FoundVad->u.VadFlags.VadType != VadRotatePhysical)
+        {
+            DPRINT1("NtAllocateVirtualMemory: Cannot use caching flags with anything but rotate VADs\n");
+            Status = STATUS_INVALID_PAGE_PROTECTION;
+            goto ErrorExit1;
+        }
+
+        /* We should make sure that the section's permissions aren't being messed with */
+        if (FoundVad->u.VadFlags.NoChange)
+        {
+            /* Make sure it's okay to touch it
+               Note: The Windows 2003 kernel has a bug here,
+               passing the unaligned base address together with the aligned size,
+               potentially covering a region larger than the actual allocation.
+               Might be exposed through NtGdiCreateDIBSection w/ section handle.
+               For now we keep this behavior.
+               TODO: analyze possible implications, create test case
+            */
+            Status = MiCheckSecuredVad(FoundVad, PBaseAddress, PRegionSize, ProtectionMask);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("NtAllocateVirtualMemory: Secured VAD being messed around with. Status %X\n", Status);
+                goto ErrorExit1;
+            }
+        }
+
+        if (FoundVad->ControlArea->FilePointer)
+        {
+            /* ARM3 does not support file-backed sections, only shared memory */
+            ASSERT(FoundVad->ControlArea->FilePointer == NULL);
+
+            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        /* Compute PTE addresses and the quota charge, then grab the commit lock */
+        StartPte = MI_GET_PROTOTYPE_PTE_FOR_VPN(FoundVad, (StartingAddress / PAGE_SIZE));
+        LastPte = MI_GET_PROTOTYPE_PTE_FOR_VPN(FoundVad, (EndingAddress / PAGE_SIZE));
+
+        QuotaCharge = (ULONG)(LastPte - StartPte + 1);
+        Pte = StartPte;
+
+        DPRINT("NtAllocateVirtualMemory: StartingAddress %p, EndingAddress %p, StartPte %p, LastPte %p\n", StartingAddress, EndingAddress, StartPte, LastPte);
+
+        QuotaCopyOnWrite = 0;
+
+        /* Rotate VADs cannot be guard pages or inaccessible, nor copy on write */
+        if (FoundVad->u.VadFlags.VadType == VadRotatePhysical)
+        {
+            if ((Protect & (PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY | PAGE_NOACCESS | PAGE_GUARD)))
+            {
+                DPRINT1("NtAllocateVirtualMemory: Invalid page protection for rotate VAD\n");
+                Status = STATUS_INVALID_PAGE_PROTECTION;
+                goto ErrorExit1;
+            }
+        }
+        else if ((ProtectionMask & 5) == 5)
+        {
+            QuotaCopyOnWrite = QuotaCharge;
+        }
+
+        if (QuotaCopyOnWrite);
+        {
+            Status = PsChargeProcessPageFileQuota(Process, QuotaCopyOnWrite);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+                goto ErrorExit;
+            }
+
+            if (Process->CommitChargeLimit)
+            {
+                if ((Process->CommitCharge + QuotaCopyOnWrite) > Process->CommitChargeLimit)
+                {
+                    if (Process->Job)
+                    {
+                        DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+                        ASSERT(FALSE);
+                    }
+
+                    DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+                    ASSERT(FALSE);
+
+                    Status = STATUS_COMMITMENT_LIMIT;
+                    goto ErrorExit;
+                }
+            }
+
+            if (Process->JobStatus & 0x10)
+            {
+                DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+            }
+        }
+
+        KeAcquireGuardedMutexUnsafe(&MmSectionCommitMutex);
+
+        DPRINT("NtAllocateVirtualMemory: FIXME MiChargeCommitment \n");
+
+        /* Get the segment template PTE and start looping each page */
+        TempPte = FoundVad->ControlArea->Segment->SegmentPteTemplate;
+        ASSERT(TempPte.u.Long != 0);
+
+        QuotaFree = 0;
+
+        while (Pte <= LastPte)
+        {
+            /* For each non-already-committed page, write the invalid template PTE */
+            if (!Pte->u.Long)
+                MI_WRITE_INVALID_PTE(Pte, TempPte);
+            else
+                QuotaFree++;
+
+            Pte++;
+        }
+
+        /* Now do the commit accounting and release the lock */
+        if (!IsReturnQuota)
+        {
+            ASSERT(QuotaCharge >= QuotaFree);
+            QuotaCharge -= QuotaFree;
+        }
+        else
+        {
+            QuotaFree = 0;
+        }
+
+        if (QuotaCharge)
+        {
+            FoundVad->ControlArea->Segment->NumberOfCommittedPages += QuotaCharge;
+            InterlockedExchangeAdd((PLONG)&MmSharedCommit, QuotaCharge);
+        }
+
+        KeReleaseGuardedMutexUnsafe(&MmSectionCommitMutex);
+
+        if (QuotaCopyOnWrite)
+        {
+            FoundVad->u.VadFlags.CommitCharge += QuotaCopyOnWrite;
+            Process->CommitCharge += QuotaCopyOnWrite;
+
+            if (Process->CommitCharge > Process->CommitChargePeak)
+                Process->CommitChargePeak = Process->CommitCharge;
+        }
+
+        MiSetProtectionOnSection(Process,
+                                 FoundVad,
+                                 StartingAddress,
+                                 EndingAddress,
+                                 Protect,
+                                 &OldProtect,
+                                 TRUE,
+                                 &Locked);
+    
+        /* Unlock the address space */
+        MmUnlockAddressSpace(AddressSpace);
+
+        if (QuotaFree)
+        {
+            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (Attached)
+            KeUnstackDetachProcess(&ApcState);
+
+        if (ProcessHandle != NtCurrentProcess())
+            ObDereferenceObject(Process);
+
+        /* Use SEH to write back the base address and the region size.
+           In the case of an exception, we strangely do return back the exception code,
+           even though the memory *has* been allocated.
+           This mimics Windows behavior and there is not much we can do about it.
+        */
+        _SEH2_TRY
+        {
+            *URegionSize = PRegionSize;
+            *UBaseAddress = (PVOID)StartingAddress;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            Status = _SEH2_GetExceptionCode();
+        }
+        _SEH2_END;
+
+        return STATUS_SUCCESS;
+    }
+
+    // FoundVad->u.VadFlags.PrivateMemory
+
+    /* While this is an actual Windows check */
+    ASSERT(FoundVad->u.VadFlags.VadType != VadRotatePhysical);
+
+    /* Throw out attempts to use copy-on-write through this API path */
+    if ((Protect & PAGE_WRITECOPY) || (Protect & PAGE_EXECUTE_WRITECOPY))
+    {
+        DPRINT1("NtAllocateVirtualMemory: STATUS_INVALID_PAGE_PROTECTION\n");
+        Status = STATUS_INVALID_PAGE_PROTECTION;
+        goto ErrorExit1;
+    }
+
+    /* Initialize a demand-zero PTE */
+    TempPte.u.Long = 0;
+    TempPte.u.Soft.Protection = ProtectionMask;
+    ASSERT(TempPte.u.Long != 0);
+
+    /* Get the PTE, PDE and the last PTE for this address range */
+    Pde = MiAddressToPde(StartingAddress);
+    Pte = MiAddressToPte(StartingAddress);
+    LastPte = MiAddressToPte(EndingAddress);
+
+    QuotaCharge = (SIZE_T)(LastPte - Pte + 1);
+
+    if (FoundVad->u.VadFlags.MemCommit)
+        EndVpnPte = MiAddressToPte(FoundVad->EndingVpn * PAGE_SIZE);
+    else
+        EndVpnPte = NULL;
+
+    if (Process->CommitChargeLimit &&
+        Process->CommitChargeLimit < (Process->CommitCharge + QuotaCharge))
+    {
+        DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+        ASSERT(FALSE);
+        goto ErrorExit1;
+    }
+
+    if (Process->JobStatus & 0x10)
+    {
+        DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    Status = PsChargeProcessPageFileQuota(Process, QuotaCharge);
+    if (!NT_SUCCESS (Status))
+    {
+        DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+        ASSERT(FALSE);
+        goto ErrorExit1;
+    }
+
+    DPRINT("NtAllocateVirtualMemory: FIXME MiChargeCommitment()\n");
+
+    /* Update the commit charge in the VAD as well as in the process,
+       and check if this commit charge was now higher than the last recorded peak,
+       in which case we also update the peak
+    */
+    FoundVad->u.VadFlags.CommitCharge += QuotaCharge;
+    Process->CommitCharge += QuotaCharge;
+
+    if (Process->CommitChargePeak < Process->CommitCharge)
+        Process->CommitChargePeak = Process->CommitCharge;
+
+    QuotaFree = 0;
+
+    if (!IsReturnQuota)
+        /* Lock the working set while we play with user pages and page tables */
+        MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+    /* Make the current page table valid, and then loop each page within it */
+    MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+
+    while (Pte <= LastPte)
+    {
+        /* Have we crossed into a new page table? */
+        if (MiIsPteOnPdeBoundary(Pte))
+        {
+            /* Get the PDE and now make it valid too */
+            Pde = MiPteToPde(Pte);
+            MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+        }
+
+        /* Is this a zero PTE as expected? */
+        if (!Pte->u.Long)
+        {
+            if (Pte <= EndVpnPte)
+                QuotaFree++;
+
+            /* First increment the count of pages in the page table for this process */
+            MiIncrementPageTableReferences(MiPteToAddress(Pte));
+
+            /* And now write the invalid demand-zero PTE as requested */
+            MI_WRITE_INVALID_PTE(Pte, TempPte);
+        }
+        else if (Pte->u.Long == MmDecommittedPte.u.Long)
+        {
+            MI_WRITE_INVALID_PTE(Pte, TempPte);
+        }
+        else
+        {
+            /* We don't handle these scenarios yet */
+            if (!IsChangeProtection)
+            {
+                if (!Pte->u.Soft.Valid &&
+                    Pte->u.Soft.Prototype &&
+                    Pte->u.Soft.PageFileHigh != MI_PTE_LOOKUP_NEEDED)
+                {
+                    if (Protect != MiGetPageProtection(Pte))
+                        IsChangeProtection = TRUE;
+
+                    MiMakePdeExistAndMakeValid (Pde, Process, MM_NOIRQL);
+                }
+                else
+                {
+                    if (Protect != MiGetPageProtection(Pte))
+                        IsChangeProtection = TRUE;
+                }
+            }
+
+            QuotaFree++;
+        }
+
+        /* Move to the next PTE */
+        Pte++;
+    }
+
+    /* Release the working set lock */
+    MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+    if (!IsReturnQuota && QuotaFree)
+        ExcessCharge = QuotaFree;
+
+    if (ExcessCharge)
+    {
+        if (!IsReturnQuota)
+        {
+            FoundVad->u.VadFlags.CommitCharge -= ExcessCharge;
+            ASSERT((LONG_PTR)FoundVad->u.VadFlags.CommitCharge >= 0);
+            Process->CommitCharge -= ExcessCharge;
+        }
+
+        /* Unlock the address space */
+        MmUnlockAddressSpace(AddressSpace);
+
+        if (!IsReturnQuota)
+        {
+            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        PsReturnProcessPageFileQuota(Process, ExcessCharge);
+
+        if (Process->JobStatus & 0x10)
+        {
+            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else
+    {
+        /* Unlock the address space */
+        MmUnlockAddressSpace(AddressSpace);
+    }
+
+Exit:
+
+    /* Check if we need to update the protection */
+    if (IsChangeProtection)
+    {
+        DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (Attached)
+        KeUnstackDetachProcess(&ApcState);
+
+    if (ProcessHandle != NtCurrentProcess())
+        ObDereferenceObject(Process);
+
+    /* Use SEH to write back the base address and the region size.
+       In the case of an exception, we strangely do return back the exception code,
+       even though the memory *has* been allocated.
+       This mimics Windows behavior and there is not much we can do about it.
+    */
+    _SEH2_TRY
+    {
+        *URegionSize = PRegionSize;
+        *UBaseAddress = (PVOID)StartingAddress;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = _SEH2_GetExceptionCode();
+    }
+    _SEH2_END;
+
+    return Status;
+
+ErrorExit1:
+
+    /* Unlock the address space */
+    MmUnlockAddressSpace(AddressSpace);
+
+ErrorExit:
+
+    if (Attached)
+        KeUnstackDetachProcess (&ApcState);
+
+    if (ProcessHandle != NtCurrentProcess())
+        ObDereferenceObject (Process);
+
+    return Status;
 }
 
 NTSTATUS

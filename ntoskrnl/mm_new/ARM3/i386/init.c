@@ -23,6 +23,9 @@ MMPTE DemandZeroPte  = {{ (MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS) }};
 /* Template PTE for prototype page */
 MMPTE PrototypePte = {{(MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS) | PTE_PROTOTYPE | (MI_PTE_LOOKUP_NEEDED << PAGE_SHIFT)}};
 
+/* Template PTE for decommited page */
+MMPTE MmDecommittedPte = {{MM_DECOMMIT << MM_PTE_SOFTWARE_PROTECTION_BITS}};
+
 extern PMMCOLOR_TABLES MmFreePagesByColor[FreePageList + 1];
 extern PMEMORY_ALLOCATION_DESCRIPTOR MxFreeDescriptor;
 extern MEMORY_ALLOCATION_DESCRIPTOR MxOldFreeDescriptor;
