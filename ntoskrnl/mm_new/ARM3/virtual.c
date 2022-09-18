@@ -16,6 +16,7 @@ extern PVOID MmPagedPoolEnd;
 extern KGUARDED_MUTEX MmSectionCommitMutex;
 extern SIZE_T MmSharedCommit;
 extern MMPTE MmDecommittedPte;
+extern MMPTE PrototypePte;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1152,6 +1153,17 @@ MiGetPageProtection(
     return Protect;
 }
 
+VOID
+NTAPI
+MiFlushTbAndCapture(IN PMMVAD Vad,
+                    IN PMMPTE Pte,
+                    IN ULONG ProtectionMask,
+                    IN PMMPFN Pfn,
+                    IN BOOLEAN UpdateDirty)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 MiSetProtectionOnSection(
@@ -1164,8 +1176,314 @@ MiSetProtectionOnSection(
     _In_ ULONG DontCharge,
     _Out_ BOOLEAN* OutLocked)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PETHREAD Thread = PsGetCurrentThread();
+    PMMPDE Pde;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    MMPTE TempPte;
+    MMPTE PteContents;
+    PMMPFN Pfn;
+    ULONG_PTR VirtualAddress;
+    ULONG ProtectionMask;
+    ULONG ProtectionMask1;
+    ULONG ProtectionMask2;
+    ULONG QuotaCharge = 0;
+    BOOLEAN IsWriteCopy = FALSE;
+    BOOLEAN UpdateDirty;
+
+    PAGED_CODE();
+    DPRINT("MiSetProtectionOnSection: %p, %p, %p, %X, %X\n", Process, StartingAddress, EndingAddress, NewProtect, DontCharge);
+
+    /* Tell caller nothing is being locked */
+    *OutLocked = FALSE;
+
+    /* This function should only be used for section VADs. Windows ASSERT */
+    ASSERT(FoundVad->u.VadFlags.PrivateMemory == 0);
+
+    if (FoundVad->u.VadFlags.VadType == VadImageMap ||
+        FoundVad->u2.VadFlags2.CopyOnWrite)
+    {
+        if (NewProtect & PAGE_READWRITE)
+        {
+            NewProtect &= ~PAGE_READWRITE;
+            NewProtect |= PAGE_WRITECOPY;
+        }
+
+        if (NewProtect & PAGE_EXECUTE_READWRITE)
+        {
+            NewProtect &= ~PAGE_EXECUTE_READWRITE;
+            NewProtect |= PAGE_EXECUTE_WRITECOPY;
+        }
+    }
+
+    /* Convert and validate the protection mask */
+    ProtectionMask = MiMakeProtectionMask(NewProtect);
+    if (ProtectionMask == MM_INVALID_PROTECTION)
+    {
+        DPRINT1("MiSetProtectionOnSection: Invalid section protect\n");
+        return STATUS_INVALID_PAGE_PROTECTION;
+    }
+
+    ProtectionMask1 = ProtectionMask;
+    if ((ProtectionMask & MM_WRITECOPY) == MM_WRITECOPY)
+    {
+        IsWriteCopy = TRUE;
+        ProtectionMask1 = (ProtectionMask1 & ~1);
+        DPRINT("MiSetProtectionOnSection: IsWriteCopy, ProtectionMask1 %X\n", ProtectionMask1);
+    }
+
+    /* Get the PTE and PDE for the address, as well as the final PTE */
+    Pde = MiAddressToPde(StartingAddress);
+    Pte = MiAddressToPte(StartingAddress);
+    LastPte = MiAddressToPte(EndingAddress);
+
+    DPRINT("MiSetProtectionOnSection: Pde %p, Pte %p, LastPte %p\n", Pde, Pte, LastPte);
+
+    MiLockProcessWorkingSetUnsafe(Process, Thread);
+
+    /* Make the PDE valid, and check the status of the first PTE */
+    MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+
+    if (Pte->u.Long)
+    {
+        if (FoundVad->u.VadFlags.VadType == VadRotatePhysical)
+        {
+            /* Not supported in ARM3 */
+            ASSERT(FoundVad->u.VadFlags.VadType != VadRotatePhysical);
+        }
+        else
+        {
+            /* Capture the page protection and make the PDE valid */
+            *OutProtection = MiGetPageProtection(Pte);
+            MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+        }
+    }
+    else
+    {
+        /* Grab the old protection from the VAD itself */
+        *OutProtection = MmProtectToValue[FoundVad->u.VadFlags.Protection];
+
+        if (FoundVad->u.VadFlags.VadType != VadImageMap)
+        {
+            /* Grab the old protection from the VAD itself */
+            *OutProtection = MmProtectToValue[FoundVad->u.VadFlags.Protection];
+        }
+        else
+        {
+            DPRINT1("MiSetProtectionOnSection: FIXME\n");
+
+            /* Only pagefile-backed section VADs are supported for now */
+            ASSERT(FoundVad->u.VadFlags.VadType != VadImageMap);
+
+            ASSERT(FALSE);
+        }
+    }
+
+    if (IsWriteCopy)
+    {
+        ASSERT(FoundVad->u.VadFlags.VadType != VadRotatePhysical);
+
+        for (; Pte <= LastPte; Pte++)
+        {
+            if (MiIsPteOnPdeBoundary(Pte))
+            {
+                PMMPTE OldPte;
+                ULONG LockChange;
+
+                Pde = MiPteToPde(Pte);
+                DPRINT("MiSetProtectionOnSection: IsWriteCopy\n");
+
+                do
+                {
+                    LockChange = 0;
+
+                    while (TRUE)
+                    {
+                        ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+                        if (Pde->u.Long)
+                        {
+                            if (!Pde->u.Hard.Valid)
+                                LockChange += MiMakeSystemAddressValid(MiPteToAddress(Pde), Process);
+
+                            break;
+                        }
+
+                        OldPte = Pte;
+                        Pde++;
+                        Pte = MiPteToAddress(Pde);
+
+                        if (Pte > LastPte)
+                        {
+                            QuotaCharge += ((LastPte - OldPte) + 1);
+                            goto EndWriteCopy;
+                        }
+
+                        QuotaCharge += (Pte - OldPte);
+                    }
+                }
+                while (LockChange);
+            }
+
+            TempPte = *Pte;
+
+            if (!TempPte.u.Long)
+            {
+                QuotaCharge++;
+            }
+            else if (TempPte.u.Hard.Valid)
+            {
+                if (!TempPte.u.Hard.CopyOnWrite)
+                {
+                    Pfn = MI_PFN_ELEMENT(TempPte.u.Hard.PageFrameNumber);
+                    if (Pfn->u3.e1.PrototypePte)
+                        QuotaCharge++;
+                }
+            }
+            else
+            {
+                if (TempPte.u.Soft.Prototype)
+                {
+                    if (TempPte.u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)
+                    {
+                        if (!((TempPte.u.Soft.Protection & MM_WRITECOPY) != MM_WRITECOPY))
+                            QuotaCharge++;
+                    }
+                    else
+                    {
+                        QuotaCharge++;
+                    }
+                }
+            }
+        }
+
+EndWriteCopy:
+
+        if (!DontCharge && QuotaCharge > 0)
+        {
+            FoundVad->u.VadFlags.CommitCharge += QuotaCharge;
+            Process->CommitCharge += QuotaCharge;
+        }
+    }
+
+    /* Loop all the PTEs now */
+    MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+
+    QuotaCharge = 0;
+
+    while (Pte <= LastPte)
+    {
+        /* Check if we've crossed a PDE boundary and make the new PDE valid too */
+        if (MiIsPteOnPdeBoundary(Pte))
+        {
+            Pde = MiPteToPde(Pte);
+            MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+        }
+
+        /* Capture the PTE and see what we're dealing with */
+        PteContents = *Pte;
+
+        if (!PteContents.u.Long)
+        {
+            /* This used to be a zero PTE and it no longer is, so we must add a reference to the pagetable. */
+            MiIncrementPageTableReferences(MiPteToAddress(Pte));
+
+            /* Create the demand-zero prototype PTE */
+            TempPte = PrototypePte;
+            TempPte.u.Soft.Protection = ProtectionMask;
+            MI_WRITE_INVALID_PTE(Pte, TempPte);
+        }
+        else if (PteContents.u.Hard.Valid)
+        {
+            /* Get the PFN entry */
+            Pfn = MiGetPfnEntry(PFN_FROM_PTE(&PteContents));
+
+            if (NewProtect & (PAGE_NOACCESS | PAGE_GUARD))
+            {
+                ASSERT(FoundVad->u.VadFlags.VadType != VadRotatePhysical);
+
+                DPRINT1("MiSetProtectionOnSection: FIXME MiRemovePageFromWorkingSet()\n");
+                ASSERT(FALSE);
+                *OutLocked = FALSE;
+                continue;
+            }
+
+            UpdateDirty = TRUE;
+
+            if (FoundVad->u.VadFlags.VadType == VadRotatePhysical)
+            {
+                DPRINT1("MiSetProtectionOnSection: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else if (Pfn->u3.e1.PrototypePte)
+            {
+                DPRINT1("MiSetProtectionOnSection: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                /* Write the protection mask */
+                Pfn->OriginalPte.u.Soft.Protection = ProtectionMask1;
+                ProtectionMask2 = ProtectionMask1;
+            }
+
+            /* TLB flush */
+            MiFlushTbAndCapture(FoundVad, Pte, ProtectionMask2, Pfn, UpdateDirty);
+
+            if (FoundVad->u.VadFlags.VadType == VadRotatePhysical)
+            {
+                DPRINT1("MiSetProtectionOnSection: FIXME\n");
+                ASSERT(FALSE);
+            }
+        }
+        else if (PteContents.u.Soft.Prototype)
+        {
+            VirtualAddress = (ULONG_PTR)MiPteToAddress(Pte);
+
+            if (PteContents.u.Soft.PageFileHigh != MI_PTE_LOOKUP_NEEDED &&
+                MiGetProtoPtr(Pte) != MI_GET_PROTOTYPE_PTE_FOR_VPN(FoundVad, (VirtualAddress / PAGE_SIZE)))
+            {
+                DPRINT1("MiSetProtectionOnSection: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                if (!IsWriteCopy && PteContents.u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)
+                {
+                    if ((PteContents.u.Soft.Protection & MM_WRITECOPY) != MM_WRITECOPY)
+                        QuotaCharge++;
+                }
+
+                MI_WRITE_INVALID_PTE(Pte, PrototypePte);
+                Pte->u.Soft.Protection = ProtectionMask;
+            }
+        }
+        else if (PteContents.u.Soft.Transition)
+        {
+            ASSERT(FoundVad->u.VadFlags.VadType != VadRotatePhysical);
+
+            DPRINT1("MiSetProtectionOnSection: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else
+        {
+            /* The PTE is already demand-zero, just update the protection mask */
+            Pte->u.Soft.Protection = ProtectionMask;
+        }
+
+        Pte++;
+    }
+
+    /* Unlock the working set and update quota charges if needed, then return */
+    MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+
+    if (QuotaCharge > 0 && !DontCharge)
+    {
+        FoundVad->u.VadFlags.CommitCharge -= QuotaCharge;
+        Process->CommitCharge -= QuotaCharge;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
