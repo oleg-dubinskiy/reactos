@@ -580,6 +580,8 @@ MmCreatePeb(
     {
         /* Cleanup and exit */
         KeDetachProcess();
+
+        DPRINT1("MmCreatePeb: Status %X\n", Status);
         return Status;
     }
 
@@ -590,6 +592,8 @@ MmCreatePeb(
     {
         /* Cleanup and exit */
         KeDetachProcess();
+
+        DPRINT1("MmCreatePeb: Status %X\n", Status);
         return Status;
     }
 
@@ -740,8 +744,81 @@ MmCreateTeb(
     _In_ PINITIAL_TEB InitialTeb,
     _Out_ PTEB* BaseTeb)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PTEB Teb;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    *BaseTeb = NULL;
+
+    /* Attach to Target */
+    KeAttachProcess(&Process->Pcb);
+
+    /* Allocate the TEB */
+    Status = MiCreatePebOrTeb(Process, sizeof(TEB), (PULONG_PTR)&Teb);
+    if (!NT_SUCCESS(Status))
+    {
+        /* Cleanup and exit */
+        KeDetachProcess();
+
+        DPRINT1("MmCreateTeb: Status %X\n", Status);
+        return Status;
+    }
+
+    /* Use SEH in case we can't load the TEB */
+    _SEH2_TRY
+    {
+        /* Initialize the PEB */
+        RtlZeroMemory(Teb, sizeof(TEB));
+
+        /* Set TIB Data */
+        Teb->NtTib.Self = (PNT_TIB)Teb;
+
+      #ifdef _M_AMD64
+        Teb->NtTib.ExceptionList = NULL;
+      #else
+        Teb->NtTib.ExceptionList = EXCEPTION_CHAIN_END;
+      #endif
+
+        /* Identify this as an OS/2 V3.0 ("Cruiser") TIB */
+        Teb->NtTib.Version = (30 << 8);
+
+        /* Set TEB Data */
+        Teb->ClientId = *ClientId;
+        Teb->RealClientId = *ClientId;
+        Teb->ProcessEnvironmentBlock = Process->Peb;
+        Teb->CurrentLocale = PsDefaultThreadLocaleId;
+
+        /* Check if we have a grandparent TEB */
+        if (!InitialTeb->PreviousStackBase &&
+            !InitialTeb->PreviousStackLimit)
+        {
+            /* Use initial TEB values */
+            Teb->NtTib.StackBase = InitialTeb->StackBase;
+            Teb->NtTib.StackLimit = InitialTeb->StackLimit;
+            Teb->DeallocationStack = InitialTeb->AllocatedStackBase;
+        }
+        else
+        {
+            /* Use grandparent TEB values */
+            Teb->NtTib.StackBase = InitialTeb->PreviousStackBase;
+            Teb->NtTib.StackLimit = InitialTeb->PreviousStackLimit;
+        }
+
+        /* Initialize the static unicode string */
+        Teb->StaticUnicodeString.MaximumLength = sizeof(Teb->StaticUnicodeBuffer);
+        Teb->StaticUnicodeString.Buffer = Teb->StaticUnicodeBuffer;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        /* Get error code */
+        Status = _SEH2_GetExceptionCode();
+    }
+    _SEH2_END;
+
+    KeDetachProcess();
+
+    *BaseTeb = Teb;
+
+    return Status;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
