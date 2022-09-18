@@ -2881,8 +2881,76 @@ NtQueryVirtualMemory(
     _In_ SIZE_T MemoryInformationLength,
     _Out_ PSIZE_T ReturnLength)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("NtQueryVirtualMemory: %p, %X\n", BaseAddress, MemoryInformationClass);
+
+    /* Bail out if the address is invalid */
+    if (BaseAddress > MM_HIGHEST_USER_ADDRESS)
+        return STATUS_INVALID_PARAMETER;
+
+    /* Probe return buffer */
+    if (PreviousMode != KernelMode)
+    {
+        _SEH2_TRY
+        {
+            ProbeForWrite(MemoryInformation, MemoryInformationLength, sizeof(ULONG_PTR));
+
+            if (ReturnLength)
+                ProbeForWriteSize_t(ReturnLength);
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            Status = _SEH2_GetExceptionCode();
+        }
+        _SEH2_END;
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("NtQueryVirtualMemory: Status %X\n", Status);
+            return Status;
+        }
+    }
+
+    switch(MemoryInformationClass)
+    {
+        case MemoryBasicInformation:
+        {
+            /* Validate the size information of the class */
+            if (MemoryInformationLength < sizeof(MEMORY_BASIC_INFORMATION))
+                /* The size is invalid */
+                return STATUS_INFO_LENGTH_MISMATCH;
+
+            Status = MiQueryMemoryBasicInformation(ProcessHandle,
+                                                   BaseAddress,
+                                                   MemoryInformation,
+                                                   MemoryInformationLength,
+                                                   ReturnLength);
+            break;
+        }
+        case MemorySectionName:
+        {
+            /* Validate the size information of the class */
+            if (MemoryInformationLength < sizeof(MEMORY_SECTION_NAME))
+                /* The size is invalid */
+                return STATUS_INFO_LENGTH_MISMATCH;
+
+            Status = MiQueryMemorySectionName(ProcessHandle,
+                                              BaseAddress,
+                                              MemoryInformation,
+                                              MemoryInformationLength,
+                                              ReturnLength);
+            break;
+        }
+        case MemoryWorkingSetList:
+        case MemoryBasicVlmInformation:
+        default:
+            DPRINT1("Unhandled memory information class %d\n", MemoryInformationClass);
+            break;
+    }
+
+    return Status;
 }
 
 NTSTATUS
