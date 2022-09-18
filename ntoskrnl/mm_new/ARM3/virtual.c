@@ -1562,6 +1562,342 @@ MiIsEntireRangeCommitted(
     return TRUE;
 }
 
+NTSTATUS
+NTAPI
+MiProtectVirtualMemory(
+    _In_ PEPROCESS Process,
+    _Inout_ PVOID* OutBase,
+    _Inout_ SIZE_T* OutSize,
+    _In_ ULONG NewProtection,
+    _Out_ ULONG* OutProtection OPTIONAL)
+{
+    PETHREAD Thread = PsGetCurrentThread();
+    PMMSUPPORT AddressSpace;
+    PMMPDE Pde;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    PMMPTE Proto;
+    PMMPTE LastProto;
+    MMPTE PteContents;
+    PMMVAD Vad;
+    PMMPFN Pfn;
+    ULONG_PTR StartingAddress;
+    ULONG_PTR EndingAddress;
+    ULONG ProtectionMask;
+    ULONG OldProtect;
+    BOOLEAN Committed;
+    BOOLEAN IsLock = FALSE;
+
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("MiProtectVirtualMemory: %p, %X, %X\n", Process, NewProtection, (OutProtection ? *OutProtection : 0));
+
+    /* Calculate the protection mask and make sure it's valid */
+    ProtectionMask = MiMakeProtectionMask(NewProtection);
+    if (ProtectionMask == MM_INVALID_PROTECTION)
+    {
+        DPRINT1("MiProtectVirtualMemory: Invalid protection mask\n");
+        return STATUS_INVALID_PAGE_PROTECTION;
+    }
+
+    /* Calculate base address for the VAD */
+    StartingAddress = (ULONG_PTR)PAGE_ALIGN(*OutBase);
+    EndingAddress = (((ULONG_PTR)*OutBase + *OutSize - 1) | (PAGE_SIZE - 1));
+
+    /* Lock the address space and make sure the process isn't already dead */
+    AddressSpace = MmGetCurrentAddressSpace();
+    MmLockAddressSpace(AddressSpace);
+
+    if (Process->VmDeleted)
+    {
+        DPRINT1("MiProtectVirtualMemory: Process is dying\n");
+        Status = STATUS_PROCESS_IS_TERMINATING;
+        goto ErrorExit;
+    }
+
+    /* Get the VAD for this address range, and make sure it exists */
+    Vad = (PMMVAD)MiCheckForConflictingNode((StartingAddress / PAGE_SIZE),
+                                            (EndingAddress / PAGE_SIZE),
+                                            &Process->VadRoot);
+    if (!Vad)
+    {
+        DPRINT("MiProtectVirtualMemory: Could not find a VAD for this allocation\n");
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto ErrorExit;
+    }
+
+    /* Make sure the address is within this VAD's boundaries */
+    if (((ULONG_PTR)StartingAddress / PAGE_SIZE) < Vad->StartingVpn ||
+        ((ULONG_PTR)EndingAddress / PAGE_SIZE) > Vad->EndingVpn)
+    {
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto ErrorExit;
+    }
+
+    if (Vad->u.VadFlags.VadType == VadLargePages)
+    {
+        if (ProtectionMask == Vad->u.VadFlags.Protection)
+        {
+            DPRINT1("MiProtectVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        DPRINT1("MiProtectVirtualMemory: STATUS_CONFLICTING_ADDRESSES\n");
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto ErrorExit;
+    }
+
+    if (Vad->u.VadFlags.VadType == VadAwe)
+    {
+        if (ProtectionMask == 0x18 ||
+            ProtectionMask == MM_READONLY ||
+            ProtectionMask == MM_READWRITE)
+        {
+            DPRINT1("MiProtectVirtualMemory: FIXME MiProtectAweRegion()\n");
+            ASSERT(FALSE);
+        }
+
+        DPRINT1("MiProtectVirtualMemory: STATUS_CONFLICTING_ADDRESSES\n");
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto ErrorExit;
+    }
+
+    /* This kind of VADs are not supported */
+    if (Vad->u.VadFlags.VadType == VadDevicePhysicalMemory)
+    {
+        DPRINT1("MiProtectVirtualMemory: Illegal VAD for attempting to set protection\n");
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto ErrorExit;
+    }
+
+    /* Check for a VAD whose protection can't be changed */
+    if (Vad->u.VadFlags.NoChange)
+    {
+        DPRINT1("MiProtectVirtualMemory: FIXME MiCheckSecuredVad()\n");
+        ASSERT(FALSE);
+    }
+
+    /* Is this section, or private memory? */
+    if (!Vad->u.VadFlags.PrivateMemory)
+    {
+        if (Vad->u.VadFlags.VadType == VadLargePageSection)
+        {
+            if (ProtectionMask == Vad->u.VadFlags.Protection)
+            {
+                /* Not yet supported */
+                DPRINT1("MiProtectVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            DPRINT1("MiProtectVirtualMemory: Illegal VAD for attempting to set protection\n");
+            Status = STATUS_CONFLICTING_ADDRESSES;
+            goto ErrorExit;
+        }
+
+        if (Vad->u.VadFlags.VadType == VadRotatePhysical)
+        {
+            if ((NewProtection & PAGE_EXECUTE_WRITECOPY) ||
+                (NewProtection & PAGE_WRITECOPY) ||
+                (NewProtection & PAGE_NOACCESS) ||
+                (NewProtection & PAGE_GUARD))
+            {
+                DPRINT1("MiProtectVirtualMemory: Illegal VAD for attempting to set protection\n");
+                Status = STATUS_INVALID_PAGE_PROTECTION;
+                goto ErrorExit;
+            }
+        }
+        else
+        {
+            /* Not valid on section files */
+            if (NewProtection & (PAGE_NOCACHE | PAGE_WRITECOMBINE))
+            {
+                DPRINT1("MiProtectVirtualMemory: Invalid protection flags for section\n");
+                Status = STATUS_INVALID_PARAMETER_4;
+                goto ErrorExit;
+            }
+
+            /* Check if data or page file mapping protection PTE is compatible */
+            if (!Vad->ControlArea->u.Flags.Image)
+            {
+                DPRINT1("MiProtectVirtualMemory: FIXME MiIsPteProtectionCompatible()\n");
+                ASSERT(FALSE);
+            }
+        }
+
+        DPRINT("MiProtectVirtualMemory: Section protection\n");
+
+        if (!Vad->ControlArea->u.Flags.File || Vad->ControlArea->u.Flags.Image)
+        {
+            if (Vad->u.VadFlags.VadType == VadImageMap)
+            {
+                DPRINT("MiProtectVirtualMemory: FIXME for large pages\n");
+            }
+
+            Proto = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, (StartingAddress / PAGE_SIZE));
+            LastProto = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, (EndingAddress / PAGE_SIZE));
+
+            KeAcquireGuardedMutexUnsafe(&MmSectionCommitMutex);
+
+            for (; Proto <= LastProto; Proto++)
+            {
+                if (!Proto->u.Long)
+                {
+                    KeReleaseGuardedMutexUnsafe(&MmSectionCommitMutex);
+                    Status = STATUS_NOT_COMMITTED;
+                    goto ErrorExit;
+                }
+            }
+
+            KeReleaseGuardedMutexUnsafe (&MmSectionCommitMutex);
+        }
+
+        Status = MiSetProtectionOnSection(Process,
+                                          Vad,
+                                          StartingAddress,
+                                          EndingAddress,
+                                          NewProtection,
+                                          &OldProtect,
+                                          FALSE,
+                                          &IsLock);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MiProtectVirtualMemory: Status %X\n", Status);
+            goto ErrorExit;
+        }
+    }
+    else
+    {
+        /* Private memory, check protection flags */
+        if (NewProtection & PAGE_WRITECOPY ||
+            NewProtection & PAGE_EXECUTE_WRITECOPY)
+        {
+            DPRINT1("MiProtectVirtualMemory: Invalid protection flags for private memory\n");
+            Status = STATUS_INVALID_PARAMETER_4;
+            goto ErrorExit;
+        }
+
+        /* Lock the working set */
+        MiLockProcessWorkingSetUnsafe(Process, Thread);
+
+        /* Check if all pages in this range are committed */
+        Committed = MiIsEntireRangeCommitted(StartingAddress, EndingAddress, Vad, Process);
+        if (!Committed)
+        {
+            MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+
+            DPRINT1("MiProtectVirtualMemory: The entire range is not committed\n");
+            Status = STATUS_NOT_COMMITTED;
+            goto ErrorExit;
+        }
+
+        /* Compute starting and ending PTE and PDE addresses */
+        Pde = MiAddressToPde(StartingAddress);
+        Pte = MiAddressToPte(StartingAddress);
+        LastPte = MiAddressToPte(EndingAddress);
+
+        /* Make this PDE valid */
+        MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+
+        /* Save protection of the first page */
+        if (Pte->u.Long)
+        {
+            /* Capture the page protection and make the PDE valid */
+            OldProtect = MiGetPageProtection(Pte);
+            MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+        }
+        else
+        {
+            /* Grab the old protection from the VAD itself */
+            OldProtect = MmProtectToValue[Vad->u.VadFlags.Protection];
+        }
+
+        /* Loop all the PTEs now */
+        while (Pte <= LastPte)
+        {
+            /* Check if we've crossed a PDE boundary and make the new PDE valid too */
+            if (MiIsPteOnPdeBoundary(Pte))
+            {
+                Pde = MiPteToPde(Pte);
+                MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+            }
+
+            /* Capture the PTE and check if it was empty */
+            PteContents = *Pte;
+            if (!PteContents.u.Long)
+            {
+                /* This used to be a zero PTE and it no longer is,
+                   so we must add a reference to the pagetable.
+                */
+                MiIncrementPageTableReferences(MiPteToAddress(Pte));
+            }
+
+            /* Check what kind of PTE we are dealing with */
+            if (PteContents.u.Hard.Valid)
+            {
+                /* Get the PFN entry */
+                Pfn = MiGetPfnEntry(PFN_FROM_PTE(&PteContents));
+
+                if (Pfn->u3.e1.PrototypePte)
+                {
+                    /* We don't support this yet */
+                    ASSERT(Pfn->u3.e1.PrototypePte == 0);
+                }
+
+                /* Check if the page should not be accessible at all */
+                if ((NewProtection & PAGE_NOACCESS) || (NewProtection & PAGE_GUARD))
+                {
+                    DPRINT1("MiProtectVirtualMemory: FIXME MiRemovePageFromWorkingSet()\n");
+                    ASSERT(FALSE);
+                    continue;
+                }
+
+                /* Write the protection mask and write it with a TLB flush */
+                Pfn->OriginalPte.u.Soft.Protection = ProtectionMask;
+                MiFlushTbAndCapture(Vad, Pte, ProtectionMask, Pfn, TRUE);
+            }
+            else if (PteContents.u.Soft.Prototype)
+            {
+                /* We don't support these cases yet */
+                ASSERT(PteContents.u.Soft.Prototype == 0);
+            }
+            else if (PteContents.u.Soft.Prototype)
+            {
+                /* We don't support these cases yet */
+                ASSERT(PteContents.u.Soft.Transition == 0);
+            }
+            else
+            {
+                /* The PTE is already demand-zero, just update the protection mask */
+                PteContents.u.Soft.Protection = ProtectionMask;
+                MI_WRITE_INVALID_PTE(Pte, PteContents);
+                ASSERT(Pte->u.Long != 0);
+            }
+
+            /* Move to the next PTE */
+            Pte++;
+        }
+
+        /* Unlock the working set */
+        MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+    }
+
+    /* Unlock the address space */
+    MmUnlockAddressSpace(AddressSpace);
+
+    /* Return parameters and success */
+    *OutSize = (EndingAddress - StartingAddress + 1);
+    *OutBase = (PVOID)StartingAddress;
+    *OutProtection = OldProtect;
+
+    return STATUS_SUCCESS;
+
+ErrorExit:
+
+    /* Unlock the address space and return the failure code */
+    MmUnlockAddressSpace(AddressSpace);
+    return Status;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS
@@ -1752,13 +2088,130 @@ NTSTATUS
 NTAPI
 NtProtectVirtualMemory(
     _In_ HANDLE ProcessHandle,
-    _Inout_ PVOID* UnsafeBaseAddress,
-    _Inout_ SIZE_T* UnsafeNumberOfBytesToProtect,
-    _In_ ULONG NewAccessProtection,
-    _Out_ PULONG UnsafeOldAccessProtection)
+    _Inout_ PVOID* OutBase,
+    _Inout_ SIZE_T* OutSize,
+    _In_ ULONG NewProtection,
+    _Out_ ULONG* OutProtection)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PEPROCESS CurrentProcess = PsGetCurrentProcess();
+    KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
+    PEPROCESS Process;
+    PVOID BaseAddress = NULL;
+    ULONG OldProtection;
+    ULONG ProtectionMask;
+    SIZE_T Size;
+    KAPC_STATE ApcState;
+    BOOLEAN Attached = FALSE;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("NtProtectVirtualMemory: %p, %X, %X\n", ProcessHandle, NewProtection, (OutProtection ? *OutProtection : 0));
+
+    /* Check for valid protection flags */
+    ProtectionMask = MiMakeProtectionMask(NewProtection);
+    if (ProtectionMask == MM_INVALID_PROTECTION)
+    {
+        DPRINT("NtProtectVirtualMemory: STATUS_INVALID_PAGE_PROTECTION\n");
+        return STATUS_INVALID_PAGE_PROTECTION;
+    }
+
+    /* Check if we came from user mode */
+    if (PreviousMode != KernelMode)
+    {
+        /* Enter SEH for probing */
+        _SEH2_TRY
+        {
+            /* Validate all outputs */
+            ProbeForWritePointer(OutBase);
+            ProbeForWriteSize_t(OutSize);
+            ProbeForWriteUlong(OutProtection);
+
+            /* Capture them */
+            BaseAddress = *OutBase;
+            Size = *OutSize;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Get exception code */
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+    }
+    else
+    {
+        /* Capture directly */
+        BaseAddress = *OutBase;
+        Size = *OutSize;
+    }
+
+    /* Catch illegal base address */
+    if (BaseAddress > MM_HIGHEST_USER_ADDRESS)
+    {
+        DPRINT("NtProtectVirtualMemory: STATUS_INVALID_PARAMETER_2\n");
+        return STATUS_INVALID_PARAMETER_2;
+    }
+
+    /* Catch illegal region size */
+    if (((ULONG_PTR)BaseAddress + Size) > MmUserProbeAddress)
+    {
+        /* Fail */
+        DPRINT("NtProtectVirtualMemory: STATUS_INVALID_PARAMETER_3\n");
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    /* 0 is also illegal */
+    if (!Size)
+    {
+        DPRINT("NtProtectVirtualMemory: STATUS_INVALID_PARAMETER_3\n");
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    /* Get a reference to the process */
+    Status = ObReferenceObjectByHandle(ProcessHandle,
+                                       PROCESS_VM_OPERATION,
+                                       PsProcessType,
+                                       PreviousMode,
+                                       (PVOID *)&Process,
+                                       NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("NtProtectVirtualMemory: Status %X\n", Status);
+        return Status;
+    }
+
+    /* Check if we should attach */
+    if (CurrentProcess != Process)
+    {
+        /* Do it */
+        KeStackAttachProcess(&Process->Pcb, &ApcState);
+        Attached = TRUE;
+    }
+
+    /* Do the actual work */
+    Status = MiProtectVirtualMemory(Process, &BaseAddress, &Size, NewProtection, &OldProtection);
+
+    /* Detach if needed */
+    if (Attached)
+        KeUnstackDetachProcess(&ApcState);
+
+    /* Release reference */
+    ObDereferenceObject(Process);
+
+    /* Enter SEH to return data */
+    _SEH2_TRY
+    {
+        /* Return data to user */
+        *OutProtection = OldProtection;
+        *OutBase = BaseAddress;
+        *OutSize = Size;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        ;
+    }
+    _SEH2_END;
+
+    return Status;
 }
 
 NTSTATUS
