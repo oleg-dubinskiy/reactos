@@ -1685,6 +1685,33 @@ MmGetCurrentAddressSpace(VOID)
     return &((PEPROCESS)KeGetCurrentThread()->ApcState.Process)->Vm;
 }
 
+extern KSPIN_LOCK MmExpansionLock;
+extern PETHREAD MiExpansionLockOwner;
+
+FORCEINLINE
+KIRQL
+MiAcquireExpansionLock(VOID)
+{
+    KIRQL OldIrql;
+
+    ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+    KeAcquireSpinLock(&MmExpansionLock, &OldIrql);
+    ASSERT(MiExpansionLockOwner == NULL);
+    MiExpansionLockOwner = PsGetCurrentThread();
+    return OldIrql;
+}
+
+FORCEINLINE
+VOID
+MiReleaseExpansionLock(
+    _In_ KIRQL OldIrql)
+{
+    ASSERT(MiExpansionLockOwner == PsGetCurrentThread());
+    MiExpansionLockOwner = NULL;
+    KeReleaseSpinLock(&MmExpansionLock, OldIrql);
+    ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+}
+
 /* ARM3\i386\init.c */
 INIT_FUNCTION
 VOID

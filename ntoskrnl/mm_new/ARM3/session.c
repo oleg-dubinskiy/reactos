@@ -26,6 +26,8 @@ PFN_NUMBER MiSessionTagPages;
 PFN_NUMBER MiSessionTagSizePages;
 PFN_NUMBER MiSessionBigPoolPages;
 PFN_NUMBER MiSessionCreateCharge;
+KSPIN_LOCK MmExpansionLock;
+PETHREAD MiExpansionLockOwner;
 
 extern PVOID MiSessionImageStart;
 extern PVOID MiSessionImageEnd;
