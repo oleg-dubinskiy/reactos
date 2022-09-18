@@ -1036,8 +1036,16 @@ MiAddViewsForSectionWithPfn(
     _In_ PMSUBSECTION StartMappedSubsection,
     _In_ ULONGLONG LastPteOffset)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("MiAddViewsForSectionWithPfn: StartMappedSubsection %p, LastPteOffset %I64X\n", StartMappedSubsection, LastPteOffset);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+    Status = MiAddViewsForSection(StartMappedSubsection, LastPteOffset, OldIrql);
+    ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+
+    return Status;
 }
 
 NTSTATUS
@@ -5653,6 +5661,19 @@ MiCheckControlAreaStatus(
     *OutOldIrql = OldIrql;
 
     return FALSE;
+}
+
+NTSTATUS
+NTAPI
+MiQueryMemorySectionName(
+    _In_ HANDLE ProcessHandle,
+    _In_ PVOID BaseAddress,
+    _Out_ PVOID MemoryInformation,
+    _In_ SIZE_T MemoryInformationLength,
+    _Out_ SIZE_T* ReturnLength)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
