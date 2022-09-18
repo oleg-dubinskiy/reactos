@@ -3326,6 +3326,57 @@ MiCreateDataFileMap(
     return STATUS_SUCCESS;
 }
 
+BOOLEAN
+NTAPI
+MiCheckProtoPtePageState(
+    _In_ PMMPTE SectionProto,
+    _In_ KIRQL OldIrql,
+    _Out_ BOOLEAN* OutIsLock)
+{
+    PMMPTE ProtoPte;
+    MMPTE TempPte;
+    PMMPFN Pfn;
+
+    DPRINT("MiCheckProtoPtePageState: SectionProto %p, OldIrql %X\n", SectionProto, OldIrql);
+
+    *OutIsLock = FALSE;
+
+    ProtoPte = MiAddressToPte(SectionProto);
+
+    if (!ProtoPte->u.Hard.Valid)
+        MiCheckPdeForPagedPool(SectionProto);
+
+    TempPte.u.Long = ProtoPte->u.Long;
+
+    if (TempPte.u.Hard.Valid)
+    {
+        Pfn = MI_PFN_ELEMENT(TempPte.u.Hard.PageFrameNumber);
+
+        if (Pfn->u2.ShareCount == 1)
+            return FALSE;
+
+        return TRUE;
+    }
+
+    if (!TempPte.u.Soft.Prototype && TempPte.u.Soft.Transition)
+        return FALSE;
+
+    Pfn = MI_PFN_ELEMENT(TempPte.u.Trans.PageFrameNumber);
+
+    if (Pfn->u3.e1.PageLocation < ActiveAndValid)
+        return FALSE;
+
+    if (OldIrql != MM_NOIRQL)
+    {
+        DPRINT1("MmPurgeSection: FIXME\n");
+        ASSERT(FALSE);
+        //MiMakeSystemAddressValidPfn(SectionProto, OldIrql);
+        *OutIsLock = TRUE;
+    }
+
+    return TRUE;
+}
+
 NTSTATUS
 NTAPI 
 MmFlushSection(
@@ -5114,57 +5165,6 @@ MiReferenceSubsection(
 Exit:
 
     MappedSubsection->u2.SubsectionFlags2.SubsectionAccessed = 1;
-    return TRUE;
-}
-
-BOOLEAN
-NTAPI
-MiCheckProtoPtePageState(
-    _In_ PMMPTE SectionProto,
-    _In_ KIRQL OldIrql,
-    _Out_ BOOLEAN* OutIsLock)
-{
-    PMMPTE ProtoPte;
-    MMPTE TempPte;
-    PMMPFN Pfn;
-
-    DPRINT("MiCheckProtoPtePageState: SectionProto %p, OldIrql %X\n", SectionProto, OldIrql);
-
-    *OutIsLock = FALSE;
-
-    ProtoPte = MiAddressToPte(SectionProto);
-
-    if (!ProtoPte->u.Hard.Valid)
-        MiCheckPdeForPagedPool(SectionProto);
-
-    TempPte.u.Long = ProtoPte->u.Long;
-
-    if (TempPte.u.Hard.Valid)
-    {
-        Pfn = MI_PFN_ELEMENT(TempPte.u.Hard.PageFrameNumber);
-
-        if (Pfn->u2.ShareCount == 1)
-            return FALSE;
-
-        return TRUE;
-    }
-
-    if (!TempPte.u.Soft.Prototype && TempPte.u.Soft.Transition)
-        return FALSE;
-
-    Pfn = MI_PFN_ELEMENT(TempPte.u.Trans.PageFrameNumber);
-
-    if (Pfn->u3.e1.PageLocation < ActiveAndValid)
-        return FALSE;
-
-    if (OldIrql != MM_NOIRQL)
-    {
-        DPRINT1("MmPurgeSection: FIXME\n");
-        ASSERT(FALSE);
-        //MiMakeSystemAddressValidPfn(SectionProto, OldIrql);
-        *OutIsLock = TRUE;
-    }
-
     return TRUE;
 }
 
