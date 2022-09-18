@@ -1064,8 +1064,92 @@ NTAPI
 MiGetPageProtection(
     _In_ PMMPTE Pte)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    PEPROCESS CurrentProcess;
+    PETHREAD CurrentThread;
+    PMMPTE Pde;
+    PMMPFN Pfn;
+    PMMPTE Proto;
+    MMPTE PteContents;
+    ULONG Protect;
+    BOOLEAN WsShared = 0;
+    BOOLEAN WsSafe = 0;
+    KIRQL OldIrql;
+
+    ASSERT(Pte < (PMMPTE)PTE_TOP);
+
+    PteContents.u.Long = Pte->u.Long;
+    ASSERT(PteContents.u.Long != 0);
+
+    DPRINT("MiGetPageProtection: Pte %p [%X]\n", Pte, PteContents.u.Long);
+
+    if (PteContents.u.Soft.Valid || !PteContents.u.Soft.Prototype)
+    {
+        if (!PteContents.u.Hard.Valid)
+            return MmProtectToValue[PteContents.u.Soft.Protection];
+
+        Pfn = MI_PFN_ELEMENT(PteContents.u.Hard.PageFrameNumber);
+
+        if (Pfn->u3.e1.PrototypePte)
+        {
+            DPRINT("MiGetPageProtection: FIXME MiLocateWsle()\n");
+            return MmProtectToValue[Pfn->OriginalPte.u.Soft.Protection];
+        }
+
+        if (!Pfn->u4.AweAllocation)
+            return MmProtectToValue[Pfn->OriginalPte.u.Soft.Protection];
+
+        if (!PteContents.u.Hard.Owner)
+            return PAGE_NOACCESS;
+
+        if (PteContents.u.Hard.Write)
+            return PAGE_READWRITE;
+
+        return PAGE_READONLY;
+    }
+
+    if (PteContents.u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)
+        return MmProtectToValue[PteContents.u.Soft.Protection];
+
+    CurrentThread = PsGetCurrentThread();
+    CurrentProcess = PsGetCurrentProcess();
+
+    MiUnlockProcessWorkingSetForFault(CurrentProcess, CurrentThread, &WsSafe, &WsShared);
+
+    Proto = MiGetProtoPtr(&PteContents);
+    PteContents.u.Long = Proto->u.Long;
+
+    if (PteContents.u.Hard.Valid)
+    {
+        Pde = MiAddressToPde(Proto);
+
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        if (!Pde->u.Hard.Valid)
+            MiMakeSystemAddressValidPfn(Proto, OldIrql);
+
+        PteContents.u.Long = Proto->u.Long;
+        ASSERT(PteContents.u.Long != 0);
+
+        if (PteContents.u.Hard.Valid)
+        {
+            Pfn = MI_PFN_ELEMENT(PteContents.u.Hard.PageFrameNumber);
+            Protect = MmProtectToValue[Pfn->OriginalPte.u.Soft.Protection];
+        }
+        else
+        {
+            Protect = MmProtectToValue[PteContents.u.Soft.Protection];
+        }
+
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    }
+    else
+    {
+        Protect = MmProtectToValue[PteContents.u.Soft.Protection];
+    }
+
+    MiLockProcessWorkingSetForFault(CurrentProcess, CurrentThread, WsSafe, WsShared);
+
+    return Protect;
 }
 
 NTSTATUS
