@@ -242,6 +242,209 @@ Exit:
 
 NTSTATUS
 NTAPI
+MiDoPoolCopy(
+    _In_ PEPROCESS SourceProcess,
+    _In_ PVOID SourceAddress,
+    _In_ PEPROCESS TargetProcess,
+    _Out_ PVOID TargetAddress,
+    _In_ SIZE_T BufferSize,
+    _In_ KPROCESSOR_MODE PreviousMode,
+    _Out_ PSIZE_T ReturnSize)
+{
+    UCHAR StackBuffer[MI_POOL_COPY_BYTES];
+    PVOID CurrentAddress = SourceAddress;
+    PVOID CurrentTargetAddress = TargetAddress;
+    PVOID PoolAddress;
+    ULONG_PTR BadAddress;
+    SIZE_T TotalSize;
+    SIZE_T CurrentSize;
+    SIZE_T RemainingSize;
+    volatile BOOLEAN FailedInProbe = FALSE;
+    volatile BOOLEAN HavePoolAddress = FALSE;
+    BOOLEAN HaveBadAddress;
+    KAPC_STATE ApcState;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    PAGED_CODE();
+
+    DPRINT("MiDoPoolCopy: %X, %p, %p, %p, %p\n",
+           BufferSize, SourceProcess, SourceAddress, TargetProcess, TargetAddress);
+
+    /* Calculate the maximum amount of data to move */
+    TotalSize = MI_MAX_TRANSFER_SIZE;
+
+    if (BufferSize <= MI_MAX_TRANSFER_SIZE)
+        TotalSize = BufferSize;
+
+    CurrentSize = TotalSize;
+    RemainingSize = BufferSize;
+
+    /* Check if we can use the stack */
+    if (BufferSize <= MI_POOL_COPY_BYTES)
+    {
+        /* Use it */
+        PoolAddress = (PVOID)StackBuffer;
+    }
+    else
+    {
+        /* Allocate pool */
+        PoolAddress = ExAllocatePoolWithTag(NonPagedPool, TotalSize, 'VmRw');
+        if (!PoolAddress)
+        {
+            DPRINT1("MiDoPoolCopy: FIXME while (TotalSize / 2)\n");
+            ASSERT(FALSE);
+        }
+
+        HavePoolAddress = TRUE;
+    }
+
+    /* Loop as long as there is still data */
+    while (RemainingSize > 0)
+    {
+        /* Check if this transfer will finish everything off */
+        if (RemainingSize < CurrentSize)
+            CurrentSize = RemainingSize;
+
+        /* Attach to the source address space */
+        KeStackAttachProcess(&SourceProcess->Pcb, &ApcState);
+
+        /* Check that state is sane */
+        ASSERT(FailedInProbe == FALSE);
+        ASSERT(Status == STATUS_SUCCESS);
+
+        /* Protect user-mode copy */
+        _SEH2_TRY
+        {
+            /* If this is our first time, probe the buffer */
+            if (CurrentAddress == SourceAddress && PreviousMode != KernelMode)
+            {
+                /* Catch a failure here */
+                FailedInProbe = TRUE;
+
+                /* Do the probe */
+                ProbeForRead(SourceAddress, BufferSize, sizeof(CHAR));
+
+                /* Passed */
+                FailedInProbe = FALSE;
+            }
+
+            /* Do the copy */
+            RtlCopyMemory(PoolAddress, CurrentAddress, CurrentSize);
+        }
+        _SEH2_EXCEPT(MiGetExceptionInfo(_SEH2_GetExceptionInformation(),
+                                        &HaveBadAddress,
+                                        &BadAddress))
+        {
+            *ReturnSize = BufferSize - RemainingSize;
+
+            /* Check if we failed during the probe */
+            if (FailedInProbe)
+            {
+                /* Exit */
+                Status = _SEH2_GetExceptionCode();
+            }
+            else
+            {
+                /* We failed during the move.
+                   Check if we know exactly where we stopped copying
+                */
+                if (HaveBadAddress)
+                    /* Return the exact number of bytes copied */
+                    *ReturnSize = BadAddress - (ULONG_PTR)SourceAddress;
+
+                /* Return partial copy */
+                Status = STATUS_PARTIAL_COPY;
+            }
+        }
+        _SEH2_END
+
+        /* Let go of the source */
+        KeUnstackDetachProcess(&ApcState);
+
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("MiDoPoolCopy: Status %X\n", Status);
+            goto Exit;
+        }
+
+        /* Grab the target process */
+        KeStackAttachProcess(&TargetProcess->Pcb, &ApcState);
+
+        _SEH2_TRY
+        {
+            /* Check if this is our first time through */
+            if ((CurrentTargetAddress == TargetAddress) && (PreviousMode != KernelMode))
+            {
+                /* Catch a failure here */
+                FailedInProbe = TRUE;
+
+                /* Do the probe */
+                ProbeForWrite(TargetAddress, BufferSize, sizeof(CHAR));
+
+                /* Passed */
+                FailedInProbe = FALSE;
+            }
+
+            /* Now do the actual move */
+            RtlCopyMemory(CurrentTargetAddress, PoolAddress, CurrentSize);
+        }
+        _SEH2_EXCEPT(MiGetExceptionInfo(_SEH2_GetExceptionInformation(),
+                                        &HaveBadAddress,
+                                        &BadAddress))
+        {
+            *ReturnSize = BufferSize - RemainingSize;
+
+            /* Check if we failed during the probe */
+            if (FailedInProbe)
+            {
+                /* Exit */
+                Status = _SEH2_GetExceptionCode();
+            }
+            else
+            {
+                /* Otherwise we failed during the move.
+                   Check if we know exactly where we stopped copying
+                */
+                if (HaveBadAddress)
+                    /* Return the exact number of bytes copied */
+                    *ReturnSize = BadAddress - (ULONG_PTR)SourceAddress;
+
+                /* Return partial copy */
+                Status = STATUS_PARTIAL_COPY;
+            }
+        }
+        _SEH2_END;
+
+        /* Detach from target */
+        KeUnstackDetachProcess(&ApcState);
+
+        /* Check for SEH status */
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("MiDoPoolCopy: Status %X\n", Status);
+            goto Exit;
+        }
+
+        /* Update location and size */
+        RemainingSize -= CurrentSize;
+        CurrentAddress = (PVOID)((ULONG_PTR)CurrentAddress + CurrentSize);
+        CurrentTargetAddress = (PVOID)((ULONG_PTR)CurrentTargetAddress + CurrentSize);
+    }
+
+Exit:
+
+    /* Check if we had allocated pool */
+    if (HavePoolAddress)
+        ExFreePoolWithTag(PoolAddress, 'VmRw');
+
+    /* All bytes read */
+    if (Status == STATUS_SUCCESS)
+        *ReturnSize = BufferSize;
+
+    return Status;
+}
+NTSTATUS
+NTAPI
 MmCopyVirtualMemory(
     _In_ PEPROCESS SourceProcess,
     _In_ PVOID SourceAddress,
