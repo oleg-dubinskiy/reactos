@@ -3707,8 +3707,156 @@ MmFlushSection(
     _Out_ IO_STATUS_BLOCK* OutIoStatus,
     _In_ ULONG Flags)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PMAPPED_FILE_SEGMENT Segment;
+    PCONTROL_AREA ControlArea;
+    PSUBSECTION Subsection;
+    PSUBSECTION LastSubsection;
+    PMMPTE SectionProto;
+    PMMPTE LastProto;
+    PETHREAD Thread;
+    UINT64 PteOffset;
+    UINT64 LastPteOffset;
+    LARGE_INTEGER fileOffset;
+    ULONG ix;
+    UCHAR OldForwardClusterOnly;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("MmFlushSection: %p, %I64X, %X, %X\n",
+           SectionPointers, (FileOffset ? FileOffset->QuadPart : 0), Length, Flags);
+
+    if (FileOffset)
+    {
+        fileOffset = *FileOffset;
+        FileOffset = &fileOffset;
+    }
+
+    OutIoStatus->Status = STATUS_SUCCESS;
+    OutIoStatus->Information = Length;
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    ControlArea = SectionPointers->DataSectionObject;
+    ASSERT((ControlArea == NULL) || (ControlArea->u.Flags.Image == 0));
+
+    if (!ControlArea)
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        return STATUS_SUCCESS;
+    }
+
+    if (ControlArea->u.Flags.BeingDeleted ||
+        ControlArea->u.Flags.BeingCreated ||
+        ControlArea->u.Flags.Rom)
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        return STATUS_SUCCESS;
+    }
+
+    if (!ControlArea->NumberOfPfnReferences)
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        return STATUS_SUCCESS;
+    }
+
+    ASSERT(ControlArea->u.Flags.Image == 0);
+    ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 0);
+    ASSERT(ControlArea->u.Flags.PhysicalMemory == 0);
+
+    Subsection = (PSUBSECTION)&ControlArea[1];
+
+    if (FileOffset)
+    {
+        DPRINT1("MmFlushSection: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        ASSERT(ControlArea->FilePointer != NULL);
+
+        PteOffset = 0;
+        LastSubsection = Subsection;
+
+        Segment = (PMAPPED_FILE_SEGMENT)ControlArea->Segment;
+
+        if (MiIsAddressValid(Segment) && Segment->LastSubsectionHint)
+            LastSubsection = (PSUBSECTION)Segment->LastSubsectionHint;
+
+        while (LastSubsection->NextSubsection)
+            LastSubsection = LastSubsection->NextSubsection;
+
+        LastPteOffset = (LastSubsection->PtesInSubsection - 1);
+    }
+
+    if (!MiReferenceSubsection((PMSUBSECTION)Subsection))
+    {
+        DPRINT1("MmFlushSection: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        SectionProto = &Subsection->SubsectionBase[PteOffset];
+        DPRINT("MmFlushSection: SectionProto %p\n", SectionProto);
+    }
+
+    ASSERT(Subsection->SubsectionBase != NULL);
+
+    if (!MiReferenceSubsection((PMSUBSECTION)LastSubsection))
+    {
+        DPRINT1("MmFlushSection: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    ControlArea->NumberOfMappedViews++;
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    Thread = PsGetCurrentThread();
+    OldForwardClusterOnly = Thread->ForwardClusterOnly;
+    Thread->ForwardClusterOnly = 1;
+
+    LastProto = &LastSubsection->SubsectionBase[LastPteOffset];
+
+    if (Flags & 1)
+    {
+        for (ix = 0; ix < 5; ix++)
+        {
+            Status = FsRtlAcquireFileForCcFlushEx(ControlArea->FilePointer);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("MmFlushSection: Status %X\n", Status);
+                break;
+            }
+
+            Status = MiFlushSectionInternal(SectionProto, LastProto, Subsection, LastSubsection, Flags, OutIoStatus);
+
+            FsRtlReleaseFileForCcFlush(ControlArea->FilePointer);
+
+            if (Status != STATUS_FILE_LOCK_CONFLICT)
+                break;
+
+            KeDelayExecutionThread(KernelMode, FALSE, &MmShortTime);
+        }
+    }
+    else
+    {
+        DPRINT1("MmFlushSection: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    Thread->ForwardClusterOnly = OldForwardClusterOnly;
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    MiDecrementSubsections(Subsection, Subsection);
+    MiDecrementSubsections(LastSubsection, LastSubsection);
+
+    ASSERT((LONG)ControlArea->NumberOfMappedViews >= 1);
+    ControlArea->NumberOfMappedViews--;
+
+    MiCheckControlArea(ControlArea, OldIrql);
+
+    return Status;
 }
 
 BOOLEAN
@@ -3742,7 +3890,7 @@ MiFlushDataSection(
     if (ControlArea->NumberOfSystemCacheViews)
         CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &IoStatusBlock);
     else
-        MmFlushSection(FileObject->SectionObjectPointer, NULL, 0, &IoStatusBlock, TRUE);
+        MmFlushSection(FileObject->SectionObjectPointer, NULL, 0, &IoStatusBlock, 1);
 
     return IsDataSectionUsed;
 }

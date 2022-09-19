@@ -138,6 +138,18 @@ FsRtlInitSystem(
     VOID
 );
 
+NTSTATUS
+NTAPI
+FsRtlAcquireFileForCcFlushEx(
+    _In_ PFILE_OBJECT FileObject
+);
+
+VOID
+NTAPI
+FsRtlReleaseFileForCcFlush(
+    _In_ PFILE_OBJECT FileObject
+);
+
 //
 // Global data inside the File System Runtime Library
 //
