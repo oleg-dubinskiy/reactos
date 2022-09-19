@@ -309,14 +309,212 @@ CcDeferWrite(IN PFILE_OBJECT FileObject,
 
 VOID
 NTAPI
-CcFastCopyRead(IN PFILE_OBJECT FileObject,
-               IN ULONG FileOffset,
-               IN ULONG Length,
-               IN ULONG PageCount,
-               OUT PVOID Buffer,
-               OUT PIO_STATUS_BLOCK IoStatus)
+CcFastCopyRead(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ ULONG FileOffset,
+    _In_ ULONG Length,
+    _In_ ULONG PageCount,
+    _Out_ PVOID Buffer,
+    _Out_ PIO_STATUS_BLOCK IoStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    PKPRCB Prcb = KeGetCurrentPrcb();
+    PSHARED_CACHE_MAP SharedMap;
+    PPRIVATE_CACHE_MAP PrivateMap;
+    PVOID CacheAddress;
+    PVACB ActiveVacb;
+    PVACB Vacb;
+    LARGE_INTEGER fileOffset;
+    LARGE_INTEGER Offset;
+    ULONG BytesCopied = Length;
+    ULONG Granularity = VACB_MAPPING_GRANULARITY;
+    ULONG ActivePage;
+    ULONG ReceivedLength;
+    ULONG CopySize;
+    ULONG pageCount;
+    ULONG size;
+    ULONG PartialLength;
+    ULONG NextOffset;
+    ULONG OldReadClusterSize;
+    UCHAR OldForwardClusterOnly;
+    BOOLEAN IsVacbLocked;
+    ULONG IsSchedule = 0;
+
+    DPRINT("CcFastCopyRead: FileObject %p\n", FileObject);
+
+    OldReadClusterSize = CurrentThread->ReadClusterSize;
+    OldForwardClusterOnly = CurrentThread->ForwardClusterOnly;
+
+    SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+    PrivateMap = FileObject->PrivateCacheMap;
+
+    ASSERT((FileOffset + Length) <= SharedMap->FileSize.LowPart);
+
+    fileOffset.QuadPart = FileOffset;
+
+    if (PrivateMap->Flags.ReadAheadEnabled && !PrivateMap->ReadAheadLength[1])
+        CcScheduleReadAhead(FileObject, &fileOffset, Length);
+
+    Prcb->CcCopyReadWait++;
+
+    CcGetActiveVacb(SharedMap, &ActiveVacb, &ActivePage, &IsVacbLocked);
+
+    if (ActiveVacb)
+    {
+        if ((FileOffset / Granularity) == (ActivePage / (Granularity / PAGE_SIZE)))
+        {
+            if (SharedMap->NeedToZero)
+                CcFreeActiveVacb(SharedMap, NULL, 0, FALSE);
+
+            CacheAddress = (PVOID)(((ULONG_PTR)ActiveVacb->BaseAddress + (FileOffset & (Granularity - 1))));
+            CopySize = (Granularity - (FileOffset & (Granularity - 1)));
+
+            if (CopySize > Length)
+                CopySize = Length;
+
+            pageCount = ((((ULONG_PTR)CacheAddress & (PAGE_SIZE - 1)) + CopySize + (PAGE_SIZE - 1)) / PAGE_SIZE) - 1;
+
+//            _SEH2_TRY
+            {
+                if (!pageCount)
+                {
+                    CurrentThread->ForwardClusterOnly = 1;
+                    CurrentThread->ReadClusterSize = 0;
+
+                    IsSchedule = !MmCheckCachedPageState(CacheAddress, FALSE);
+
+                    RtlCopyMemory(Buffer, CacheAddress, CopySize);
+
+                    Buffer = (PVOID)((ULONG_PTR)Buffer + CopySize);
+                }
+                else
+                {
+                    for (size = CopySize; size; size -= PartialLength)
+                    {
+                        PartialLength = (ULONG)((((ULONG_PTR)CacheAddress + PAGE_SIZE) & ~(PAGE_SIZE - 1)) - (ULONG_PTR)CacheAddress);
+
+                        if (PartialLength > size)
+                            PartialLength = size;
+
+                        CurrentThread->ForwardClusterOnly = 1;
+
+                        if (pageCount <= 0xF)
+                            CurrentThread->ReadClusterSize = pageCount;
+                        else
+                            CurrentThread->ReadClusterSize = 0xF;
+
+                        IsSchedule |= !MmCheckCachedPageState(CacheAddress, FALSE);
+
+                        RtlCopyMemory(Buffer, CacheAddress, PartialLength);
+
+                        CacheAddress = (PVOID)((ULONG_PTR)CacheAddress + PartialLength);
+                        Buffer = (PVOID)((ULONG_PTR)Buffer + PartialLength);
+                        pageCount--;
+                    }
+                }
+            }
+//            _SEH2_EXCEPT()
+            {
+            }
+//            _SEH2_END
+
+            FileOffset += CopySize;
+            Length -= CopySize;
+        }
+
+        if (Length)
+            CcFreeActiveVacb(SharedMap, ActiveVacb, ActivePage, IsVacbLocked);
+        else
+            CcSetActiveVacb(SharedMap, &ActiveVacb, ActivePage, IsVacbLocked);
+    }
+
+    Offset.HighPart = 0;
+
+    for (Offset.LowPart = FileOffset; Length; Offset.LowPart = NextOffset)
+    {
+        CacheAddress = CcGetVirtualAddress(SharedMap, Offset, &Vacb, &ReceivedLength);
+
+        NextOffset = (Offset.LowPart + ReceivedLength);
+
+        if (ReceivedLength > Length)
+            ReceivedLength = Length;
+
+//        _SEH2_TRY
+        {
+            pageCount = ((((ULONG_PTR)CacheAddress & (PAGE_SIZE - 1)) + ReceivedLength + (PAGE_SIZE - 1)) / PAGE_SIZE) - 1;
+
+            if (!pageCount)
+            {
+                CurrentThread->ForwardClusterOnly = 1;
+                CurrentThread->ReadClusterSize = 0;
+
+                IsSchedule |= !MmCheckCachedPageState(CacheAddress, FALSE);
+
+                RtlCopyMemory(Buffer, CacheAddress, ReceivedLength);
+
+                Buffer = (PVOID)((ULONG_PTR)Buffer + ReceivedLength);
+            }
+            else
+            {
+                for (size = ReceivedLength; size; size -= PartialLength)
+                {
+                    PartialLength = ((ULONG)((ULONG_PTR)CacheAddress + PAGE_SIZE) & ~(PAGE_SIZE - 1)) - (ULONG_PTR)CacheAddress;
+
+                    if (PartialLength > size)
+                        PartialLength = size;
+
+                    CurrentThread->ForwardClusterOnly = 1;
+
+                    if (pageCount <= 0xF)
+                        CurrentThread->ReadClusterSize = pageCount;
+                    else
+                        CurrentThread->ReadClusterSize = 0xF;
+
+                    IsSchedule |= !MmCheckCachedPageState(CacheAddress, FALSE);
+
+                    RtlCopyMemory(Buffer, CacheAddress, PartialLength);
+
+                    CacheAddress = (PVOID)((ULONG_PTR)CacheAddress + PartialLength);
+                    Buffer = (PVOID)((ULONG_PTR)Buffer + PartialLength);
+                    pageCount--;
+                }
+            }
+        }
+//        _SEH2_EXCEPT()
+        {
+        }
+//        _SEH2_END
+
+        Length -= ReceivedLength;
+        if (!Length)
+        {
+            CcSetActiveVacb(SharedMap, &Vacb, (Offset.LowPart / PAGE_SIZE), 0);
+            break;
+        }
+
+        CcFreeVirtualAddress(Vacb);
+    }
+
+    CurrentThread->ReadClusterSize = OldReadClusterSize;
+    CurrentThread->ForwardClusterOnly = OldForwardClusterOnly;
+
+    if (IsSchedule &&
+        !(FileObject->Flags & FO_RANDOM_ACCESS) &&
+        !(PrivateMap->UlongFlags & 0x20000))
+    {
+        InterlockedOr((PLONG)&PrivateMap->UlongFlags, 0x20000);
+        CcScheduleReadAhead(FileObject, &fileOffset, BytesCopied);
+    }
+
+    PrivateMap->FileOffset1.LowPart = PrivateMap->FileOffset2.LowPart;
+    PrivateMap->BeyondLastByte1.LowPart = PrivateMap->BeyondLastByte2.LowPart;
+
+
+    PrivateMap->FileOffset2.LowPart = fileOffset.LowPart;
+    PrivateMap->BeyondLastByte2.LowPart = fileOffset.LowPart + BytesCopied;
+
+    IoStatus->Status = STATUS_SUCCESS;
+    IoStatus->Information = BytesCopied;
 }
 
 VOID
