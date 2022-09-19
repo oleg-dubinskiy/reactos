@@ -659,6 +659,189 @@ MiInitializeCopyOnWritePfn(
     NewPfn->u3.e1.Modified = 1;
 }
 
+BOOLEAN
+NTAPI
+MiCopyOnWrite(
+    _In_ PVOID Address,
+    _In_ PMMPTE Pte)
+{
+    PEPROCESS CurrenProcess = PsGetCurrentProcess();
+    PMM_SESSION_SPACE Session;
+    PVOID MappingAddress;
+    PMMWSL WsList;
+    PMMPFN Pfn;
+    PMMPTE MappingPte;
+    MMPTE TempPte;
+    ULONG Color;
+    ULONG WsleIndex;
+    PFN_NUMBER PageNumber;
+    PFN_NUMBER CopyPageNumber;
+    KIRQL OldIrql;
+    BOOLEAN IsNotCopyOnWrite = FALSE;
+
+    DPRINT("MiCopyOnWrite: Address %p, Pte %p [%p]\n", Address, Pte, (Pte ? Pte->u.Long : 0));
+
+    TempPte.u.Long = Pte->u.Long;
+    ASSERT(TempPte.u.Hard.Valid == 1);
+
+    PageNumber = TempPte.u.Hard.PageFrameNumber;
+    Pfn = MI_PFN_ELEMENT(PageNumber);
+
+    if ((ULONG_PTR)Address >= (ULONG_PTR)MmSessionBase)
+    {
+        DPRINT1("MiCopyOnWrite: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        WsList = MmWorkingSetList;
+        Session = NULL;
+
+        if (CurrenProcess->ForkInProgress)
+        {
+            DPRINT1("MiCopyOnWrite: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!TempPte.u.Hard.CopyOnWrite)
+            IsNotCopyOnWrite = TRUE;
+    }
+
+    DPRINT("MiCopyOnWrite: FIXME MiLocateWsle()\n");
+    //WsleIndex = MiLocateWsle(...);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (MmAvailablePages < 0x80)
+    {
+        DPRINT1("MiCopyOnWrite: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    ASSERT(Pfn->u3.e1.PrototypePte == 1);
+
+    if (Session)
+    {
+        DPRINT1("MiCopyOnWrite: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        ASSERT(KeGetCurrentIrql() > APC_LEVEL);
+
+        if (!Pfn->u3.e1.Modified && Pte->u.Hard.Dirty)
+        {
+            ASSERT(Pfn->u3.e1.Rom == 0);
+            Pfn->u3.e1.Modified = 1;
+
+            if (!Pfn->OriginalPte.u.Soft.Prototype &&
+                !Pfn->u3.e1.WriteInProgress)
+            {
+                DPRINT1("MiCopyOnWrite: FIXME\n");
+                ASSERT(FALSE);
+            }
+        }
+
+        Color = MI_GET_NEXT_PROCESS_COLOR(CurrenProcess);
+        CopyPageNumber = MiRemoveAnyPage(MI_GET_PAGE_COLOR(Color));
+    }
+
+    WsleIndex = 0;
+    MiInitializeCopyOnWritePfn(CopyPageNumber, Pte, WsleIndex, WsList);
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    InterlockedIncrement(&KeGetCurrentPrcb()->MmCopyOnWriteCount);
+
+    MappingPte = MiReserveSystemPtes(1, 0);
+
+    if (MappingPte)
+    {
+        MMPTE tempPte;
+
+        MI_MAKE_HARDWARE_PTE_KERNEL(&tempPte, MappingPte, MM_READWRITE, CopyPageNumber);
+        MI_MAKE_DIRTY_PAGE(&tempPte);
+
+        if (Pfn->u3.e1.CacheAttribute == MiNonCached)
+        {
+            tempPte.u.Hard.CacheDisable = 1;
+            tempPte.u.Hard.WriteThrough = 1;
+        }
+        else if (Pfn->u3.e1.CacheAttribute == MiWriteCombined)
+        {
+            tempPte.u.Hard.CacheDisable = 1;
+            tempPte.u.Hard.WriteThrough = 0;
+        }
+
+        MI_WRITE_VALID_PTE(MappingPte, tempPte);
+
+        MappingAddress = MiPteToAddress(MappingPte);
+    }
+    else
+    {
+        MappingAddress = MiMapPageInHyperSpace(CurrenProcess, CopyPageNumber, &OldIrql);
+    }
+
+    RtlCopyMemory(MappingAddress, (PVOID)((ULONG_PTR)Address & ~(PAGE_SIZE - 1)), PAGE_SIZE);
+
+    if (!MappingPte)
+    {
+        DPRINT1("MiCopyOnWrite: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        MiReleaseSystemPtes(MappingPte, 1, 0);
+    }
+
+    if (!IsNotCopyOnWrite)
+    {
+        MI_MAKE_DIRTY_PAGE(&TempPte);
+        TempPte.u.Hard.Write = 1;
+        MI_MAKE_ACCESSED_PAGE(&TempPte);
+        TempPte.u.Hard.CopyOnWrite = 0;
+    }
+
+    TempPte.u.Hard.PageFrameNumber = CopyPageNumber;
+
+    ASSERT(Pte->u.Hard.Valid == 1);
+    ASSERT(TempPte.u.Hard.Valid == 1);
+    ASSERT(Pte->u.Hard.PageFrameNumber != TempPte.u.Hard.PageFrameNumber);
+    Pte->u.Long = TempPte.u.Long;
+
+    if (!Session)
+    {
+        /* Flush the TLB */
+        //KeFlushSingleTb(Address, 0);
+        //FIXME: Use KeFlushSingleTb() instead
+        KeFlushEntireTb(TRUE, FALSE);
+
+        CurrenProcess->NumberOfPrivatePages++;
+    }
+    else
+    {
+        /* Flush the TLB */
+        //KeFlushSingleTb(Address, 1);
+        //FIXME: Use KeFlushSingleTb() instead
+        KeFlushEntireTb(TRUE, TRUE);
+
+        ASSERT(Pfn->u3.e1.PrototypePte == 1);
+    }
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    MiDecrementShareCount(Pfn, PageNumber);
+
+    if (!Session && CurrenProcess->CloneRoot)
+    {
+        DPRINT1("MiCopyOnWrite: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    return TRUE;
+}
+
 NTSTATUS
 NTAPI
 MiResolveDemandZeroFault(
