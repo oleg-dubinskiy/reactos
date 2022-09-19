@@ -78,6 +78,19 @@ MmSessionDelete(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+VOID
+NTAPI
+MiSessionLeader(
+    _In_ PEPROCESS Process)
+{
+    KIRQL OldIrql;
+
+    /* Set the flag while under the expansion lock */
+    OldIrql = MiAcquireExpansionLock();
+    Process->Vm.Flags.SessionLeader = TRUE;
+    MiReleaseExpansionLock(OldIrql);
+}
+
 NTSTATUS
 NTAPI
 MmSessionCreate(
