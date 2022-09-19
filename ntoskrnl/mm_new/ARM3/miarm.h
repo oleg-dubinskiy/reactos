@@ -2237,6 +2237,12 @@ MiFindEmptyAddressRangeDownBasedTree(
     _Out_ ULONG_PTR* OutBase
 );
 
+VOID
+NTAPI
+MiInsertBasedSection(
+    _In_ PSECTION Section
+);
+
 /* ARM3\virtual.c */
 PFN_COUNT
 NTAPI

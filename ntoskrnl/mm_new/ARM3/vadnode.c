@@ -2,7 +2,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 #include "miarm.h"
 
@@ -1163,6 +1163,27 @@ MiCheckForConflictingNode(
     }
 
     return NULL;
+}
+
+VOID
+NTAPI
+MiInsertBasedSection(
+    _In_ PSECTION Section)
+{
+    PMMADDRESS_NODE Parent = NULL;
+    TABLE_SEARCH_RESULT Result;
+
+    DPRINT("MiInsertBasedSection: Section %p\n", Section);
+
+    ASSERT(Section->Address.EndingVpn >= Section->Address.StartingVpn);
+
+    /* Find the parent VAD and where this child should be inserted */
+    Result = RtlpFindAvlTableNodeOrParent(&MmSectionBasedRoot, (PVOID)Section->Address.StartingVpn, &Parent);
+
+    ASSERT(Result != TableFoundNode);
+    ASSERT((Parent != NULL) || (Result == TableEmptyTree));
+
+    MiInsertNode(&MmSectionBasedRoot, &Section->Address, Parent, Result);
 }
 
 /* EOF */
