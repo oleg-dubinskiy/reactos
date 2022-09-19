@@ -12,8 +12,14 @@ SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
 SHARED_CACHE_MAP_LIST_CURSOR CcLazyWriterCursor;
 GENERAL_LOOKASIDE CcTwilightLookasideList;
 MM_SYSTEMSIZE CcCapturedSystemSize;
-ULONG CcNumberWorkerThreads;
+KSPIN_LOCK CcDeferredWriteSpinLock;
+LIST_ENTRY CcDeferredWrites;
 LIST_ENTRY CcCleanSharedCacheMapList;
+ULONG CcNumberWorkerThreads;
+ULONG CcDirtyPageThreshold;
+ULONG CcDirtyPageTarget;
+LONG CcAggressiveZeroCount;
+LONG CcAggressiveZeroThreshold;
 
 extern LIST_ENTRY CcRegularWorkQueue;
 extern LIST_ENTRY CcExpressWorkQueue;
@@ -22,6 +28,7 @@ extern LIST_ENTRY CcPostTickWorkQueue;
 extern LARGE_INTEGER CcCollisionDelay;
 extern LAZY_WRITER LazyWriter;
 extern LIST_ENTRY CcIdleWorkerThreadList;
+extern ULONG CcIdleDelayTick;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -970,6 +977,8 @@ CcInitializeCacheManager(VOID)
 
     DPRINT("CcInitializeCacheManager()\n");
 
+    CcIdleDelayTick = (10000000 / KeQueryTimeIncrement());
+
     InitializeListHead(&CcCleanSharedCacheMapList);
 
     InitializeListHead(&CcDirtySharedCacheMapList.SharedCacheMapLinks);
@@ -986,6 +995,49 @@ CcInitializeCacheManager(VOID)
 
     CcCapturedSystemSize = MmQuerySystemSize();
 
+    if (!CcNumberWorkerThreads)
+    {
+        if (CcCapturedSystemSize == MmSmallSystem)
+        {
+            CcNumberWorkerThreads = (ExCriticalWorkerThreads - 1);
+            CcDirtyPageThreshold = (MmNumberOfPhysicalPages / 8);
+            CcAggressiveZeroThreshold = 1;
+        }
+        else if (CcCapturedSystemSize == MmMediumSystem)
+        {
+            CcNumberWorkerThreads = (ExCriticalWorkerThreads - 1);
+            CcDirtyPageThreshold = (MmNumberOfPhysicalPages / 4);
+            CcAggressiveZeroThreshold = 2;
+        }
+        else if (CcCapturedSystemSize == MmLargeSystem)
+        {
+            CcNumberWorkerThreads = (ExCriticalWorkerThreads - 2);
+
+            if (MmSystemCacheWs.MaximumWorkingSetSize <= 0x400)
+            {
+                CcDirtyPageThreshold = (MmNumberOfPhysicalPages / 8) + (MmNumberOfPhysicalPages / 4);
+            }
+            else if ((MmSystemCacheWs.MaximumWorkingSetSize - 0x200) > (MmNumberOfPhysicalPages / 2))
+            {
+                CcDirtyPageThreshold = (MmNumberOfPhysicalPages / 2);
+            }
+            else
+            {
+                CcDirtyPageThreshold = (MmSystemCacheWs.MaximumWorkingSetSize - 0x200);
+            }
+
+            CcAggressiveZeroThreshold = 4;
+        }
+        else
+        {
+            CcNumberWorkerThreads = 1;
+            CcDirtyPageThreshold = MmNumberOfPhysicalPages / 8;
+        }
+
+        CcDirtyPageTarget = (CcDirtyPageThreshold / 2) + (CcDirtyPageThreshold / 4);
+    }
+
+    CcAggressiveZeroCount = 0;
 
     for (ix = 0; ix < CcNumberWorkerThreads; ix++)
     {
@@ -993,7 +1045,7 @@ CcInitializeCacheManager(VOID)
         if (!WorkItem)
         {
             ASSERT(FALSE);
-            KeBugCheckEx(0x34, 0x400E0, 0, 0, 0); //? (0x40000 | __LINE__)
+            KeBugCheckEx(0x34, 0x400E0, 0, 0, 0);
         }
 
         ExInitializeWorkItem(WorkItem, CcWorkerThread, WorkItem);
@@ -1048,6 +1100,9 @@ CcInitializeCacheManager(VOID)
 
         Prcb->PPLookasideList[5].P = LookasideList;
     }
+
+    KeInitializeSpinLock(&CcDeferredWriteSpinLock);
+    InitializeListHead(&CcDeferredWrites);
 
     CcInitializeVacbs();
 

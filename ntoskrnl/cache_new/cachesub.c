@@ -8,121 +8,6 @@
 
 /* GLOBALS ********************************************************************/
 
-#if 0
-//LONG CcPfNumActiveTraces =0;
-ULONG CcMaxDirtyWrite = 0x10000;
-
-#define try_return(S) { S; goto try_exit; }
-#define try_leave(S) { S; _SEH2_LEAVE; }
-
-#define SizeOfVacbArray(LSZ) (                                                            \
-    ((LSZ).HighPart != 0) ? MAXULONG :                                                    \
-    ((LSZ).LowPart > (PREALLOCATED_VACBS * VACB_MAPPING_GRANULARITY) ?                    \
-     (((LSZ).LowPart >> VACB_OFFSET_SHIFT) * sizeof(PVACB)) :                             \
-     (PREALLOCATED_VACBS * sizeof(PVACB)))                                                \
-)
-
-#define RetryError(STS) (((STS) == STATUS_VERIFY_REQUIRED) || ((STS) == STATUS_FILE_LOCK_CONFLICT) || ((STS) == STATUS_ENCOUNTERED_WRITE_IN_PROGRESS))
-
-#define BugCheckFileId (CACHE_BUG_CHECK_CACHESUB) //  The Bugcheck file id for this module
-
-
-LIST_ENTRY CcCleanSharedCacheMapList;
-SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
-SHARED_CACHE_MAP_LIST_CURSOR CcLazyWriterCursor;
-
-// extern KSPIN_LOCK CcWorkQueueSpinLock;
-
-ULONG CcNumberWorkerThreads = 0;
-ULONG CcNumberActiveWorkerThreads = 0;
-
-LIST_ENTRY CcIdleWorkerThreadList;
-LIST_ENTRY CcExpressWorkQueue;
-LIST_ENTRY CcRegularWorkQueue;
-LIST_ENTRY CcPostTickWorkQueue;
-
-BOOLEAN CcQueueThrottle = FALSE;
-
-ULONG CcIdleDelayTick;
-LARGE_INTEGER CcNoDelay;
-LARGE_INTEGER CcFirstDelay = {{(ULONG)-(3*LAZY_WRITER_IDLE_DELAY), -1}};
-LARGE_INTEGER CcIdleDelay = {{(ULONG)-LAZY_WRITER_IDLE_DELAY, -1}};
-LARGE_INTEGER CcCollisionDelay = {{(ULONG)-LAZY_WRITER_COLLISION_DELAY, -1}};
-LARGE_INTEGER CcTargetCleanDelay = {{(ULONG)-(LONG)(LAZY_WRITER_IDLE_DELAY * (LAZY_WRITER_MAX_AGE_TARGET + 1)), -1}};
-
-// extern KSPIN_LOCK CcVacbSpinLock;
-ULONG_PTR CcNumberVacbs;
-
-//  Pointer to the global Vacb vector.
-PVACB CcVacbs;
-PVACB CcBeyondVacbs;
-LIST_ENTRY CcVacbLru;
-LIST_ENTRY CcVacbFreeList;
-
-ULONG CcMaxVacbLevelsSeen = 1;
-ULONG CcVacbLevelEntries = 0;
-PVACB *CcVacbLevelFreeList = NULL;
-ULONG CcVacbLevelWithBcbsEntries = 0;
-PVACB *CcVacbLevelWithBcbsFreeList = NULL;
-
-ALIGNED_SPINLOCK CcDeferredWriteSpinLock;
-LIST_ENTRY CcDeferredWrites;
-
-ULONG CcDirtyPageThreshold;
-ULONG CcDirtyPageTarget;
-ULONG CcPagesYetToWrite;
-
-ULONG CcPagesWrittenLastTime = 0;
-ULONG CcDirtyPagesLastScan = 0;
-
-//ULONG CcAvailablePagesThreshold = 100;
-ULONG CcTotalDirtyPages = 0;
-
-MM_SYSTEMSIZE CcCapturedSystemSize;
-
-LONG CcAggressiveZeroCount;
-LONG CcAggressiveZeroThreshold;
-
-//ULONG CcTune = 0;
-
-LAZY_WRITER LazyWriter;
-
-GENERAL_LOOKASIDE CcTwilightLookasideList;
-
-#if DBG
-  ULONG CcBcbCount;
-  LIST_ENTRY CcBcbList;
-#endif
-
-ULONG CcThrowAway;
-PULONG CcMissCounter = &CcThrowAway;
-
-
-//ULONG CcFastMdlReadNoWait;
-//ULONG CcFastMdlReadResourceMiss;
-
-ULONG CcMapDataNoWaitMiss;
-ULONG CcMapDataWaitMiss;
-
-ULONG CcPinReadNoWaitMiss;
-ULONG CcPinReadWaitMiss;
-
-ULONG CcCopyReadNoWait;
-ULONG CcCopyReadWait;
-ULONG CcCopyReadNoWaitMiss;
-ULONG CcCopyReadWaitMiss;
-
-//ULONG CcMdlReadNoWait;
-//ULONG CcMdlReadWait;
-//ULONG CcMdlReadNoWaitMiss;
-//ULONG CcMdlReadWaitMiss;
-
-ULONG CcReadAheadIos;
-ULONG CcLazyWriteHotSpots;
-ULONG CcLostDelayedWrites;
-
-#endif
-
 ULONG CcDataFlushes;
 ULONG CcDataPages;
 ULONG CcFastMdlReadNotPossible;
@@ -138,6 +23,7 @@ ULONG CcMapDataNoWait;
 ULONG CcPinMappedDataCount;
 ULONG CcPinReadWait;
 ULONG CcPinReadNoWait;
+ULONG CcIdleDelayTick;
 
 extern LIST_ENTRY CcExpressWorkQueue;
 
