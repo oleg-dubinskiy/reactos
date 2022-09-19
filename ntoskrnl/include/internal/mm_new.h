@@ -11,6 +11,7 @@ extern PFN_COUNT MmNumberOfPhysicalPages;
 extern PFN_NUMBER MmHighestPhysicalPage;
 extern PKTHREAD MmPfnOwner;
 extern PFN_NUMBER MmSizeOfSystemCacheInPages;
+extern MMSUPPORT MmSystemCacheWs;
 
 /* Although Microsoft says this isn't hardcoded anymore, they won't be able to change it.
    Stuff depends on it
@@ -391,6 +392,12 @@ MmPurgeSection(
     _In_ BOOLEAN IsFullPurge
 );
 
+BOOLEAN
+NTAPI
+MmDisableModifiedWriteOfSection(
+    _In_ PSECTION_OBJECT_POINTERS SectionObjectPointer
+);
+
 /* ARM3\session.c */
 ULONG
 NTAPI
@@ -498,6 +505,14 @@ NTAPI
 MmCheckCachedPageState(
     _In_ PVOID CacheAddress,
     _In_ BOOLEAN Parametr2
+);
+
+NTSTATUS
+NTAPI
+MmExtendSection(
+    _In_ PSECTION Section,
+    _Inout_ LARGE_INTEGER* OutSectionSize,
+    _In_ BOOLEAN IgnoreFileSizeChecking
 );
 
 /* ARM3\sysldr.c */

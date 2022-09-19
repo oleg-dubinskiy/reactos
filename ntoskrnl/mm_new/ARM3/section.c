@@ -6948,8 +6948,31 @@ NTAPI
 MmDisableModifiedWriteOfSection(
     _In_ PSECTION_OBJECT_POINTERS SectionObjectPointer)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PCONTROL_AREA ControlArea;
+    KIRQL OldIrql;
+    BOOLEAN Result = TRUE;
+
+    DPRINT("MmDisableModifiedWriteOfSection: SectionObjectPointer %p\n", SectionObjectPointer);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    ControlArea = SectionObjectPointer->DataSectionObject;
+
+    if (ControlArea)
+    {
+        if (ControlArea->NumberOfMappedViews)
+            Result = (ControlArea->u.Flags.NoModifiedWriting == 1);
+        else
+            ControlArea->u.Flags.NoModifiedWriting = 1;
+    }
+    else
+    {
+        Result = FALSE;
+    }
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    return Result;
 }
 
 ULONG
