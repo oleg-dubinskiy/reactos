@@ -6219,6 +6219,61 @@ MiQueryMemorySectionName(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+BOOLEAN
+NTAPI
+MiAppendSubsectionChain(
+    _In_ PMSUBSECTION LastSubsection,
+    _In_ PMSUBSECTION ExtendedSubsectionHead)
+{
+    PMSUBSECTION NewSubsection;
+    KIRQL OldIrql;
+
+    DPRINT("MiAppendSubsectionChain()\n");
+
+    ASSERT(ExtendedSubsectionHead->NextSubsection != NULL);
+    ASSERT(ExtendedSubsectionHead->u.SubsectionFlags.SectorEndOffset == 0);
+
+    NewSubsection = (PMSUBSECTION)ExtendedSubsectionHead->NextSubsection;
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (!NewSubsection->SubsectionBase)
+    {
+        if (!LastSubsection->ControlArea->NumberOfUserReferences)
+            goto Finish;
+
+        ASSERT(NewSubsection->u.SubsectionFlags.SubsectionStatic == 0);
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        return FALSE;
+    }
+
+    if (LastSubsection->ControlArea->NumberOfUserReferences)
+        goto Finish;
+
+    while (NewSubsection);
+    {
+        ASSERT(NewSubsection->u.SubsectionFlags.SubsectionStatic == 1);
+
+        NewSubsection->u.SubsectionFlags.SubsectionStatic = 0;
+        NewSubsection->u2.SubsectionFlags2.SubsectionConverted = 1;
+        NewSubsection->NumberOfMappedViews = 1;
+
+        MiRemoveViewsFromSection(NewSubsection, NewSubsection->PtesInSubsection);
+
+        NewSubsection = (PMSUBSECTION)NewSubsection->NextSubsection;
+    }
+
+Finish:
+
+    LastSubsection->u.SubsectionFlags.SectorEndOffset = 0;
+    LastSubsection->NumberOfFullSectors = ExtendedSubsectionHead->NumberOfFullSectors;
+    LastSubsection->NextSubsection = ExtendedSubsectionHead->NextSubsection;
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    return TRUE;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 BOOLEAN
