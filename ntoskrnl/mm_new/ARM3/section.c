@@ -2,7 +2,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 #include "miarm.h"
 
@@ -7944,8 +7944,8 @@ MmUnmapViewOfSection(
     _In_ PEPROCESS Process,
     _In_ PVOID BaseAddress)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("MmUnmapViewOfSection: Process %p, BaseAddress %p\n", Process, BaseAddress);
+    return MiUnmapViewOfSection(Process, BaseAddress, 0);
 }
 
 /* SYSTEM CALLS ***************************************************************/
