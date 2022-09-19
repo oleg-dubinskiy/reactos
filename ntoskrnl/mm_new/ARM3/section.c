@@ -19,6 +19,8 @@ typedef struct _MI_PE_HEADER_MDL
     PFN_NUMBER PageNumber[MI_PE_HEADER_MAX_PAGES];
 } MI_PE_HEADER_MDL, *PMI_PE_HEADER_MDL;
 
+ERESOURCE MmSectionExtendResource;
+ERESOURCE MmSectionExtendSetResource;
 KGUARDED_MUTEX MmSectionCommitMutex;
 KGUARDED_MUTEX MmSectionBasedMutex;
 KEVENT MmCollidedFlushEvent;
@@ -6272,6 +6274,432 @@ Finish:
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
     return TRUE;
+}
+
+NTSTATUS
+NTAPI
+MmExtendSection(
+    _In_ PSECTION Section,
+    _Inout_ LARGE_INTEGER* OutSectionSize,
+    _In_ BOOLEAN IgnoreFileSizeChecking)
+{
+    PKTHREAD CurrentThread = KeGetCurrentThread();
+    PSEGMENT Segment = Section->Segment;
+    PCONTROL_AREA ControlArea = Segment->ControlArea;
+    MSUBSECTION FirstExtendSubsection;
+    PMSUBSECTION LastExtendSubsection;
+    PMSUBSECTION ExtendSubsection;
+    PSUBSECTION Subsection;
+    PSUBSECTION LastSubsection;
+    PMMPTE SectionProtos;
+    MMPTE TempPte;
+    LARGE_INTEGER SegmentPages;
+    LARGE_INTEGER Last4KChunk;
+    LARGE_INTEGER FileSize;
+    LARGE_INTEGER Start1;
+    LARGE_INTEGER Start2;
+    UINT64 AllocationSize;
+    UINT64 NeedPages;
+    UINT64 TotalPtes;
+    UINT64 NewPages;
+    UINT64 Size;
+    SIZE_T AllocationFragment;
+    ULONG FragmentSize;
+    ULONG UnusedPtes;
+    ULONG UsedPtes;
+    BOOLEAN Appended;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT1("MmExtendSection: Section %X, OutSectionSize %I64X, IgnoreFileSizeChecking %X\n",
+            Section, OutSectionSize->QuadPart, IgnoreFileSizeChecking);
+
+    if (ControlArea->u.Flags.PhysicalMemory)
+    {
+        DPRINT1("MmExtendSection: STATUS_SECTION_NOT_EXTENDED\n");
+        return STATUS_SECTION_NOT_EXTENDED;
+    }
+
+    if (ControlArea->u.Flags.Image)
+    {
+        DPRINT1("MmExtendSection: STATUS_SECTION_NOT_EXTENDED\n");
+        return STATUS_SECTION_NOT_EXTENDED;
+    }
+
+    if (!ControlArea->FilePointer)
+    {
+        DPRINT1("MmExtendSection: STATUS_SECTION_NOT_EXTENDED\n");
+        return STATUS_SECTION_NOT_EXTENDED;
+    }
+
+    KeEnterCriticalRegionThread(CurrentThread);
+    ExAcquireResourceExclusiveLite(&MmSectionExtendResource, TRUE);
+
+    if (OutSectionSize->QuadPart > 0x3FFFFFFFFFF000)
+    {
+        ExReleaseResourceLite(&MmSectionExtendResource);
+        KeLeaveCriticalRegionThread(CurrentThread);
+
+        DPRINT1("MmExtendSection: STATUS_SECTION_TOO_BIG\n");
+        return STATUS_SECTION_TOO_BIG;
+    }
+
+    NeedPages = ((OutSectionSize->QuadPart + (PAGE_SIZE - 1)) / PAGE_SIZE);
+
+    if (!ControlArea->u.Flags.WasPurged &&
+        OutSectionSize->QuadPart <= Section->SizeOfSection.QuadPart)
+    {
+        OutSectionSize->QuadPart = Section->SizeOfSection.QuadPart;
+
+        ExReleaseResourceLite(&MmSectionExtendResource);
+        KeLeaveCriticalRegionThread(CurrentThread);
+        return STATUS_SUCCESS;
+    }
+
+    if (!IgnoreFileSizeChecking)
+    {
+        ExReleaseResourceLite(&MmSectionExtendResource);
+        ExAcquireResourceExclusiveLite(&MmSectionExtendSetResource, TRUE);
+
+        Status = FsRtlGetFileSize(ControlArea->FilePointer, &FileSize);
+        if (!NT_SUCCESS(Status))
+        {
+            ExReleaseResourceLite(&MmSectionExtendSetResource);
+            KeLeaveCriticalRegionThread(CurrentThread);
+
+            DPRINT1("MmExtendSection: Status %X\n", Status);
+            return Status;
+        }
+
+        if (OutSectionSize->QuadPart > FileSize.QuadPart)
+        {
+            if (!((Section->InitialPageProtection & PAGE_READWRITE) |
+                  (Section->InitialPageProtection & PAGE_EXECUTE_READWRITE)))
+            {
+                ExReleaseResourceLite(&MmSectionExtendSetResource);
+                KeLeaveCriticalRegionThread(CurrentThread);
+
+                DPRINT1("MmExtendSection: STATUS_SECTION_NOT_EXTENDED\n");
+                return STATUS_SECTION_NOT_EXTENDED;
+            }
+
+            FileSize.QuadPart = OutSectionSize->QuadPart;
+
+            DPRINT1("MmExtendSection: FIXME\n");
+            ASSERT(FALSE);
+            Status = 0;//FsRtlSetFileSize(ControlArea->FilePointer, &FileSize);
+            if (!NT_SUCCESS(Status))
+            {
+                ExReleaseResourceLite(&MmSectionExtendSetResource);
+                KeLeaveCriticalRegionThread(CurrentThread);
+
+                DPRINT1("MmExtendSection: Status %X\n", Status);
+                return Status;
+            }
+        }
+
+        if (Segment->ExtendInfo)
+        {
+            KeAcquireGuardedMutex(&MmSectionBasedMutex);
+
+            if (Segment->ExtendInfo)
+                Segment->ExtendInfo->CommittedSize = FileSize.QuadPart;
+
+            KeReleaseGuardedMutex(&MmSectionBasedMutex);
+        }
+
+        ExReleaseResourceLite(&MmSectionExtendSetResource);
+        ExAcquireResourceExclusiveLite(&MmSectionExtendResource, TRUE);
+    }
+
+    ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 0);
+
+    if (((PMAPPED_FILE_SEGMENT)Segment)->LastSubsectionHint)
+        LastSubsection = (PSUBSECTION)((PMAPPED_FILE_SEGMENT)Segment)->LastSubsectionHint;
+    else if (ControlArea->u.Flags.Rom)
+        LastSubsection = (PSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+    else
+        LastSubsection = (PSUBSECTION)(ControlArea + 1);
+
+    while (LastSubsection->NextSubsection)
+    {
+        ASSERT(LastSubsection->UnusedPtes == 0);
+        LastSubsection = LastSubsection->NextSubsection;
+    }
+
+    MiSubsectionConsistent(LastSubsection);
+
+    TotalPtes = ((((ULONGLONG)Segment->SegmentFlags.TotalNumberOfPtes4132) << 32) | Segment->TotalNumberOfPtes);
+
+    if (NeedPages <= TotalPtes)
+    {
+        Section->SizeOfSection.QuadPart = OutSectionSize->QuadPart;
+
+        if (Segment->SizeOfSegment < OutSectionSize->QuadPart)
+        {
+            Segment->SizeOfSegment = OutSectionSize->QuadPart;
+
+            Start1.LowPart = LastSubsection->StartingSector;
+            Start1.HighPart = LastSubsection->u.SubsectionFlags.StartingSector4132;
+
+            Last4KChunk.QuadPart = ((OutSectionSize->QuadPart / PAGE_SIZE) - Start1.QuadPart);
+            ASSERT(Last4KChunk.HighPart == 0);
+
+            LastSubsection->NumberOfFullSectors = Last4KChunk.LowPart;
+            LastSubsection->u.SubsectionFlags.SectorEndOffset = (OutSectionSize->LowPart & (PAGE_SIZE - 1));
+
+            MiSubsectionConsistent(LastSubsection);
+        }
+
+        ExReleaseResourceLite(&MmSectionExtendResource);
+        KeLeaveCriticalRegionThread(CurrentThread);
+        return STATUS_SUCCESS;
+    }
+
+    NewPages = (NeedPages - TotalPtes);
+
+    if (NewPages >= LastSubsection->UnusedPtes)
+    {
+        UsedPtes = LastSubsection->UnusedPtes;
+        NewPages -= UsedPtes;
+    }
+    else
+    {
+        UsedPtes = NewPages;
+        NewPages = 0;
+    }
+
+    LastSubsection->PtesInSubsection += UsedPtes;
+    LastSubsection->UnusedPtes -= UsedPtes;
+
+    Segment->SizeOfSegment += (UsedPtes * PAGE_SIZE);
+
+    TotalPtes += UsedPtes;
+    Segment->TotalNumberOfPtes = TotalPtes;
+
+    if (TotalPtes >= 0x100000000)
+        Segment->SegmentFlags.TotalNumberOfPtes4132 = (TotalPtes >> 32);
+
+    if (!NewPages)
+    {
+        Start1.LowPart = LastSubsection->StartingSector;
+        Start1.HighPart = LastSubsection->u.SubsectionFlags.StartingSector4132;
+
+        Last4KChunk.QuadPart = ((OutSectionSize->QuadPart / PAGE_SIZE) - Start1.QuadPart);
+        ASSERT(Last4KChunk.HighPart == 0);
+
+        LastSubsection->NumberOfFullSectors = Last4KChunk.LowPart;
+
+        LastSubsection->u.SubsectionFlags.SectorEndOffset = (OutSectionSize->LowPart & (PAGE_SIZE - 1));
+        MiSubsectionConsistent(LastSubsection);
+
+        Segment->SizeOfSegment = OutSectionSize->QuadPart;
+        Section->SizeOfSection.QuadPart = OutSectionSize->QuadPart;
+
+        ExReleaseResourceLite(&MmSectionExtendResource);
+        KeLeaveCriticalRegionThread(CurrentThread);
+        return STATUS_SUCCESS;
+    }
+
+    SegmentPages.QuadPart = (Segment->SizeOfSegment / PAGE_SIZE);
+
+    AllocationSize = (((NewPages * sizeof(MMPTE)) + (PAGE_SIZE - 1)) & ~(PAGE_SIZE - 1));
+    AllocationFragment = MmAllocationFragment;
+
+    RtlCopyMemory(&FirstExtendSubsection, LastSubsection, sizeof(FirstExtendSubsection));
+
+    LastExtendSubsection = &FirstExtendSubsection;
+    ASSERT(LastExtendSubsection->NextSubsection == NULL);
+
+    Size = 0;
+
+    do
+    {
+        ExtendSubsection = ExAllocatePoolWithTag(NonPagedPool, sizeof(MSUBSECTION), 'dSmM');
+        if (!ExtendSubsection)
+        {
+            DPRINT1("MmExtendSection: STATUS_INSUFFICIENT_RESOURCES\n");
+            goto ErrorExit;
+        }
+
+        ExtendSubsection->SubsectionBase = NULL;
+        ExtendSubsection->NextSubsection = NULL;
+
+        LastExtendSubsection->NextSubsection = (PSUBSECTION)ExtendSubsection;
+
+        ASSERT(ControlArea->FilePointer != NULL);
+
+        if (AllocationSize - Size > AllocationFragment)
+            FragmentSize = (ULONG)AllocationFragment;
+        else
+            FragmentSize = (ULONG)(AllocationSize - Size);
+
+        ExtendSubsection->u.LongFlags = 0;
+        ExtendSubsection->ControlArea = ControlArea;
+        ExtendSubsection->PtesInSubsection = FragmentSize / sizeof(MMPTE);
+        ExtendSubsection->UnusedPtes = 0;
+
+        Size += FragmentSize;
+
+        if (Size > (NewPages * sizeof(MMPTE)))
+        {
+            UnusedPtes = (Size / sizeof(MMPTE) - NewPages);
+            ExtendSubsection->PtesInSubsection -= UnusedPtes;
+            ExtendSubsection->UnusedPtes = UnusedPtes;
+        }
+
+        ExtendSubsection->u.SubsectionFlags.Protection = Segment->SegmentPteTemplate.u.Soft.Protection;
+
+        ExtendSubsection->DereferenceList.Flink = NULL;
+        ExtendSubsection->DereferenceList.Blink = NULL;
+        ExtendSubsection->NumberOfMappedViews = 0;
+        ExtendSubsection->u2.LongFlags2 = 0;
+
+        if (LastExtendSubsection == &FirstExtendSubsection)
+        {
+            Start1.LowPart = LastExtendSubsection->StartingSector;
+            Start1.HighPart = LastExtendSubsection->u.SubsectionFlags.StartingSector4132;
+
+            Last4KChunk.QuadPart = (SegmentPages.QuadPart - Start1.QuadPart);
+
+            if (LastExtendSubsection->u.SubsectionFlags.SectorEndOffset)
+                Last4KChunk.QuadPart++;
+
+            ASSERT(Last4KChunk.HighPart == 0);
+            LastExtendSubsection->u.SubsectionFlags.SectorEndOffset = 0;
+
+            LastExtendSubsection->NumberOfFullSectors = Last4KChunk.LowPart;
+
+            MiSubsectionConsistent((PSUBSECTION)LastExtendSubsection);
+
+            Start1.QuadPart += LastExtendSubsection->NumberOfFullSectors;
+            Start2.QuadPart = Start1.QuadPart;
+        }
+        else
+        {
+            Start2.QuadPart += LastExtendSubsection->NumberOfFullSectors;
+        }
+
+        ExtendSubsection->StartingSector = Start2.LowPart;
+        ExtendSubsection->u.SubsectionFlags.StartingSector4132 = (Start2.HighPart & (0x400 - 1));
+
+        if (Size >= AllocationSize)
+        {
+            Last4KChunk.QuadPart = ((OutSectionSize->QuadPart / PAGE_SIZE) - Start2.QuadPart);
+            ASSERT(Last4KChunk.HighPart == 0);
+
+            ExtendSubsection->NumberOfFullSectors = Last4KChunk.LowPart;
+            ExtendSubsection->u.SubsectionFlags.SectorEndOffset = (OutSectionSize->LowPart & (PAGE_SIZE - 1));
+        }
+        else
+        {
+            ExtendSubsection->NumberOfFullSectors = (FragmentSize / sizeof(MMPTE));
+            ExtendSubsection->u.SubsectionFlags.SectorEndOffset = 0;
+        }
+
+        MiSubsectionConsistent((PSUBSECTION)ExtendSubsection);
+        LastExtendSubsection = ExtendSubsection;
+    }
+    while (Size < AllocationSize);
+
+    if (!ControlArea->NumberOfUserReferences)
+    {
+        ASSERT(IgnoreFileSizeChecking == TRUE);
+    }
+
+    Appended = MiAppendSubsectionChain((PMSUBSECTION)LastSubsection, &FirstExtendSubsection);
+
+    if (!Appended)
+    {
+        Size = 0;
+
+        Subsection = (PSUBSECTION)&FirstExtendSubsection;
+
+        do
+        {
+            if (AllocationSize - Size > AllocationFragment)
+                FragmentSize = (ULONG)AllocationFragment;
+            else
+                FragmentSize = (ULONG)(AllocationSize - Size);
+
+            Size += FragmentSize;
+
+            SectionProtos = ExAllocatePoolWithTag(PagedPool, FragmentSize, 'tSmM'); // (PagedPool | 0x80000000)
+            if (!SectionProtos)
+            {
+                DPRINT1("MmExtendSection: STATUS_INSUFFICIENT_RESOURCES\n");
+                goto ErrorExit;
+            }
+
+            Subsection = Subsection->NextSubsection;
+
+            Subsection->SubsectionBase = SectionProtos;
+            Subsection->u.SubsectionFlags.SubsectionStatic = 1;
+
+            MI_MAKE_SUBSECTION_PTE(&TempPte, Subsection);
+
+            TempPte.u.Soft.Prototype = 1;
+            TempPte.u.Soft.Protection = Segment->SegmentPteTemplate.u.Soft.Protection;
+
+            RtlFillMemoryUlong(SectionProtos, FragmentSize, TempPte.u.Long);
+        }
+        while (Size < AllocationSize);
+
+        ASSERT(ControlArea->DereferenceList.Flink == NULL);
+
+        Appended = MiAppendSubsectionChain((PMSUBSECTION)LastSubsection, &FirstExtendSubsection);
+        ASSERT(Appended == TRUE);
+    }
+
+    TotalPtes += NewPages;
+
+    Segment->TotalNumberOfPtes = (ULONG)TotalPtes;
+
+    if (TotalPtes >= 0x100000000)
+        Segment->SegmentFlags.TotalNumberOfPtes4132 = (TotalPtes >> 32);
+
+    if (LastExtendSubsection != &FirstExtendSubsection)
+        ((PMAPPED_FILE_SEGMENT)Segment)->LastSubsectionHint = LastExtendSubsection;
+
+    Segment->SizeOfSegment = *(PULONGLONG)OutSectionSize;
+    Section->SizeOfSection = *OutSectionSize;
+
+    ExReleaseResourceLite(&MmSectionExtendResource);
+    KeLeaveCriticalRegionThread(CurrentThread);
+    return STATUS_SUCCESS;
+
+ErrorExit:
+
+    LastSubsection->PtesInSubsection -= UsedPtes;
+    LastSubsection->UnusedPtes += UsedPtes;
+
+    TotalPtes -= UsedPtes;
+    Segment->SegmentFlags.TotalNumberOfPtes4132 = 0;
+
+    Segment->TotalNumberOfPtes = TotalPtes;
+
+    if (TotalPtes >= 0x100000000)
+        Segment->SegmentFlags.TotalNumberOfPtes4132 = (TotalPtes >> 32);
+
+    Segment->SizeOfSegment -= (UsedPtes * PAGE_SIZE);
+    LastSubsection = FirstExtendSubsection.NextSubsection;
+
+    while (LastSubsection)
+    {
+        Subsection = LastSubsection->NextSubsection;
+
+        if (LastSubsection->SubsectionBase)
+            ExFreePool(LastSubsection->SubsectionBase);
+
+        ExFreePool(LastSubsection);
+
+        LastSubsection = Subsection;
+    }
+
+    ExReleaseResourceLite(&MmSectionExtendResource);
+    KeLeaveCriticalRegionThread(CurrentThread);
+
+    return STATUS_INSUFFICIENT_RESOURCES;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
