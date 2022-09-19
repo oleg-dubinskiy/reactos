@@ -245,6 +245,245 @@ MiSessionInitializeWorkingSetList(VOID)
 
 NTSTATUS
 NTAPI
+MiSessionCreateInternal(
+    _Out_ ULONG* OutSessionId)
+{
+    PEPROCESS Process = PsGetCurrentProcess();
+    PFN_NUMBER TagPage[MI_SESSION_TAG_PAGES_MAXIMUM];
+    PFN_NUMBER DataPage[MI_SESSION_DATA_PAGES_MAXIMUM];
+    PMM_SESSION_SPACE SessionGlobal;
+    PMMPDE Pde;
+    PMMPDE PageTables;
+    PMMPTE Pte;
+    PMMPTE SessionPte;
+    MMPDE TempPde;
+    MMPTE TempPte;
+    PFN_NUMBER SessionPageDirIndex;
+    ULONG NewFlags;
+    ULONG Flags;
+    ULONG Size;
+    ULONG Color;
+    ULONG ix;
+    KIRQL OldIrql;
+    BOOLEAN Result;
+    NTSTATUS Status;
+
+    DPRINT("MiSessionCreateInternal()\n");
+
+    /* This should not exist yet */
+    ASSERT(MmIsAddressValid(MmSessionSpace) == FALSE);
+
+    /* Loop so we can set the session-is-creating flag */
+    Flags = Process->Flags;
+
+    while (TRUE)
+    {
+        /* Check if it's already set */
+        if (Flags & PSF_SESSION_CREATION_UNDERWAY_BIT)
+        {
+            /* Bail out */
+            DPRINT1("MiSessionCreateInternal: Lost session race\n");
+            return STATUS_ALREADY_COMMITTED;
+        }
+
+        /* Now try to set it */
+        NewFlags = InterlockedCompareExchange((PLONG)&Process->Flags,
+                                              (Flags | PSF_SESSION_CREATION_UNDERWAY_BIT),
+                                              Flags);
+        if (NewFlags == Flags)
+            break;
+
+        /* It changed, try again */
+        Flags = NewFlags;
+    }
+
+    /* Now we should own the flag */
+    ASSERT(Process->Flags & PSF_SESSION_CREATION_UNDERWAY_BIT);
+
+    /* Session space covers everything from 0xA0000000 to 0xC0000000.
+       Allocate enough page tables to describe the entire region
+    */
+    Size = (0x20000000 / PDE_MAPPED_VA) * sizeof(MMPTE);
+
+    PageTables = ExAllocatePoolWithTag(NonPagedPool, Size, 'tHmM');
+    ASSERT(PageTables != NULL);
+
+    RtlZeroMemory(PageTables, Size);
+
+    /* Lock the session ID creation mutex */
+    KeAcquireGuardedMutex(&MiSessionIdMutex);
+
+    /* Allocate a new Session ID */
+    *OutSessionId = RtlFindClearBitsAndSet(MiSessionIdBitmap, 1, 0);
+    if (*OutSessionId == 0xFFFFFFFF)
+    {
+        /* We ran out of session IDs, we should expand */
+        DPRINT1("MiSessionCreateInternal: Too many sessions created. Expansion not yet supported\n");
+        ExFreePoolWithTag(PageTables, 'tHmM');
+        return STATUS_NO_MEMORY;
+    }
+
+    /* Unlock the session ID creation mutex */
+    KeReleaseGuardedMutex(&MiSessionIdMutex);
+
+    /* Reserve the global PTEs */
+    SessionPte = MiReserveSystemPtes(MiSessionDataPages, SystemPteSpace);
+    ASSERT(SessionPte != NULL);
+
+    /* Acquire the PFN lock while we set everything up */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    /* Loop the global PTEs */
+    TempPte = ValidKernelPte;
+
+    for (ix = 0; ix < MiSessionDataPages; ix++)
+    {
+        /* Get a zeroed colored zero page */
+        MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
+        Color = MI_GET_NEXT_COLOR();
+
+        DataPage[ix] = MiRemoveZeroPageSafe(Color);
+        if (!DataPage[ix])
+        {
+            /* No zero pages, grab a free one */
+            DataPage[ix] = MiRemoveAnyPage(Color);
+
+            /* Zero it outside the PFN lock */
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            MiZeroPhysicalPage(DataPage[ix]);
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+        }
+
+        /* Fill the PTE out */
+        TempPte.u.Hard.PageFrameNumber = DataPage[ix];
+        MI_WRITE_VALID_PTE((SessionPte + ix), TempPte);
+    }
+
+    /* Set the pointer to global space */
+    SessionGlobal = MiPteToAddress(SessionPte);
+
+    /* Get a zeroed colored zero page */
+    MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
+    Color = MI_GET_NEXT_COLOR();
+
+    SessionPageDirIndex = MiRemoveZeroPageSafe(Color);
+    if (!SessionPageDirIndex)
+    {
+        /* No zero pages, grab a free one */
+        SessionPageDirIndex = MiRemoveAnyPage(Color);
+
+        /* Zero it outside the PFN lock */
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        MiZeroPhysicalPage(SessionPageDirIndex);
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+    }
+
+    /* Fill the PTE out */
+    TempPde = ValidKernelPdeLocal;
+    TempPde.u.Hard.PageFrameNumber = SessionPageDirIndex;
+
+    /* Setup, allocate, fill out the MmSessionSpace PTE */
+    Pde = MiAddressToPde(MmSessionSpace);
+    ASSERT(Pde->u.Long == 0);
+    MI_WRITE_VALID_PDE(Pde, TempPde);
+
+    MiInitializePfnForOtherProcess(SessionPageDirIndex, Pde, SessionPageDirIndex);
+    ASSERT(MI_PFN_ELEMENT(SessionPageDirIndex)->u1.WsIndex == 0);
+
+     /* Loop all the local PTEs for it */
+    TempPte = ValidKernelPteLocal;
+    Pte = MiAddressToPte(MmSessionSpace);
+
+    for (ix = 0; ix < MiSessionDataPages; ix++)
+    {
+        /* And fill them out */
+        TempPte.u.Hard.PageFrameNumber = DataPage[ix];
+        MiInitializePfnAndMakePteValid(DataPage[ix], Pte + ix, TempPte);
+        ASSERT(MI_PFN_ELEMENT(DataPage[ix])->u1.WsIndex == 0);
+    }
+
+     /* Finally loop all of the session pool tag pages */
+    for (ix = 0; ix < MiSessionTagPages; ix++)
+    {
+        /* Grab a zeroed colored page */
+        MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
+        Color = MI_GET_NEXT_COLOR();
+
+        TagPage[ix] = MiRemoveZeroPageSafe(Color);
+        if (!TagPage[ix])
+        {
+            /* No zero pages, grab a free one */
+            TagPage[ix] = MiRemoveAnyPage(Color);
+
+            /* Zero it outside the PFN lock */
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            MiZeroPhysicalPage(TagPage[ix]);
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+        }
+
+        /* Fill the PTE out */
+        TempPte.u.Hard.PageFrameNumber = TagPage[ix];
+
+        MiInitializePfnAndMakePteValid(TagPage[ix],
+                                       (Pte + MiSessionDataPages + ix),
+                                       TempPte);
+    }
+
+    /* PTEs have been setup, release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    /* Fill out the session space structure now */
+    MmSessionSpace->GlobalVirtualAddress = SessionGlobal;
+    MmSessionSpace->ReferenceCount = 1;
+    MmSessionSpace->ResidentProcessCount = 1;
+    MmSessionSpace->u.LongFlags = 0;
+    MmSessionSpace->SessionId = *OutSessionId;
+    MmSessionSpace->LocaleId = PsDefaultSystemLocaleId;
+    MmSessionSpace->SessionPageDirectoryIndex = SessionPageDirIndex;
+    MmSessionSpace->Color = Color;
+    MmSessionSpace->NonPageablePages = MiSessionCreateCharge;
+    MmSessionSpace->CommittedPages = MiSessionCreateCharge;
+#ifndef _M_AMD64
+    MmSessionSpace->PageTables = PageTables;
+    MmSessionSpace->PageTables[Pde - MiAddressToPde(MmSessionBase)] = *Pde;
+#endif
+
+    InitializeListHead(&MmSessionSpace->ImageList);
+
+    DPRINT1("MiSessionCreateInternal: Session %X is ready to go: %p, %p, %X, %p\n", *OutSessionId, MmSessionSpace, SessionGlobal, SessionPageDirIndex, PageTables);
+
+    /* Initialize session pool */
+    //Status = MiInitializeSessionPool();
+    Status = STATUS_SUCCESS;
+    ASSERT(NT_SUCCESS(Status) == TRUE);
+
+    /* Initialize system space */
+    Result = MiInitializeSystemSpaceMap(&SessionGlobal->Session);
+    ASSERT(Result == TRUE);
+
+    /* Initialize the process list, make sure the workign set list is empty */
+    ASSERT(SessionGlobal->WsListEntry.Flink == NULL);
+    ASSERT(SessionGlobal->WsListEntry.Blink == NULL);
+
+    InitializeListHead(&SessionGlobal->ProcessList);
+
+    /* We're done, clear the flag */
+    ASSERT(Process->Flags & PSF_SESSION_CREATION_UNDERWAY_BIT);
+    PspClearProcessFlag(Process, PSF_SESSION_CREATION_UNDERWAY_BIT);
+
+    /* Insert the process into the session  */
+    ASSERT(Process->Session == NULL);
+    ASSERT(SessionGlobal->ProcessReferenceToSession == 0);
+    SessionGlobal->ProcessReferenceToSession = 1;
+
+    /* We're done */
+    InterlockedIncrement(&MmSessionDataPages);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 MmSessionCreate(
     _Out_ PULONG SessionId)
 {
