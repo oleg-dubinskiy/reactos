@@ -901,8 +901,8 @@ NTAPI
 MmGrowKernelStack(
     _In_ PVOID StackPointer)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    /* Call the extended version */
+    return MmGrowKernelStackEx(StackPointer, KERNEL_LARGE_STACK_COMMIT);
 }
 
 PVOID
