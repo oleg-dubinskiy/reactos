@@ -78,4 +78,66 @@ MiUnmapPageInHyperSpace(
     ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
     KeReleaseSpinLock(&Process->HyperSpaceLock, OldIrql);
 }
+
+PVOID
+NTAPI
+MiMapPagesInZeroSpace(
+    _In_ PMMPFN Pfn,
+    _In_ PFN_NUMBER NumberOfPages)
+{
+    PMMPTE Pte;
+    MMPTE TempPte;
+    PFN_NUMBER Offset;
+    PFN_NUMBER PageFrameIndex;
+
+    /* Sanity checks */
+    ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
+    ASSERT(NumberOfPages != 0);
+    ASSERT(NumberOfPages <= (MI_ZERO_PTES - 1));
+
+    /* Pick the first zeroing PTE */
+    Pte = MiFirstReservedZeroingPte;
+
+    /* Now get the first free PTE */
+    Offset = PFN_FROM_PTE(Pte);
+
+    if (NumberOfPages > Offset)
+    {
+        /* Reset the PTEs */
+        Offset = (MI_ZERO_PTES - 1);
+        Pte->u.Hard.PageFrameNumber = Offset;
+
+        KeFlushProcessTb();
+    }
+
+    /* Prepare the next PTE */
+    Pte->u.Hard.PageFrameNumber = (Offset - NumberOfPages);
+
+    /* Choose the correct PTE to use, and which template */
+    Pte += (Offset + 1);
+    TempPte = ValidKernelPte;
+
+    /* Make sure the list isn't empty and loop it */
+    ASSERT(Pfn != (PVOID)LIST_HEAD);
+
+    while (Pfn != (PVOID)LIST_HEAD)
+    {
+        /* Get the page index for this PFN */
+        PageFrameIndex = MiGetPfnEntryIndex(Pfn);
+
+        /* Write the PFN */
+        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
+
+        /* Set the correct PTE to write to, and set its new value */
+        Pte--;
+        MI_WRITE_VALID_PTE(Pte, TempPte);
+
+        /* Move to the next PFN */
+        Pfn = (PMMPFN)Pfn->u1.Flink;
+    }
+
+    /* Return the address */
+    return MiPteToAddress(Pte);
+}
+
 /* EOF */
