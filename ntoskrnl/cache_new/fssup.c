@@ -708,6 +708,7 @@ CcSetFileSizes(
     LARGE_INTEGER FileSize;
     PVACB ActiveVacb;
     KIRQL OldIrql;
+    NTSTATUS Status;
 
     DPRINT("CcSetFileSizes: FileObject %p FileSizes %X\n", FileObject, FileSizes);
 
@@ -741,8 +742,42 @@ CcSetFileSizes(
         AllocationSize.QuadPart += (0x100000 - 1);
         AllocationSize.LowPart &= ~(0x100000 - 1);
 
-        DPRINT1("CcSetFileSizes: FIXME MmFlushSection()\n");
-        ASSERT(FALSE);
+        Status = MmExtendSection((PSECTION)SharedMap->Section, &AllocationSize, 1);
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("CcSetFileSizes: Status %X\n", Status);
+            Status = FsRtlNormalizeNtstatus(Status, STATUS_UNEXPECTED_MM_EXTEND_ERR);
+        }
+        else
+        {
+            Status = CcExtendVacbArray(SharedMap, AllocationSize);
+        }
+
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+        SharedMap->OpenCount--;
+
+        if (!SharedMap->OpenCount &&
+            !(SharedMap->Flags & SHARE_FL_WRITE_QUEUED) &&
+            !SharedMap->DirtyPages)
+        {
+            DPRINT1("CcSetFileSizes: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("CcSetFileSizes: Status %X\n", Status);
+            KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+            RtlRaiseStatus(Status);
+        }
+
+        SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+        if (!SharedMap)
+        {
+            KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+            return;
+        }
     }
 
     SharedMap->OpenCount++;
