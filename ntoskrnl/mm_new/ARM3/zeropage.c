@@ -4,11 +4,17 @@
 #include <ntoskrnl.h>
 //#define NDEBUG
 #include <debug.h>
-//#include "miarm.h"
+#include "miarm.h"
 
 /* GLOBALS ********************************************************************/
 
 KEVENT MmZeroingPageEvent;
+
+extern MM_MEMORY_CONSUMER MiMemoryConsumers[MC_MAXIMUM];
+extern PFN_NUMBER MmAvailablePages;
+extern ULONG MmSecondaryColorMask;
+extern MMPFNLIST MmFreePageListHead;
+extern MMPFNLIST MmZeroedPageListHead;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -38,6 +44,7 @@ MiFreeInitializationCode(
     /* Try to actually free them */
     PagesFreed = MiDeleteSystemPageableVm(Pte, PagesFreed, 0, NULL);
 }
+
 
 VOID
 NTAPI
@@ -250,7 +257,79 @@ VOID
 NTAPI
 MmZeroPageThread(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PKTHREAD Thread = KeGetCurrentThread();
+    PVOID StartAddress, EndAddress;
+    PVOID WaitObjects[2];
+    KIRQL OldIrql;
+    PVOID ZeroAddress;
+    PFN_NUMBER PageIndex, FreePage;
+    PMMPFN Pfn1;
+
+    /* Get the discardable sections to free them */
+    MiFindInitializationCode(&StartAddress, &EndAddress);
+
+    if (StartAddress)
+        MiFreeInitializationCode(StartAddress, EndAddress);
+
+    DPRINT("Free non-cache pages: %lx\n", MmAvailablePages + MiMemoryConsumers[MC_CACHE].PagesUsed);
+
+    /* Set our priority to 0 */
+    Thread->BasePriority = 0;
+    KeSetPriorityThread(Thread, 0);
+
+    /* Setup the wait objects */
+    WaitObjects[0] = &MmZeroingPageEvent;
+//    WaitObjects[1] = &PoSystemIdleTimer; FIXME: Implement idle timer
+
+    while (TRUE)
+    {
+        KeWaitForMultipleObjects(1, // 2
+                                 WaitObjects,
+                                 WaitAny,
+                                 WrFreePage,
+                                 KernelMode,
+                                 FALSE,
+                                 NULL,
+                                 NULL);
+
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        while (TRUE)
+        {
+            if (!MmFreePageListHead.Total)
+            {
+                KeClearEvent(&MmZeroingPageEvent);
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                break;
+            }
+
+            PageIndex = MmFreePageListHead.Flink;
+            ASSERT(PageIndex != LIST_HEAD);
+            Pfn1 = MiGetPfnEntry(PageIndex);
+            MI_SET_USAGE(MI_USAGE_ZERO_LOOP);
+            MI_SET_PROCESS2("Kernel 0 Loop");
+
+            FreePage = MiRemoveAnyPage(MI_GET_PAGE_COLOR(PageIndex));
+
+            /* The first global free page should also be the first on its own list */
+            if (FreePage != PageIndex)
+            {
+                KeBugCheckEx(PFN_LIST_CORRUPT, 0x8F, FreePage, PageIndex, 0);
+            }
+
+            Pfn1->u1.Flink = LIST_HEAD;
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+            ZeroAddress = MiMapPagesInZeroSpace(Pfn1, 1);
+            ASSERT(ZeroAddress);
+            RtlZeroMemory(ZeroAddress, PAGE_SIZE);
+            MiUnmapPagesInZeroSpace(ZeroAddress, 1);
+
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+
+            MiInsertPageInList(&MmZeroedPageListHead, PageIndex);
+        }
+    }
 }
 
 /* EOF */

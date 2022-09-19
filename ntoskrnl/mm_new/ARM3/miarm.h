@@ -1880,6 +1880,13 @@ MiUnlinkPageFromList(
     _In_ PMMPFN Pfn
 );
 
+VOID
+NTAPI
+MiInsertPageInList(
+    _In_ PMMPFNLIST ListHead,
+    _In_ PFN_NUMBER PageFrameIndex
+);
+
 /* ARM3\pool.c */
 INIT_FUNCTION
 VOID
