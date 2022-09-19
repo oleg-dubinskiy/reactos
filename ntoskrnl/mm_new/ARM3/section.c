@@ -1405,8 +1405,136 @@ MiSetPageModified(
     _In_ PMMVAD Vad,
     _In_ PVOID Address)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    PEPROCESS CurrentProcess;
+    PMMPTE Pte;
+    PMMPDE Pde;
+    PMMPFN Pfn;
+    MMPTE PteContents;
+    KIRQL OldIrql;
+    BOOLEAN IsReturnQuota = FALSE;
+    BOOLEAN IsMemoryUsage = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("MiSetPageModified: Vad %p, Address %p\n", Vad, Address);
+
+    ASSERT((CurrentThread) == PsGetCurrentThread());
+    CurrentProcess = (PEPROCESS)CurrentThread->Tcb.ApcState.Process;
+
+    Status = PsChargeProcessPageFileQuota(CurrentProcess, 1);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MiSetPageModified: Status %X\n", Status);
+        return STATUS_COMMITMENT_LIMIT;
+    }
+
+    if (CurrentProcess->CommitChargeLimit &&
+        CurrentProcess->CommitChargeLimit < (CurrentProcess->CommitCharge + 1))
+    {
+        if (CurrentProcess->Job)
+        {
+            DPRINT1("MiSetPageModified: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        PsReturnProcessPageFileQuota(CurrentProcess, 1);
+
+        DPRINT1("MiSetPageModified: STATUS_COMMITMENT_LIMIT\n");
+        return STATUS_COMMITMENT_LIMIT;
+    }
+
+    if (CurrentProcess->JobStatus & 0x10)
+    {
+        DPRINT1("MiSetPageModified: FIXME\n");
+        ASSERT(FALSE);
+        IsMemoryUsage = TRUE;
+    }
+
+    DPRINT("MiSetPageModified: FIXME MiChargeCommitment\n");
+
+    CurrentProcess->CommitCharge++;
+
+    if (CurrentProcess->CommitCharge > CurrentProcess->CommitChargePeak)
+        CurrentProcess->CommitChargePeak = CurrentProcess->CommitCharge;
+
+    Pte = MiAddressToPte(Address);
+    Pde = MiAddressToPde(Address);
+
+    while (TRUE)
+    {
+        _SEH2_TRY
+        {
+            *(volatile PUCHAR)Address;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            DPRINT1("MiSetPageModified: FIXME\n");
+            ASSERT(FALSE);
+            return _SEH2_GetExceptionCode();
+        }
+        _SEH2_END;
+
+        MiLockProcessWorkingSetUnsafe(CurrentProcess, CurrentThread);
+
+        if (Pde->u.Hard.Valid && Pte->u.Hard.Valid)
+            break;
+
+        MiUnlockProcessWorkingSetUnsafe(CurrentProcess, CurrentThread);
+    }
+
+    PteContents.u.Long = Pte->u.Long;
+    ASSERT(PteContents.u.Hard.Valid == 1);
+
+    Pfn = MI_PFN_ELEMENT(PteContents.u.Hard.PageFrameNumber);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    ASSERT(Pfn->u3.e1.Rom == 0);
+    Pfn->u3.e1.Modified = 1;
+
+    if (!Pfn->OriginalPte.u.Soft.Prototype)
+    {
+        if (!Pfn->u3.e1.WriteInProgress)
+        {
+            DPRINT1("MiSetPageModified: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        IsReturnQuota = TRUE;
+    }
+
+    MI_MAKE_CLEAN_PAGE(&PteContents);
+
+    ASSERT(Pte->u.Hard.Valid == 1);
+    Pte->u.Long = PteContents.u.Long;
+
+    //FIXME: Use "KeFlushSingleTb(Address, 0);" instead
+    KeFlushCurrentTb();
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    MiUnlockProcessWorkingSetUnsafe(CurrentProcess, CurrentThread);
+
+    if (!IsReturnQuota)
+    {
+        ASSERT(Vad->u.VadFlags.CommitCharge != 0x7FFFF);
+        Vad->u.VadFlags.CommitCharge++;
+        return STATUS_SUCCESS;
+    }
+
+    CurrentProcess->CommitCharge--;
+
+    if (IsMemoryUsage)
+    {
+        DPRINT1("MiSetPageModified: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    ASSERT(MmTotalCommittedPages >= 1);
+    InterlockedDecrementSizeT(&MmTotalCommittedPages);
+
+    PsReturnProcessPageFileQuota(CurrentProcess, 1);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
