@@ -487,8 +487,68 @@ NTAPI
 MmSessionCreate(
     _Out_ PULONG SessionId)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PEPROCESS Process = PsGetCurrentProcess();
+    ULONG SessionLeaderExists;
+    NTSTATUS Status;
+
+    DPRINT("MmSessionCreate()\n");
+
+    /* Fail if the process is already in a session */
+    if (Process->Flags & PSF_PROCESS_IN_SESSION_BIT)
+    {
+        DPRINT1("MmSessionCreate: Process already in session\n");
+        return STATUS_ALREADY_COMMITTED;
+    }
+
+    /* Check if the process is already the session leader */
+    if (!Process->Vm.Flags.SessionLeader)
+    {
+        /* Atomically set it as the leader */
+        SessionLeaderExists = InterlockedCompareExchange(&MiSessionLeaderExists, 1, 0);
+        if (SessionLeaderExists)
+        {
+            DPRINT1("MmSessionCreate: Session leader race\n");
+            return STATUS_INVALID_SYSTEM_SERVICE;
+        }
+
+        /* Do the work required to upgrade him */
+        MiSessionLeader(Process);
+    }
+
+    /* Create the session */
+    KeEnterCriticalRegion();
+
+    Status = MiSessionCreateInternal(SessionId);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmSessionCreate: Status %X\n", Status);
+        KeLeaveCriticalRegion();
+        return Status;
+    }
+
+    /* Set up the session working set */
+    Status = MiSessionInitializeWorkingSetList();
+    if (!NT_SUCCESS(Status))
+    {
+        /* Fail */
+        //MiDereferenceSession();
+        ASSERT(FALSE);
+
+        DPRINT1("MmSessionCreate: Status %X\n", Status);
+        KeLeaveCriticalRegion();
+        return Status;
+    }
+
+    /* All done */
+    KeLeaveCriticalRegion();
+
+    /* Set and assert the flags, and return */
+    MmSessionSpace->u.Flags.Initialized = 1;
+    PspSetProcessFlag(Process, PSF_PROCESS_IN_SESSION_BIT);
+
+    ASSERT(MiSessionLeaderExists == 1);
+
+    return Status;
 }
 
 PVOID
