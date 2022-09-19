@@ -270,7 +270,7 @@ InitGdiHandleTable(void)
                              NULL,
                              &liSize,
                              PAGE_READWRITE,
-                             SEC_COMMIT | 0x1,
+                             SEC_COMMIT,
                              NULL,
                              NULL);
     if (!NT_SUCCESS(status))

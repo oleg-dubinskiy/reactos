@@ -149,7 +149,7 @@ EngCreateSectionHack(
                              NULL,
                              &liSize,
                              PAGE_READWRITE,
-                             SEC_COMMIT | 1,
+                             SEC_COMMIT,
                              NULL,
                              NULL);
     if (!NT_SUCCESS(Status))

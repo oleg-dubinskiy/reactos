@@ -190,7 +190,7 @@ UserCreateHeap(OUT PVOID *SectionObject,
                              NULL,
                              &SizeHeap,
                              PAGE_EXECUTE_READWRITE, /* Would prefer PAGE_READWRITE, but thanks to RTL heaps... */
-                             SEC_RESERVE | 1,
+                             SEC_RESERVE,
                              NULL,
                              NULL);
 
