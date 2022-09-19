@@ -2227,6 +2227,16 @@ MiGetNextNode(
     _In_ PMMADDRESS_NODE Node
 );
 
+NTSTATUS
+NTAPI
+MiFindEmptyAddressRangeDownBasedTree(
+    _In_ SIZE_T Length,
+    _In_ ULONG_PTR BoundaryAddress,
+    _In_ ULONG_PTR Alignment,
+    _In_ PMM_AVL_TABLE Table,
+    _Out_ ULONG_PTR* OutBase
+);
+
 /* ARM3\virtual.c */
 PFN_COUNT
 NTAPI

@@ -461,10 +461,121 @@ MiFindEmptyAddressRangeDownBasedTree(
     _In_ ULONG_PTR BoundaryAddress,
     _In_ ULONG_PTR Alignment,
     _In_ PMM_AVL_TABLE Table,
-    _Out_ PULONG_PTR Base)
+    _Out_ ULONG_PTR* OutBase)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PMMADDRESS_NODE Node;
+    PMMADDRESS_NODE LowestNode;
+    ULONG_PTR LowVpn;
+    ULONG_PTR BestVpn;
+
+    DPRINT("MiFindEmptyAddressRangeDownBasedTree: %X, %X, %X, %p\n", Length, BoundaryAddress, Alignment, Table);
+
+    /* Sanity checks */
+    ASSERT(Table == &MmSectionBasedRoot);
+    ASSERT(BoundaryAddress);
+    ASSERT(BoundaryAddress <= ((ULONG_PTR)MM_HIGHEST_VAD_ADDRESS + 1));
+
+    /* Compute page length, make sure the boundary address is valid */
+    Length = ROUND_TO_PAGES(Length);
+
+    if (Length > (BoundaryAddress + 1))
+    {
+        DPRINT1("MiFindEmptyAddressRangeDownBasedTree: STATUS_NO_MEMORY\n");
+        return STATUS_NO_MEMORY;
+    }
+
+    /* Check if the table is empty */
+    BestVpn = ROUND_DOWN((BoundaryAddress - Length + 1), Alignment);
+
+    if (!Table->NumberGenericTableElements)
+    {
+        /* Tree is empty, the candidate address is already the best one */
+        *OutBase = BestVpn;
+        return STATUS_SUCCESS;
+    }
+
+    /* Go to the right-most node which should be the biggest address */
+    Node = Table->BalancedRoot.RightChild;
+
+    while (RtlRightChildAvl(Node))
+        Node = RtlRightChildAvl(Node);
+
+    /* Check if we can fit in here */
+    LowVpn = ROUND_UP((Node->EndingVpn + 1), Alignment);
+
+    if (LowVpn < BoundaryAddress && Length <= (BoundaryAddress - LowVpn))
+    {
+        /* Note: this is a compatibility hack that mimics a bug in the 2k3 kernel.
+           It will can waste up to Alignment bytes of memory above the allocation.
+           This bug was fixed in Windows Vista
+        */
+        *OutBase = ROUND_DOWN((BoundaryAddress - Length), Alignment);
+
+        return STATUS_SUCCESS;
+    }
+
+    /* Now loop the Vad nodes */
+    do
+    {
+        /* Break out if we've reached the last node */
+        LowestNode = MiGetPreviousNode(Node);
+        if (!LowestNode)
+            break;
+
+        /* Check if this node could contain the requested address */
+        LowVpn = ROUND_UP((LowestNode->EndingVpn + 1), Alignment);
+
+        if (LowestNode->EndingVpn < BestVpn &&
+            LowVpn < Node->StartingVpn &&
+            Length <= (Node->StartingVpn - LowVpn))
+        {
+            /* Check if we need to take BoundaryAddress into account */
+            if (BoundaryAddress < Node->StartingVpn)
+            {
+                /* Return the optimal VPN address */
+                *OutBase = BestVpn;
+                return STATUS_SUCCESS;
+            }
+            else
+            {
+                /* The upper margin is given by the Node's starting address */
+                *OutBase = ROUND_DOWN((Node->StartingVpn - Length), Alignment);
+                return STATUS_SUCCESS;
+            }
+        }
+
+        /* Move to the next node */
+        Node = LowestNode;
+    }
+    while (TRUE);
+
+    /* Check if there's enough space before the lowest Vad */
+    if (Node->StartingVpn <= (ULONG_PTR)MI_LOWEST_VAD_ADDRESS)
+    {
+        /* No address space left at all */
+        DPRINT1("MiFindEmptyAddressRangeDownBasedTree: STATUS_NO_MEMORY\n");
+        return STATUS_NO_MEMORY;
+    }
+
+    if (Node->StartingVpn < (Length + (ULONG_PTR)MI_LOWEST_VAD_ADDRESS))
+    {
+        /* No address space left at all */
+        DPRINT1("MiFindEmptyAddressRangeDownBasedTree: STATUS_NO_MEMORY\n");
+        return STATUS_NO_MEMORY;
+    }
+
+    /* Check if it fits in perfectly */
+    if (BoundaryAddress < Node->StartingVpn)
+    {
+        /* Return the optimal VPN address */
+        *OutBase = BestVpn;
+        return STATUS_SUCCESS;
+    }
+
+    /* Return an aligned base address within this node */
+    *OutBase = ROUND_DOWN((Node->StartingVpn - Length), Alignment);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
