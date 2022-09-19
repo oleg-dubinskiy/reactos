@@ -7533,7 +7533,41 @@ ErrorExit:
         /* Is this a "based" allocation, in which all mappings are identical? */
         if (AllocationAttributes & SEC_BASED)
         {
-            ASSERT(FALSE);
+            NTSTATUS status;
+
+            NewSection->u.Flags.Based = 1;
+
+            if ((ULONGLONG)NewSection->SizeOfSection.QuadPart > (ULONG_PTR)MmHighSectionBase)
+            {
+                DPRINT1("MmCreateSection: return STATUS_NO_MEMORY\n");
+                ObDereferenceObject(NewSection);
+                return STATUS_NO_MEMORY;
+            }
+
+            /* Lock the VAD tree during the search */
+            KeAcquireGuardedMutex(&MmSectionBasedMutex);
+
+            /* Then we must find a global address, top-down */
+            status = MiFindEmptyAddressRangeDownBasedTree(NewSection->SizeOfSection.LowPart,
+                                                          (ULONG_PTR)MmHighSectionBase,
+                                                          _64K,
+                                                          &MmSectionBasedRoot,
+                                                          &NewSection->Address.StartingVpn);
+            if (!NT_SUCCESS(status))
+            {
+                /* No way to find a valid range. */
+                DPRINT1("MmCreateSection: status %X\n", status);
+                KeReleaseGuardedMutex(&MmSectionBasedMutex);
+                ObDereferenceObject(NewSection);
+                return status;
+            }
+
+            /* Compute the ending address and insert it into the VAD tree */
+            NewSection->Address.EndingVpn = (NewSection->Address.StartingVpn + 
+                                             NewSection->SizeOfSection.LowPart - 1);
+
+            MiInsertBasedSection(NewSection);
+            KeReleaseGuardedMutex(&MmSectionBasedMutex);
         }
     }
 
