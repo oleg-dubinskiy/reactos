@@ -142,6 +142,7 @@ extern PFN_NUMBER MmAvailablePages;
 extern ULONG MmSecondaryColorMask;
 extern SIZE_T MmAllocationFragment;
 extern ULONG MmVirtualBias;
+extern PMM_SESSION_SPACE MmSessionSpace;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1027,8 +1028,113 @@ MiSessionCommitPageTables(
     _In_ PVOID StartVa,
     _In_ PVOID EndVa)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    MMPDE TempPde = ValidKernelPdeLocal;
+    PMMPDE StartPde;
+    PMMPDE EndPde;
+    PMMPFN Pfn;
+    PFN_NUMBER PageCount = 0;
+    PFN_NUMBER ActualPages = 0;
+    PFN_NUMBER PageFrameNumber;
+    ULONG Color;
+    ULONG Index;
+    KIRQL OldIrql;
+
+    DPRINT("MiSessionCommitPageTables: StartVa %p, EndVa %p\n", StartVa, EndVa);
+
+    /* Windows sanity checks */
+    ASSERT(StartVa >= (PVOID)MmSessionBase);
+    ASSERT(EndVa < (PVOID)MiSessionSpaceEnd);
+    ASSERT(PAGE_ALIGN(EndVa) == EndVa);
+
+    /* Get the start and end PDE, then loop each one */
+    StartPde = MiAddressToPde(StartVa);
+    EndPde = MiAddressToPde((PVOID)((ULONG_PTR)EndVa - 1));
+
+    Index = (((ULONG_PTR)StartVa - (ULONG_PTR)MmSessionBase) >> 22);
+
+    while (StartPde <= EndPde)
+    {
+        /* If we don't already have a page table for it, increment count */
+        if (!MmSessionSpace->PageTables[Index].u.Long)
+            PageCount++;
+
+        /* Move to the next one */
+        StartPde++;
+        Index++;
+    }
+
+    /* If there's no page tables to create, bail out */
+    if (!PageCount)
+        return STATUS_SUCCESS;
+
+    /* Reset the start PDE and index */
+    StartPde = MiAddressToPde(StartVa);
+    Index = (((ULONG_PTR)StartVa - (ULONG_PTR)MmSessionBase) >> 22);
+
+    /* Loop each PDE while holding the working set lock */
+    //MiLockWorkingSet(PsGetCurrentThread(), &MmSessionSpace->GlobalVirtualAddress->Vm);
+
+    while (StartPde <= EndPde)
+    {
+        /* Check if we already have a page table */
+        if (!MmSessionSpace->PageTables[Index].u.Long)
+        {
+            /* We don't, so the PDE shouldn't be ready yet */
+            ASSERT(StartPde->u.Hard.Valid == 0);
+
+            /* ReactOS check to avoid MiEnsureAvailablePageOrWait */
+            ASSERT(MmAvailablePages >= 32);
+
+            /* Acquire the PFN lock and grab a zero page */
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+
+            MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
+            MI_SET_PROCESS2(PsGetCurrentProcess()->ImageFileName);
+
+            Color = ((++MmSessionSpace->Color) & MmSecondaryColorMask);
+            PageFrameNumber = MiRemoveZeroPage(Color);
+            TempPde.u.Hard.PageFrameNumber = PageFrameNumber;
+            MI_WRITE_VALID_PDE(StartPde, TempPde);
+
+            /* Write the page table in session space structure */
+            ASSERT(MmSessionSpace->PageTables[Index].u.Long == 0);
+            MmSessionSpace->PageTables[Index] = TempPde;
+
+            /* Initialize the PFN */
+            MiInitializePfnForOtherProcess(PageFrameNumber, StartPde, MmSessionSpace->SessionPageDirectoryIndex);
+
+            /* And now release the lock */
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+            /* Get the PFN entry and make sure there's no event for it */
+            Pfn = MI_PFN_ELEMENT(PageFrameNumber);
+            ASSERT(Pfn->u1.Event == NULL);
+
+            /* Increment the number of pages */
+            ActualPages++;
+        }
+
+        /* Move to the next PDE */
+        StartPde++;
+        Index++;
+    }
+
+    /* Make sure we didn't do more pages than expected */
+    ASSERT(ActualPages <= PageCount);
+
+    /* Release the working set lock */
+    //MiUnlockWorkingSet(PsGetCurrentThread(), &MmSessionSpace->GlobalVirtualAddress->Vm);
+
+    /* If we did at least one page... */
+    if (ActualPages)
+    {
+        /* Update the performance counters! */
+        InterlockedExchangeAddSizeT(&MmSessionSpace->NonPageablePages, ActualPages);
+        InterlockedExchangeAddSizeT(&MmSessionSpace->CommittedPages, ActualPages);
+    }
+
+    /* Return status */
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
