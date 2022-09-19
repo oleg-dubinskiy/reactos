@@ -17,6 +17,14 @@ ULONG MiInPageSinglePages = 0;
 PFN_NUMBER MmFreeGoal = 100;
 SIZE_T MmSystemLockPagesCount;
 
+static CHAR MmMakeProtectNotWriteCopy[32] =
+{
+    0x18, 0x01, 0x02, 0x03, 0x04, 0x04, 0x06, 0x06,
+    0x18, 0x09, 0x0A, 0x0B, 0x0C, 0x0C, 0x0E, 0x0E,
+    0x18, 0x11, 0x12, 0x13, 0x14, 0x14, 0x16, 0x16,
+    0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1C, 0x1E, 0x1E
+};
+
 extern MI_PFN_CACHE_ATTRIBUTE MiPlatformCacheAttributes[2][MmMaximumCacheType];
 extern PMMPTE MiSessionLastPte;
 extern PMM_SESSION_SPACE MmSessionSpace;
@@ -570,6 +578,85 @@ MiCheckVirtualAddress(
     *ProtectCode = MM_NOACCESS;
 
     return NULL;
+}
+
+VOID
+NTAPI
+MiInitializeCopyOnWritePfn(
+    _In_ PFN_NUMBER PageNumber,
+    _In_ PMMPTE Pte,
+    _In_ ULONG WsleIndex,
+    _In_ PMMWSL WsList)
+{
+    PMMPFN Pfn;
+    PMMPFN NewPfn;
+    //PMMWSLE Wsle;
+    PMMPDE Pde;
+    ULONG Protection;
+
+    DPRINT("MiInitializeCopyOnWritePfn: %X, %p [%I64X], %X, %p\n",
+           PageNumber, Pte, MiGetPteContents(Pte), WsleIndex, WsList);
+
+    ASSERT(Pte->u.Hard.Valid == 1);
+
+    Pfn = MI_PFN_ELEMENT(Pte->u.Hard.PageFrameNumber);
+
+    NewPfn = MI_PFN_ELEMENT(PageNumber);
+    NewPfn->PteAddress = Pte;
+    NewPfn->OriginalPte.u.Long = 0;
+
+    // FIXME MiInitializeWorkingSetList
+
+    if (MmWorkingSetList->Wsle == (PVOID)(ULONG_PTR)0xDEADBABEDEADBABEULL)
+    {
+        Protection = MmMakeProtectNotWriteCopy[Pfn->OriginalPte.u.Soft.Protection];
+        NewPfn->OriginalPte.u.Soft.Protection = Protection;
+    }
+    else
+    {
+        DPRINT1("MiCopyOnWrite: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    ASSERT(NewPfn->u3.e2.ReferenceCount == 0);
+
+    NewPfn->u2.ShareCount++;
+    NewPfn->u3.e2.ReferenceCount++;
+    NewPfn->u3.e1.PageLocation = ActiveAndValid;
+
+    if (NewPfn->u3.e1.CacheAttribute != Pfn->u3.e1.CacheAttribute)
+    {
+        //MiFlushType[0x21]++;
+        KeFlushEntireTb(TRUE, TRUE);
+
+        if (Pfn->u3.e1.CacheAttribute != MiCached)
+        {
+            //MiFlushCacheForAttributeChange++;
+            KeInvalidateAllCaches();
+        }
+
+        NewPfn->u3.e1.CacheAttribute = Pfn->u3.e1.CacheAttribute;
+    }
+
+    NewPfn->u1.WsIndex = WsleIndex;
+
+    Pde = MiAddressToPte(Pte);
+
+    if (!Pde->u.Hard.Valid)
+    {
+        if (!NT_SUCCESS(MiCheckPdeForPagedPool(Pte)))
+        {
+            DPRINT1("MiCopyOnWrite: KeBugCheckEx()\n");
+            ASSERT(FALSE);
+            KeBugCheckEx(0x1A, 0x61940, (ULONG_PTR)Pte, (ULONG_PTR)Pde->u.Long, (ULONG_PTR)MiPteToAddress(Pte));
+        }
+    }
+
+    ASSERT(Pde->u.Hard.PageFrameNumber != 0);
+    NewPfn->u4.PteFrame = Pde->u.Hard.PageFrameNumber;
+
+    ASSERT(NewPfn->u3.e1.Rom == 0);
+    NewPfn->u3.e1.Modified = 1;
 }
 
 NTSTATUS
