@@ -2478,6 +2478,143 @@ MiProcessValidPteList(
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
 }
 
+ULONG
+NTAPI
+MiDecommitPages(
+    _In_ PVOID StartingAddress,
+    _In_ PMMPTE EndingPte,
+    _In_ PEPROCESS Process,
+    _In_ PMMVAD Vad)
+{
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    PMMPTE ValidPteList[0X100];
+    PMMPTE CommitPte = NULL;
+    PMMPDE Pde;
+    PMMPTE Pte;
+    PMMPFN Pfn;
+    MMPTE PteContents;
+    ULONG CommitReduction = 0;
+    ULONG PteCount = 0;
+
+    /* Get the PTE and PTE for the address, and lock the working set
+       If this was a VAD for a MEM_COMMIT allocation,
+       also figure out where the commited range ends so that we can do the right accounting.
+    */
+    Pde = MiAddressToPde(StartingAddress);
+    Pte = MiAddressToPte(StartingAddress);
+
+    if (Vad->u.VadFlags.MemCommit)
+        CommitPte = (MiAddressToPte(Vad->EndingVpn * PAGE_SIZE));
+
+    MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+    /* Make the PDE valid, and now loop through each page's worth of data */
+    MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+
+    while (Pte <= EndingPte)
+    {
+        /* Check if we've crossed a PDE boundary */
+        if (MiIsPteOnPdeBoundary(Pte))
+        {
+            /* Get the new PDE and flush the valid PTEs we had built up until now.
+               This helps reduce the amount of TLB flushing we have to do.
+               Note that Windows does a much better job using timestamps and such,
+               and does not flush the entire TLB all the time,
+               but right now we have bigger problems to worry about than TLB flushing.
+            */
+            Pde = MiAddressToPde(StartingAddress);
+            if (PteCount)
+            {
+                MiProcessValidPteList(ValidPteList, PteCount);
+                PteCount = 0;
+            }
+
+            /* Make this PDE valid */
+            MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+        }
+
+        /* Read this PTE. It might be active or still demand-zero. */
+        PteContents = *Pte;
+        if (PteContents.u.Long)
+        {
+            /* The PTE is active. It might be valid and in a working set,
+               or it might be a prototype PTE or paged out or even in transition.
+            */
+            if (Pte->u.Long == MmDecommittedPte.u.Long)
+            {
+                /* It's already decommited, so there's nothing for us to do here */
+                CommitReduction++;
+            }
+            else
+            {
+                /* Remove it from the counters, and check if it was valid or not */
+                //Process->NumberOfPrivatePages--;
+
+                if (PteContents.u.Hard.Valid)
+                {
+                    /* It's valid. At this point make sure that it is not a ROS PFN.
+                       Also, we don't support ProtoPTEs in this code path.
+                    */
+                    Pfn = MiGetPfnEntry(PteContents.u.Hard.PageFrameNumber);
+                    ASSERT(Pfn->u3.e1.PrototypePte == FALSE);
+
+                    /* Flush any pending PTEs that we had not yet flushed,
+                       if our list has gotten too big, then add this PTE to the flush list.
+                    */
+                    if (PteCount == 0x100)
+                    {
+                        MiProcessValidPteList(ValidPteList, PteCount);
+                        PteCount = 0;
+                    }
+
+                    ValidPteList[PteCount++] = Pte;
+                }
+                else
+                {
+                    /* We do not support any of these other scenarios at the moment */
+                    ASSERT(PteContents.u.Soft.Prototype == 0);
+                    ASSERT(PteContents.u.Soft.Transition == 0);
+                    ASSERT(PteContents.u.Soft.PageFileHigh == 0);
+
+                    /* So the only other possibility is that it is still a demand zero PTE,
+                       in which case we undo the accounting we did earlier and simply make the page decommitted.
+                    */
+                    //Process->NumberOfPrivatePages++;
+                    MI_WRITE_INVALID_PTE(Pte, MmDecommittedPte);
+                }
+            }
+        }
+        else
+        {
+            /* This used to be a zero PTE and it no longer is, so we must add a reference to the pagetable. */
+            MiIncrementPageTableReferences(StartingAddress);
+
+            DPRINT("MiDecommitPages: [%d] Address %p, RefCount %X\n",
+                   MiAddressToPdeOffset(StartingAddress), StartingAddress, MiQueryPageTableReferences(StartingAddress));
+
+            /* Next, we account for decommitted PTEs and make the PTE as such */
+            if (Pte > CommitPte)
+                CommitReduction++;
+
+            MI_WRITE_INVALID_PTE(Pte, MmDecommittedPte);
+        }
+
+        /* Move to the next PTE and the next address */
+        Pte++;
+        StartingAddress = (PVOID)((ULONG_PTR)StartingAddress + PAGE_SIZE);
+    }
+
+    /* Flush any dangling PTEs from the loop in the last page table,
+       and then release the working set and return the commit reduction accounting.
+    */
+    if (PteCount)
+        MiProcessValidPteList(ValidPteList, PteCount);
+
+    MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+    return CommitReduction;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS
