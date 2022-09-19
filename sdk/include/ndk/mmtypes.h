@@ -403,7 +403,7 @@ typedef struct _SEGMENT
     ULONG Spare0;
     ULONGLONG SizeOfSegment;
     MMPTE SegmentPteTemplate;
-    ULONG NumberOfCommittedPages;
+    SIZE_T NumberOfCommittedPages;
     PMMEXTEND_INFO ExtendInfo;
     SEGMENT_FLAGS SegmentFlags;
     PVOID BasedAddress;
