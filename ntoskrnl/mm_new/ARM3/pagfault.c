@@ -2708,13 +2708,55 @@ MiDispatchFault(
                     }
                     else if (!TempProto.u.Soft.Prototype && TempProto.u.Soft.Transition)
                     {
-                        DPRINT1("MiDispatchFault: FIXME!\n");
-                        ASSERT(FALSE);
+                        DPRINT1("MiDispatchFault: TempProto.u.Long %X, LockIrql %X\n", TempProto.u.Long, LockIrql);
+
+                        /* This is a standby page, bring it back from the cache */
+                        PageFrameIndex = TempProto.u.Trans.PageFrameNumber;
+                        Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+                        ASSERT(Pfn->u3.e1.PageLocation != ActiveAndValid);
+
+                        if (Pfn->u3.e1.ReadInProgress || Pfn->u4.InPageError || (MmAvailablePages < 0x80))
+                            break;
+
+                        /* Get the page */
+                        MiUnlinkPageFromList(Pfn);
+
+                        /* Bump its reference count */
+                        ASSERT(Pfn->u2.ShareCount == 0);
+                        InterlockedIncrement16((PSHORT)&Pfn->u3.e2.ReferenceCount);
+                        Pfn->u2.ShareCount++;
+
+                        /* Make it valid again */
+                        /* This looks like another macro.... */
+                        Pfn->u3.e1.PageLocation = ActiveAndValid;
+
+                        ASSERT(SectionProto->u.Hard.Valid == 0);
+                        ASSERT(SectionProto->u.Trans.Prototype == 0);
+                        ASSERT(SectionProto->u.Trans.Transition == 1);
+
+                        TempPte.u.Long = (SectionProto->u.Long & ~(PAGE_SIZE - 1)) |
+                                         MmProtectToPteMask[SectionProto->u.Trans.Protection];
+
+                        TempPte.u.Hard.Valid = 1;
+                        MI_MAKE_ACCESSED_PAGE(&TempPte);
+
+                        /* Is the PTE writeable? */
+                        if (Pfn->u3.e1.Modified && TempPte.u.Hard.Write && !TempPte.u.Hard.CopyOnWrite)
+                            /* Make it dirty */
+                            MI_MAKE_DIRTY_PAGE(&TempPte);
+                        else
+                            /* Make it clean */
+                            MI_MAKE_CLEAN_PAGE(&TempPte);
+
+                        /* Write the valid PTE */
+                        MI_WRITE_VALID_PTE(SectionProto, TempPte);
+                        ASSERT(Pte->u.Hard.Valid == 0);
                     }
                     else
                     {
-                        DPRINT1("MiDispatchFault: FIXME!\n");
-                        ASSERT(FALSE);
+                        /* Page is invalid, get out of the loop */
+                        DPRINT("MiDispatchFault: TempProto.u.Long %X, LockIrql %X\n", TempProto.u.Long, LockIrql);
+                        break;
                     }
 
                     /* One more done, was it the last? */
@@ -3592,8 +3634,55 @@ UserFault:
 
     if (TempPte.u.Hard.Valid)
     {
-        DPRINT1("MmAccessFault: FIXME\n");
-        ASSERT(FALSE);
+        if (MI_IS_PAGE_LARGE(&TempPte))
+        {
+            DPRINT1("KeBugCheckEx()\n");
+            ASSERT(FALSE);//DbgBreakPoint();
+            KeBugCheckEx(PAGE_FAULT_IN_NONPAGED_AREA, (ULONG_PTR)Address, FaultCode, (ULONG_PTR)TrapInformation, 8);
+        }
+
+        Status = STATUS_SUCCESS;
+
+        if (!TempPte.u.Hard.Owner && Address <= MmHighestUserAddress)
+        {
+            DPRINT1("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
+            ASSERT(FALSE);
+            Status = STATUS_ACCESS_VIOLATION;
+            goto Exit2;
+        }
+
+        if (MI_IS_WRITE_ACCESS(FaultCode) && TempPte.u.Hard.CopyOnWrite)
+        {
+            MiCopyOnWrite(Address, Pte);
+            Status = STATUS_PAGE_FAULT_COPY_ON_WRITE;
+            goto Exit2;
+        }
+
+        if (MI_IS_WRITE_ACCESS(FaultCode) && !TempPte.u.Hard.Write)
+        {
+            DPRINT("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
+            ASSERT(FALSE);
+            Status = STATUS_ACCESS_VIOLATION;
+            goto Exit2;
+        }
+
+        if (CurrentProcess->AweInfo)
+        {
+            DPRINT1("MmAccessFault: FIXME\n");
+            ASSERT(FALSE);
+            goto Exit2;
+        }
+
+        if (!MI_IS_WRITE_ACCESS(FaultCode) || TempPte.u.Hard.Dirty)
+            goto Exit2;
+
+        if (!MiSetDirtyBit(Address, Pte, FALSE))
+        {
+            DPRINT1("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
+            ASSERT(FALSE);
+            Status = STATUS_ACCESS_VIOLATION;
+        }
+
         goto Exit2;
     }
 
@@ -3792,8 +3881,48 @@ UserFault:
     }
     else
     {
-        DPRINT1("MmAccessFault: FIXME\n");
-        ASSERT(FALSE);
+        /* Get the protection code and check if this is a proto PTE */
+        ProtectionCode = (ULONG)TempPte.u.Soft.Protection;
+
+        if (TempPte.u.Soft.Prototype)
+        {
+            /* Do we need to go find the real PTE? */
+            if (TempPte.u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)
+            {
+                /* Get the prototype pte and VAD for it */
+                SectionProto = MiCheckVirtualAddress(Address, &ProtectionCode, &Vad);
+                if (!SectionProto)
+                {
+                    DPRINT1("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
+                    ASSERT(FALSE);
+                    Status = STATUS_ACCESS_VIOLATION;
+                    goto Exit3;
+                }
+            }
+            else
+            {
+                /* Get the prototype PTE! */
+                SectionProto = MiGetProtoPtr(&TempPte);
+
+                /* Is it read-only */
+                if (TempPte.u.Proto.ReadOnly)
+                {
+                    /* Set read-only code */
+                    ProtectionCode = MM_READONLY;
+                }
+                else
+                {
+                    /* Set unknown protection */
+                    ProtectionCode = 0x100;
+
+                    if (CurrentProcess->CloneRoot)
+                    {
+                        DPRINT1("MmAccessFault: CurrentProcess->CloneRoot %X\n", CurrentProcess->CloneRoot);
+                        ASSERT(CurrentProcess->CloneRoot == NULL);
+                    }
+                }
+            }
+        }
     }
 
     /* Do we have a valid protection code? */

@@ -1753,6 +1753,20 @@ MiUnmapPageInHyperSpace(
     _In_ KIRQL OldIrql
 );
 
+PVOID
+NTAPI
+MiMapPagesInZeroSpace(
+    _In_ PMMPFN Pfn,
+    _In_ PFN_NUMBER NumberOfPages
+);
+
+VOID
+NTAPI
+MiUnmapPagesInZeroSpace(
+    _In_ PVOID VirtualAddress,
+    _In_ PFN_NUMBER NumberOfPages
+);
+
 /* ARM3\largepag.c */
 INIT_FUNCTION
 VOID
@@ -1985,6 +1999,16 @@ MiMakeProtectionMask(
     IN ULONG Protect
 );
 
+NTSTATUS
+NTAPI
+MiQueryMemorySectionName(
+    _In_ HANDLE ProcessHandle,
+    _In_ PVOID BaseAddress,
+    _Out_ PVOID MemoryInformation,
+    _In_ SIZE_T MemoryInformationLength,
+    _Out_ SIZE_T* ReturnLength
+);
+
 /* ARM3\session.c */
 VOID
 NTAPI
@@ -2195,6 +2219,12 @@ MiCheckForConflictingNode(
     _In_ ULONG_PTR StartVpn,
     _In_ ULONG_PTR EndVpn,
     _In_ PMM_AVL_TABLE Table
+);
+
+PMMADDRESS_NODE
+NTAPI
+MiGetNextNode(
+    _In_ PMMADDRESS_NODE Node
 );
 
 /* ARM3\virtual.c */
