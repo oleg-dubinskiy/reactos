@@ -180,4 +180,11 @@ CcScheduleLazyWriteScanEx(
     _In_ BOOLEAN PendingTeardown
 );
 
+NTSTATUS
+NTAPI
+CcExtendVacbArray(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LARGE_INTEGER AllocationSize
+);
+
 /* EOF */
