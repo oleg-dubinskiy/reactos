@@ -362,9 +362,7 @@ CcInitializeCacheMap(
 
             if (!(Fcb->Flags2 & FSRTL_FLAG2_DO_MODIFIED_WRITE) && !FileObject->FsContext2)
             {
-                DPRINT1("CcInitializeCacheMap: FIXME MmDisableModifiedWriteOfSection()\n");
-                ASSERT(FALSE);
-                //MmDisableModifiedWriteOfSection(FileObject->SectionObjectPointer);
+                MmDisableModifiedWriteOfSection(FileObject->SectionObjectPointer);
 
                 OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
                 SharedMap->Flags |= SHARE_FL_MODIFIED_NO_WRITE;
