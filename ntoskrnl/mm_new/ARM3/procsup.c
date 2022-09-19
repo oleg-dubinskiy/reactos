@@ -930,7 +930,64 @@ MmDeleteKernelStack(
     _In_ PVOID StackBase,
     _In_ BOOLEAN GuiStack)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PSLIST_ENTRY SListEntry;
+    PMMPTE Pte;
+    PMMPFN Pfn;
+    PFN_NUMBER PageFrameNumber;
+    PFN_COUNT StackPages;
+    ULONG ix;
+    KIRQL OldIrql;
+
+    /* This should be the guard page, so decrement by one */
+    Pte = MiAddressToPte(StackBase);
+    Pte--;
+
+    /* If this is a small stack, just push the stack onto the dead stack S-LIST */
+    if (!GuiStack &&
+        ExQueryDepthSList(&MmDeadStackSListHead) < MmMaximumDeadKernelStacks)
+    {
+        SListEntry = (((PSLIST_ENTRY)StackBase) - 1);
+        InterlockedPushEntrySList(&MmDeadStackSListHead, SListEntry);
+        return;
+    }
+
+    /* Calculate pages used */
+    StackPages = BYTES_TO_PAGES(GuiStack ? MmLargeStackSize : KERNEL_STACK_SIZE);
+
+    /* Acquire the PFN lock */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    /* Loop them */
+    for (ix = 0; ix < StackPages; ix++, Pte--)
+    {
+        /* Check if this is a valid PTE */
+        if (!Pte->u.Hard.Valid)
+            continue;
+
+        /* Get the PTE's page */
+        PageFrameNumber = PFN_FROM_PTE(Pte);
+        Pfn = MiGetPfnEntry(PageFrameNumber);
+
+        /* Now get the page of the page table mapping it.
+           Remove a shared reference, since the page is going away
+        */
+        MiDecrementShareCount(MiGetPfnEntry(Pfn->u4.PteFrame), Pfn->u4.PteFrame);
+
+        /* Set the special pending delete marker */
+        MI_SET_PFN_DELETED(Pfn);
+
+        /* And now delete the actual stack page */
+        MiDecrementShareCount(Pfn, PageFrameNumber);
+    }
+
+    /* We should be at the guard page now */
+    ASSERT(Pte->u.Hard.Valid == 0);
+
+    /* Release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    /* Release the PTEs */
+    MiReleaseSystemPtes(Pte, (StackPages + 1), SystemPteSpace);
 }
 
 /* SYSTEM CALLS ***************************************************************/
