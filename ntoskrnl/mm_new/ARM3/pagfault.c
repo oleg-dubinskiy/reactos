@@ -3503,8 +3503,15 @@ MmAccessFault(
         }
         else if (!TempPte.u.Soft.Transition && !TempPte.u.Soft.Protection)
         {
-            DPRINT1("MmAccessFault: FIXME! !Transition and !Protection\n");
-            ASSERT(FALSE);//DbgBreakPoint();
+            if (KeInvalidAccessAllowed(TrapInformation))
+            {
+                DPRINT1("MmAccessFault: return STATUS_ACCESS_VIOLATION\n");
+                return STATUS_ACCESS_VIOLATION;
+            }
+
+            DPRINT1("KeBugCheckEx()\n");
+            ASSERT(FALSE);
+            //KeBugCheckEx();
         }
         else if (TempPte.u.Soft.Protection == MM_NOACCESS)
         {
