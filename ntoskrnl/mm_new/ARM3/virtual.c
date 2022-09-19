@@ -2615,6 +2615,173 @@ MiDecommitPages(
     return CommitReduction;
 }
 
+ULONG
+NTAPI
+MiCalculatePageCommitment(
+    _In_ ULONG_PTR StartingAddress,
+    _In_ ULONG_PTR EndingAddress,
+    _In_ PMMVAD Vad,
+    _In_ PEPROCESS Process)
+{
+    PMMPDE Pde;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    ULONG CommittedPages;
+
+    /* Compute starting and ending PTE and PDE addresses */
+    Pde = MiAddressToPde(StartingAddress);
+    Pte = MiAddressToPte(StartingAddress);
+    LastPte = MiAddressToPte(EndingAddress);
+
+    /* Handle commited pages first */
+    if (Vad->u.VadFlags.MemCommit)
+    {
+        /* This is a committed VAD, so Assume the whole range is committed */
+        CommittedPages = (ULONG)BYTES_TO_PAGES(EndingAddress - StartingAddress);
+
+        /* Is the PDE demand-zero? */
+        Pde = MiPteToPde(Pte);
+        if (Pde->u.Long)
+        {
+            /* It is not. Is it valid? */
+            if (!Pde->u.Hard.Valid)
+            {
+                /* Fault it in */
+                Pte = MiPteToAddress(Pde);
+                MiMakeSystemAddressValid(Pte, Process);
+            }
+        }
+        else
+        {
+            /* It is, skip it and move to the next PDE, unless we're done */
+            Pde++;
+
+            Pte = MiPteToAddress(Pde);
+            if (Pte > LastPte)
+                return CommittedPages;
+        }
+
+        /* Now loop all the PTEs in the range */
+        while (Pte <= LastPte)
+        {
+            /* Have we crossed a PDE boundary? */
+            if (MiIsPteOnPdeBoundary(Pte))
+            {
+                /* Is this PDE demand zero? */
+                Pde = MiPteToPde(Pte);
+                if (Pde->u.Long)
+                {
+                    /* It isn't -- is it valid? */
+                    if (!Pde->u.Hard.Valid)
+                    {
+                        /* Nope, fault it in */
+                        Pte = MiPteToAddress(Pde);
+                        MiMakeSystemAddressValid(Pte, Process);
+                    }
+                }
+                else
+                {
+                    /* It is, skip it and move to the next PDE */
+                    Pde++;
+                    Pte = MiPteToAddress(Pde);
+                    continue;
+                }
+            }
+
+            /* Is this PTE demand zero? */
+            if (Pte->u.Long)
+            {
+                /* It isn't -- is it a decommited, invalid, or faulted PTE? */
+                if (Pte->u.Soft.Protection == MM_DECOMMIT &&
+                    !Pte->u.Hard.Valid &&
+                    (!Pte->u.Soft.Prototype || Pte->u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED))
+                {
+                    /* It is, so remove it from the count of commited pages */
+                    CommittedPages--;
+                }
+            }
+
+            /* Move to the next PTE */
+            Pte++;
+        }
+
+        /* Return how many committed pages there still are */
+        return CommittedPages;
+    }
+
+    /* This is a non-commited VAD, so assume none of it is committed */
+    CommittedPages = 0;
+
+    /* Is the PDE demand-zero? */
+    Pde = MiPteToPde(Pte);
+    if (Pde->u.Long)
+    {
+        /* It isn't -- is it invalid? */
+        if (!Pde->u.Hard.Valid)
+        {
+            /* It is, so page it in */
+            Pte = MiPteToAddress(Pde);
+            MiMakeSystemAddressValid(Pte, Process);
+        }
+    }
+    else
+    {
+        /* It is, so skip it and move to the next PDE */
+        Pde++;
+
+        Pte = MiPteToAddress(Pde);
+        if (Pte > LastPte)
+            return CommittedPages;
+    }
+
+    /* Loop all the PTEs in this PDE */
+    while (Pte <= LastPte)
+    {
+        /* Have we crossed a PDE boundary? */
+        if (MiIsPteOnPdeBoundary(Pte))
+        {
+            /* Is this new PDE demand-zero? */
+            Pde = MiPteToPde(Pte);
+            if (Pde->u.Long)
+            {
+                /* It isn't. Is it valid? */
+                if (!Pde->u.Hard.Valid)
+                {
+                    /* It isn't, so make it valid */
+                    Pte = MiPteToAddress(Pde);
+                    MiMakeSystemAddressValid(Pte, Process);
+                }
+            }
+            else
+            {
+                /* It is, so skip it and move to the next one */
+                Pde++;
+                Pte = MiPteToAddress(Pde);
+                continue;
+            }
+        }
+
+        /* Is this PTE demand-zero? */
+        if (Pte->u.Long)
+        {
+            /* Nope. Is it a valid, non-decommited, non-paged out PTE? */
+            if (Pte->u.Soft.Protection != MM_DECOMMIT ||
+                Pte->u.Hard.Valid ||
+                (Pte->u.Soft.Prototype && Pte->u.Soft.PageFileHigh != MI_PTE_LOOKUP_NEEDED))
+            {
+                /* It is! So we'll treat this as a committed page */
+                CommittedPages++;
+            }
+        }
+
+        /* Move to the next PTE */
+        Pte++;
+    }
+
+    /* Return how many committed pages we found in this VAD */
+    return CommittedPages;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS
