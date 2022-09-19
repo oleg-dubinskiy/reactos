@@ -134,6 +134,7 @@ extern SIZE_T MmSessionViewSize;
 extern PVOID MiSystemViewStart;
 extern SIZE_T MmSystemViewSize;
 extern LARGE_INTEGER MmHalfSecond;
+extern LARGE_INTEGER MmShortTime;
 extern SIZE_T MmSharedCommit;
 extern SIZE_T MmTotalCommittedPages;
 extern MMPDE ValidKernelPde;
@@ -3368,7 +3369,7 @@ MiCheckProtoPtePageState(
 
     if (OldIrql != MM_NOIRQL)
     {
-        DPRINT1("MmPurgeSection: FIXME\n");
+        DPRINT1("MiCheckProtoPtePageState: FIXME\n");
         ASSERT(FALSE);
         //MiMakeSystemAddressValidPfn(SectionProto, OldIrql);
         *OutIsLock = TRUE;
@@ -3408,6 +3409,293 @@ Exit:
 
     MappedSubsection->u2.SubsectionFlags2.SubsectionAccessed = 1;
     return TRUE;
+}
+
+NTSTATUS
+NTAPI 
+MiFlushSectionInternal(
+    _In_ PMMPTE StartPte,
+    _In_ PMMPTE LastPte,
+    _In_ PSUBSECTION StartSubsection,
+    _In_ PSUBSECTION LastSubsection,
+    _In_ ULONG Flags,
+    _Out_ IO_STATUS_BLOCK* OutIoStatus)
+{
+    PFN_NUMBER MdlBuffer[(sizeof(MDL) / sizeof(PFN_NUMBER)) + 17];
+    PMDL Mdl = (PMDL)MdlBuffer;
+    PCONTROL_AREA ControlArea;
+    PFILE_OBJECT FilePointer;
+    PSUBSECTION subsection;
+    PMSUBSECTION MappedSubsection;
+    PVOID FlushData = NULL;
+    PMMPTE Pte;
+    PMMPTE LastWrittenPte;
+    MMPTE TempPte;
+    PMMPFN Pfn;
+    KEVENT event;
+    PFN_NUMBER PageNumber;
+    BOOLEAN IsSingleFlush;
+    BOOLEAN IsLocked;
+    BOOLEAN IsAlowWrite;
+    BOOLEAN IsWriteInProgress;
+    BOOLEAN IsDereferenceSegment = FALSE;
+    KIRQL OldIrql;
+
+    DPRINT("MiFlushSectionInternal: Ptes %p:%p, Subsections %X:%X, Flags %X\n",
+           StartPte, LastPte, StartSubsection, LastSubsection, Flags);
+
+    if (Flags & 0x4)
+        IsSingleFlush = FALSE;
+    else
+        IsSingleFlush = TRUE;
+
+    if (Flags & 0x8)
+    {
+        DPRINT1("MiFlushSectionInternal: FIXME\n");
+        ASSERT(FALSE);
+        //FlushData = ExAllocatePoolWithTag();
+    }
+
+    if (Flags & 0x80000000)
+    {
+        IsDereferenceSegment = TRUE;
+
+        DPRINT1("MiFlushSectionInternal: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    LastPte++;
+
+    while (TRUE)
+    {
+        IsAlowWrite = FALSE;
+        IsWriteInProgress = FALSE;
+
+        OutIoStatus->Status = STATUS_SUCCESS;
+        OutIoStatus->Information = 0;
+
+        if (!FlushData)
+        {
+            KeInitializeEvent(&event, NotificationEvent, FALSE);
+        }
+        else
+        {
+            DPRINT1("MiFlushSectionInternal: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        ControlArea = StartSubsection->ControlArea;
+        FilePointer = ControlArea->FilePointer;
+
+        subsection = StartSubsection;
+        MappedSubsection = NULL;
+
+        Pte = StartPte;
+        LastWrittenPte = NULL;
+
+        ASSERT((ControlArea->u.Flags.Image == 0) &&
+               (FilePointer != NULL) &&
+               (ControlArea->u.Flags.PhysicalMemory == 0));
+
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        ASSERT(ControlArea->u.Flags.Image == 0);
+
+        if (!ControlArea->NumberOfPfnReferences)
+        {
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+            if (FlushData)
+                ExFreePool(FlushData);
+
+            return STATUS_SUCCESS;
+        }
+
+        if (IsSingleFlush)
+        {
+            if (ControlArea->FlushInProgressCount)
+            //while (ControlArea->FlushInProgressCount)
+            {
+                DPRINT1("MiFlushSectionInternal: FIXME\n");
+                ASSERT(FALSE);
+                //KeWaitForSingleObject();
+            }
+        }
+
+        ControlArea->FlushInProgressCount++;
+
+        while (TRUE)
+        {
+            if (LastSubsection != subsection)
+                LastPte = &subsection->SubsectionBase[subsection->PtesInSubsection];
+
+            if (!subsection->SubsectionBase)
+            {
+                if (LastWrittenPte)
+                {
+                    ASSERT(MappedSubsection != NULL);
+
+                    IsAlowWrite = TRUE;
+                    goto StartFlush;
+                }
+
+                if (LastSubsection == subsection)
+                    break;
+
+                subsection = subsection->NextSubsection;
+                Pte = subsection->SubsectionBase;
+
+                continue;
+            }
+
+            MappedSubsection = (PMSUBSECTION)subsection;
+            MappedSubsection->NumberOfMappedViews++;
+
+            if (MappedSubsection->DereferenceList.Flink)
+            {
+                DPRINT1("MiFlushSectionInternal: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            if (!IsDereferenceSegment)
+                MappedSubsection->u2.SubsectionFlags2.SubsectionAccessed = 1;
+
+            if (!MiCheckProtoPtePageState(Pte, OldIrql, &IsLocked))
+                Pte = (PMMPTE)(((ULONG_PTR)Pte | (PAGE_SIZE - 1)) + 1);
+
+            while (Pte < LastPte)
+            {
+                if (MiIsPteOnPdeBoundary(Pte) &&
+                    !MiCheckProtoPtePageState(Pte, OldIrql, &IsLocked))
+                {
+                    Pte = (PMMPTE)((ULONG_PTR)Pte + PAGE_SIZE);
+
+                    if (LastWrittenPte)
+                    {
+                        IsAlowWrite = TRUE;
+                        goto StartFlush;
+                    }
+
+                    continue;
+                }
+
+                TempPte = *Pte;
+                //DPRINT("MiFlushSectionInternal: Pte %p [%p], LastPte %p\n", Pte, TempPte, LastPte);
+
+                if (TempPte.u.Hard.Valid ||
+                    (!TempPte.u.Soft.Prototype && TempPte.u.Soft.Transition))
+                {
+                    PageNumber = TempPte.u.Hard.PageFrameNumber;
+                    Pfn = MI_PFN_ELEMENT(PageNumber);
+
+                    ASSERT(Pfn->OriginalPte.u.Soft.Prototype == 1);
+                    ASSERT(Pfn->OriginalPte.u.Hard.Valid == 0);
+
+                    if (IsDereferenceSegment && Pfn->u3.e2.ReferenceCount)
+                    {
+                        DPRINT1("MiFlushSectionInternal: FIXME\n");
+                        ASSERT(FALSE);
+
+                        if (TempPte.u.Hard.Valid &&
+                            !MappedSubsection->u2.SubsectionFlags2.SubsectionAccessed &&
+                            !ControlArea->u.Flags.Accessed)
+                        {
+                            DbgPrintEx(DPFLTR_MM_ID, DPFLTR_ERROR_LEVEL, "MM: flushing valid proto, %p %p\n", Pfn, Pte);
+                            ASSERT(FALSE);
+                        }
+
+                        Pte = LastPte;
+                        IsWriteInProgress = TRUE;
+
+                        if (LastWrittenPte)
+                            IsAlowWrite = TRUE;
+
+                        goto StartFlush;
+                    }
+
+                    if (Pfn->u3.e1.Modified || Pfn->u3.e1.WriteInProgress)
+                    {
+                        DPRINT1("MiFlushSectionInternal: FIXME\n");
+                        ASSERT(FALSE);
+                    }
+                    else if (LastWrittenPte)
+                    {
+                        DPRINT1("MiFlushSectionInternal: FIXME\n");
+                        ASSERT(FALSE);
+                    }
+                }
+                else if (LastWrittenPte)
+                {
+                    DPRINT1("MiFlushSectionInternal: FIXME\n");
+                    ASSERT(FALSE);
+                }
+
+                Pte++;
+StartFlush:
+                if (!IsAlowWrite && (Pte != LastPte || !LastWrittenPte))
+                    continue;
+
+                DPRINT("MiFlushSectionInternal: IsAlowWrite %X, LastWrittenPte %X\n", IsAlowWrite, LastWrittenPte);
+
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                IsAlowWrite = FALSE;
+
+                DPRINT1("MiFlushSectionInternal: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            ASSERT(MappedSubsection->DereferenceList.Flink == NULL);
+
+            ASSERT(((LONG_PTR)MappedSubsection->NumberOfMappedViews >= 1) ||
+                   (MappedSubsection->u.SubsectionFlags.SubsectionStatic == 1));
+
+            MappedSubsection->NumberOfMappedViews--;
+
+            if (!MappedSubsection->NumberOfMappedViews &&
+                !MappedSubsection->u.SubsectionFlags.SubsectionStatic)
+            {
+                DPRINT1("MiFlushSectionInternal: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            if (IsWriteInProgress || subsection == LastSubsection)
+                break;
+
+            subsection = subsection->NextSubsection;
+            Pte = subsection->SubsectionBase;
+        }
+
+        ASSERT(LastWrittenPte == NULL);
+
+        ControlArea->FlushInProgressCount--;
+
+        if (ControlArea->u.Flags.CollidedFlush && !ControlArea->FlushInProgressCount)
+        {
+            DPRINT1("MiFlushSectionInternal: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        if (!FlushData)
+        {
+            if (IsWriteInProgress)
+                OutIoStatus->Status = 0xC0000433;
+
+            return OutIoStatus->Status;
+        }
+
+        DPRINT1("MiFlushSectionInternal: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    DPRINT("MiFlushSectionInternal: Mdl %X\n", Mdl);
+
+    DPRINT1("MiFlushSectionInternal: FIXME\n");
+    ASSERT(FALSE);
+
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 NTSTATUS
