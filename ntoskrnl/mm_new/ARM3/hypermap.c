@@ -140,4 +140,24 @@ MiMapPagesInZeroSpace(
     return MiPteToAddress(Pte);
 }
 
+VOID
+NTAPI
+MiUnmapPagesInZeroSpace(
+    _In_ PVOID VirtualAddress,
+    _In_ PFN_NUMBER NumberOfPages)
+{
+    PMMPTE Pte;
+
+    /* Sanity checks */
+    ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
+    ASSERT (NumberOfPages != 0);
+    ASSERT (NumberOfPages <= (MI_ZERO_PTES - 1));
+
+    /* Get the first PTE for the mapped zero VA */
+    Pte = MiAddressToPte(VirtualAddress);
+
+    /* Blow away the mapped zero PTEs */
+    RtlZeroMemory(Pte, (NumberOfPages * sizeof(MMPTE)));
+}
+
 /* EOF */
