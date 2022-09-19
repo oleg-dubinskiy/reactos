@@ -4176,8 +4176,9 @@ ErrorVadExit:
 
         if (!IsReturnQuota)
         {
-            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
-            ASSERT(FALSE);
+            ASSERT((SSIZE_T)(ExcessCharge) >= 0);
+            ASSERT(MmTotalCommittedPages >= (ExcessCharge));
+            InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -ExcessCharge);
         }
 
         PsReturnProcessPageFileQuota(Process, ExcessCharge);
