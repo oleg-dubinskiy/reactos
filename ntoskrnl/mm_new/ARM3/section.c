@@ -143,6 +143,7 @@ extern ULONG MmSecondaryColorMask;
 extern SIZE_T MmAllocationFragment;
 extern ULONG MmVirtualBias;
 extern PMM_SESSION_SPACE MmSessionSpace;
+extern MMPTE ValidKernelPdeLocal;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -7016,8 +7017,20 @@ MmMapViewInSessionSpace(
     _Out_ PVOID* MappedBase,
     _Inout_ PSIZE_T ViewSize)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAGED_CODE();
+    DPRINT("MmMapViewInSessionSpace: Section %p, MappedBase %p, ViewSize %I64X\n", Section, (MappedBase?*MappedBase:NULL), (ViewSize?(ULONGLONG)(*ViewSize):0ull));
+
+    /* Process must be in a session */
+    if (PsGetCurrentProcess()->ProcessInSession == FALSE)
+    {
+        DPRINT1("Process is not in session\n");
+        return STATUS_NOT_MAPPED_VIEW;
+    }
+
+    /* Use the system space API, but with the session view instead */
+    ASSERT(MmIsAddressValid(MmSessionSpace) == TRUE);
+
+    return MiMapViewInSystemSpace(Section, &MmSessionSpace->Session, MappedBase, ViewSize);
 }
 
 NTSTATUS
