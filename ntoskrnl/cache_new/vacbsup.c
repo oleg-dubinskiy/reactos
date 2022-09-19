@@ -3,7 +3,7 @@
 
 #include <ntoskrnl.h>
 #include "cc.h"
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS ********************************************************************/
