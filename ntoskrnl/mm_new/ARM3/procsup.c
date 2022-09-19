@@ -821,6 +821,79 @@ MmCreateTeb(
     return Status;
 }
 
+NTSTATUS
+NTAPI
+MmGrowKernelStackEx(
+    _In_ PVOID StackPointer,
+    _In_ ULONG GrowSize)
+{
+    PKTHREAD Thread = KeGetCurrentThread();
+    PMMPTE LimitPte;
+    PMMPTE NewLimitPte;
+    PMMPTE LastPte;
+    MMPTE TempPte;
+    MMPTE InvalidPte;
+    PFN_NUMBER PageFrameIndex;
+    KIRQL OldIrql;
+
+    /* Make sure the stack did not overflow */
+    ASSERT(((ULONG_PTR)Thread->StackBase - (ULONG_PTR)Thread->StackLimit) <= (MmLargeStackSize + PAGE_SIZE));
+
+    /* Get the current stack limit */
+    LimitPte = MiAddressToPte(Thread->StackLimit);
+    ASSERT(LimitPte->u.Hard.Valid == 1);
+
+    /* Get the new one and make sure this isn't a retarded request */
+    NewLimitPte = MiAddressToPte((PVOID)((ULONG_PTR)StackPointer - GrowSize));
+    if (NewLimitPte == LimitPte)
+        return STATUS_SUCCESS;
+
+    /* Now make sure you're not going past the reserved space */
+    LastPte = MiAddressToPte((PVOID)((ULONG_PTR)Thread->StackBase - MmLargeStackSize));
+    if (NewLimitPte < LastPte)
+    {
+        /* Sorry! */
+        DPRINT1("MmGrowKernelStackEx: STATUS_STACK_OVERFLOW\n");
+        return STATUS_STACK_OVERFLOW;
+    }
+
+    /* Calculate the number of new pages */
+    LimitPte--;
+
+    /* Setup the temporary invalid PTE */
+    MI_MAKE_SOFTWARE_PTE(&InvalidPte, MM_NOACCESS);
+
+    /* Acquire the PFN DB lock */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    /* Loop each stack page */
+    while (LimitPte >= NewLimitPte)
+    {
+        /* Get a page and write the current invalid PTE */
+        MI_SET_USAGE(MI_USAGE_KERNEL_STACK_EXPANSION);
+        MI_SET_PROCESS2(PsGetCurrentProcess()->ImageFileName);
+        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        MI_WRITE_INVALID_PTE(LimitPte, InvalidPte);
+
+        /* Initialize the PFN entry for this page */
+        MiInitializePfn(PageFrameIndex, LimitPte, 1);
+
+        /* Setup the template stack PTE */
+        MI_MAKE_HARDWARE_PTE_KERNEL(&TempPte, LimitPte, MM_READWRITE, PageFrameIndex);
+
+        /* Write the valid PTE */
+        MI_WRITE_VALID_PTE(LimitPte--, TempPte);
+    }
+
+    /* Release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    /* Set the new limit */
+    Thread->StackLimit = (ULONG_PTR)MiPteToAddress(NewLimitPte);
+
+    return STATUS_SUCCESS;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 NTSTATUS
