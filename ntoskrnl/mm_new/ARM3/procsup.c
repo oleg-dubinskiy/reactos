@@ -2,7 +2,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 #include "miarm.h"
 
@@ -37,7 +37,66 @@ MmDeleteTeb(
     _In_ PEPROCESS Process,
     _In_ PTEB Teb)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PETHREAD Thread = PsGetCurrentThread();
+    PMM_AVL_TABLE VadTree = &Process->VadRoot;
+    PMMVAD Vad;
+    ULONG_PTR TebEnd;
+
+    DPRINT("MmDeleteTeb: %p in %16s\n", Teb, Process->ImageFileName);
+
+    /* TEB is one page */
+    TebEnd = ((ULONG_PTR)Teb + ROUND_TO_PAGES(sizeof(TEB)) - 1);
+
+    /* Attach to the process */
+    KeAttachProcess(&Process->Pcb);
+
+    /* Lock the process address space */
+    KeAcquireGuardedMutex(&Process->AddressCreationLock);
+
+    /* Find the VAD, make sure it's a TEB VAD */
+    Vad = MiLocateAddress(Teb);
+    ASSERT(Vad != NULL);
+
+    DPRINT("MmDeleteTeb: Removing %X-%X\n", Vad->StartingVpn, Vad->EndingVpn);
+
+    if (Vad->StartingVpn != ((ULONG_PTR)Teb / PAGE_SIZE))
+    {
+        /* Bug in the AVL code? */
+        DPRINT1("Corrupted VAD!\n");
+        goto Exit;
+    }
+
+    /* Sanity checks for a valid TEB VAD */
+    ASSERT((Vad->StartingVpn == ((ULONG_PTR)Teb >> PAGE_SHIFT) &&
+           (Vad->EndingVpn == (TebEnd >> PAGE_SHIFT))));
+
+    ASSERT(Vad->u.VadFlags.NoChange == TRUE);
+    ASSERT(Vad->u2.VadFlags2.OneSecured == TRUE);
+    ASSERT(Vad->u2.VadFlags2.MultipleSecured == FALSE);
+
+    /* Lock the working set */
+    MiLockProcessWorkingSetUnsafe(Process, Thread);
+
+    /* Remove this VAD from the tree */
+    ASSERT(VadTree->NumberGenericTableElements >= 1);
+    MiRemoveNode((PMMADDRESS_NODE)Vad, VadTree);
+
+    /* Delete the pages */
+    MiDeleteVirtualAddresses((ULONG_PTR)Teb, TebEnd, NULL);
+
+    /* Release the working set */
+    MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+
+    /* Remove the VAD */
+    ExFreePool(Vad);
+
+Exit:
+
+    /* Release the address space lock */
+    KeReleaseGuardedMutex(&Process->AddressCreationLock);
+
+    /* Detach */
+    KeDetachProcess();
 }
 
 NTSTATUS
