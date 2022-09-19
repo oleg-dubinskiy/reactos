@@ -738,7 +738,63 @@ ExQueryPoolUsage(
     _Out_ PULONG NonPagedPoolFrees,
     _Out_ PULONG NonPagedPoolLookasideHits)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PGENERAL_LOOKASIDE Lookaside;
+    PPOOL_DESCRIPTOR PoolDesc;
+    PLIST_ENTRY ListEntry;
+    ULONG ix;
+
+    /* Assume all failures */
+    *PagedPoolPages = 0;
+    *PagedPoolAllocs = 0;
+    *PagedPoolFrees = 0;
+
+    /* Tally up the totals for all the apged pool */
+    for (ix = 0; ix < (ExpNumberOfPagedPools + 1); ix++)
+    {
+        PoolDesc = ExpPagedPoolDescriptor[ix];
+
+        *PagedPoolPages += (PoolDesc->TotalPages + PoolDesc->TotalBigPages);
+        *PagedPoolAllocs += PoolDesc->RunningAllocs;
+        *PagedPoolFrees += PoolDesc->RunningDeAllocs;
+    }
+
+    /* The first non-paged pool has a hardcoded well-known descriptor name */
+    PoolDesc = &NonPagedPoolDescriptor;
+
+    *NonPagedPoolPages = PoolDesc->TotalPages + PoolDesc->TotalBigPages;
+    *NonPagedPoolAllocs = PoolDesc->RunningAllocs;
+    *NonPagedPoolFrees = PoolDesc->RunningDeAllocs;
+
+#if 0
+    /* If the system has more than one non-paged pool, copy the other descriptor totals as well */
+    if (ExpNumberOfNonPagedPools > 1)
+    {
+        for (ix = 0; ix < ExpNumberOfNonPagedPools; ix++)
+        {
+            PoolDesc = ExpNonPagedPoolDescriptor[ix];
+
+            *NonPagedPoolPages += (PoolDesc->TotalPages + PoolDesc->TotalBigPages);
+            *NonPagedPoolAllocs += PoolDesc->RunningAllocs;
+            *NonPagedPoolFrees += PoolDesc->RunningDeAllocs;
+        }
+    }
+#endif
+
+    /* Get the amount of hits in the system lookaside lists */
+    if (IsListEmpty(&ExPoolLookasideListHead))
+        return;
+
+    for (ListEntry = ExPoolLookasideListHead.Flink;
+         ListEntry != &ExPoolLookasideListHead;
+         ListEntry = ListEntry->Flink)
+    {
+        Lookaside = CONTAINING_RECORD(ListEntry, GENERAL_LOOKASIDE, ListEntry);
+
+        if (Lookaside->Type == NonPagedPool)
+            *NonPagedPoolLookasideHits += Lookaside->AllocateHits;
+        else
+            *PagedPoolLookasideHits += Lookaside->AllocateHits;
+    }
 }
 
 VOID
