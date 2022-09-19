@@ -4247,12 +4247,535 @@ NTSTATUS
 NTAPI
 NtFreeVirtualMemory(
     _In_ HANDLE ProcessHandle,
-    _In_ PVOID* UBaseAddress,
-    _In_ PSIZE_T URegionSize,
+    _In_ PVOID* OutBase,
+    _In_ SIZE_T* OutSize,
     _In_ ULONG FreeType)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    PEPROCESS CurrentProcess = PsGetCurrentProcess();
+    KPROCESSOR_MODE PreviousMode = KeGetPreviousMode();
+    PMMSUPPORT AddressSpace;
+    PEPROCESS Process;
+    PMMPTE StartPte;
+    PMMPTE EndPte;
+    PMMVAD Vad;
+    PVOID BaseAddress;
+    LONG_PTR AlreadyDecommitted;
+    LONG_PTR CommitReduction = 0;
+    ULONG_PTR StartingAddress;
+    ULONG_PTR EndingAddress;
+    SIZE_T RegionSize;
+    KAPC_STATE ApcState;
+    BOOLEAN Attached = FALSE;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("NtFreeVirtualMemory: %p, %p, %X, %X\n",
+           ProcessHandle, (OutBase ? *OutBase : 0), (OutSize ? *OutSize : 0), FreeType);
+
+    if (FreeType & ~(MEM_RELEASE | MEM_DECOMMIT))
+    {
+        DPRINT1("NtFreeVirtualMemory: return STATUS_INVALID_PARAMETER_4\n");
+        return STATUS_INVALID_PARAMETER_4;
+    }
+
+    if (!(FreeType & (MEM_RELEASE | MEM_DECOMMIT)))
+    {
+        DPRINT1("NtFreeVirtualMemory: return STATUS_INVALID_PARAMETER_4\n");
+        return STATUS_INVALID_PARAMETER_4;
+    }
+
+    if ((FreeType & (MEM_RELEASE | MEM_DECOMMIT)) == (MEM_RELEASE | MEM_DECOMMIT))
+    {
+        DPRINT1("NtFreeVirtualMemory: return STATUS_INVALID_PARAMETER_4\n");
+        return STATUS_INVALID_PARAMETER_4;
+    }
+
+    /* Enter SEH for probe and capture. On failure, return back to the caller with an exception violation. */
+    _SEH2_TRY
+    {
+        /* Check for user-mode parameters and make sure that they are writeable */
+        if (PreviousMode != KernelMode)
+        {
+            ProbeForWritePointer(OutBase);
+            ProbeForWriteUlong(OutSize);
+        }
+
+        /* Capture the current values */
+        BaseAddress = *OutBase;
+        RegionSize = *OutSize;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        _SEH2_YIELD(return _SEH2_GetExceptionCode());
+    }
+    _SEH2_END;
+
+    /* Make sure the allocation wouldn't overflow past the user area */
+    if (((ULONG_PTR)MM_HIGHEST_USER_ADDRESS - (ULONG_PTR)BaseAddress) < RegionSize)
+    {
+        DPRINT1("NtFreeVirtualMemory: return STATUS_INVALID_PARAMETER_3\n");
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    /* If this is for the current process, just use PsGetCurrentProcess */
+    if (ProcessHandle == NtCurrentProcess())
+    {
+        Process = CurrentProcess;
+    }
+    else
+    {
+        /* Otherwise, reference the process with VM rights and attach to it if this isn't the current process.
+           We must attach because we'll be touching PTEs and PDEs that belong to user-mode memory,
+           and also touching the Working Set which is stored in Hyperspace.
+        */
+        Status = ObReferenceObjectByHandle(ProcessHandle,
+                                           PROCESS_VM_OPERATION,
+                                           PsProcessType,
+                                           PreviousMode,
+                                           (PVOID *)&Process,
+                                           NULL);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("NtFreeVirtualMemory: Status %X\n", Status);
+            return Status;
+        }
+
+        if (CurrentProcess != Process)
+        {
+            KeStackAttachProcess(&Process->Pcb, &ApcState);
+            Attached = TRUE;
+        }
+    }
+
+    DPRINT("NtFreeVirtualMemory: %p, %p, %IX, %X\n", Process, BaseAddress, RegionSize, FreeType);
+
+    /* Lock the address space */
+    AddressSpace = MmGetCurrentAddressSpace();
+    MmLockAddressSpace(AddressSpace);
+
+    /* If the address space is being deleted, fail the de-allocation since it's too late to do anything about it */
+    if (Process->VmDeleted)
+    {
+        DPRINT1("NtFreeVirtualMemory: Process is dead\n");
+        Status = STATUS_PROCESS_IS_TERMINATING;
+        goto ErrorExit;
+    }
+
+    /* Compute start and end addresses, and locate the VAD */
+    StartingAddress = (ULONG_PTR)PAGE_ALIGN(BaseAddress);
+    EndingAddress = (((ULONG_PTR)BaseAddress + RegionSize - 1) | (PAGE_SIZE - 1));
+
+    Vad = MiLocateAddress((PVOID)StartingAddress);
+    if (!Vad)
+    {
+        DPRINT1("NtFreeVirtualMemory: Unable to find VAD for %p\n", StartingAddress);
+        Status = STATUS_MEMORY_NOT_ALLOCATED;
+        goto ErrorExit;
+    }
+
+    /* If the range exceeds the VAD's ending VPN, fail this request */
+    if (Vad->EndingVpn < (EndingAddress / PAGE_SIZE))
+    {
+        DPRINT1("NtFreeVirtualMemory: Address %p is beyond the VAD\n", EndingAddress);
+        Status = STATUS_UNABLE_TO_FREE_VM;
+        goto ErrorExit;
+    }
+
+    /* Only private memory (except rotate VADs) can be freed through here */
+    if ((!Vad->u.VadFlags.PrivateMemory && Vad->u.VadFlags.VadType != VadRotatePhysical) ||
+        Vad->u.VadFlags.VadType == VadDevicePhysicalMemory)
+    {
+        DPRINT1("NtFreeVirtualMemory: Attempt to free section memory\n");
+        Status = STATUS_UNABLE_TO_DELETE_SECTION;
+        goto ErrorExit;
+    }
+
+    /* ARM3 does not yet handle protected VM */
+    if (Vad->u.VadFlags.NoChange)
+    {
+        ASSERT(Vad->u.VadFlags.NoChange == 0);
+
+        if (FreeType & MEM_RELEASE)
+        {
+            DPRINT1("NtFreeVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else
+        {
+            DPRINT1("NtFreeVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    /* Now we can try the operation. First check if this is a RELEASE or a DECOMMIT */
+    if (FreeType & MEM_RELEASE)
+    {
+        /* ARM3 only supports this VAD in this path */
+        ASSERT(Vad->u.VadFlags.VadType == VadNone);
+
+        /* Is the caller trying to remove the whole VAD,
+           or remove only a portion of it? If no region size is specified,
+           then the assumption is that the whole VAD is to be destroyed
+        */
+        if (!RegionSize)
+        {
+            /* The caller must specify the base address identically to the range that is stored in the VAD. */
+            if (((ULONG_PTR)BaseAddress / PAGE_SIZE) != Vad->StartingVpn)
+            {
+                DPRINT1("NtFreeVirtualMemory: Address 0x%p does not match the VAD\n", BaseAddress);
+                Status = STATUS_FREE_VM_NOT_AT_BASE;
+                goto ErrorExit;
+            }
+
+            /* Now compute the actual start/end addresses based on the VAD */
+            StartingAddress = (Vad->StartingVpn * PAGE_SIZE);
+            EndingAddress = ((Vad->EndingVpn * PAGE_SIZE) | (PAGE_SIZE - 1));
+
+            if (Vad->u.VadFlags.VadType == VadRotatePhysical)
+            {
+                DPRINT1("NtFreeVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+                goto ReleaseFinish;
+            }
+            else if (Vad->u.VadFlags.VadType == VadLargePages)
+            {
+                DPRINT1("NtFreeVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+            }
+            if (Vad->u.VadFlags.VadType == VadAwe)
+            {
+                DPRINT1("NtFreeVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else if (Vad->u.VadFlags.VadType == VadWriteWatch)
+            {
+                DPRINT1("NtFreeVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                /* Lock the working set */
+                MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+            }
+
+            /* Finally remove the VAD from the VAD tree */
+            ASSERT(Process->VadRoot.NumberGenericTableElements >= 1);
+            MiRemoveNode((PMMADDRESS_NODE)Vad, &Process->VadRoot);
+        }
+        else
+        {
+            /* This means the caller wants to release a specific region within the range.
+               We have to find out which range this is -- the following possibilities exist plus their union (CASE D):
+
+               STARTING ADDRESS                                   ENDING ADDRESS
+               [<========][========================================][=========>]
+                 CASE A                  CASE B                       CASE C
+
+               First, check for case A or D
+            */
+            if ((StartingAddress / PAGE_SIZE) == Vad->StartingVpn)
+            {
+                /* Check for case D */
+                if ((EndingAddress / PAGE_SIZE) == Vad->EndingVpn)
+                {
+                    /* This is the easiest one to handle -- it is identical to the code path above
+                       when the caller sets a zero region size and the whole VAD is destroyed
+                    */
+                    if (Vad->u.VadFlags.VadType == VadRotatePhysical)
+                    {
+                        DPRINT1("NtFreeVirtualMemory: FIXME\n");
+                        ASSERT(FALSE);
+                        goto ReleaseFinish;
+                    }
+
+                    if (Vad->u.VadFlags.VadType == VadLargePages)
+                    {
+                        DPRINT1("NtFreeVirtualMemory: FIXME\n");
+                        ASSERT(FALSE);
+                    }
+                    else if (Vad->u.VadFlags.VadType == VadAwe)
+                    {
+                        DPRINT1("NtFreeVirtualMemory: FIXME\n");
+                        ASSERT(FALSE);
+                    }
+                    else if (Vad->u.VadFlags.VadType == VadWriteWatch)
+                    {
+                        DPRINT1("NtFreeVirtualMemory: FIXME\n");
+                        ASSERT(FALSE);
+                    }
+                    else
+                    {
+                        /* Lock the working set */
+                        MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+                    }
+
+                    /* Finally remove the VAD from the VAD tree */
+                    ASSERT(Process->VadRoot.NumberGenericTableElements >= 1);
+                    MiRemoveNode((PMMADDRESS_NODE)Vad, &Process->VadRoot);
+                }
+                else
+                {
+                    /* This case is pretty easy too -- we compute a bunch of pages to decommit,
+                       and then push the VAD's starting address a bit further down, then decrement the commit charge
+
+                       NOT YET IMPLEMENTED IN ARM3.
+                    */
+                    if (Vad->u.VadFlags.VadType == VadAwe || 
+                        Vad->u.VadFlags.VadType == VadLargePages ||
+                        Vad->u.VadFlags.VadType == VadRotatePhysical ||
+                        Vad->u.VadFlags.VadType == VadWriteWatch)
+                    {
+                        DPRINT1("NtFreeVirtualMemory: Case A not handled\n");
+                        Status = STATUS_FREE_VM_NOT_AT_BASE;
+                        goto ErrorExit;
+                    }
+
+                    DPRINT1("NtFreeVirtualMemory: FIXME\n");
+                    ASSERT(FALSE);
+
+                    /* After analyzing the VAD, set it to NULL so that we don't free it in the exit path */
+                    Vad = NULL;
+                }
+            }
+            else
+            {
+                /* This is case B or case C. First check for case C */
+                if (Vad->u.VadFlags.VadType == VadAwe || 
+                    Vad->u.VadFlags.VadType == VadLargePages ||
+                    Vad->u.VadFlags.VadType == VadRotatePhysical ||
+                    Vad->u.VadFlags.VadType == VadWriteWatch)
+                {
+                    Status = STATUS_FREE_VM_NOT_AT_BASE;
+                    goto ErrorExit;
+                }
+
+                if ((EndingAddress / PAGE_SIZE) == Vad->EndingVpn)
+                {
+                    /* This is pretty easy and similar to case A.
+                       We compute the amount of pages to decommit,
+                       update the VAD's commit charge and then change the ending address of the VAD to be a bit smaller.
+                    */
+
+                    /* Lock the working set */
+                    MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+                    CommitReduction = MiCalculatePageCommitment(StartingAddress, EndingAddress, Vad, Process);
+                    Vad->u.VadFlags.CommitCharge -= CommitReduction;
+
+                    Vad->EndingVpn = ((StartingAddress - 1) / PAGE_SIZE);
+                    //PreviousVad = (PMMVAD)Vad;
+                }
+                else
+                {
+                    /*  This is case B and the hardest one.
+                        Because we are removing a chunk of memory from the very middle of the VAD,
+                        we must actually split the VAD into two new VADs
+                        and compute the commit charges for each of them, and reinsert new charges.
+
+                       NOT YET IMPLEMENTED IN ARM3.
+                    */
+                    DPRINT1("NtFreeVirtualMemory: Case B not handled\n");
+                    ASSERT(FALSE);
+                }
+
+                /* After analyzing the VAD, set it to NULL so that we don't free it in the exit path */
+                Vad = NULL;
+            }
+        }
+
+        DPRINT("NtFreeVirtualMemory: FIXME MiDeletePageTablesForPhysicalRange()\n");
+
+        /* Now we have a range of pages to dereference,
+           so call the right API to do that and then release the working set,
+           since we're done messing around with process pages.
+        */
+        MiDeleteVirtualAddresses(StartingAddress, EndingAddress, NULL);
+        MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+        RegionSize = ((PCHAR)EndingAddress - (PCHAR)StartingAddress + 1);
+
+        Process->VirtualSize -= RegionSize;
+        Process->CommitCharge -= CommitReduction;
+
+        Status = STATUS_SUCCESS;
+
+ReleaseFinish:
+
+        /* Unlock the address space and free the VAD in failure cases.
+           Next, detach from the target process so we can write the region size and the base address
+           to the correct source process, and dereference the target process.
+        */
+        MmUnlockAddressSpace(AddressSpace);
+
+        if (CommitReduction)
+        {
+            ASSERT(Vad == NULL);
+
+            PsReturnProcessPageFileQuota(Process, CommitReduction);
+
+            ASSERT((SSIZE_T)(CommitReduction) >= 0);
+            ASSERT(MmTotalCommittedPages >= (CommitReduction));
+            InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -CommitReduction);
+
+            if (Process->JobStatus & 0x10)
+            {
+                DPRINT1("NtFreeVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+            }
+        }
+        else if (Vad)
+        {
+            ExFreePool(Vad);
+        }
+
+        if (Attached)
+            KeUnstackDetachProcess(&ApcState);
+
+        if (ProcessHandle != NtCurrentProcess())
+            ObDereferenceObject(Process);
+
+        /* Use SEH to safely return the region size and the base address of the deallocation.
+           If we get an access violation, don't return a failure code as the deallocation *has* happened.
+           The caller will just have to figure out another way to find out where it is (such as VirtualQuery).
+        */
+        _SEH2_TRY
+        {
+            *OutSize = RegionSize;
+            *OutBase = (PVOID)StartingAddress;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+        }
+        _SEH2_END;
+
+        DPRINT("NtFreeVirtualMemory: Status %X\n", Status);
+        return Status;
+    }
+
+    /* This is the decommit path. You cannot decommit from the following VADs in Windows, so fail the vall */
+    if (Vad->u.VadFlags.VadType == VadAwe)
+    {
+        Status = STATUS_MEMORY_NOT_ALLOCATED;
+        goto ErrorExit;
+    }
+
+    if (Vad->u.VadFlags.VadType == VadLargePages ||
+        Vad->u.VadFlags.VadType == VadRotatePhysical)
+    {
+        Status = STATUS_MEMORY_NOT_ALLOCATED;
+        goto ErrorExit;
+    }
+
+    /* If the caller did not specify a region size,
+       first make sure that this region is actually committed.
+       If it is, then compute the ending address based on the VAD.
+    */
+    if (!RegionSize)
+    {
+        if (((ULONG_PTR)BaseAddress / PAGE_SIZE) != Vad->StartingVpn)
+        {
+            DPRINT1("NtFreeVirtualMemory: Decomitting non-committed memory\n");
+            Status = STATUS_FREE_VM_NOT_AT_BASE;
+            goto ErrorExit;
+        }
+
+        EndingAddress = ((Vad->EndingVpn * PAGE_SIZE) | (PAGE_SIZE - 1));
+    }
+
+    /* Decommit the PTEs for the range plus the actual backing pages for the range,
+       then reduce that amount from the commit charge in the VAD
+    */
+    StartPte = MiAddressToPte(StartingAddress);
+    EndPte = MiAddressToPte(EndingAddress);
+
+    AlreadyDecommitted = MiDecommitPages((PVOID)StartingAddress, EndPte, Process, Vad);
+    CommitReduction = ((EndPte - StartPte) + 1 - AlreadyDecommitted);
+
+    ASSERT(CommitReduction >= 0);
+    ASSERT(Vad->u.VadFlags.CommitCharge >= CommitReduction);
+
+    Vad->u.VadFlags.CommitCharge -= CommitReduction;
+
+    /* We are done, go to the exit path without freeing the VAD
+       as it remains valid since we have not released the allocation.
+    */
+    Vad = NULL;
+    Status = STATUS_SUCCESS;
+
+    /* Update the process counters */
+    RegionSize = (EndingAddress - StartingAddress + 1);
+    Process->CommitCharge -= CommitReduction;
+
+    if (FreeType & MEM_RELEASE)
+        Process->VirtualSize -= RegionSize;
+
+    /* Unlock the address space and free the VAD in failure cases.
+       Next, detach from the target process so we can write the region size and the base address
+      to the correct source process, and dereference the target process.
+    */
+    MmUnlockAddressSpace(AddressSpace);
+
+    if (CommitReduction)
+    {
+        PsReturnProcessPageFileQuota(Process, CommitReduction);
+
+        ASSERT((SSIZE_T)(CommitReduction) >= 0);
+        ASSERT(MmTotalCommittedPages >= (CommitReduction));
+        InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -CommitReduction);
+
+        if (Process->JobStatus & 0x10)
+        {
+            DPRINT1("NtFreeVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else if (Vad)
+    {
+        ExFreePool(Vad);
+    }
+
+    if (Vad)
+        ExFreePool(Vad);
+
+    if (Attached)
+        KeUnstackDetachProcess(&ApcState);
+
+    if (ProcessHandle != NtCurrentProcess())
+        ObDereferenceObject(Process);
+
+    /* Use SEH to safely return the region size and the base address of the deallocation.
+       If we get an access violation, don't return a failure code as the deallocation *has* happened.
+       The caller will just have to figure out another way to find out where it is (such as VirtualQuery).
+    */
+    _SEH2_TRY
+    {
+        *OutSize = RegionSize;
+        *OutBase = (PVOID)StartingAddress;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+    _SEH2_END;
+
+    return Status;
+
+
+    /* In the failure path, we detach and derefernece the target process,
+       and return whatever failure code was sent.
+    */
+
+ErrorExit:
+
+    MmUnlockAddressSpace(AddressSpace);
+
+    if (Attached)
+        KeUnstackDetachProcess(&ApcState);
+
+    if (ProcessHandle != NtCurrentProcess())
+        ObDereferenceObject(Process);
+
+    return Status;
 }
 
 /* EOF */
