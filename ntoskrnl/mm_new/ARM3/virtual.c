@@ -2437,6 +2437,47 @@ MiQueryMemoryBasicInformation(
     return Status;
 }
 
+VOID
+NTAPI
+MiProcessValidPteList(
+    _Inout_ PMMPTE* ValidPteList,
+    _In_ ULONG Count)
+{
+    PMMPFN Pfn;
+    MMPTE TempPte;
+    PFN_NUMBER PageFrameIndex;
+    ULONG ix;
+    KIRQL OldIrql;
+
+    /* Acquire the PFN lock and loop all the PTEs in the list */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    for (ix = 0; ix != Count; ix++)
+    {
+        /* The PTE must currently be valid */
+        TempPte = *ValidPteList[ix];
+        ASSERT(TempPte.u.Hard.Valid == 1);
+
+        /* Get the PFN entry for the page itself */
+        PageFrameIndex = PFN_FROM_PTE(&TempPte);
+        Pfn = MiGetPfnEntry(PageFrameIndex);
+
+        /* Decrement the share count on the page table, and then on the page itself */
+        MiDecrementShareCount(MiGetPfnEntry(Pfn->u4.PteFrame), Pfn->u4.PteFrame);
+        MI_SET_PFN_DELETED(Pfn);
+        MiDecrementShareCount(Pfn, PageFrameIndex);
+
+        /* Make the page decommitted */
+        MI_WRITE_INVALID_PTE(ValidPteList[ix], MmDecommittedPte);
+    }
+
+    /* All the PTEs have been dereferenced and made invalid,
+       flush the TLB now and then release the PFN lock
+    */
+    KeFlushCurrentTb();
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS
