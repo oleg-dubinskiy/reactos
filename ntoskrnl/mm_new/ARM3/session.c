@@ -2,7 +2,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 #include "miarm.h"
 
@@ -81,8 +81,33 @@ NTAPI
 MmSessionDelete(
     _In_ ULONG SessionId)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PEPROCESS Process = PsGetCurrentProcess();
+
+    DPRINT1("MmSessionDelete: SessionId %X\n", SessionId);
+
+    /* Process must be in a session */
+    if (!(Process->Flags & PSF_PROCESS_IN_SESSION_BIT))
+    {
+        DPRINT1("MmSessionDelete: Not in a session!\n");
+        return STATUS_UNABLE_TO_FREE_VM;
+    }
+
+    /* It must be the session leader */
+    if (!Process->Vm.Flags.SessionLeader)
+    {
+        DPRINT1("MmSessionDelete: Not a session leader!\n");
+        return STATUS_UNABLE_TO_FREE_VM;
+    }
+
+    /* Remove one reference count */
+    KeEnterCriticalRegion();
+
+    /* FIXME: Do it */
+
+    KeLeaveCriticalRegion();
+
+    /* All done */
+    return STATUS_SUCCESS;
 }
 
 VOID
