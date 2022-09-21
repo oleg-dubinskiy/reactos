@@ -1464,7 +1464,7 @@ MiSetPageModified(
     {
         _SEH2_TRY
         {
-            *(volatile PUCHAR)Address;
+            ProbeForReadChar(Address);
         }
         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
         {
