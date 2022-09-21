@@ -84,6 +84,20 @@ CcCreateSharedCacheMap(
 
 VOID
 NTAPI
+CcUnmapAndPurge(
+    _In_ PSHARED_CACHE_MAP SharedMap)
+{
+    DPRINT("CcUnmapAndPurge: SharedMap %p\n", SharedMap);
+
+    if (SharedMap->Vacbs)
+        CcUnmapVacbArray(SharedMap, NULL, 0, FALSE);
+
+    if (SharedMap->Flags & SHARE_FL_TRUNCATE_SIZE)
+        CcPurgeCacheSection(SharedMap->FileObject->SectionObjectPointer, NULL, 0, FALSE);
+}
+
+VOID
+NTAPI
 CcDeleteSharedCacheMap(
     _In_ PSHARED_CACHE_MAP SharedMap,
     _In_ KIRQL OldIrql,
