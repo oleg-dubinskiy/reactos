@@ -103,7 +103,75 @@ CcDeleteSharedCacheMap(
     _In_ KIRQL OldIrql,
     _In_ BOOLEAN IsReleaseFile)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    DPRINT("CcDeleteSharedCacheMap: SharedMap %p\n", SharedMap);
+
+    RemoveEntryList(&SharedMap->SharedCacheMapLinks);
+
+    SharedMap->FileObject->SectionObjectPointer->SharedCacheMap = NULL;
+    SharedMap->Flags |= 0x20;
+
+    if (SharedMap->VacbActiveCount || SharedMap->NeedToZero)
+    {
+        DPRINT1("CcDeleteSharedCacheMap: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+    if (!IsListEmpty(&SharedMap->BcbList))
+    {
+        DPRINT1("CcDeleteSharedCacheMap: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    CcUnmapAndPurge(SharedMap);
+
+    if (IsReleaseFile)
+        FsRtlReleaseFile(SharedMap->FileObject);
+
+    if (SharedMap->Section)
+        ObDereferenceObject(SharedMap->Section);
+
+    ObDereferenceObject(SharedMap->FileObject);
+
+    if (SharedMap->Mbcb)
+    {
+        DPRINT1("CcDeleteSharedCacheMap: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (SharedMap->UninitializeEvent)
+    {
+        PCACHE_UNINITIALIZE_EVENT event;
+        PCACHE_UNINITIALIZE_EVENT NextEvent;
+
+        for (event = SharedMap->UninitializeEvent; event; event = NextEvent)
+        {
+            NextEvent = event->Next;
+
+            event = (PCACHE_UNINITIALIZE_EVENT)((ULONG_PTR)event & ~1);
+            KeSetEvent(&event->Event, 0, FALSE);
+        }
+    }
+
+    if (SharedMap->Vacbs != SharedMap->InitialVacbs && SharedMap->Vacbs)
+    {
+        if (SharedMap->SectionSize.QuadPart > 0x2000000)
+        {
+            DPRINT1("CcDeleteSharedCacheMap: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        ExFreePool(SharedMap->Vacbs);
+    }
+
+    if (SharedMap->CreateEvent && SharedMap->CreateEvent != &SharedMap->Event)
+        ExFreePool(SharedMap->CreateEvent);
+
+    if (SharedMap->WaitOnActiveCount && SharedMap->WaitOnActiveCount != &SharedMap->Event)
+        ExFreePool(SharedMap->WaitOnActiveCount);
+
+    ExFreePool(SharedMap);
 }
 
 VOID

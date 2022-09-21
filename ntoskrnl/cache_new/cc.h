@@ -187,4 +187,12 @@ CcExtendVacbArray(
     _In_ LARGE_INTEGER AllocationSize
 );
 
+VOID
+NTAPI
+CcDeleteSharedCacheMap(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ KIRQL OldIrql,
+    _In_ BOOLEAN IsReleaseFile
+);
+
 /* EOF */
