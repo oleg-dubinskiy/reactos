@@ -398,6 +398,16 @@ MmDisableModifiedWriteOfSection(
     _In_ PSECTION_OBJECT_POINTERS SectionObjectPointer
 );
 
+NTSTATUS
+NTAPI 
+MmFlushSection(
+    _In_ PSECTION_OBJECT_POINTERS SectionPointer,
+    _In_ PLARGE_INTEGER FileSize,
+    _In_ ULONG Length,
+    _Out_ PIO_STATUS_BLOCK OutIoStatus,
+    _In_ ULONG Param5
+);
+
 /* ARM3\session.c */
 ULONG
 NTAPI

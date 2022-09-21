@@ -206,19 +206,168 @@ CcPerformReadAhead(
 }
 
 VOID
-FASTCALL
-CcWriteBehind(
-    _In_ PSHARED_CACHE_MAP SharedMap,
-    _In_ IO_STATUS_BLOCK* OutIoStatus)
+NTAPI
+CcPostDeferredWrites(VOID)
 {
     UNIMPLEMENTED_DBGBREAK();
 }
 
 VOID
-NTAPI
-CcPostDeferredWrites(VOID)
+FASTCALL
+CcWriteBehind(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ IO_STATUS_BLOCK* OutIoStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    KLOCK_QUEUE_HANDLE LockHandle;
+    PVACB ActiveVacb = NULL;
+    ULONG ActivePage;
+    ULONG TargetPages;
+    KIRQL OldIrql;
+    BOOLEAN IsVacbLocked = FALSE;
+    BOOLEAN IsCancelWait = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("CcWriteBehind: SharedMap %p, OutIoStatus %p\n", SharedMap, OutIoStatus);
+
+    if (!(*SharedMap->Callbacks->AcquireForLazyWrite)(SharedMap->LazyWriteContext, TRUE))
+    {
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+        SharedMap->Flags &= ~0x20;
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        OutIoStatus->Status = STATUS_FILE_LOCK_CONFLICT;
+        return;
+    }
+
+    KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+    KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueMasterLock]);
+
+    if (SharedMap->DirtyPages <= 1 || !SharedMap->OpenCount)
+    {
+        KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
+
+        ActiveVacb = SharedMap->ActiveVacb;
+        if (ActiveVacb)
+        {
+            ActivePage = SharedMap->ActivePage;
+            SharedMap->ActiveVacb = 0;
+            IsVacbLocked = ((SharedMap->Flags & SHARE_FL_VACB_LOCKED) != 0);
+        }
+
+        KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
+    }
+
+    SharedMap->OpenCount++;
+
+    if (SharedMap->Mbcb)
+    {
+        TargetPages = SharedMap->Mbcb->DirtyPages;
+
+        if (ActiveVacb)
+            TargetPages++;
+
+        if (TargetPages > CcPagesYetToWrite)
+            SharedMap->Mbcb->PagesToWrite = CcPagesYetToWrite;
+        else
+            SharedMap->Mbcb->PagesToWrite = TargetPages;
+    }
+
+
+    KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueMasterLock]);
+    KeReleaseInStackQueuedSpinLock(&LockHandle);
+
+    if (ActiveVacb)
+        CcFreeActiveVacb(SharedMap, ActiveVacb, ActivePage, IsVacbLocked);
+
+    CcFlushCache(SharedMap->FileObject->SectionObjectPointer, &CcNoDelay, 1, OutIoStatus);
+
+    (*SharedMap->Callbacks->ReleaseFromLazyWrite)(SharedMap->LazyWriteContext);
+
+    if (!NT_SUCCESS(OutIoStatus->Status) && OutIoStatus->Status != STATUS_VERIFY_REQUIRED)
+    {
+        DPRINT1("CcWriteBehind: OutIoStatus->Status %X\n", OutIoStatus->Status);
+        ASSERT(FALSE);
+
+        IsCancelWait = TRUE;
+    }
+
+    if (!NT_SUCCESS(OutIoStatus->Status) &&
+        OutIoStatus->Status != STATUS_VERIFY_REQUIRED &&
+        OutIoStatus->Status != STATUS_FILE_LOCK_CONFLICT &&
+        OutIoStatus->Status != STATUS_ENCOUNTERED_WRITE_IN_PROGRESS)
+    {
+        DPRINT1("CcWriteBehind: OutIoStatus->Status %X\n", OutIoStatus->Status);
+        ASSERT(FALSE);
+    }
+    else
+    {
+        if (!IsListEmpty(&CcDeferredWrites))
+            CcPostDeferredWrites();
+    }
+
+    KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+
+    Status = STATUS_SUCCESS;
+
+    if (SharedMap->Flags & (0x400 | 0x8000))
+    {
+        DPRINT1("CcWriteBehind: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseInStackQueuedSpinLock(&LockHandle);
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+    SharedMap->OpenCount--;
+    LockHandle.OldIrql = OldIrql;
+
+    if (IsCancelWait && (SharedMap->Flags & SHARE_FL_WAITING_TEARDOWN))
+    {
+        DPRINT1("CcWriteBehind: FIXME CcCancelMmWaitForUninitializeCacheMap()\n");
+        ASSERT(FALSE);
+    }
+
+    if (SharedMap->OpenCount)
+        goto Exit;
+
+    if (NT_SUCCESS(Status) ||
+        (Status != STATUS_INSUFFICIENT_RESOURCES &&
+         Status != STATUS_VERIFY_REQUIRED &&
+         Status != STATUS_FILE_LOCK_CONFLICT &&
+         Status != STATUS_ENCOUNTERED_WRITE_IN_PROGRESS))
+    {
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, LockHandle.OldIrql);
+        FsRtlAcquireFileExclusive(SharedMap->FileObject);
+
+        LockHandle.OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+        if (!SharedMap->OpenCount)
+        {
+            if (!SharedMap->DirtyPages ||
+               (!SharedMap->FileSize.QuadPart && !(SharedMap->Flags & SHARE_FL_PIN_ACCESS)))
+            {
+                CcDeleteSharedCacheMap(SharedMap, LockHandle.OldIrql, TRUE);
+                OutIoStatus->Information = 0;
+                return;
+            }
+        }
+
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, LockHandle.OldIrql);
+        FsRtlReleaseFile(SharedMap->FileObject);
+        LockHandle.OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+    }
+    else if (!SharedMap->DirtyPages)
+    {
+        DPRINT1("CcWriteBehind: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+Exit:
+
+    if (OutIoStatus->Information != 0x8A5E)
+        SharedMap->Flags &= ~0x20;
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, LockHandle.OldIrql);
 }
 
 BOOLEAN
