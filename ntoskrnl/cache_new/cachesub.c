@@ -26,6 +26,7 @@ ULONG CcPinReadNoWait;
 ULONG CcIdleDelayTick;
 
 extern LIST_ENTRY CcExpressWorkQueue;
+extern LARGE_INTEGER CcNoDelay;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -34,12 +35,162 @@ extern LIST_ENTRY CcExpressWorkQueue;
 
 VOID
 NTAPI
-CcFlushCache(IN PSECTION_OBJECT_POINTERS SectionObjectPointer,
-             IN OPTIONAL PLARGE_INTEGER FileOffset,
+CcFlushCache(IN PSECTION_OBJECT_POINTERS SectionObjectPointers,
+             IN PLARGE_INTEGER FileOffset OPTIONAL,
              IN ULONG Length,
-             OUT OPTIONAL PIO_STATUS_BLOCK IoStatus)
+             OUT IO_STATUS_BLOCK* OutIoStatus OPTIONAL)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PSHARED_CACHE_MAP SharedMap;
+    IO_STATUS_BLOCK ioStatus;
+    LARGE_INTEGER EndTickCount;
+    PFSRTL_COMMON_FCB_HEADER FcbHeader;
+    ULONG Flags;
+    BOOLEAN IsSaveStatus = FALSE;
+    BOOLEAN IsLazyWrite = FALSE;
+    BOOLEAN PendingTeardown = FALSE;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    if (!OutIoStatus)
+        OutIoStatus = &ioStatus;
+
+    OutIoStatus->Status = STATUS_SUCCESS;
+    OutIoStatus->Information = 0;
+
+    if (FileOffset == &CcNoDelay)
+    {
+        OutIoStatus->Status = STATUS_VERIFY_REQUIRED;
+        IsLazyWrite = TRUE;
+        FileOffset = NULL;
+        Flags = 2;
+    }
+    else
+    {
+        Flags = 1;
+    }
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    SharedMap = SectionObjectPointers->SharedCacheMap;
+
+    DPRINT("CcFlushCache: SharedMap %p, Length %X\n", SharedMap, Length);
+
+    if (SharedMap)
+    {
+        if (IsLazyWrite && (SharedMap->Flags & SHARE_FL_WAITING_TEARDOWN))
+        {
+            Flags &= ~2;
+            PendingTeardown = TRUE;
+        }
+
+        if (SharedMap->Flags & 0x2000)
+        {
+            if (!((ULONG_PTR)FileOffset & 1))
+            {
+                KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+                return;
+            }
+
+            FileOffset = (PLARGE_INTEGER)((ULONG_PTR)FileOffset ^ 1);
+        }
+
+        if (SharedMap->FileObject->DeviceObject &&
+            SharedMap->FileObject->DeviceObject->DeviceType == FILE_DEVICE_CD_ROM)
+        {
+            Flags &= ~2;
+        }
+    }
+
+    if (FileOffset && !Length)
+    {
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+        return;
+    }
+
+    if (SharedMap)
+    {
+        SharedMap->OpenCount++;
+
+        if (SharedMap->NeedToZero || SharedMap->ActiveVacb)
+        {
+            DPRINT1("CcFlushCache: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+    FcbHeader = SharedMap->FileObject->FsContext;
+
+    if (!SharedMap ||
+        (FcbHeader->Flags & FSRTL_FLAG_USER_MAPPED_FILE) ||
+        (SharedMap->Flags & 0x20000))
+    {
+        if (!IsLazyWrite)
+        {
+            MmFlushSection(SectionObjectPointers, FileOffset, Length, OutIoStatus, 1);
+
+            ASSERT(OutIoStatus->Status != STATUS_ENCOUNTERED_WRITE_IN_PROGRESS);
+
+            if (!NT_SUCCESS(OutIoStatus->Status) &&
+                OutIoStatus->Status != STATUS_VERIFY_REQUIRED &&
+                OutIoStatus->Status != STATUS_FILE_LOCK_CONFLICT &&
+                OutIoStatus->Status != STATUS_ENCOUNTERED_WRITE_IN_PROGRESS)
+            {
+                IsSaveStatus = TRUE;
+                Status = OutIoStatus->Status;
+            }
+        }
+    }
+
+    if (!SharedMap)
+        goto Exit;
+
+    if (!IsLazyWrite && !FileOffset)
+        SharedMap->ValidDataLength = SharedMap->ValidDataGoal;
+
+    if (FileOffset)
+    {
+        DPRINT1("CcFlushCache: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (IsLazyWrite)
+    {
+        KeQueryTickCount(&EndTickCount);
+        EndTickCount.QuadPart += CcIdleDelayTick;
+    }
+
+    while (TRUE)
+    {
+        if (!SharedMap->PagesToWrite && IsLazyWrite && !PendingTeardown)
+            break;
+
+        if (!SharedMap->FileSize.QuadPart && !(SharedMap->Flags & SHARE_FL_PIN_ACCESS))
+            break;
+
+        DPRINT1("CcFlushCache: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    SharedMap->OpenCount--;
+
+    if (!SharedMap->OpenCount &&
+        !(SharedMap->Flags & 0x20) &&
+        !SharedMap->DirtyPages)
+    {
+        DPRINT1("CcFlushCache: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+Exit:
+
+    if (IsSaveStatus)
+        OutIoStatus->Status = Status;
 }
 
 LARGE_INTEGER
