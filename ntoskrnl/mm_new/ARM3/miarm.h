@@ -2009,6 +2009,13 @@ MiQueryMemorySectionName(
     _Out_ SIZE_T* ReturnLength
 );
 
+VOID
+NTAPI
+MiRemoveMappedView(
+    _In_ PEPROCESS Process,
+    _In_ PMMVAD Vad
+);
+
 /* ARM3\session.c */
 VOID
 NTAPI
@@ -2032,6 +2039,18 @@ VOID
 NTAPI
 MiSessionAddProcess(
     _In_ PEPROCESS NewProcess
+);
+
+VOID
+NTAPI
+MiSessionRemoveProcess(
+    VOID
+);
+
+VOID
+NTAPI
+MiReleaseProcessReferenceToSessionDataPage(
+    _In_ PMM_SESSION_SPACE SessionGlobal
 );
 
 /* ARM3\special.c */
@@ -2273,6 +2292,17 @@ ULONG
 NTAPI
 MiMakeSystemAddressValidPfn(
     _In_ PVOID VirtualAddress,
+    _In_ KIRQL OldIrql
+);
+
+ULONG
+NTAPI
+MiDeletePte(
+    _In_ PMMPTE Pte,
+    _In_ PVOID VirtualAddress,
+    _In_ PEPROCESS CurrentProcess,
+    _In_ PMMPTE PrototypePte,
+    _In_ PMMPTE_FLUSH_LIST FlushList,
     _In_ KIRQL OldIrql
 );
 

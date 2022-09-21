@@ -939,7 +939,7 @@ MiDereferenceSession(VOID)
 
     /* Check if tis is the session leader or the last process in the session */
     if (!Process->Vm.Flags.SessionLeader && ReferenceCount)
-        goto;
+        goto Exit;
 
     /* Get the global session address before we kill the session mapping */
     SessionGlobal = MmSessionSpace->GlobalVirtualAddress;

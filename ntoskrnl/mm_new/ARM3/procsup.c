@@ -279,6 +279,73 @@ MmDeleteProcessAddressSpace2(
 
 NTSTATUS
 NTAPI
+MmDeleteProcessAddressSpace(
+    _In_ PEPROCESS Process)
+{
+    KIRQL OldIrql;
+    PVOID Address;
+
+    DPRINT("MmDeleteProcessAddressSpace: %p, '%s'\n", Process, Process->ImageFileName);
+
+    OldIrql = MiAcquireExpansionLock();
+    RemoveEntryList(&Process->MmProcessLinks);
+    MiReleaseExpansionLock(OldIrql);
+
+    MmLockAddressSpace(&Process->Vm);
+
+    /* There should not be any memory areas left! */
+    ASSERT(Process->Vm.WorkingSetExpansionLinks.Flink == NULL);
+
+    #if (_MI_PAGING_LEVELS == 2)
+    {
+        PMMPDE Pde;
+
+        /* Attach to Process */
+        KeAttachProcess(&Process->Pcb);
+
+        /* Acquire PFN lock */
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        for (Address = MI_LOWEST_VAD_ADDRESS;
+             Address < MM_HIGHEST_VAD_ADDRESS;
+             Address = (PVOID)((ULONG_PTR)Address + (PAGE_SIZE * PTE_PER_PAGE)))
+        {
+            /* At this point all references should be dead */
+            if (MiQueryPageTableReferences(Address))
+            {
+                DPRINT1("MmDeleteProcessAddressSpace: %p, %p, %X\n", Process, Address, MiQueryPageTableReferences(Address));
+                ASSERT(MiQueryPageTableReferences(Address) == 0);
+            }
+
+            Pde = MiAddressToPde(Address);
+
+            /* Unlike in ARM3, we don't necesarrily free the PDE page as soon as reference reaches 0,
+               so we must clean up a bit when process closes
+            */
+            if (Pde->u.Hard.Valid)
+                MiDeletePte(Pde, MiPdeToPte(Pde), Process, NULL, NULL, OldIrql);
+
+            ASSERT(Pde->u.Hard.Valid == 0);
+        }
+
+        /* Release lock */
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        /* Detach */
+        KeDetachProcess();
+    }
+    #endif
+
+    MmUnlockAddressSpace(&Process->Vm);
+
+    DPRINT("Finished MmDeleteProcessAddressSpace()\n");
+    MmDeleteProcessAddressSpace2(Process);
+
+    return(STATUS_SUCCESS);
+}
+
+NTSTATUS
+NTAPI
 MmSetMemoryPriorityProcess(
     _In_ PEPROCESS Process,
     _In_ UCHAR MemoryPriority)
