@@ -28,6 +28,7 @@ LIST_ENTRY CcExpressWorkQueue;
 LIST_ENTRY CcIdleWorkerThreadList;
 
 extern SHARED_CACHE_MAP_LIST_CURSOR CcLazyWriterCursor;
+extern SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
 extern MM_SYSTEMSIZE CcCapturedSystemSize;
 extern LIST_ENTRY CcDeferredWrites;
 extern ULONG CcDirtyPageTarget;
@@ -359,7 +360,13 @@ CcPerformReadAhead(
         !(SharedMap->Flags & SHARE_FL_WRITE_QUEUED) &&
         !SharedMap->DirtyPages)
     {
-        ASSERT(FALSE);
+        RemoveEntryList(&SharedMap->SharedCacheMapLinks);
+        InsertTailList(&CcDirtySharedCacheMapList.SharedCacheMapLinks, &SharedMap->SharedCacheMapLinks);
+
+        LazyWriter.OtherWork = TRUE;
+
+        if (!LazyWriter.ScanActive)
+            CcScheduleLazyWriteScan(FALSE);
     }
 
     KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
