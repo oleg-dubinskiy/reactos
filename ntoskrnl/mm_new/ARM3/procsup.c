@@ -187,13 +187,94 @@ Exit:
     KeDetachProcess();
 }
 
-NTSTATUS
+VOID
 NTAPI
-MmDeleteProcessAddressSpace(
-    PEPROCESS Process)
+MmDeleteProcessAddressSpace2(
+    _In_ PEPROCESS Process)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PEPROCESS CurrentProcess = PsGetCurrentProcess();
+    PMMPFN Pfn1;
+    PMMPFN Pfn2;
+    PMMPTE Pte;
+    PFN_NUMBER PdeFrameIndex;
+    PFN_NUMBER HyperFrameIndex;
+    PFN_NUMBER VadBitmapIndex;
+    KIRQL OldIrql;
+    KIRQL Irql;
+
+    DPRINT("MmDeleteProcessAddressSpace2: Process %p\n", Process);
+
+    /* Acquire the PFN lock */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    /* Check for fully initialized process */
+    if (Process->AddressSpaceInitialized == 2)
+    {
+        /* Revert MmCreateProcessAddressSpace() */
+
+        /* Map the working set page and its page table */
+        Pfn1 = MiGetPfnEntry(Process->WorkingSetPage);
+        Pfn2 = MiGetPfnEntry(Pfn1->u4.PteFrame);
+
+        /* Nuke it */
+        MI_SET_PFN_DELETED(Pfn1);
+        MiDecrementShareCount(Pfn2, Pfn1->u4.PteFrame);
+        MiDecrementShareCount(Pfn1, Process->WorkingSetPage);
+        ASSERT((Pfn1->u3.e2.ReferenceCount == 0) || (Pfn1->u3.e1.WriteInProgress));
+
+        /* hyperspace and vad bitmap */
+        HyperFrameIndex = (Process->Pcb.DirectoryTableBase[1] / PAGE_SIZE);
+        Pte = MiMapPageInHyperSpace(CurrentProcess, HyperFrameIndex, &Irql);
+        VadBitmapIndex = (Pte + MiAddressToPteOffset(MI_VAD_BITMAP))->u.Hard.PageFrameNumber;
+        MiUnmapPageInHyperSpace(CurrentProcess, Pte, Irql);
+
+        /* Now map vad bitmap and its page table */
+        Pfn1 = MiGetPfnEntry(VadBitmapIndex);
+        Pfn2 = MiGetPfnEntry(Pfn1->u4.PteFrame);
+
+        /* Nuke it */
+        MI_SET_PFN_DELETED(Pfn1);
+        MiDecrementShareCount(Pfn2, Pfn1->u4.PteFrame);
+        MiDecrementShareCount(Pfn1, VadBitmapIndex);
+        ASSERT((Pfn1->u3.e2.ReferenceCount == 0) || (Pfn1->u3.e1.WriteInProgress));
+
+        /* Now map hyperspace and its page table */
+        Pfn1 = MiGetPfnEntry(HyperFrameIndex);
+        Pfn2 = MiGetPfnEntry(Pfn1->u4.PteFrame);
+
+        /* Nuke it */
+        MI_SET_PFN_DELETED(Pfn1);
+        MiDecrementShareCount(Pfn2, Pfn1->u4.PteFrame);
+        MiDecrementShareCount(Pfn1, HyperFrameIndex);
+
+        ASSERT((Pfn1->u3.e2.ReferenceCount == 0) || (Pfn1->u3.e1.WriteInProgress));
+
+        /* Finally, nuke the PDE itself */
+        PdeFrameIndex = (Process->Pcb.DirectoryTableBase[0] / PAGE_SIZE);
+        Pfn1 = MiGetPfnEntry(PdeFrameIndex);
+        MI_SET_PFN_DELETED(Pfn1);
+        MiDecrementShareCount(Pfn1, PdeFrameIndex);
+        MiDecrementShareCount(Pfn1, PdeFrameIndex);
+
+        /* Page table is now dead. Bye bye... */
+        ASSERT((Pfn1->u3.e2.ReferenceCount == 0) || (Pfn1->u3.e1.WriteInProgress));
+    }
+    else
+    {
+        /* A partly-initialized process should never exit through here */
+        ASSERT(FALSE);
+    }
+
+    /* Release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    /* Drop a reference on the session */
+    if (Process->Session)
+        MiReleaseProcessReferenceToSessionDataPage(Process->Session);
+
+    /* Clear out the PDE pages */
+    Process->Pcb.DirectoryTableBase[0] = 0;
+    Process->Pcb.DirectoryTableBase[1] = 0;
 }
 
 NTSTATUS
