@@ -771,4 +771,68 @@ MiSessionAddProcess(
     PspSetProcessFlag(NewProcess, PSF_PROCESS_IN_SESSION_BIT);
 }
 
+VOID
+NTAPI
+MiDereferenceSessionFinal(VOID)
+{
+    PMM_SESSION_SPACE SessionGlobal;
+    KIRQL OldIrql;
+
+    /* Get the pointer to the global session address */
+    SessionGlobal = MmSessionSpace->GlobalVirtualAddress;
+
+    /* Acquire the expansion lock */
+    OldIrql = MiAcquireExpansionLock();
+
+    /* Set delete pending flag, so that processes can no longer attach to this session
+       and the last process that detaches sets the AttachEvent
+    */
+    ASSERT(SessionGlobal->u.Flags.DeletePending == 0);
+    SessionGlobal->u.Flags.DeletePending = 1;
+
+    /* Check if we have any attached processes */
+    if (SessionGlobal->AttachCount)
+    {
+        /* Initialize the event (it's not in use yet!) */
+        KeInitializeEvent(&SessionGlobal->AttachEvent, NotificationEvent, FALSE);
+
+        /* Release the expansion lock for the wait */
+        MiReleaseExpansionLock(OldIrql);
+
+        /* Wait for the event to be set due to the last process detach */
+        KeWaitForSingleObject(&SessionGlobal->AttachEvent, WrVirtualMemory, KernelMode, FALSE, NULL);
+
+        /* Reacquire the expansion lock */
+        OldIrql = MiAcquireExpansionLock();
+
+        /* Makes sure we still have the delete flag and no attached processes */
+        ASSERT(MmSessionSpace->u.Flags.DeletePending == 1);
+        ASSERT(MmSessionSpace->AttachCount == 0);
+    }
+
+    /* Check if the session is in the workingset expansion list */
+    if (SessionGlobal->Vm.WorkingSetExpansionLinks.Flink)
+    {
+        /* Remove the session from the list and zero the list entry */
+        RemoveEntryList(&SessionGlobal->Vm.WorkingSetExpansionLinks);
+        SessionGlobal->Vm.WorkingSetExpansionLinks.Flink = 0;
+    }
+
+    /* Check if the session is in the workingset list */
+    if (SessionGlobal->WsListEntry.Flink)
+    {
+        /* Remove the session from the list and zero the list entry */
+        RemoveEntryList(&SessionGlobal->WsListEntry);
+        SessionGlobal->WsListEntry.Flink = NULL;
+    }
+
+    /* Release the expansion lock */
+    MiReleaseExpansionLock(OldIrql);
+
+    /* Check for a win32k unload routine */
+    if (SessionGlobal->Win32KDriverUnload)
+        /* Call it */
+        SessionGlobal->Win32KDriverUnload(NULL);
+}
+
 /* EOF */
