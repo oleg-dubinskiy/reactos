@@ -28,7 +28,95 @@ NTAPI
 MmCleanProcessAddressSpace(
     _In_ PEPROCESS Process)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PETHREAD Thread = PsGetCurrentThread();
+    PMM_AVL_TABLE VadTree;
+    PMMVAD Vad;
+
+    DPRINT1("MmCleanProcessAddressSpace: Process %p\n", Process);
+
+    /* Only support this */
+    ASSERT(Process->AddressSpaceInitialized == 2);
+
+    /* Remove from the session */
+    MiSessionRemoveProcess();
+
+    /* Lock the process address space from changes */
+    MmLockAddressSpace(&Process->Vm);
+    MiLockProcessWorkingSetUnsafe(Process, Thread);
+
+    /* VM is deleted now */
+    Process->VmDeleted = TRUE;
+    MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+
+    /* Enumerate the VADs */
+    VadTree = &Process->VadRoot;
+
+    while (VadTree->NumberGenericTableElements)
+    {
+        /* Grab the current VAD */
+        Vad = (PMMVAD)VadTree->BalancedRoot.RightChild;
+
+        /* Check for old-style memory areas */
+        if (Vad->u.VadFlags.Spare == 1)
+        {
+            /* Let RosMm handle this */
+            ASSERT(0);//MiRosCleanupMemoryArea(Process, Vad);
+            continue;
+        }
+
+        /* Lock the working set */
+        MiLockProcessWorkingSetUnsafe(Process, Thread);
+
+        /* Remove this VAD from the tree */
+        ASSERT(VadTree->NumberGenericTableElements >= 1);
+        MiRemoveNode((PMMADDRESS_NODE)Vad, VadTree);
+
+        /* Only regular VADs supported for now */
+//        ASSERT(Vad->u.VadFlags.VadType == VadNone);
+
+        /* Check if this is a section VAD */
+        if (!Vad->u.VadFlags.PrivateMemory && Vad->ControlArea)
+        {
+            /* Remove the view */
+            MiRemoveMappedView(Process, Vad);
+        }
+        else
+        {
+            /* Delete the addresses */
+            MiDeleteVirtualAddresses((Vad->StartingVpn * PAGE_SIZE),
+                                     ((Vad->EndingVpn * PAGE_SIZE) | (PAGE_SIZE - 1)),
+                                     Vad);
+
+            /* Release the working set */
+            MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+        }
+
+         /* Skip ARM3 fake VADs, they'll be freed by MmDeleteProcessAddresSpace */
+        if (Vad->u.VadFlags.Spare == 1)
+        {
+            /* Set a flag so MmDeleteMemoryArea knows to free, but not to remove */
+            Vad->u.VadFlags.Spare = 2;
+            continue;
+        }
+
+        /* Free the VAD memory */
+        ExFreePool(Vad);
+    }
+
+    /* Lock the working set */
+    MiLockProcessWorkingSetUnsafe(Process, Thread);
+
+    ASSERT(Process->CloneRoot == NULL);
+    ASSERT(Process->PhysicalVadRoot == NULL);
+
+    /* Delete the shared user data section */
+    MiDeleteVirtualAddresses(USER_SHARED_DATA, USER_SHARED_DATA, NULL);
+
+    /* Release the working set */
+    MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+
+    /* Release the address space */
+    MmUnlockAddressSpace(&Process->Vm);
 }
 
 VOID
