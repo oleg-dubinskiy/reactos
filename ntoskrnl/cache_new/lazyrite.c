@@ -16,6 +16,9 @@ LARGE_INTEGER CcCollisionDelay = RTL_CONSTANT_LARGE_INTEGER(-10000LL * 100);  //
 LAZY_WRITER LazyWriter;
 ULONG CcTotalDirtyPages = 0;
 ULONG CcNumberActiveWorkerThreads = 0;
+ULONG CcDirtyPagesLastScan = 0;
+ULONG CcPagesWrittenLastTime = 0;
+ULONG CcPagesYetToWrite;
 BOOLEAN CcQueueThrottle = FALSE;
 
 LIST_ENTRY CcFastTeardownWorkQueue;
@@ -24,7 +27,10 @@ LIST_ENTRY CcRegularWorkQueue;
 LIST_ENTRY CcExpressWorkQueue;
 LIST_ENTRY CcIdleWorkerThreadList;
 
+extern SHARED_CACHE_MAP_LIST_CURSOR CcLazyWriterCursor;
+extern MM_SYSTEMSIZE CcCapturedSystemSize;
 extern LIST_ENTRY CcDeferredWrites;
+extern ULONG CcDirtyPageTarget;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -208,6 +214,13 @@ CcWriteBehind(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+VOID
+NTAPI
+CcPostDeferredWrites(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 BOOLEAN
 NTAPI
 IsGoToNextMap(
@@ -260,7 +273,220 @@ VOID
 NTAPI
 CcLazyWriteScan(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PSHARED_CACHE_MAP FirstMap = NULL;
+    PSHARED_CACHE_MAP SharedMap;
+    PGENERAL_LOOKASIDE LookasideList;
+    PWORK_QUEUE_ENTRY WorkItem;
+    PLIST_ENTRY ListEntry;
+    PLIST_ENTRY MapLinks;
+    PKPRCB Prcb;
+    LIST_ENTRY PostWorkList;
+    ULONG TargetPages;
+    ULONG NextTargetPages;
+    ULONG DirtyPages;
+    ULONG counter = 0;
+    BOOLEAN IsNoPagesToWrite = FALSE;
+    BOOLEAN IsDubleScan = FALSE;
+    KIRQL OldIrql;
+
+    DPRINT("CcLazyWriteScan()\n");
+
+    //_SEH2_TRY // FIXME
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    if (!CcTotalDirtyPages && !LazyWriter.OtherWork)
+    {
+        if (!IsListEmpty(&CcDeferredWrites))
+        {
+            KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+            CcPostDeferredWrites();
+            CcScheduleLazyWriteScan(FALSE);
+        }
+        else
+        {
+            LazyWriter.ScanActive = 0;
+            KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+        }
+
+        return;
+    }
+
+    InitializeListHead(&PostWorkList);
+
+    while (!IsListEmpty(&CcPostTickWorkQueue))
+    {
+        ListEntry = RemoveHeadList(&CcPostTickWorkQueue);
+        InsertTailList(&PostWorkList, ListEntry);
+    }
+
+    LazyWriter.OtherWork = FALSE;
+
+    if (CcTotalDirtyPages > 8)
+        TargetPages = (CcTotalDirtyPages / 8);
+    else
+        TargetPages = CcTotalDirtyPages;
+
+    DirtyPages = (CcTotalDirtyPages + CcPagesWrittenLastTime);
+
+    if (CcDirtyPagesLastScan < DirtyPages)
+        NextTargetPages = (DirtyPages - CcDirtyPagesLastScan);
+    else
+        NextTargetPages = 0;
+
+    NextTargetPages += (CcTotalDirtyPages - TargetPages);
+
+    if (NextTargetPages > CcDirtyPageTarget)
+        TargetPages += (NextTargetPages - CcDirtyPageTarget);
+
+    CcDirtyPagesLastScan = CcTotalDirtyPages;
+    CcPagesWrittenLastTime = TargetPages;
+    CcPagesYetToWrite = TargetPages;
+
+    SharedMap = CONTAINING_RECORD(CcLazyWriterCursor.SharedCacheMapLinks.Flink, SHARED_CACHE_MAP, SharedCacheMapLinks);
+
+    while (SharedMap != FirstMap)
+    {
+        MapLinks = &SharedMap->SharedCacheMapLinks;
+
+        if (MapLinks == &CcLazyWriterCursor.SharedCacheMapLinks)
+            break;
+
+        if (!FirstMap)
+            FirstMap = SharedMap;
+
+        if (IsGoToNextMap(SharedMap, TargetPages))
+        {
+            counter++;
+            if (counter >= 20)
+            {
+                DPRINT1("CcLazyWriteScan: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            goto NextMap;
+        }
+
+        SharedMap->PagesToWrite = SharedMap->DirtyPages;
+
+        if ((SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) &&
+            SharedMap->DirtyPages >= 0x40 &&
+            CcCapturedSystemSize != MmSmallSystem)
+        {
+            SharedMap->PagesToWrite /= 8;
+        }
+
+        if (!IsNoPagesToWrite)
+        {
+            if (TargetPages > SharedMap->PagesToWrite)
+            {
+                TargetPages -= SharedMap->PagesToWrite;
+            }
+            else if ((SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) ||
+                     (FirstMap == SharedMap && !(SharedMap->LazyWritePassCount & 0xF)))
+            {
+                TargetPages = 0;
+                IsNoPagesToWrite = TRUE;
+
+                IsDubleScan = TRUE;
+            }
+            else
+            {
+                RemoveEntryList(&CcLazyWriterCursor.SharedCacheMapLinks);
+                InsertTailList(MapLinks, &CcLazyWriterCursor.SharedCacheMapLinks);
+
+                TargetPages = 0;
+                IsNoPagesToWrite = TRUE;
+            }
+        }
+
+        SharedMap->Flags |= 0x20;
+        SharedMap->DirtyPages++;
+
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        Prcb = KeGetCurrentPrcb();
+
+        LookasideList = Prcb->PPLookasideList[5].P;
+        LookasideList->TotalAllocates++;
+
+        WorkItem = (PWORK_QUEUE_ENTRY)InterlockedPopEntrySList(&LookasideList->ListHead);
+        if (!WorkItem)
+        {
+            LookasideList->AllocateMisses++;
+
+            LookasideList = Prcb->PPLookasideList[5].L;
+            LookasideList->TotalAllocates++;
+
+            WorkItem = (PWORK_QUEUE_ENTRY)InterlockedPopEntrySList(&LookasideList->ListHead);
+            if (!WorkItem)
+            {
+                LookasideList->AllocateMisses++;
+                WorkItem = LookasideList->Allocate(LookasideList->Type, LookasideList->Size, LookasideList->Tag);
+            }
+        }
+
+        if (!WorkItem)
+        {
+            OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+            SharedMap->Flags &= ~0x20;
+            SharedMap->DirtyPages--;
+            break;
+        }
+
+        WorkItem->Function = WriteBehind;
+        WorkItem->Parameters.Write.SharedCacheMap = SharedMap;
+
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+        SharedMap->DirtyPages--;
+
+        if (SharedMap->Flags & SHARE_FL_WAITING_TEARDOWN)
+        {
+            SharedMap->WriteBehindWorkQueueEntry = (PVOID)((ULONG_PTR)WorkItem | 1);
+            CcPostWorkQueue(WorkItem, &CcFastTeardownWorkQueue);
+        }
+        else
+        {
+            SharedMap->WriteBehindWorkQueueEntry = WorkItem;
+            CcPostWorkQueue(WorkItem, &CcRegularWorkQueue);
+        }
+
+        counter = 0;
+
+NextMap:
+
+        SharedMap = CONTAINING_RECORD(MapLinks->Flink, SHARED_CACHE_MAP, SharedCacheMapLinks);
+
+        if (IsDubleScan)
+        {
+            RemoveEntryList(&CcLazyWriterCursor.SharedCacheMapLinks);
+            InsertHeadList(MapLinks, &CcLazyWriterCursor.SharedCacheMapLinks);
+
+            IsDubleScan = FALSE;
+        }
+    }
+
+    while (!IsListEmpty(&PostWorkList))
+    {
+        PWORK_QUEUE_ENTRY workItem;
+        PLIST_ENTRY entry;
+
+        entry = RemoveHeadList(&PostWorkList);
+        workItem = CONTAINING_RECORD(entry, WORK_QUEUE_ENTRY, WorkQueueLinks);
+
+        CcPostWorkQueue(workItem, &CcRegularWorkQueue);
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+    if (!IsListEmpty(&CcDeferredWrites))
+        CcPostDeferredWrites();
+
+    CcScheduleLazyWriteScan(FALSE);
+
+    //_SEH2_EXCEPT()
+    //_SEH2_END;
 }
 
 VOID
