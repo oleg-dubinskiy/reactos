@@ -3223,8 +3223,16 @@ Finish:
 
     if (LockedProtoPfn)
     {
-        DPRINT1("MiDispatchFault: FIXME! LockedProtoPfn %X\n", LockedProtoPfn);
-        ASSERT(FALSE);
+        ASSERT(SectionProto != NULL);
+
+        /* Lock the PFN database */
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        ASSERT(LockedProtoPfn->u3.e2.ReferenceCount >= 1);
+        MiDereferencePfnAndDropLockCount(LockedProtoPfn);
+
+        /* Unlock the PFN database */
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
     }
 
     ASSERT(OldIrql == KeGetCurrentIrql());
