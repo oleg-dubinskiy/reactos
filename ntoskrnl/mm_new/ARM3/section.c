@@ -349,7 +349,44 @@ NTAPI
 MiConvertStaticSubsections(
     _In_ PCONTROL_AREA ControlArea)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMSUBSECTION MappedSubsection;
+
+    DPRINT("MiConvertStaticSubsections: ControlArea %p\n", ControlArea);
+
+    ASSERT(ControlArea->u.Flags.Image == 0);
+    ASSERT(ControlArea->FilePointer != NULL);
+    ASSERT(ControlArea->u.Flags.PhysicalMemory == 0);
+
+    if (ControlArea->u.Flags.Rom)
+        MappedSubsection = (PMSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+    else
+        MappedSubsection = (PMSUBSECTION)(ControlArea + 1);
+
+    while (MappedSubsection)
+    {
+        if (MappedSubsection->DereferenceList.Flink)
+            goto Next;
+
+        if (MappedSubsection->u.SubsectionFlags.SubsectionStatic && MappedSubsection->SubsectionBase)
+        {
+            DPRINT("MiConvertStaticSubsections: FIXME\n");
+            ASSERT(FALSE);
+            goto Next;
+        }
+
+        MappedSubsection->u2.SubsectionFlags2.SubsectionConverted = 1;
+        MappedSubsection->u.SubsectionFlags.SubsectionStatic = 0;
+
+        MappedSubsection->NumberOfMappedViews = 1;
+
+        MiRemoveViewsFromSection(MappedSubsection, MappedSubsection->PtesInSubsection);
+
+        DPRINT("MiConvertStaticSubsections: FIXME MiSubsectionsConvertedToDynamic\n");
+
+Next:
+
+        MappedSubsection = (PMSUBSECTION)MappedSubsection->NextSubsection;
+    }
 }
 
 VOID
