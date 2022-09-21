@@ -2474,11 +2474,7 @@ MiResolveProtoPteFault(
     }
 
     if (PageBlock)
-    {
-        DPRINT1("MiResolveProtoPteFault: FIXME\n");
-        ASSERT(FALSE);
-        //MiFreeInPageSupportBlock(PageBlock);
-    }
+        MiFreeInPageSupportBlock(PageBlock);
 
     return Status;
 }
