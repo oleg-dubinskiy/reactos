@@ -480,8 +480,8 @@ MmMapLockedPages(
     _In_ PMDL Mdl,
     _In_ KPROCESSOR_MODE AccessMode)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    /* Call the extended version */
+    return MmMapLockedPagesSpecifyCache(Mdl, AccessMode, MmCached, NULL, TRUE, HighPagePriority);
 }
 
 PVOID
