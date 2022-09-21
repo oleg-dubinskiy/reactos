@@ -835,4 +835,74 @@ MiDereferenceSessionFinal(VOID)
         SessionGlobal->Win32KDriverUnload(NULL);
 }
 
+VOID
+NTAPI
+MiReleaseProcessReferenceToSessionDataPage(
+    _In_ PMM_SESSION_SPACE SessionGlobal)
+{
+    PFN_NUMBER PageFrameIndex[MI_SESSION_DATA_PAGES_MAXIMUM];
+    PMMPTE Pte;
+    PMMPFN Pfn;
+    ULONG SessionId;
+    ULONG ix;
+    KIRQL OldIrql;
+
+    /* Is there more than just this reference? If so, bail out */
+    if (InterlockedDecrement(&SessionGlobal->ProcessReferenceToSession))
+        return;
+
+    /* Get the session ID */
+    SessionId = SessionGlobal->SessionId;
+
+    DPRINT1("MiReleaseProcessReferenceToSessionDataPage: Last process in session %X going down!!!\n", SessionId);
+
+    /* Free the session page tables */
+    ExFreePoolWithTag(SessionGlobal->PageTables, 'tHmM');
+    ASSERT(!MI_IS_PHYSICAL_ADDRESS(SessionGlobal));
+
+    /* Capture the data page PFNs */
+    Pte = MiAddressToPte(SessionGlobal);
+
+    for (ix = 0; ix < MiSessionDataPages; ix++)
+        PageFrameIndex[ix] = PFN_FROM_PTE(Pte + ix);
+
+    /* Release them */
+    MiReleaseSystemPtes(Pte, MiSessionDataPages, SystemPteSpace);
+
+    /* Mark them as deleted */
+    for (ix = 0; ix < MiSessionDataPages; ix++)
+    {
+        Pfn = MI_PFN_ELEMENT(PageFrameIndex[ix]);
+        MI_SET_PFN_DELETED(Pfn);
+    }
+
+    /* Loop every data page and drop a reference count */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    for (ix = 0; ix < MiSessionDataPages; ix++)
+    {
+        /* Sanity check that the page is correct, then decrement it */
+        Pfn = MI_PFN_ELEMENT(PageFrameIndex[ix]);
+
+        ASSERT(Pfn->u2.ShareCount == 1);
+        ASSERT(Pfn->u3.e2.ReferenceCount == 1);
+
+        MiDecrementShareCount(Pfn, PageFrameIndex[ix]);
+    }
+
+    /* Done playing with pages, release the lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    /* Decrement the number of data pages */
+    InterlockedDecrement(&MmSessionDataPages);
+
+    /* Free this session ID from the session bitmap */
+    KeAcquireGuardedMutex(&MiSessionIdMutex);
+
+    ASSERT(RtlCheckBit(MiSessionIdBitmap, SessionId));
+    RtlClearBit(MiSessionIdBitmap, SessionId);
+
+    KeReleaseGuardedMutex(&MiSessionIdMutex);
+}
+
 /* EOF */
