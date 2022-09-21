@@ -963,4 +963,34 @@ Exit:
     RtlInterlockedClearBits(&Process->Flags, PSF_PROCESS_IN_SESSION_BIT);
 }
 
+VOID
+NTAPI
+MiSessionRemoveProcess(VOID)
+{
+    PEPROCESS CurrentProcess = PsGetCurrentProcess();
+    KIRQL OldIrql;
+
+    DPRINT("MiSessionRemoveProcess()\n");
+
+    /* If the process isn't already in a session, or if it's the leader... */
+    if (!(CurrentProcess->Flags & PSF_PROCESS_IN_SESSION_BIT) || CurrentProcess->Vm.Flags.SessionLeader)
+        /* Then there's nothing to do */
+        return;
+
+    /* Sanity check */
+    ASSERT(MmIsAddressValid(MmSessionSpace) == TRUE);
+
+    /* Acquire the expansion lock while touching the session */
+    OldIrql = MiAcquireExpansionLock();
+
+    /* Remove the process from the list */
+    RemoveEntryList(&CurrentProcess->SessionProcessLinks);
+
+    /* Release the lock again */
+    MiReleaseExpansionLock(OldIrql);
+
+    /* Dereference the session */
+    MiDereferenceSession();
+}
+
 /* EOF */
