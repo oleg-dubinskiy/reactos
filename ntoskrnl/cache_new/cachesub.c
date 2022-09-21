@@ -169,9 +169,10 @@ CcFlushCache(IN PSECTION_OBJECT_POINTERS SectionObjectPointers,
 {
     PSHARED_CACHE_MAP SharedMap;
     IO_STATUS_BLOCK ioStatus;
-    LARGE_INTEGER EndTickCount;
+    LARGE_INTEGER fileSize;
     PFSRTL_COMMON_FCB_HEADER FcbHeader;
     ULONG Flags;
+    ULONG Size;
     BOOLEAN IsSaveStatus = FALSE;
     BOOLEAN IsLazyWrite = FALSE;
     BOOLEAN PendingTeardown = FALSE;
@@ -186,9 +187,9 @@ CcFlushCache(IN PSECTION_OBJECT_POINTERS SectionObjectPointers,
 
     if (FileOffset == &CcNoDelay)
     {
-        OutIoStatus->Status = STATUS_VERIFY_REQUIRED;
-        IsLazyWrite = TRUE;
         FileOffset = NULL;
+        IsLazyWrite = TRUE;
+        OutIoStatus->Status = STATUS_VERIFY_REQUIRED;
         Flags = 2;
     }
     else
@@ -277,23 +278,37 @@ CcFlushCache(IN PSECTION_OBJECT_POINTERS SectionObjectPointers,
         SharedMap->ValidDataLength = SharedMap->ValidDataGoal;
 
     if (FileOffset)
-    {
-        DPRINT1("CcFlushCache: FIXME\n");
-        ASSERT(FALSE);
-    }
+        fileSize.QuadPart = FileOffset->QuadPart;
 
-    if (IsLazyWrite)
-    {
-        KeQueryTickCount(&EndTickCount);
-        EndTickCount.QuadPart += CcIdleDelayTick;
-    }
+    if (Length)
+        Size = Length;
+    else
+        Size = 1;
 
     while (TRUE)
     {
+        PLARGE_INTEGER offset;
+        PVOID Param6;
+        LARGE_INTEGER fileOffset;
+        ULONG length;
+
         if (!SharedMap->PagesToWrite && IsLazyWrite && !PendingTeardown)
             break;
 
         if (!SharedMap->FileSize.QuadPart && !(SharedMap->Flags & SHARE_FL_PIN_ACCESS))
+            break;
+
+        if (!IsLazyWrite || PendingTeardown)
+            length = Size;
+        else
+            length = 0;
+
+        if (!IsLazyWrite || PendingTeardown)
+            offset = (FileOffset ? &fileSize : NULL);
+        else
+            offset = NULL;
+
+        if (!CcAcquireByteRangeForWrite(SharedMap, offset, length, &fileOffset, &Size, &Param6))
             break;
 
         DPRINT1("CcFlushCache: FIXME\n");
@@ -305,7 +320,7 @@ CcFlushCache(IN PSECTION_OBJECT_POINTERS SectionObjectPointers,
     SharedMap->OpenCount--;
 
     if (!SharedMap->OpenCount &&
-        !(SharedMap->Flags & 0x20) &&
+        !(SharedMap->Flags & SHARE_FL_WRITE_QUEUED) &&
         !SharedMap->DirtyPages)
     {
         DPRINT1("CcFlushCache: FIXME\n");
