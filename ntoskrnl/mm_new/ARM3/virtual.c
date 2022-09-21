@@ -2782,6 +2782,22 @@ MiCalculatePageCommitment(
     return CommittedPages;
 }
 
+NTSTATUS
+NTAPI
+MmFlushVirtualMemory(
+    _In_ PEPROCESS Process,
+    _Inout_ PVOID* BaseAddress,
+    _Inout_ SIZE_T* RegionSize,
+    _Out_ IO_STATUS_BLOCK* IoStatusBlock)
+{
+    PAGED_CODE();
+
+    UNIMPLEMENTED;
+
+    /* Fake success */
+    return STATUS_SUCCESS;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS
@@ -3186,8 +3202,95 @@ NtFlushVirtualMemory(
     _Inout_ PSIZE_T NumberOfBytesToFlush,
     _Out_ PIO_STATUS_BLOCK IoStatusBlock)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
+    IO_STATUS_BLOCK LocalStatusBlock;
+    PEPROCESS Process;
+    PVOID CapturedBaseAddress;
+    SIZE_T CapturedBytesToFlush;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    /* Check if we came from user mode */
+    if (PreviousMode != KernelMode)
+    {
+        /* Enter SEH for probing */
+        _SEH2_TRY
+        {
+            /* Validate all outputs */
+            ProbeForWritePointer(BaseAddress);
+            ProbeForWriteSize_t(NumberOfBytesToFlush);
+            ProbeForWriteIoStatusBlock(IoStatusBlock);
+
+            /* Capture them */
+            CapturedBaseAddress = *BaseAddress;
+            CapturedBytesToFlush = *NumberOfBytesToFlush;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Get exception code */
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+    }
+    else
+    {
+        /* Capture directly */
+        CapturedBaseAddress = *BaseAddress;
+        CapturedBytesToFlush = *NumberOfBytesToFlush;
+    }
+
+    /* Catch illegal base address */
+    if (CapturedBaseAddress > MM_HIGHEST_USER_ADDRESS)
+    {
+        DPRINT1("NtFlushVirtualMemory: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Catch illegal region size */
+    if (CapturedBytesToFlush > (MmUserProbeAddress - (ULONG_PTR)CapturedBaseAddress))
+    {
+        /* Fail */
+        DPRINT1("NtFlushVirtualMemory: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Get a reference to the process */
+    Status = ObReferenceObjectByHandle(ProcessHandle,
+                                       PROCESS_VM_OPERATION,
+                                       PsProcessType,
+                                       PreviousMode,
+                                       (PVOID *)(&Process),
+                                       NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("NtFlushVirtualMemory: Status %X\n", Status);
+        return Status;
+    }
+
+    /* Do it */
+    Status = MmFlushVirtualMemory(Process,
+                                  &CapturedBaseAddress,
+                                  &CapturedBytesToFlush,
+                                  &LocalStatusBlock);
+
+    /* Release reference */
+    ObDereferenceObject(Process);
+
+    /* Enter SEH to return data */
+    _SEH2_TRY
+    {
+        /* Return data to user */
+        *BaseAddress = PAGE_ALIGN(CapturedBaseAddress);
+        *NumberOfBytesToFlush = 0;
+        *IoStatusBlock = LocalStatusBlock;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+    _SEH2_END;
+
+    return Status;
 }
 
 NTSTATUS
