@@ -24,6 +24,8 @@ LIST_ENTRY CcRegularWorkQueue;
 LIST_ENTRY CcExpressWorkQueue;
 LIST_ENTRY CcIdleWorkerThreadList;
 
+extern LIST_ENTRY CcDeferredWrites;
+
 /* FUNCTIONS ******************************************************************/
 
 VOID
@@ -173,12 +175,233 @@ CcScanDpc(
     CcPostWorkQueue(WorkItem, WorkQueue);
 }
 
+LONG
+CcExceptionFilter(
+    _In_ NTSTATUS Status)
+{
+    LONG Result;
+
+    DPRINT1("CcExceptionFilter: Status %X\n", Status);
+
+    if (FsRtlIsNtstatusExpected(Status))
+        Result = EXCEPTION_EXECUTE_HANDLER;
+    else
+        Result = EXCEPTION_CONTINUE_SEARCH;
+
+    return Result;
+}
+
+VOID
+FASTCALL
+CcPerformReadAhead(
+    _In_ PFILE_OBJECT FileObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+FASTCALL
+CcWriteBehind(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ IO_STATUS_BLOCK* OutIoStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+CcLazyWriteScan(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 VOID
 NTAPI
 CcWorkerThread(
     _In_ PVOID Parameter)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PWORK_QUEUE_ITEM WorkItem = Parameter;
+    PGENERAL_LOOKASIDE LookasideList;
+    PSHARED_CACHE_MAP SharedMap;
+    PWORK_QUEUE_ENTRY WorkEntry;
+    PLIST_ENTRY Entry;
+    PKPRCB Prcb;
+    IO_STATUS_BLOCK IoStatus;
+    KIRQL OldIrql;
+    BOOLEAN DropThrottle = FALSE;
+    BOOLEAN WritePerformed = FALSE;
+
+    DPRINT("CcWorkerThread: WorkItem %p\n", WorkItem);
+
+    IoStatus.Status = STATUS_SUCCESS;
+    IoStatus.Information = 0;
+
+    /* Loop till we have jobs */
+    while (TRUE)
+    {
+        /* Lock queues */
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueWorkQueueLock);
+
+        /* If we have to touch throttle, reset it now! */
+        if (DropThrottle)
+        {
+            CcQueueThrottle = FALSE;
+            DropThrottle = FALSE;
+        }
+
+        if (IoStatus.Information == 0x8A5E)
+        {
+            ASSERT(Entry);
+
+            if (WorkEntry->Function == WriteBehind)
+            {
+                SharedMap = WorkEntry->Parameters.Write.SharedCacheMap;
+                ASSERT(Entry != &CcFastTeardownWorkQueue);
+                SharedMap->WriteBehindWorkQueueEntry = WorkEntry;
+            }
+
+            InsertTailList(Entry, &WorkEntry->WorkQueueLinks);
+            IoStatus.Information = 0;
+        }
+
+        /* Check if we have write to do */
+        if (!IsListEmpty(&CcFastTeardownWorkQueue))
+        {
+            Entry = &CcFastTeardownWorkQueue;
+            WorkEntry = CONTAINING_RECORD(Entry->Flink, WORK_QUEUE_ENTRY, WorkQueueLinks);
+
+            ASSERT((WorkEntry->Function == LazyWriteScan) ||
+                   (WorkEntry->Function == WriteBehind)); 
+        }
+        /* If not, check read queues */
+        else if (!IsListEmpty(&CcExpressWorkQueue))
+        {
+            Entry = &CcExpressWorkQueue;
+        }
+        else if (!IsListEmpty(&CcRegularWorkQueue))
+        {
+            Entry = &CcRegularWorkQueue;
+        }
+        else
+        {
+            break;
+        }
+
+        /* Get our work item, if someone is waiting for us to finish
+           and we're not the only thread in queue then, quit running to let the others do
+           and throttle so that noone starts till current activity is over
+        */
+        WorkEntry = CONTAINING_RECORD(Entry->Flink, WORK_QUEUE_ENTRY, WorkQueueLinks);
+
+        if (WorkEntry->Function == SetDone && CcNumberActiveWorkerThreads > 1)
+        {
+            CcQueueThrottle = TRUE;
+            break;
+        }
+
+        if (WorkEntry->Function == WriteBehind)
+            WorkEntry->Parameters.Write.SharedCacheMap->WriteBehindWorkQueueEntry = NULL;
+
+        /* Remove current entry */
+        RemoveHeadList(Entry);
+
+        /* Unlock queues */
+        KeReleaseQueuedSpinLock(LockQueueWorkQueueLock, OldIrql);
+
+        /* And handle it */
+        _SEH2_TRY
+        {
+            switch (WorkEntry->Function)
+            {
+                case ReadAhead:
+                {
+                    CcPerformReadAhead(WorkEntry->Parameters.Read.FileObject);
+                    break;
+                }
+                case WriteBehind:
+                {
+                    WritePerformed = TRUE;
+                    PsGetCurrentThread()->MemoryMaker = 1;
+
+                    CcWriteBehind(WorkEntry->Parameters.Write.SharedCacheMap, &IoStatus);
+
+                    if (!NT_SUCCESS(IoStatus.Status))
+                        WritePerformed = FALSE;
+
+                    PsGetCurrentThread()->MemoryMaker = 0;
+                    break;
+                }
+                case LazyWriteScan:
+                {
+                    CcLazyWriteScan();
+                    break;
+                }
+                case SetDone:
+                {
+                    KeSetEvent(WorkEntry->Parameters.Event.Event, IO_NO_INCREMENT, FALSE);
+                    DropThrottle = TRUE;
+                    break;
+                }
+            }
+        }
+        _SEH2_EXCEPT(CcExceptionFilter(_SEH2_GetExceptionCode()))
+        {
+            if (WorkEntry->Function == WriteBehind)
+                PsGetCurrentThread()->MemoryMaker = 0;
+        }
+        _SEH2_END;
+
+
+        /* Handle for WriteBehind */
+        if (IoStatus.Information == 0x8A5E)
+            continue;
+
+        /* Release the current element and continue */
+
+        Prcb = KeGetCurrentPrcb();
+
+        LookasideList = Prcb->PPLookasideList[5].P;
+        LookasideList->TotalFrees++;
+
+        if (LookasideList->ListHead.Depth < LookasideList->Depth)
+        {
+            InterlockedPushEntrySList(&LookasideList->ListHead, (PSINGLE_LIST_ENTRY)WorkEntry);
+            continue;
+        }
+
+        LookasideList->FreeMisses++;
+
+        LookasideList = Prcb->PPLookasideList[5].L;
+        LookasideList->TotalFrees++;
+
+        if (LookasideList->ListHead.Depth < LookasideList->Depth)
+        {
+            InterlockedPushEntrySList(&LookasideList->ListHead, (PSINGLE_LIST_ENTRY)WorkEntry);
+            continue;
+        }
+
+        LookasideList->FreeMisses++;
+        LookasideList->Free(WorkEntry);
+    }
+
+    /* Our thread is available again */
+    InsertTailList(&CcIdleWorkerThreadList, &WorkItem->List);
+
+    /* One less worker */
+    CcNumberActiveWorkerThreads--;
+
+    /* Unlock queues */
+    KeReleaseQueuedSpinLock(LockQueueWorkQueueLock, OldIrql);
+
+    /* If there are pending write openations and we have at least 20 dirty pages */
+    if (!IsListEmpty(&CcDeferredWrites) && CcTotalDirtyPages >= 20)
+    {
+        /* And if we performed a write operation previously,
+           then stress the system a bit and reschedule a scan to find stuff to write
+        */
+        if (WritePerformed)
+            CcLazyWriteScan();
+    }
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
