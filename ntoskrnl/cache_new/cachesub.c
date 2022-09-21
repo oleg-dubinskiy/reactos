@@ -30,6 +30,133 @@ extern LARGE_INTEGER CcNoDelay;
 
 /* FUNCTIONS ******************************************************************/
 
+BOOLEAN
+NTAPI
+CcAcquireByteRangeForWrite(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PLARGE_INTEGER Offset,
+    _In_ ULONG Length,
+    _Out_ PLARGE_INTEGER OutFileOffset,
+    _Out_ ULONG* OutLength,
+    _Out_ PVOID* OutParam6)
+{
+    KLOCK_QUEUE_HANDLE LockHandle;
+    PCC_BCB Bcb;
+    BOOLEAN IsFlag = FALSE;
+    BOOLEAN Result = FALSE;
+
+    DPRINT("CcAcquireByteRangeForWrite: SharedMap %p, Length %X\n", SharedMap, Length);
+
+    OutFileOffset->QuadPart = 0;
+    *OutLength = 0;
+
+    KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+
+    if (SharedMap->Mbcb)
+    {
+        DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    while (TRUE)
+    {
+        Bcb = CONTAINING_RECORD(SharedMap->BcbList.Blink, CC_BCB, Link);
+
+        if (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE)
+        {
+            DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        while (&Bcb->Link != &SharedMap->BcbList)
+        {
+            if (Bcb->NodeTypeCode != NODE_TYPE_BCB)
+            {
+                Bcb = CONTAINING_RECORD(Bcb->Link.Blink, CC_BCB, Link);
+                continue;
+            }
+
+            if (Offset && ((Offset->QuadPart + Length) <= Bcb->FileOffset.QuadPart))
+                break;
+
+            if (*OutLength == 0)
+            {
+                if (!Bcb->Reserved1[0] ||
+                    (Offset && (Offset->QuadPart >= Bcb->BeyondLastByte.QuadPart)) ||
+                    (!Offset && (Bcb->FileOffset.QuadPart < SharedMap->BeyondLastFlush)))
+                {
+                    Bcb = CONTAINING_RECORD(Bcb->Link.Blink, CC_BCB, Link);
+                    continue;
+                }
+
+                DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                if (!Bcb->Reserved1[0])
+                    break;
+
+                if (Bcb->FileOffset.QuadPart != (OutFileOffset->QuadPart + *OutLength))
+                    break;
+
+                if ((*OutLength + Bcb->Length) > 0x10000)
+                    break;
+
+                if (Bcb->PinCount)
+                    break;
+
+                if (!(Bcb->FileOffset.QuadPart & (0x2000000 - 1)))
+                    break;
+            }
+
+            Bcb->PinCount++;
+
+            KeReleaseInStackQueuedSpinLock(&LockHandle);
+
+            if ((SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) &&
+                !(SharedMap->Flags & 2))
+            {
+                DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (IsFlag)
+        {
+            DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (*OutLength)
+        {
+            DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
+            ASSERT(FALSE);
+
+            break;
+        }
+
+        if (!SharedMap->BeyondLastFlush || Offset)
+            break;
+
+        SharedMap->BeyondLastFlush = 0;
+    }
+
+    KeReleaseInStackQueuedSpinLock(&LockHandle);
+
+    if (*OutLength)
+        Result = TRUE;
+
+    return Result;
+}
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 
