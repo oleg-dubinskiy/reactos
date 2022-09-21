@@ -208,6 +208,54 @@ CcWriteBehind(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+BOOLEAN
+NTAPI
+IsGoToNextMap(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ ULONG TargetPages)
+{
+    BOOLEAN Skip = FALSE;
+
+    if (SharedMap->Flags & (0x20 | 0x800))
+        return TRUE;
+
+    if ((SharedMap->OpenCount || SharedMap->DirtyPages) &&
+        SharedMap->FileSize.QuadPart)
+    {
+        Skip = TRUE;
+    }
+
+    if (!SharedMap->DirtyPages && Skip)
+        return TRUE;
+
+    if (SharedMap->Flags & SHARE_FL_WAITING_TEARDOWN)
+        return FALSE;
+
+    if (!TargetPages && Skip)
+        return TRUE;
+
+    SharedMap->LazyWritePassCount++;
+
+    if ((SharedMap->LazyWritePassCount & 0xF) &&
+        (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) &&
+        CcCapturedSystemSize != MmSmallSystem &&
+        SharedMap->DirtyPages < 0x40 &&
+        Skip)
+    {
+        return TRUE;
+    }
+
+    if ((SharedMap->FileObject->Flags & 0x8000) &&
+        SharedMap->OpenCount &&
+        CcCanIWrite(SharedMap->FileObject, 0x40000, 0, 0xFF) &&
+        Skip)
+    {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 VOID
 NTAPI
 CcLazyWriteScan(VOID)
