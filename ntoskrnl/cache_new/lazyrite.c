@@ -202,7 +202,167 @@ FASTCALL
 CcPerformReadAhead(
     _In_ PFILE_OBJECT FileObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    PSHARED_CACHE_MAP SharedMap;
+    PPRIVATE_CACHE_MAP PrivateMap;
+    PVACB Vacb = NULL;
+    PVOID CacheAddress;
+    LARGE_INTEGER FileOffset;
+    LARGE_INTEGER readAheadOffset[2];
+    ULONG readAheadLength[2];
+    ULONG IsPageNotResident = 0;
+    ULONG ReceivedLength;
+    ULONG NumberOfPages;
+    ULONG Length;
+    ULONG ix;
+    ULONG OldReadClusterSize;
+    UCHAR OldForwardClusterOnly;
+    KIRQL OldIrql;
+    BOOLEAN LengthIsZero;
+    BOOLEAN IsFinished = FALSE;
+    BOOLEAN IsReadAhead = FALSE;
+    BOOLEAN IsReadAheadLock = FALSE;
+
+    DPRINT("CcPerformReadAhead: FileObject %p\n", FileObject);
+
+    /* Save previous values */
+    OldForwardClusterOnly = CurrentThread->ForwardClusterOnly;
+    OldReadClusterSize = CurrentThread->ReadClusterSize;
+
+    //_SEH2_TRY
+
+    SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+
+    while (TRUE)
+    {
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+        PrivateMap = FileObject->PrivateCacheMap;
+        if (PrivateMap)
+        {
+            KeAcquireSpinLockAtDpcLevel(&PrivateMap->ReadAheadSpinLock);
+
+            LengthIsZero = (!(PrivateMap->ReadAheadLength[0] | PrivateMap->ReadAheadLength[1]));
+
+            readAheadOffset[0].QuadPart = PrivateMap->ReadAheadOffset[0].QuadPart;
+            readAheadOffset[1].QuadPart = PrivateMap->ReadAheadOffset[1].QuadPart;
+
+            readAheadLength[0] = PrivateMap->ReadAheadLength[0];
+            readAheadLength[1] = PrivateMap->ReadAheadLength[1];
+
+            PrivateMap->ReadAheadLength[0] = 0;
+            PrivateMap->ReadAheadLength[1] = 0;
+
+            KeReleaseSpinLockFromDpcLevel(&PrivateMap->ReadAheadSpinLock);
+        }
+
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        IsReadAheadLock = (*SharedMap->Callbacks->AcquireForReadAhead)(SharedMap->LazyWriteContext, TRUE);
+
+        if (!PrivateMap || LengthIsZero || !IsReadAheadLock)
+            break;
+
+        for (ix = 0; ix <= 1; ix++)
+        {
+            FileOffset = readAheadOffset[ix];
+            Length = readAheadLength[ix];
+
+            if (Length && FileOffset.QuadPart <= SharedMap->FileSize.QuadPart)
+            {
+                IsReadAhead = TRUE;
+
+                if (SharedMap->FileSize.QuadPart <= (FileOffset.QuadPart + (LONGLONG)Length))
+                {
+                    Length = (SharedMap->FileSize.QuadPart - FileOffset.QuadPart);
+                    IsFinished = TRUE;
+                }
+
+                if (Length > 0x800000)
+                    Length = 0x800000;
+
+                while (Length)
+                {
+                    CacheAddress = CcGetVirtualAddress(SharedMap, FileOffset, &Vacb, &ReceivedLength);
+
+                    if (ReceivedLength > Length)
+                        ReceivedLength = Length;
+
+                    for (NumberOfPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(CacheAddress, ReceivedLength);
+                         NumberOfPages;
+                         NumberOfPages--)
+                    {
+                        CurrentThread->ForwardClusterOnly = 1;
+
+                        if (NumberOfPages > 0x10)
+                            CurrentThread->ReadClusterSize = 0xF;
+                        else
+                            CurrentThread->ReadClusterSize = (NumberOfPages - 1);
+
+                        IsPageNotResident |= !MmCheckCachedPageState(CacheAddress, FALSE);
+
+                        CacheAddress = (PVOID)((ULONG_PTR)CacheAddress + PAGE_SIZE);
+                    }
+
+                    FileOffset.QuadPart += ReceivedLength;
+                    Length -= ReceivedLength;
+
+                    CcFreeVirtualAddress(Vacb);
+                    Vacb = NULL;
+                }
+            }
+        }
+
+        (*SharedMap->Callbacks->ReleaseFromReadAhead)(SharedMap->LazyWriteContext);
+
+        IsReadAheadLock = FALSE;
+    }
+
+    //_SEH2_FINALLY
+
+    /* Restore claster variables */
+    CurrentThread->ForwardClusterOnly = OldForwardClusterOnly;
+    CurrentThread->ReadClusterSize = OldReadClusterSize;
+
+    if (Vacb)
+        CcFreeVirtualAddress(Vacb);
+
+    if (IsReadAheadLock)
+        (*SharedMap->Callbacks->ReleaseFromReadAhead)(SharedMap->LazyWriteContext);
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    PrivateMap = FileObject->PrivateCacheMap;
+    if (PrivateMap)
+    {
+        KeAcquireSpinLockAtDpcLevel(&PrivateMap->ReadAheadSpinLock);
+
+        RtlInterlockedAndBits(&PrivateMap->UlongFlags, ~SHARE_FL_WAITING_TEARDOWN);
+
+        if (IsFinished && (FileObject->Flags & FO_SEQUENTIAL_ONLY))
+            PrivateMap->ReadAheadOffset[1].QuadPart = 0;
+
+        if (IsReadAhead && !IsPageNotResident)
+            RtlInterlockedAndBits(&PrivateMap->UlongFlags, ~0x20000);
+
+        KeReleaseSpinLockFromDpcLevel(&PrivateMap->ReadAheadSpinLock);
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+    ObDereferenceObject(FileObject);
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    SharedMap->OpenCount--;
+    SharedMap->Flags &= ~SHARE_FL_READ_AHEAD;
+
+    if (!SharedMap->OpenCount &&
+        !(SharedMap->Flags & SHARE_FL_WRITE_QUEUED) &&
+        !SharedMap->DirtyPages)
+    {
+        ASSERT(FALSE);
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
 }
 
 VOID
