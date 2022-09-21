@@ -58,7 +58,11 @@ CcCreateVacbArray(
     _In_ LARGE_INTEGER AllocationSize)
 {
     PVACB* NewVacbs;
+    PLIST_ENTRY BcbEntry;
     ULONG NewSize;
+    ULONG AllocSize;
+    BOOLEAN IsExtended = FALSE;
+    BOOLEAN IsDpcLevel = FALSE;
 
     DPRINT("CcCreateVacbArray: SharedMap %p AllocationSize %I64X\n", SharedMap, AllocationSize.QuadPart);
 
@@ -84,6 +88,7 @@ CcCreateVacbArray(
         DPRINT("CcCreateVacbArray: NewSize %X\n", NewSize);
     }
 
+    AllocSize = NewSize;
 
     if (NewSize == (CC_DEFAULT_NUMBER_OF_VACBS * sizeof(PVACB)))
     {
@@ -91,11 +96,53 @@ CcCreateVacbArray(
     }
     else
     {
-        DPRINT1("CcCreateVacbArray: FIXME! NewSize %X\n", NewSize);
-        ASSERT(FALSE);
+        if (NewSize <= 0x200)
+        {
+            if ((SharedMap->Flags & 0x200) && AllocationSize.QuadPart > 0x200000)
+            {
+                AllocSize += ((AllocSize + (sizeof(LIST_ENTRY) - 1)) & ~(sizeof(LIST_ENTRY) - 1));
+                IsDpcLevel = TRUE;
+            }
+
+            if (NewSize == 0x200)
+            {
+                AllocSize += sizeof(LIST_ENTRY);
+                IsExtended = TRUE;
+            }
+        }
+        else
+        {
+            IsExtended = TRUE;
+            DPRINT1("CcCreateVacbArray: FIXME! NewSize %X\n", NewSize);
+            ASSERT(FALSE);
+        }
+
+        NewVacbs = ExAllocatePoolWithTag(NonPagedPool, AllocSize, 'pVcC');
+        if (!NewVacbs)
+        {
+            DPRINT1("CcCreateVacbArray: STATUS_INSUFFICIENT_RESOURCES\n");
+            SharedMap->Status = STATUS_INSUFFICIENT_RESOURCES;
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
     }
 
     RtlZeroMemory(NewVacbs, NewSize);
+
+    if (IsExtended)
+    {
+        AllocSize -= sizeof(LIST_ENTRY);
+        RtlZeroMemory((PVOID)((ULONG_PTR)NewVacbs + AllocSize), sizeof(LIST_ENTRY));
+    }
+
+    if (IsDpcLevel)
+    {
+        for (BcbEntry = (PLIST_ENTRY)((ULONG_PTR)NewVacbs + NewSize);
+             BcbEntry < (PLIST_ENTRY)((ULONG_PTR)NewVacbs + AllocSize);
+             BcbEntry++)
+        {
+            InsertHeadList(&SharedMap->BcbList, BcbEntry);
+        }
+    }
 
     SharedMap->SectionSize.QuadPart = AllocationSize.QuadPart;
     SharedMap->Vacbs = NewVacbs;
