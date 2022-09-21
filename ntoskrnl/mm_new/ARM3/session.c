@@ -73,7 +73,19 @@ NTAPI
 MmSetSessionLocaleId(
     _In_ LCID LocaleId)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PEPROCESS CurrentProcess;
+
+    PAGED_CODE();
+
+    /* Get the current process and check if it is in a session */
+    CurrentProcess = PsGetCurrentProcess();
+
+    if (!CurrentProcess->Vm.Flags.SessionLeader && CurrentProcess->Session)
+        /* Set the session locale Id */
+        ((PMM_SESSION_SPACE)CurrentProcess->Session)->LocaleId = LocaleId;
+    else
+        /* Set the default locale */
+        PsDefaultThreadLocaleId = LocaleId;
 }
 
 NTSTATUS
