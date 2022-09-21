@@ -905,4 +905,62 @@ MiReleaseProcessReferenceToSessionDataPage(
     KeReleaseGuardedMutex(&MiSessionIdMutex);
 }
 
+VOID
+NTAPI
+MiDereferenceSession(VOID)
+{
+    PMM_SESSION_SPACE SessionGlobal;
+    PEPROCESS Process;
+    ULONG ReferenceCount;
+    ULONG SessionId;
+
+    /* Sanity checks */
+    ASSERT(PsGetCurrentProcess()->ProcessInSession ||
+           (!MmSessionSpace->u.Flags.Initialized &&
+            PsGetCurrentProcess()->Vm.Flags.SessionLeader &&
+            MmSessionSpace->ReferenceCount == 1));
+
+    /* The session bit must be set */
+    SessionId = MmSessionSpace->SessionId;
+
+    ASSERT(RtlCheckBit(MiSessionIdBitmap, SessionId));
+
+    /* Get the current process */
+    Process = PsGetCurrentProcess();
+
+    /* Decrement the process count */
+    InterlockedDecrement(&MmSessionSpace->ResidentProcessCount);
+
+    /* Decrement the reference count and check if was the last reference */
+    ReferenceCount = InterlockedDecrement(&MmSessionSpace->ReferenceCount);
+    if (!ReferenceCount)
+        /* No more references left, kill the session completely */
+        MiDereferenceSessionFinal();
+
+    /* Check if tis is the session leader or the last process in the session */
+    if (!Process->Vm.Flags.SessionLeader && ReferenceCount)
+        goto;
+
+    /* Get the global session address before we kill the session mapping */
+    SessionGlobal = MmSessionSpace->GlobalVirtualAddress;
+
+    /* Delete all session PDEs and flush the TB */
+    RtlZeroMemory(MiAddressToPde(MmSessionBase), BYTES_TO_PAGES(MmSessionSize) * sizeof(MMPDE));
+
+    KeFlushEntireTb(FALSE, FALSE);
+
+    /* Is this the session leader? */
+    if (Process->Vm.Flags.SessionLeader)
+    {
+        /* Clean up the references here. */
+        ASSERT(Process->Session == NULL);
+        MiReleaseProcessReferenceToSessionDataPage(SessionGlobal);
+    }
+
+Exit:
+
+    /* Reset the current process' session flag */
+    RtlInterlockedClearBits(&Process->Flags, PSF_PROCESS_IN_SESSION_BIT);
+}
+
 /* EOF */
