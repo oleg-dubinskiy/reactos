@@ -6911,6 +6911,7 @@ MmCreateSection(
     SECTION Section;
     PSECTION NewSection;
     PFILE_OBJECT File;
+    PFILE_OBJECT ControlAreaFile;
     LARGE_INTEGER FileSize;
     ULONG ControlAreaSize;
     ULONG ProtectionMask;
@@ -7014,8 +7015,43 @@ MmCreateSection(
                     !ControlArea->u.Flags.BeingDeleted &&
                     !ControlArea->u.Flags.BeingCreated)
                 {
-                    DPRINT1("MmCreateSection: FIXME\n");
-                    ASSERT(FALSE);
+                    NewSegment = ControlArea->Segment;
+
+                    if (!ControlArea->NumberOfSectionReferences &&
+                        !ControlArea->NumberOfMappedViews &&
+                        !ControlArea->ModifiedWriteCount)
+                    {
+                        ASSERT(ControlArea->FilePointer != NULL);
+
+                        ControlAreaFile = ControlArea->FilePointer;
+                        ControlArea->FilePointer = FileObject;
+                    }
+
+                    ControlArea->u.Flags.Accessed = 1;
+                    ControlArea->NumberOfSectionReferences++;
+
+                    if (ControlArea->DereferenceList.Flink)
+                    {
+                        RemoveEntryList(&ControlArea->DereferenceList);
+
+                        DPRINT("MmCreateSection: FIXME MmUnusedSegmentCount\n");
+
+                        ControlArea->DereferenceList.Flink = NULL;
+                        ControlArea->DereferenceList.Blink = NULL;
+                    }
+
+                    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                    if (ControlAreaFile)
+                    {
+                        ObDereferenceObjectDeferDelete(ControlAreaFile);
+                        ObReferenceObject(FileObject);
+                    }
+
+                    UserRefIncremented = TRUE;
+                    Section.SizeOfSection.QuadPart = InputMaximumSize->QuadPart;
+
+                    goto Finish;
                 }
 
                 MiUnlockPfnDb(OldIrql, APC_LEVEL);
@@ -7443,6 +7479,8 @@ MmCreateSection(
         IoSetTopLevelIrp(NULL);
         FileLock = FALSE;
     }
+
+Finish:
 
     /* Set the initial section object data */
     Section.InitialPageProtection = SectionPageProtection;
