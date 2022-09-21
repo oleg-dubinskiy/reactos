@@ -8031,8 +8031,88 @@ NtAreMappedFilesTheSame(
     _In_ PVOID File1MappedAsAnImage,
     _In_ PVOID File2MappedAsFile)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PCONTROL_AREA ControlArea;
+    PVOID AddressSpace;
+    PMMVAD Vad1;
+    PMMVAD Vad2;
+    BOOLEAN IsGlobal;
+    NTSTATUS Status;
+
+    DPRINT("NtAreMappedFilesTheSame: %p, %p\n", File1MappedAsAnImage, File2MappedAsFile);
+
+    /* Lock address space */
+    AddressSpace = MmGetCurrentAddressSpace();
+    MmLockAddressSpace(AddressSpace);
+
+    /* Get the VAD for Address 1 */
+    Vad1 = MiLocateAddress(File1MappedAsAnImage);
+    if (!Vad1)
+    {
+        /* Fail, the address does not exist */
+        DPRINT1("NtAreMappedFilesTheSame: No VAD at address 1 %p\n", File1MappedAsAnImage);
+        Status = STATUS_INVALID_ADDRESS;
+        goto Exit;
+    }
+
+    /* Get the VAD for Address 2 */
+    Vad2 = MiLocateAddress(File2MappedAsFile);
+    if (!Vad2)
+    {
+        /* Fail, the address does not exist */
+        DPRINT1("NtAreMappedFilesTheSame: No VAD at address 2 %p\n", File2MappedAsFile);
+        Status = STATUS_INVALID_ADDRESS;
+        goto Exit;
+    }
+
+    if (Vad1->u.VadFlags.PrivateMemory || Vad2->u.VadFlags.PrivateMemory)
+    {
+        DPRINT1("NtAreMappedFilesTheSame: STATUS_CONFLICTING_ADDRESSES\n");
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto Exit;
+    }
+
+    if (!Vad1->ControlArea || !Vad2->ControlArea)
+    {
+        DPRINT1("NtAreMappedFilesTheSame: STATUS_CONFLICTING_ADDRESSES\n");
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto Exit;
+    }
+    
+    if (!Vad1->ControlArea->FilePointer || !Vad2->ControlArea->FilePointer)
+    {
+        DPRINT1("NtAreMappedFilesTheSame: STATUS_CONFLICTING_ADDRESSES\n");
+        Status = STATUS_CONFLICTING_ADDRESSES;
+        goto Exit;
+    }
+
+    if (Vad1->ControlArea == Vad2->ControlArea->FilePointer->SectionObjectPointer->ImageSectionObject)
+    {
+        Status = STATUS_SUCCESS;
+        goto Exit;
+    }
+
+    if (!Vad1->ControlArea->u.Flags.GlobalOnlyPerSession)
+    {    
+        DPRINT1("NtAreMappedFilesTheSame: STATUS_CONFLICTING_ADDRESSES\n");
+        Status = STATUS_NOT_SAME_DEVICE;
+        goto Exit;
+    }
+
+    ControlArea = MiFindImageSectionObject(Vad2->ControlArea->FilePointer, FALSE, &IsGlobal);
+    if (ControlArea != Vad1->ControlArea)
+    {    
+        DPRINT1("NtAreMappedFilesTheSame: STATUS_CONFLICTING_ADDRESSES\n");
+        Status = STATUS_NOT_SAME_DEVICE;
+        goto Exit;
+    }
+
+    Status = STATUS_SUCCESS;
+
+Exit:
+
+    /* Unlock address space */
+    MmUnlockAddressSpace(AddressSpace);
+    return Status;
 }
 
 NTSTATUS
