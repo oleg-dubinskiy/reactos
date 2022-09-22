@@ -50,6 +50,7 @@ extern SIZE_T MmTotalCommittedPages;
 extern PVOID MmPagedPoolEnd;
 extern PVOID MmSpecialPoolStart;
 extern PVOID MmSpecialPoolEnd;
+extern LARGE_INTEGER MmShortTime;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -2704,7 +2705,7 @@ MiDispatchFault(
                     }
                     else if (!TempProto.u.Soft.Prototype && TempProto.u.Soft.Transition)
                     {
-                        DPRINT1("MiDispatchFault: TempProto.u.Long %X, LockIrql %X\n", TempProto.u.Long, LockIrql);
+                        DPRINT("MiDispatchFault: TempProto.u.Long %X, LockIrql %X\n", TempProto.u.Long, LockIrql);
 
                         /* This is a standby page, bring it back from the cache */
                         PageFrameIndex = TempProto.u.Trans.PageFrameNumber;
@@ -3672,7 +3673,6 @@ UserFault:
         if (MI_IS_WRITE_ACCESS(FaultCode) && !TempPte.u.Hard.Write)
         {
             DPRINT("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
-            ASSERT(FALSE);
             Status = STATUS_ACCESS_VIOLATION;
             goto Exit2;
         }
@@ -3789,14 +3789,14 @@ UserFault:
             {
                 /* Then it's really a demand-zero PDE (on behalf of user-mode) */
                 MI_WRITE_INVALID_PTE(Pte, DemandZeroPde);
-                DPRINT1("MmAccessFault: Pte->u.Long %X\n", Pte->u.Long);
+                DPRINT("MmAccessFault: Pte->u.Long %X\n", Pte->u.Long);
             }
             else
             {
                 /* No, create a new PTE. First, write the protection */
                 TempPte.u.Soft.Protection = ProtectionCode;
                 MI_WRITE_INVALID_PTE(Pte, TempPte);
-                DPRINT1("MmAccessFault: Pte->u.Long %X\n", Pte->u.Long);
+                DPRINT("MmAccessFault: Pte->u.Long %X\n", Pte->u.Long);
             }
 
             /* Lock the PFN database since we're going to grab a page */
@@ -3863,7 +3863,7 @@ UserFault:
                 Pfn = MI_PFN_ELEMENT(PageFrameIndex);
                 ASSERT(Pfn->u1.Event == NULL);
 
-                DPRINT1("MmAccessFault: FIXME MiAllocateWsle()\n");
+                DPRINT("MmAccessFault: FIXME MiAllocateWsle()\n");
             }
             else
             {
@@ -4022,20 +4022,26 @@ Exit2:
 
 Exit1:
 
+    if (Status == STATUS_SUCCESS)
+        return Status;
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmAccessFault: Status %X\n", Status);
+
+        if (Status == STATUS_INSUFFICIENT_RESOURCES ||
+            Status == STATUS_WORKING_SET_QUOTA ||
+            Status == STATUS_NO_MEMORY)
+        {
+            DPRINT("MmAccessFault: Status: %X\n", Status);
+            KeDelayExecutionThread(KernelMode, FALSE, &MmShortTime);
+            Status = STATUS_SUCCESS;
+        }
+    }
+
     if (Status != STATUS_SUCCESS)
     {
-        DPRINT("MmAccessFault: Status %X\n", Status);
-
-        if (!NT_SUCCESS(Status))
-        {
-            DPRINT1("MmAccessFault: FIXME MmIsRetryIoStatus(). Status %X\n", Status);
-            ASSERT(FALSE);
-        }
-
-        if (Status != STATUS_SUCCESS)
-        {
-            DPRINT("MmAccessFault: fixeme NotifyRoutine. Status %X\n", Status);
-        }
+        DPRINT("MmAccessFault: fixeme NotifyRoutine. Status %X\n", Status);
     }
 
     DPRINT("MmAccessFault: return Status %X\n", Status);
