@@ -335,7 +335,7 @@ FindInTree:
                                          OutBaseAddress);
 }
 
-TABLE_SEARCH_RESULT
+NTSTATUS
 NTAPI
 MiFindEmptyAddressRangeDownTree(
     _In_ SIZE_T Length,
@@ -989,9 +989,14 @@ MiRemoveVadCharges(
             PsReturnProcessPageFileQuota(Process, RealCharge);
 
             ASSERT((SSIZE_T)(RealCharge) >= 0);
-            ASSERT(MmTotalCommittedPages >= RealCharge);
+            //ASSERT(MmTotalCommittedPages >= RealCharge);
+            if (MmTotalCommittedPages < RealCharge)
+            {
+                DPRINT("MiRemoveVadCharges: MmTotalCommittedPages %X, RealCharge %X\n", MmTotalCommittedPages, RealCharge);
+                DPRINT1("MiRemoveVadCharges: FIXME MiChargeCommitment()\n");
+            }
 
-            InterlockedExchangeAdd((volatile PLONG)&MmTotalCommittedPages, -RealCharge);
+            InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -RealCharge);
 
             if (Process->JobStatus & 0x10) // ?
             {

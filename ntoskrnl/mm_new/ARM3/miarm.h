@@ -2155,7 +2155,7 @@ MiFindEmptyAddressRange(
     _Out_ PULONG_PTR OutBaseAddress
 );
 
-TABLE_SEARCH_RESULT
+NTSTATUS
 NTAPI
 MiFindEmptyAddressRangeDownTree(
     _In_ SIZE_T Length,
