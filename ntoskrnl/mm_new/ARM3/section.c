@@ -574,7 +574,7 @@ MiCheckControlArea(
             KeSetEvent(&PurgeEvent->Event, 0, FALSE);
 
         /* Not yet supported */
-        DPRINT1("MiCheckControlArea: FIXME MmUnusedSegmentCleanup\n");
+        DPRINT("MiCheckControlArea: FIXME MmUnusedSegmentCleanup\n");
         //ASSERT(FALSE);
 
         return;
@@ -7290,7 +7290,7 @@ MmCreateSection(
             /* This is a previously mapped file. */
             if (AllocationAttributes & SEC_IMAGE)
             {
-                DPRINT1("MmCreateSection: FIXME MiFlushDataSection \n");
+                DPRINT("MmCreateSection: FIXME MiFlushDataSection \n");
                 //MiFlushDataSection(File);
             }
 

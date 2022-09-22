@@ -24,7 +24,7 @@ MiIsAddressValid(
 
     if (!Pde->u.Hard.Valid)
     {
-        DPRINT1("MiIsAddressValid: Address %p not valid\n", Address);
+        DPRINT("MiIsAddressValid: Address %p not valid\n", Address);
         return FALSE;
     }
 
@@ -38,13 +38,13 @@ MiIsAddressValid(
 
     if (!Pte->u.Hard.Valid)
     {
-        DPRINT1("MiIsAddressValid: Address %p not valid\n", Address);
+        DPRINT("MiIsAddressValid: Address %p not valid\n", Address);
         return FALSE;
     }
 
     if (!Pte->u.Hard.LargePage)
     {
-        DPRINT1("MiIsAddressValid: Address %p not valid\n", Address);
+        DPRINT("MiIsAddressValid: Address %p not valid\n", Address);
         return FALSE;
     }
 

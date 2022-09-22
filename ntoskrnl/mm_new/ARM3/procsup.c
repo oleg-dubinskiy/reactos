@@ -32,7 +32,7 @@ MmCleanProcessAddressSpace(
     PMM_AVL_TABLE VadTree;
     PMMVAD Vad;
 
-    DPRINT1("MmCleanProcessAddressSpace: Process %p\n", Process);
+    DPRINT("MmCleanProcessAddressSpace: Process %p\n", Process);
 
     /* Only support this */
     ASSERT(Process->AddressSpaceInitialized == 2);
@@ -696,12 +696,12 @@ MmInitializeProcessAddressSpace(
 
 Exit1:
 
-    DPRINT1("MmInitializeProcessAddressSpace: FIXME MiAllowWorkingSetExpansion\n");
+    DPRINT("MmInitializeProcessAddressSpace: FIXME MiAllowWorkingSetExpansion\n");
     KeDetachProcess();
 
 Exit:
     /* Return status to caller */
-    DPRINT1("MmInitializeProcessAddressSpace: return %X\n", Status);
+    DPRINT("MmInitializeProcessAddressSpace: return %X\n", Status);
     return Status;
 }
 
@@ -816,7 +816,7 @@ MiCreatePebOrTeb(
         Process->VadRoot.NodeHint = Vad;
         MiInsertVad((PMMVAD)Vad, &Process->VadRoot);
 
-        DPRINT1("MiCreatePebOrTeb: MiInsertVad return %X\n", Result);
+        DPRINT("MiCreatePebOrTeb: MiInsertVad return %X\n", Result);
 
         MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
         KeReleaseGuardedMutex(&Process->AddressCreationLock);

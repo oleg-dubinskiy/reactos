@@ -2,7 +2,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 #include "ARM3/miarm.h"
 

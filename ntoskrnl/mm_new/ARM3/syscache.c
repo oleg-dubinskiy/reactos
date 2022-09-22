@@ -415,7 +415,7 @@ MmCheckCachedPageState(
 
             MmAccessFault(0, CacheAddress, KernelMode, NULL);
 
-            DPRINT1("MmCheckCachedPageState: return FALSE\n");
+            DPRINT("MmCheckCachedPageState: return FALSE\n");
             return FALSE;
         }
 

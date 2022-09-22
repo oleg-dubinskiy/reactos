@@ -769,13 +769,13 @@ MiInsertNode(
     _In_ PMMADDRESS_NODE Parent,
     _In_ TABLE_SEARCH_RESULT Result)
 {
-    DPRINT1("MiInsertNode: NewNode %p, Table %p, StartingVpn %p, EndingVpn %p\n",
+    DPRINT("MiInsertNode: NewNode %p, Table %p, StartingVpn %p, EndingVpn %p\n",
             NewNode, Table, NewNode->StartingVpn, NewNode->EndingVpn);
 
     /* Insert it into the tree */
     RtlpInsertAvlTreeNode(Table, NewNode, Parent, Result);
 
-    DPRINT1("MiInsertNode: Result %X\n", Result);
+    DPRINT("MiInsertNode: Result %X\n", Result);
 }
 
 VOID
