@@ -933,7 +933,7 @@ MiDeleteVirtualAddresses(
             Va = (ULONG_PTR)MiPteToAddress(Pte);
             if (Va > EndingAddress)
             {
-                DPRINT1("MiDeleteVirtualAddresses: Va %p, EndingAddress %p, Vad %p\n", Va, EndingAddress, Vad);
+                DPRINT("MiDeleteVirtualAddresses: Va %p, EndingAddress %p, Vad %p\n", Va, EndingAddress, Vad);
                 return;
             }
         }
@@ -2881,8 +2881,83 @@ NtReadVirtualMemory(
     _In_ SIZE_T NumberOfBytesToRead,
     _Out_ PSIZE_T NumberOfBytesRead OPTIONAL)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
+    PEPROCESS Process;
+    SIZE_T BytesRead = 0;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    PAGED_CODE();
+
+    /* Check if we came from user mode */
+    if (PreviousMode != KernelMode)
+    {
+        /* Validate the read addresses */
+        if ((((ULONG_PTR)BaseAddress + NumberOfBytesToRead) < (ULONG_PTR)BaseAddress) ||
+            (((ULONG_PTR)Buffer + NumberOfBytesToRead) < (ULONG_PTR)Buffer) ||
+            (((ULONG_PTR)BaseAddress + NumberOfBytesToRead) > MmUserProbeAddress) ||
+            (((ULONG_PTR)Buffer + NumberOfBytesToRead) > MmUserProbeAddress))
+        {
+            /* Don't allow to write into kernel space */
+            return STATUS_ACCESS_VIOLATION;
+        }
+
+        /* Enter SEH for probe */
+        _SEH2_TRY
+        {
+            /* Probe the output value */
+            if (NumberOfBytesRead)
+                ProbeForWriteSize_t(NumberOfBytesRead);
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Get exception code */
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+    }
+
+    /* Don't do zero-byte transfers */
+    if (NumberOfBytesToRead)
+    {
+        /* Reference the process */
+        Status = ObReferenceObjectByHandle(ProcessHandle,
+                                           PROCESS_VM_READ,
+                                           PsProcessType,
+                                           PreviousMode,
+                                           (PVOID *)(&Process),
+                                           NULL);
+        if (NT_SUCCESS(Status))
+        {
+            /* Do the copy */
+            Status = MmCopyVirtualMemory(Process,
+                                         BaseAddress,
+                                         PsGetCurrentProcess(),
+                                         Buffer,
+                                         NumberOfBytesToRead,
+                                         PreviousMode,
+                                         &BytesRead);
+
+            /* Dereference the process */
+            ObDereferenceObject(Process);
+        }
+    }
+
+    /* Check if the caller sent this parameter */
+    if (!NumberOfBytesRead)
+        return Status;
+
+    /* Enter SEH to guard write */
+    _SEH2_TRY
+    {
+        /* Return the number of bytes read */
+        *NumberOfBytesRead = BytesRead;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+    _SEH2_END;
+
+    return Status;
 }
 
 NTSTATUS
