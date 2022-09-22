@@ -57,6 +57,7 @@ CcCopyRead(
     PVOID CacheAddress;
     PVACB TempVacb;
     PVACB Vacb;
+    ULONG InputLength = Length;
     ULONG ActivePage;
     ULONG ReadLength;
     ULONG ReadPages;
@@ -268,17 +269,17 @@ CcCopyRead(
         !PrivateMap->Flags.ReadAheadEnabled)
     {
         InterlockedOr((PLONG)&PrivateMap->UlongFlags, 0x20000);
-        CcScheduleReadAhead(FileObject, FileOffset, Length);
+        CcScheduleReadAhead(FileObject, FileOffset, InputLength);
     }
 
     PrivateMap->FileOffset1.QuadPart = PrivateMap->FileOffset2.QuadPart;
     PrivateMap->BeyondLastByte1.QuadPart = PrivateMap->BeyondLastByte2.QuadPart;
 
     PrivateMap->FileOffset2.QuadPart = FileOffset->QuadPart;
-    PrivateMap->BeyondLastByte2.QuadPart = FileOffset->QuadPart + Length;
+    PrivateMap->BeyondLastByte2.QuadPart = (FileOffset->QuadPart + InputLength);
 
     OutIoStatus->Status = STATUS_SUCCESS;
-    OutIoStatus->Information = Length;
+    OutIoStatus->Information = InputLength;
 
     return TRUE;
 }
