@@ -81,6 +81,65 @@ CcFindBcb(
     return Result;
 }
 
+PCC_BCB
+NTAPI
+CcAllocateInitializeBcb(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PCC_BCB NextBcb,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ PLARGE_INTEGER Length)
+{
+    PCC_BCB Bcb;
+
+    DPRINT("CcAllocateInitializeBcb: %p, [%I64X]\n", SharedMap, (FileOffset ? FileOffset->QuadPart : 0ll));
+
+    Bcb = ExAllocatePoolWithTag(NonPagedPool, sizeof(*Bcb), 'cBcC');
+    if (!Bcb)
+    {
+        DPRINT1("CcAllocateInitializeBcb: ExAllocatePoolWithTag() failed\n");
+        return NULL;
+    }
+
+    RtlZeroMemory(Bcb, sizeof(*Bcb));
+
+    if (!SharedMap)
+        return Bcb;
+
+    Bcb->NodeTypeCode = NODE_TYPE_BCB;
+    Bcb->PinCount++;
+
+    Bcb->Length = Length->LowPart;
+    Bcb->FileOffset.QuadPart = FileOffset->QuadPart;
+    Bcb->BeyondLastByte.QuadPart = (FileOffset->QuadPart + Length->QuadPart);
+
+    ExInitializeResourceLite(&Bcb->BcbResource);
+    Bcb->SharedCacheMap = SharedMap;
+
+    KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+
+    InsertTailList(&NextBcb->Link, &Bcb->Link);
+
+    ASSERT((SharedMap->SectionSize.QuadPart < CACHE_OVERALL_SIZE) ||
+           (CcFindBcb(SharedMap, FileOffset, &Bcb->BeyondLastByte, &NextBcb) && (Bcb == NextBcb)));
+
+    if (SharedMap->SectionSize.QuadPart > CACHE_OVERALL_SIZE &&
+        (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
+    {
+        DPRINT1("CcAllocateInitializeBcb: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[4]);
+
+    if (SharedMap->Flags & 2)
+    {
+        DPRINT1("CcAllocateInitializeBcb: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    return Bcb;
+}
+
 BOOLEAN
 NTAPI
 CcAcquireByteRangeForWrite(

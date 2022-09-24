@@ -214,4 +214,13 @@ CcFindBcb(
     _Out_ PCC_BCB* OutBcb
 );
 
+PCC_BCB
+NTAPI
+CcAllocateInitializeBcb(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PCC_BCB PreviousBcb,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ PLARGE_INTEGER Length
+);
+
 /* EOF */
