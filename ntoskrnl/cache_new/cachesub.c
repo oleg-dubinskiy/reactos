@@ -81,6 +81,17 @@ CcFindBcb(
     return Result;
 }
 
+VOID
+NTAPI
+CcDeallocateBcb(
+    _In_ PCC_BCB Bcb)
+{
+    if (Bcb->NodeTypeCode == NODE_TYPE_BCB)
+        ExDeleteResourceLite(&Bcb->BcbResource);
+
+    ExFreePool(Bcb);
+}
+
 PCC_BCB
 NTAPI
 CcAllocateInitializeBcb(

@@ -234,4 +234,10 @@ CcMapAndRead(
     _In_ PVOID BaseAddress
 );
 
+VOID
+NTAPI
+CcDeallocateBcb(
+    _In_ PCC_BCB Bcb
+);
+
 /* EOF */
