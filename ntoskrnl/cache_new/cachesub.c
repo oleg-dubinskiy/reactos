@@ -281,6 +281,76 @@ CcAcquireByteRangeForWrite(
     return Result;
 }
 
+BOOLEAN
+NTAPI
+CcMapAndRead(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ ULONG Flags,
+    _In_ BOOLEAN SkipNotCached,
+    _In_ PVOID BaseAddress)
+{
+    PETHREAD Thread = PsGetCurrentThread();
+    ULONG ReadPages;
+    ULONG Mask = 1;
+    ULONG OldReadClusterSize;
+    UCHAR OldForwardClusterOnly;
+    BOOLEAN Result = FALSE;
+
+    DPRINT("CcMapAndRead: SharedMap %p, Length %X\n", SharedMap, Length);
+
+    /* Save previous values */
+    OldForwardClusterOnly = Thread->ForwardClusterOnly;
+    OldReadClusterSize = Thread->ReadClusterSize;
+
+    //_SEH2_TRY
+    {
+        ReadPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(BaseAddress, Length);
+
+        while (ReadPages)
+        {
+            Thread->ForwardClusterOnly = 1;
+
+            if (ReadPages <= 0x10)
+               Thread->ReadClusterSize = (ReadPages - 1);
+            else
+               Thread->ReadClusterSize = 0xF;
+
+            if (!(Flags & Mask) || !MmCheckCachedPageState(BaseAddress, TRUE))
+            {
+                if (!MmCheckCachedPageState(BaseAddress, FALSE) && !SkipNotCached)
+                {
+                    Result = FALSE;
+                    goto Exit;
+                }
+            }
+
+            BaseAddress = Add2Ptr(BaseAddress, PAGE_SIZE);
+            ReadPages--;
+
+            if (ReadPages == 1)
+                Mask = 4;
+            else
+                Mask = 2;
+        }
+
+        Result = TRUE;
+
+Exit:
+        ;
+    }
+    //_SEH2_FINALLY
+    {
+        /* Restore claster variables */
+        Thread->ForwardClusterOnly = OldForwardClusterOnly;
+        Thread->ReadClusterSize = OldReadClusterSize;
+    }
+    //_SEH2_END;
+
+    return Result;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 VOID

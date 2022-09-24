@@ -223,4 +223,15 @@ CcAllocateInitializeBcb(
     _In_ PLARGE_INTEGER Length
 );
 
+BOOLEAN
+NTAPI
+CcMapAndRead(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ ULONG Flags,
+    _In_ BOOLEAN Flag5,
+    _In_ PVOID BaseAddress
+);
+
 /* EOF */
