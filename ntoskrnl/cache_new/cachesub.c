@@ -32,6 +32,57 @@ extern LARGE_INTEGER CcNoDelay;
 
 BOOLEAN
 NTAPI
+CcFindBcb(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ PLARGE_INTEGER EndFileOffset,
+    _Out_ PCC_BCB* OutBcb)
+{
+    PLIST_ENTRY NextBcbList;
+    PCC_BCB Bcb;
+    BOOLEAN Result = FALSE;
+
+    DPRINT("CcFindBcb: %p, [%I64X], [%I64X]\n",
+           SharedMap, (FileOffset ? FileOffset->QuadPart : 0ll), (EndFileOffset ? EndFileOffset->QuadPart : 0ll));
+
+    NextBcbList = CcGetBcbListHead(SharedMap, (FileOffset->QuadPart + BCB_MAPPING_GRANULARITY), TRUE);
+
+    DPRINT("CcFindBcb: NextBcbList %p\n", NextBcbList);
+
+    Bcb = CONTAINING_RECORD(NextBcbList->Flink, CC_BCB, Link);
+
+    DPRINT("CcFindBcb: Bcb %p, NodeTypeCode %X\n", Bcb, Bcb->NodeTypeCode);
+
+    if (!FileOffset->HighPart && !Bcb->BeyondLastByte.HighPart)
+    {
+        while (Bcb->NodeTypeCode == NODE_TYPE_BCB)
+        {
+            if (FileOffset->LowPart >= Bcb->BeyondLastByte.LowPart)
+                break;
+
+            DPRINT1("CcFindBcb: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else
+    {
+        while (Bcb->NodeTypeCode == NODE_TYPE_BCB)
+        {
+            if (FileOffset->QuadPart >= Bcb->BeyondLastByte.QuadPart)
+                break;
+
+            DPRINT1("CcFindBcb: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    *OutBcb = Bcb;
+
+    return Result;
+}
+
+BOOLEAN
+NTAPI
 CcAcquireByteRangeForWrite(
     _In_ PSHARED_CACHE_MAP SharedMap,
     _In_ PLARGE_INTEGER Offset,

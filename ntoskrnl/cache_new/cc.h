@@ -205,4 +205,13 @@ CcGetBcbListHead(
     _In_ BOOLEAN Flag3
 );
 
+BOOLEAN
+NTAPI
+CcFindBcb(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ PLARGE_INTEGER EndFileOffset,
+    _Out_ PCC_BCB* OutBcb
+);
+
 /* EOF */
