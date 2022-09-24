@@ -19,6 +19,48 @@ extern LAZY_WRITER LazyWriter;
 
 /* FUNCTIONS ******************************************************************/
 
+PLIST_ENTRY
+NTAPI
+CcGetBcbListHeadLargeOffset(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LONGLONG FileOffset,
+    _In_ BOOLEAN Flag3)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
+PLIST_ENTRY
+NTAPI
+CcGetBcbListHead(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LONGLONG FileOffset,
+    _In_ BOOLEAN Flag3)
+{
+    PLIST_ENTRY BcbLists;
+    ULONG SizeOfVacbs;
+
+    DPRINT("CcGetBcbListHead: %p, [%I64X], %X\n", SharedMap, FileOffset, Flag3);
+
+    if (SharedMap->SectionSize.QuadPart <= 0x200000)
+        return &SharedMap->BcbList;
+
+    if (!(SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
+        return &SharedMap->BcbList;
+
+    if (SharedMap->SectionSize.QuadPart > CACHE_OVERALL_SIZE)
+        return CcGetBcbListHeadLargeOffset(SharedMap, FileOffset, Flag3);
+
+    if (SharedMap->SectionSize.QuadPart <= FileOffset)
+        return &SharedMap->BcbList;
+
+    SizeOfVacbs = ((SharedMap->SectionSize.LowPart / VACB_MAPPING_GRANULARITY) * sizeof(PVACB));
+
+    BcbLists = Add2Ptr(SharedMap->Vacbs, SizeOfVacbs);
+
+    return &BcbLists[FileOffset / BCB_MAPPING_GRANULARITY];
+}
+
 VOID
 NTAPI
 CcInitializeVacbs(VOID)

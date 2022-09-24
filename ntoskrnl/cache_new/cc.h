@@ -6,8 +6,10 @@
 #define _1GB (1024ull * _1MB)
 #define _1TB (1024ull * _1GB)
 
-#define CC_DEFAULT_NUMBER_OF_VACBS 4
-#define CACHE_OVERALL_SIZE        (32 * _1MB)
+#define CC_DEFAULT_NUMBER_OF_VACBS    4
+#define CC_VACBS_DEFAULT_MAPPING_SIZE (CC_DEFAULT_NUMBER_OF_VACBS * VACB_MAPPING_GRANULARITY)
+#define BCB_MAPPING_GRANULARITY       (2 * VACB_MAPPING_GRANULARITY)
+#define CACHE_OVERALL_SIZE            (32 * _1MB) // VACB_SIZE_OF_FIRST_LEVEL (win)
 
 #define READAHEAD_DISABLED    0x1
 #define WRITEBEHIND_DISABLED  0x2
@@ -17,7 +19,7 @@ typedef union _CC_BCB
     struct
     {
         USHORT NodeTypeCode;
-        UCHAR Reserved1[2];
+        UCHAR Reserved1[2]; // FIXME
         ULONG Length;
         LARGE_INTEGER FileOffset;
         LIST_ENTRY Link;
@@ -193,6 +195,14 @@ CcDeleteSharedCacheMap(
     _In_ PSHARED_CACHE_MAP SharedMap,
     _In_ KIRQL OldIrql,
     _In_ BOOLEAN IsReleaseFile
+);
+
+PLIST_ENTRY
+NTAPI
+CcGetBcbListHead(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LONGLONG FileOffset,
+    _In_ BOOLEAN Flag3
 );
 
 /* EOF */
