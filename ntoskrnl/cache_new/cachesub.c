@@ -355,10 +355,11 @@ Exit:
 
 VOID
 NTAPI
-CcFlushCache(IN PSECTION_OBJECT_POINTERS SectionObjectPointers,
-             IN PLARGE_INTEGER FileOffset OPTIONAL,
-             IN ULONG Length,
-             OUT IO_STATUS_BLOCK* OutIoStatus OPTIONAL)
+CcFlushCache(
+    _In_ PSECTION_OBJECT_POINTERS SectionObjectPointers,
+    _In_ PLARGE_INTEGER FileOffset OPTIONAL,
+    _In_ ULONG Length,
+    _Out_ IO_STATUS_BLOCK* OutIoStatus OPTIONAL)
 {
     PSHARED_CACHE_MAP SharedMap;
     IO_STATUS_BLOCK ioStatus;
