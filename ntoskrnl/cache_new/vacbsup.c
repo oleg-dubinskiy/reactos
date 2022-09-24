@@ -104,7 +104,7 @@ CcCreateVacbArray(
     ULONG NewSize;
     ULONG AllocSize;
     BOOLEAN IsExtended = FALSE;
-    BOOLEAN IsDpcLevel = FALSE;
+    BOOLEAN IsBcbList = FALSE;
 
     DPRINT("CcCreateVacbArray: SharedMap %p AllocationSize %I64X\n", SharedMap, AllocationSize.QuadPart);
 
@@ -140,10 +140,11 @@ CcCreateVacbArray(
     {
         if (NewSize <= 0x200)
         {
-            if ((SharedMap->Flags & 0x200) && AllocationSize.QuadPart > 0x200000)
+            if ((SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) && AllocationSize.QuadPart > 0x200000)
             {
+                /* Add size for BcbLists */
                 AllocSize += ((AllocSize + (sizeof(LIST_ENTRY) - 1)) & ~(sizeof(LIST_ENTRY) - 1));
-                IsDpcLevel = TRUE;
+                IsBcbList = TRUE;
             }
 
             if (NewSize == 0x200)
@@ -173,13 +174,15 @@ CcCreateVacbArray(
     if (IsExtended)
     {
         AllocSize -= sizeof(LIST_ENTRY);
-        RtlZeroMemory((PVOID)((ULONG_PTR)NewVacbs + AllocSize), sizeof(LIST_ENTRY));
+        RtlZeroMemory(Add2Ptr(NewVacbs, AllocSize), sizeof(LIST_ENTRY));
     }
 
-    if (IsDpcLevel)
+    if (IsBcbList)
     {
-        for (BcbEntry = (PLIST_ENTRY)((ULONG_PTR)NewVacbs + NewSize);
-             BcbEntry < (PLIST_ENTRY)((ULONG_PTR)NewVacbs + AllocSize);
+        DPRINT1("CcCreateVacbArray: NewSize %X, AllocSize %X\n", NewSize, AllocSize);
+
+        for (BcbEntry = Add2Ptr(NewVacbs, NewSize);
+             BcbEntry < (PLIST_ENTRY)Add2Ptr(NewVacbs, AllocSize);
              BcbEntry++)
         {
             InsertHeadList(&SharedMap->BcbList, BcbEntry);
