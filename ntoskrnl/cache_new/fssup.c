@@ -156,7 +156,7 @@ CcDeleteSharedCacheMap(
 
     if (SharedMap->Vacbs != SharedMap->InitialVacbs && SharedMap->Vacbs)
     {
-        if (SharedMap->SectionSize.QuadPart > 0x2000000)
+        if (SharedMap->SectionSize.QuadPart > CACHE_OVERALL_SIZE)
         {
             DPRINT1("CcDeleteSharedCacheMap: FIXME\n");
             ASSERT(FALSE);
@@ -300,8 +300,8 @@ CcInitializeCacheMap(
 
     if (FileObject->WriteAccess)
     {
-        fileSizes.AllocationSize.QuadPart += (0x100000 - 1);
-        fileSizes.AllocationSize.LowPart &= ~(0x100000 - 1);
+        fileSizes.AllocationSize.QuadPart += (CC_VACBS_DEFAULT_MAPPING_SIZE - 1);
+        fileSizes.AllocationSize.LowPart &= ~(CC_VACBS_DEFAULT_MAPPING_SIZE - 1);
     }
     else
     {
@@ -442,6 +442,16 @@ CcInitializeCacheMap(
 
             Fcb = FileObject->FsContext;
 
+            /* If the FsContext2 is non-NULL,
+               the file stream represents an open instance of a file or a directory,
+               and FSRTL_FLAG2_DO_MODIFIED_WRITE is ignored.
+
+               If the FsContext2 is NULL, and FSRTL_FLAG2_DO_MODIFIED_WRITE is not set,
+               the file object is a stream file object, and the stream is a modified-no-write (MNW) stream.
+
+               If the FsContext2 is NULL, and FSRTL_FLAG2_DO_MODIFIED_WRITE is set,
+               the file object is a stream file object, and the stream is writable.
+            */
             if (!(Fcb->Flags2 & FSRTL_FLAG2_DO_MODIFIED_WRITE) && !FileObject->FsContext2)
             {
                 MmDisableModifiedWriteOfSection(FileObject->SectionObjectPointer);
@@ -821,8 +831,8 @@ CcSetFileSizes(
         SharedMap->OpenCount++;
         KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
 
-        AllocationSize.QuadPart += (0x100000 - 1);
-        AllocationSize.LowPart &= ~(0x100000 - 1);
+        AllocationSize.QuadPart += (CC_VACBS_DEFAULT_MAPPING_SIZE - 1);
+        AllocationSize.LowPart &= ~(CC_VACBS_DEFAULT_MAPPING_SIZE - 1);
 
         Status = MmExtendSection((PSECTION)SharedMap->Section, &AllocationSize, 1);
 
