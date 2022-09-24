@@ -897,21 +897,21 @@ CcExtendVacbArray(
     _In_ PSHARED_CACHE_MAP SharedMap,
     _In_ LARGE_INTEGER AllocationSize)
 {
-    BOOLEAN IsExtendSection = FALSE;
-    BOOLEAN IsDpcLevel = FALSE;
+    KLOCK_QUEUE_HANDLE LockHandle;
+    PVACB* OldVacbs;
+    PVACB* NewVacbs;
+    PLIST_ENTRY HeadList;
+    PLIST_ENTRY OldEntry;
+    PLIST_ENTRY BcbEntry;
     LARGE_INTEGER SectionNewSize;
+    LARGE_INTEGER Size;
     ULONG AllocSize;
     ULONG NewVacbsSize;
     ULONG OldVacbsSize;
-    PVACB* NewVacbs;
-    PVACB* OldVacbs;
-    KLOCK_QUEUE_HANDLE LockHandle;
-    LARGE_INTEGER Size;
-    PLIST_ENTRY BcbEntry;
-    PLIST_ENTRY Entry;
-    PLIST_ENTRY HeadList;
+    BOOLEAN IsExtendSection = FALSE;
+    BOOLEAN IsBcbList = FALSE;
 
-    DPRINT1("CcExtendVacbArray: SharedMap %X, AllocationSize %IX64\n", SharedMap, AllocationSize.QuadPart);
+    DPRINT1("CcExtendVacbArray: SharedMap %X, AllocationSize %I64X\n", SharedMap, AllocationSize.QuadPart);
 
     if (AllocationSize.HighPart & ~(PAGE_SIZE - 1))
     {
@@ -919,19 +919,19 @@ CcExtendVacbArray(
         return STATUS_SECTION_TOO_BIG;
     }
 
-    if ((SharedMap->Flags & 0x200) && AllocationSize.QuadPart > 0x200000)
-        IsDpcLevel = TRUE;
+    if ((SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) && AllocationSize.QuadPart > 0x200000)
+        IsBcbList = TRUE;
 
-    DPRINT1("CcExtendVacbArray: SectionSize %IX64, IsDpcLevel %X\n", SharedMap->SectionSize.QuadPart, IsDpcLevel);
+    DPRINT1("CcExtendVacbArray: SectionSize %I64X, IsBcbList %X\n", SharedMap->SectionSize.QuadPart, IsBcbList);
 
     if (AllocationSize.QuadPart <= SharedMap->SectionSize.QuadPart)
         return STATUS_SUCCESS;
 
-    if (SharedMap->SectionSize.QuadPart < 0x2000000)
+    if (SharedMap->SectionSize.QuadPart < CACHE_OVERALL_SIZE)
     {
-        if (AllocationSize.QuadPart >= 0x2000000)
+        if (AllocationSize.QuadPart >= CACHE_OVERALL_SIZE)
         {
-            SectionNewSize.QuadPart = 0x2000000;
+            SectionNewSize.QuadPart = CACHE_OVERALL_SIZE;
             IsExtendSection = TRUE;
         }
         else
@@ -941,17 +941,17 @@ CcExtendVacbArray(
 
         if (SectionNewSize.HighPart)
             NewVacbsSize = 0xFFFFFFFF;
-        else if (SectionNewSize.LowPart <= 0x100000)
-            NewVacbsSize = 0x10;
+        else if (SectionNewSize.LowPart <= CC_VACBS_DEFAULT_MAPPING_SIZE)
+            NewVacbsSize = (CC_DEFAULT_NUMBER_OF_VACBS * sizeof(PVACB));
         else
-            NewVacbsSize = ((SectionNewSize.LowPart / 0x40000) * sizeof(PVACB));
+            NewVacbsSize = ((SectionNewSize.LowPart / VACB_MAPPING_GRANULARITY) * sizeof(PVACB));
 
         if (SharedMap->SectionSize.HighPart)
             OldVacbsSize = 0xFFFFFFFF;
-        else if (SharedMap->SectionSize.LowPart <= 0x100000)
-            OldVacbsSize = 0x10;
+        else if (SharedMap->SectionSize.LowPart <= CC_VACBS_DEFAULT_MAPPING_SIZE)
+            OldVacbsSize = (CC_DEFAULT_NUMBER_OF_VACBS * sizeof(PVACB));
         else
-            OldVacbsSize = ((SharedMap->SectionSize.LowPart / 0x40000) * sizeof(PVACB));
+            OldVacbsSize = ((SharedMap->SectionSize.LowPart / VACB_MAPPING_GRANULARITY) * sizeof(PVACB));
 
         if (NewVacbsSize > OldVacbsSize)
         {
@@ -959,8 +959,12 @@ CcExtendVacbArray(
 
             AllocSize = NewVacbsSize;
 
-            if (IsDpcLevel)
-                AllocSize += ((NewVacbsSize + (sizeof(LIST_ENTRY) - 1)) & ~(sizeof(LIST_ENTRY) - 1));
+            if (IsBcbList)
+            {
+                /* Add size for BcbLists */
+                AllocSize += ((AllocSize + (sizeof(LIST_ENTRY) - 1)) & ~(sizeof(LIST_ENTRY) - 1));
+                DPRINT1("CcExtendVacbArray: NewVacbsSize %X, AllocSize %X\n", NewVacbsSize, AllocSize);
+            }
 
             if (IsExtendSection)
                 AllocSize += sizeof(LIST_ENTRY);
@@ -972,7 +976,7 @@ CcExtendVacbArray(
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            if (IsDpcLevel)
+            if (IsBcbList)
             {
                 KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
                 KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
@@ -987,7 +991,7 @@ CcExtendVacbArray(
             else
                 OldVacbsSize = 0;
 
-            RtlZeroMemory((PVOID)((ULONG_PTR)NewVacbs + OldVacbsSize), (NewVacbsSize - OldVacbsSize));
+            RtlZeroMemory(Add2Ptr(NewVacbs, OldVacbsSize), (NewVacbsSize - OldVacbsSize));
 
             if (IsExtendSection)
             {
@@ -995,24 +999,24 @@ CcExtendVacbArray(
                 RtlZeroMemory((PVOID)((ULONG_PTR)NewVacbs + AllocSize), sizeof(LIST_ENTRY));
             }
 
-            if (IsDpcLevel)
+            if (IsBcbList)
             {
                 Size.QuadPart = 0;
-                BcbEntry = (PLIST_ENTRY)((ULONG_PTR)NewVacbs + NewVacbsSize);
+                BcbEntry = Add2Ptr(NewVacbs, NewVacbsSize);
 
                 if (SharedMap->SectionSize.QuadPart > 0x200000 && SharedMap->Vacbs)
                 {
-                    Entry = (PLIST_ENTRY)((ULONG_PTR)SharedMap->Vacbs + OldVacbsSize);
+                    OldEntry = Add2Ptr(SharedMap->Vacbs, OldVacbsSize);
 
                     while (Size.QuadPart < SharedMap->SectionSize.QuadPart)
                     {
-                        HeadList = Entry->Flink;
+                        HeadList = OldEntry->Flink;
 
-                        RemoveEntryList(Entry);
+                        RemoveEntryList(OldEntry);
                         InsertTailList(HeadList, BcbEntry);
 
-                        Size.QuadPart += 0x80000;
-                        Entry++;
+                        Size.QuadPart += BCB_MAPPING_GRANULARITY;
+                        OldEntry++;
                         BcbEntry++;
                     }
                 }
@@ -1033,7 +1037,7 @@ CcExtendVacbArray(
 
                             InsertHeadList(HeadList, BcbEntry);
 
-                            Size.QuadPart += 0x80000;
+                            Size.QuadPart += BCB_MAPPING_GRANULARITY;
                             BcbEntry++;
                         }
                     }
@@ -1042,7 +1046,7 @@ CcExtendVacbArray(
                 while (Size.QuadPart < SectionNewSize.QuadPart)
                 {
                     InsertHeadList(&SharedMap->BcbList, BcbEntry);
-                    Size.QuadPart += 0x80000;
+                    Size.QuadPart += BCB_MAPPING_GRANULARITY;
                     BcbEntry++;
                 }
             }
@@ -1051,7 +1055,7 @@ CcExtendVacbArray(
             SharedMap->Vacbs = NewVacbs;
             SharedMap->SectionSize.QuadPart = SectionNewSize.QuadPart;
 
-            if (IsDpcLevel)
+            if (IsBcbList)
             {
                 KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
                 KeReleaseInStackQueuedSpinLock(&LockHandle);
