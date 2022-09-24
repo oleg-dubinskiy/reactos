@@ -648,8 +648,19 @@ CcScheduleReadAhead(
         else if ((NewOffset.QuadPart - PrivateMap->FileOffset2.QuadPart) ==
                  (PrivateMap->FileOffset2.QuadPart - PrivateMap->FileOffset1.QuadPart))
         {
-            DPRINT1("CcScheduleReadAhead: FIXME\n");
-            ASSERT(FALSE);
+            LARGE_INTEGER offset;
+
+            offset.QuadPart = ((NewOffset.QuadPart * 2) - PrivateMap->FileOffset2.QuadPart);
+
+            if (offset.HighPart >= 0)
+            {
+                PrivateMap->ReadAheadLength[1] = ROUND_TO_PAGES(Length + (offset.LowPart & (PAGE_SIZE - 1)));
+
+                PrivateMap->ReadAheadOffset[1].HighPart = offset.HighPart;
+                PrivateMap->ReadAheadOffset[1].LowPart = (offset.LowPart & ~(PAGE_SIZE - 1));
+
+                IsFlag = TRUE;
+            }
         }
     }
 
@@ -698,7 +709,7 @@ CcScheduleReadAhead(
 
     OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
     SharedMap->OpenCount++;
-    SharedMap->Flags |= 0x4000;
+    SharedMap->Flags |= SHARE_FL_READ_AHEAD;
     KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
 
     WorkItem->Function = ReadAhead;
