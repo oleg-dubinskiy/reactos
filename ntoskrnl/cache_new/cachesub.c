@@ -174,8 +174,21 @@ CcAcquireByteRangeForWrite(
 
         if (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE)
         {
-            DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
-            ASSERT(FALSE);
+            PLARGE_INTEGER StartOffset;
+            LARGE_INTEGER EndOffset;
+
+            if (Offset)
+                StartOffset = Offset;
+            else
+                StartOffset = (PLARGE_INTEGER)&SharedMap->BeyondLastFlush;
+
+            if (StartOffset->QuadPart)
+            {
+                EndOffset.QuadPart = StartOffset->QuadPart + PAGE_SIZE;
+
+                if (!CcFindBcb(SharedMap, StartOffset, &EndOffset, &Bcb))
+                    Bcb = CONTAINING_RECORD(Bcb->Link.Blink, CC_BCB, Link);
+            }
         }
 
         while (&Bcb->Link != &SharedMap->BcbList)
@@ -216,7 +229,7 @@ CcAcquireByteRangeForWrite(
                 if (Bcb->PinCount)
                     break;
 
-                if (!(Bcb->FileOffset.QuadPart & (0x2000000 - 1)))
+                if (!(Bcb->FileOffset.QuadPart & (CACHE_OVERALL_SIZE - 1)))
                     break;
             }
 
