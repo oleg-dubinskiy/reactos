@@ -248,7 +248,7 @@ CcUnmapVacbArray(
     LARGE_INTEGER Start;
     LARGE_INTEGER End;
     PVACB Vacb;
-    BOOLEAN IsMmodifiedNoWrite = FALSE;
+    BOOLEAN LockMode = FALSE;
 
     DPRINT("CcUnmapVacbArray: %p, %I64X, %X, %X\n", SharedMap, (FileOffset ? FileOffset->QuadPart : 0), Length, FrontOfList);
 
@@ -273,12 +273,12 @@ CcUnmapVacbArray(
     if (SharedMap->SectionSize.QuadPart > (2 * _1MB) &&
         (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
     {
-        IsMmodifiedNoWrite = TRUE;
+        LockMode = TRUE;
     }
 
     ExAcquirePushLockShared((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
 
-    if (IsMmodifiedNoWrite)
+    if (LockMode)
     {
         KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
         KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
@@ -308,7 +308,7 @@ CcUnmapVacbArray(
             {
                 if (Vacb->Overlay.ActiveCount)
                 {
-                    if (IsMmodifiedNoWrite)
+                    if (LockMode)
                     {
                         KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
                         KeReleaseInStackQueuedSpinLock(&LockHandle);
@@ -327,7 +327,7 @@ CcUnmapVacbArray(
                 Vacb->Overlay.ActiveCount++;
                 Vacb->SharedCacheMap = NULL;
 
-                if (!IsMmodifiedNoWrite)
+                if (!LockMode)
                 {
                     KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle.OldIrql);
                 }
@@ -339,7 +339,7 @@ CcUnmapVacbArray(
 
                 CcUnmapVacb(Vacb, SharedMap, FrontOfList);
 
-                if (IsMmodifiedNoWrite)
+                if (LockMode)
                 {
                     KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
                     KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
@@ -363,7 +363,7 @@ CcUnmapVacbArray(
         Start.QuadPart += VACB_MAPPING_GRANULARITY;
     }
 
-    if (IsMmodifiedNoWrite)
+    if (LockMode)
     {
         KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
         KeReleaseInStackQueuedSpinLock(&LockHandle);
