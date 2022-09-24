@@ -386,7 +386,7 @@ CcGetVacbMiss(
      _In_ PSHARED_CACHE_MAP SharedMap,
      _In_ LARGE_INTEGER FileOffset,
      _In_ PKLOCK_QUEUE_HANDLE LockHandle,
-     _In_ BOOLEAN IsMmodifiedNoWrite)
+     _In_ BOOLEAN LockMode)
 {
     PVACB Vacb;
     PVACB OutVacb;
@@ -394,16 +394,16 @@ CcGetVacbMiss(
     LARGE_INTEGER SectionOffset;
     NTSTATUS Status;
 
-    DPRINT("CcGetVacbMiss: %p, %I64X, %X\n", SharedMap, FileOffset.QuadPart, IsMmodifiedNoWrite);
+    DPRINT("CcGetVacbMiss: %p, %I64X, %X\n", SharedMap, FileOffset.QuadPart, LockMode);
 
     SectionOffset = FileOffset;
     SectionOffset.LowPart -= (FileOffset.LowPart & (VACB_MAPPING_GRANULARITY - 1));
 
     if (!(SharedMap->Flags & SHARE_FL_RANDOM_ACCESS) &&
         !(SectionOffset.LowPart & (0x80000 - 1)) &&
-        SectionOffset.QuadPart >= 0x100000)
+        SectionOffset.QuadPart >= CC_VACBS_DEFAULT_MAPPING_SIZE)
     {
-        if (IsMmodifiedNoWrite)
+        if (LockMode)
         {
             KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
             KeReleaseInStackQueuedSpinLock(LockHandle);
@@ -415,12 +415,12 @@ CcGetVacbMiss(
 
         ExReleasePushLockShared((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
         
-        ViewSize.QuadPart = (SectionOffset.QuadPart - 0x100000);
-        CcUnmapVacbArray(SharedMap, &ViewSize, 0x100000, TRUE);
+        ViewSize.QuadPart = (SectionOffset.QuadPart - CC_VACBS_DEFAULT_MAPPING_SIZE);
+        CcUnmapVacbArray(SharedMap, &ViewSize, CC_VACBS_DEFAULT_MAPPING_SIZE, TRUE);
 
         ExAcquirePushLockShared((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
 
-        if (IsMmodifiedNoWrite)
+        if (LockMode)
         {
             KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, LockHandle);
             KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
@@ -453,7 +453,7 @@ CcGetVacbMiss(
     Vacb->Overlay.ActiveCount = 1;
     SharedMap->VacbActiveCount++;
 
-    if (IsMmodifiedNoWrite)
+    if (LockMode)
     {
         KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
         KeReleaseInStackQueuedSpinLock(LockHandle);
@@ -489,7 +489,7 @@ CcGetVacbMiss(
 
         if (SharedMap->SectionSize.QuadPart <= CACHE_OVERALL_SIZE)
         {
-            if (IsMmodifiedNoWrite)
+            if (LockMode)
             {
                 KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, LockHandle);
                 KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
@@ -577,7 +577,7 @@ CcGetVirtualAddress(
     PVACB Vacb;
     KLOCK_QUEUE_HANDLE LockHandle;
     ULONG VacbOffset;
-    BOOLEAN IsMmodifiedNoWrite = FALSE;
+    BOOLEAN LockMode = FALSE;
 
     DPRINT("CcGetVirtualAddress: SharedMap %p, Offset %I64X\n", SharedMap, FileOffset.QuadPart);
 
@@ -591,7 +591,7 @@ CcGetVirtualAddress(
 
     if (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE)
     {
-        IsMmodifiedNoWrite = TRUE;
+        LockMode = TRUE;
         KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
         KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
     }
@@ -627,7 +627,7 @@ CcGetVirtualAddress(
     else
     {
         /* Vacb not found */
-        Vacb = CcGetVacbMiss(SharedMap, FileOffset, &LockHandle, IsMmodifiedNoWrite);
+        Vacb = CcGetVacbMiss(SharedMap, FileOffset, &LockHandle, LockMode);
     }
 
     /* Updating lists */
@@ -635,7 +635,7 @@ CcGetVirtualAddress(
     InsertTailList(&CcVacbLru, &Vacb->LruList);
 
     /* Unlock */
-    if (!IsMmodifiedNoWrite)
+    if (!LockMode)
     {
         KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle.OldIrql);
     }
