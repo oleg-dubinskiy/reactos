@@ -55,9 +55,13 @@ VOID
 NTAPI
 CcUnpinFileDataEx(
     _In_ PCC_BCB Bcb,
-    _In_ BOOLEAN IsNoWrite)
+    _In_ BOOLEAN IsNoWrite,
+    _In_ ULONG Type)
 {
-    DPRINT("CcUnpinFileDataEx: Bcb %p, IsNoWrite %X\n", Bcb, IsNoWrite);
+    KLOCK_QUEUE_HANDLE LockHandle;
+    PSHARED_CACHE_MAP SharedMap;
+
+    DPRINT("CcUnpinFileDataEx: Bcb %p, IsNoWrite %X, Type %X\n", Bcb, IsNoWrite, Type);
 
     if (Bcb->NodeTypeCode != NODE_TYPE_BCB)
     {
@@ -71,7 +75,76 @@ CcUnpinFileDataEx(
         return;
     }
 
-    ASSERT(FALSE);
+    SharedMap = Bcb->SharedCacheMap;
+
+    if (!(SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) || Type == 1)
+        IsNoWrite = TRUE;
+
+    KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+
+    switch (Type)
+    {
+        case 0:
+        case 1:
+        {
+            ASSERT(Bcb->PinCount > 0);
+            Bcb->PinCount--;
+            break;
+        }
+        case 2:
+        {
+            DPRINT1("CcUnpinFileDataEx: FIXME\n");
+            ASSERT(FALSE);
+            break;
+        }
+        default:
+        {
+            DPRINT1("CcUnpinFileDataEx: BugCheck() FIXME\n");
+            ASSERT(FALSE);
+            //BugCheck();
+        }
+    }
+
+    if (!Bcb->PinCount)
+    {
+        if (Bcb->Reserved1[0])
+        {
+            DPRINT1("CcUnpinFileDataEx: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else
+        {
+            KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[4]);
+
+            RemoveEntryList(&Bcb->Link);
+
+            if (SharedMap->SectionSize.QuadPart > CACHE_OVERALL_SIZE &&
+                (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
+            {
+                DPRINT1("CcUnpinFileDataEx: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[4]);
+
+            if (Bcb->BaseAddress)
+                CcFreeVirtualAddress(Bcb->Vacb);
+
+            if (!IsNoWrite)
+                ExReleaseResourceLite(&Bcb->BcbResource);
+
+            ASSERT(Bcb->BcbResource.ActiveCount == 0);
+
+            KeReleaseInStackQueuedSpinLock(&LockHandle);
+
+            CcDeallocateBcb(Bcb);
+        }
+    }
+    else
+    {
+        DPRINT1("CcUnpinFileDataEx: FIXME\n");
+        ASSERT(FALSE);
+    }
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
@@ -223,7 +296,7 @@ CcUnpinData(
         IsNoWrite = TRUE;
         Bcb = (PCC_BCB)((ULONG_PTR)Bcb & ~(1));
 
-        CcUnpinFileDataEx(Bcb, IsNoWrite);
+        CcUnpinFileDataEx(Bcb, IsNoWrite, 0);
 
         return;
     }
