@@ -505,6 +505,23 @@ typedef struct _MI_LARGE_PAGE_DRIVER_ENTRY
     UNICODE_STRING BaseName;
 } MI_LARGE_PAGE_DRIVER_ENTRY, *PMI_LARGE_PAGE_DRIVER_ENTRY;
 
+#define MAX_PAGING_FILES (0x10)
+
+/* Page file information */
+typedef struct _MMPAGING_FILE
+{
+    PFN_NUMBER Size;
+    PFN_NUMBER MaximumSize;
+    PFN_NUMBER MinimumSize;
+    PFN_NUMBER FreeSpace;
+    PFN_NUMBER CurrentUsage;
+    PFILE_OBJECT FileObject;
+    UNICODE_STRING PageFileName;
+    PRTL_BITMAP Bitmap;
+    HANDLE FileHandle;
+}
+MMPAGING_FILE, *PMMPAGING_FILE;
+
 extern PMMCOLOR_TABLES MmFreePagesByColor[FreePageList + 1];
 extern PVOID MmPagedPoolStart;
 extern PVOID MmNonPagedPoolEnd;
