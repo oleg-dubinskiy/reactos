@@ -397,7 +397,7 @@ CcMapData(
     {
         for (BaseAddress = *OutBuffer;
              NumberOfPages;
-             BaseAddress = (PVOID)((ULONG_PTR)BaseAddress + PAGE_SIZE))
+             BaseAddress = Add2Ptr(BaseAddress, PAGE_SIZE))
         {
             /* Claster variables used in MiResolveMappedFileFault() */
             Thread->ForwardClusterOnly = 1;
@@ -430,7 +430,7 @@ CcMapData(
 Exit:
 
     /* Windows does this */
-    *OutBcb = (PVOID)((ULONG_PTR)Bcb + 1);
+    *OutBcb = Add2Ptr(Bcb, 1);
 
     return TRUE;
 }
