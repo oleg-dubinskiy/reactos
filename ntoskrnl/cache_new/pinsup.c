@@ -565,6 +565,14 @@ CcUnpinData(
         return;
     }
 
+    if (Bcb->NodeTypeCode != 0x02FA)
+    {
+        IsNoWrite = FALSE;
+        CcUnpinFileDataEx(Bcb, IsNoWrite, 0);
+        return;
+    }
+
+    DPRINT1("CcUnpinData: FIXME\n");
     ASSERT(FALSE);
 }
 
