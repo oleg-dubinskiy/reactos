@@ -449,15 +449,78 @@ CcPinMappedData(IN PFILE_OBJECT FileObject,
 
 BOOLEAN
 NTAPI
-CcPinRead(IN PFILE_OBJECT FileObject,
-          IN PLARGE_INTEGER FileOffset,
-          IN ULONG Length,
-          IN ULONG Flags,
-          OUT PVOID *Bcb,
-          OUT PVOID *Buffer)
+CcPinRead(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ ULONG Flags,
+    _Out_ PVOID* OutBcb,
+    _Out_ PVOID* OutBuffer)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PSHARED_CACHE_MAP SharedMap;
+    LARGE_INTEGER fileOffset;
+    LARGE_INTEGER EndOffset;
+    LARGE_INTEGER CurrentOffset;
+    PVOID Buffer;
+    PVOID Bcb = NULL;
+    PVOID* pBcb = &Bcb;
+    BOOLEAN Result = FALSE;
+
+    fileOffset.QuadPart = FileOffset->QuadPart;
+    EndOffset.QuadPart = (fileOffset.QuadPart + Length);
+
+    DPRINT("CcPinRead: %p, [%I64X], %X, %X\n", FileObject, fileOffset.QuadPart, Length, Flags);
+
+    if (Flags & PIN_WAIT)
+        CcPinReadWait++;
+    else
+        CcPinReadNoWait++;
+
+    SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+
+    //_SEH2_TRY
+
+    do
+    {
+        if (Bcb)
+        {
+            DPRINT1("CcPinRead: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!CcPinFileData(FileObject,
+                           &fileOffset,
+                           Length,
+                           !(SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE),
+                           0,
+                           Flags,
+                           (PCC_BCB *)pBcb,
+                           &Buffer,
+                           &CurrentOffset))
+        {
+            Result = FALSE;
+            goto Exit;
+        }
+    }
+    while (CurrentOffset.QuadPart < EndOffset.QuadPart);
+
+    *OutBcb = Bcb;
+
+    if (pBcb == &Bcb)
+        *OutBuffer = Buffer;
+
+    Result = TRUE;
+
+Exit:
+
+    //_SEH2_FINALLY
+
+    if (!Result && Bcb)
+        CcUnpinData(Bcb);
+
+    return Result;
+
+    //_SEH2_END;
 }
 
 BOOLEAN
