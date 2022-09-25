@@ -1000,8 +1000,61 @@ NTSTATUS
 NTAPI
 CcWaitForCurrentLazyWriterActivity(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PKPRCB Prcb = KeGetCurrentPrcb();
+    PGENERAL_LOOKASIDE LookasideList;
+    PWORK_QUEUE_ENTRY WorkItem;
+    KEVENT Event;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("CcWaitForCurrentLazyWriterActivity()\n");
+
+    /* Allocate a work item */
+    LookasideList = Prcb->PPLookasideList[5].P;
+    LookasideList->TotalAllocates++;
+
+    WorkItem = (PWORK_QUEUE_ENTRY)InterlockedPopEntrySList(&LookasideList->ListHead);
+    if (!WorkItem)
+    {
+        LookasideList->AllocateMisses++;
+        LookasideList = Prcb->PPLookasideList[5].L;
+        LookasideList->TotalAllocates++;
+
+        WorkItem = (PWORK_QUEUE_ENTRY)InterlockedPopEntrySList(&LookasideList->ListHead);
+        if (!WorkItem)
+        {
+            LookasideList->AllocateMisses++;
+            WorkItem = (PWORK_QUEUE_ENTRY)LookasideList->Allocate(LookasideList->Type,
+                                                                  LookasideList->Size,
+                                                                  LookasideList->Tag);
+        }
+    }
+
+    if (!WorkItem)
+    {
+        DPRINT1("CcWaitForCurrentLazyWriterActivity: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    WorkItem->Function = SetDone;
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+    WorkItem->Parameters.Event.Event = &Event;
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    InsertTailList(&CcPostTickWorkQueue, &WorkItem->WorkQueueLinks);
+
+    LazyWriter.OtherWork = 1;
+
+    if (!LazyWriter.ScanActive)
+        CcScheduleLazyWriteScan(TRUE);
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+    Status = KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+    return Status;
 }
 
 /* EOF */
