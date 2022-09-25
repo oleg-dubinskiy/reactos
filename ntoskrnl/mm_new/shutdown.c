@@ -35,9 +35,29 @@ MiShutdownSystem(VOID)
 }
 
 VOID
-MmShutdownSystem(_In_ ULONG Phase)
+MmShutdownSystem(
+    _In_ ULONG Phase)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ULONG ix;
+
+    if (Phase == 0)
+    {
+        MiShutdownSystem();
+    }
+    else if (Phase == 1)
+    {
+        /* Loop through all the paging files */
+        for (ix = 0; ix < MmNumberOfPagingFiles; ix++)
+        {
+            /* And dereference them */
+            ObDereferenceObject(MmPagingFile[ix]->FileObject);
+        }
+    }
+    else
+    {
+        ASSERT(Phase == 2);
+        UNIMPLEMENTED;
+    }
 }
 
 /* EOF */
