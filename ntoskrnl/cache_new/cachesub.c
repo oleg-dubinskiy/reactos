@@ -579,11 +579,11 @@ CcScheduleReadAhead(
     PKPRCB Prcb;
     LARGE_INTEGER NewOffset;
     LARGE_INTEGER EndNewOffset;
-    //LARGE_INTEGER FileOffset1;
+    LARGE_INTEGER FileOffset1;
     LARGE_INTEGER FileOffset2;
     ULONG ReadAheadLength;
     KIRQL OldIrql;
-    BOOLEAN IsFlag = FALSE;
+    BOOLEAN IsSchedule = FALSE;
 
     DPRINT("CcScheduleReadAhead: %p, [%p], %X\n", FileObject, (FileOffset ? FileOffset->QuadPart : 0), Length);
 
@@ -613,6 +613,7 @@ CcScheduleReadAhead(
     NewOffset.QuadPart = FileOffset->QuadPart;
     EndNewOffset.QuadPart = FileOffset->QuadPart + (LONGLONG)Length;
 
+    /* Round read length with read ahead mask */
     ReadAheadLength = (Length + PrivateMap->ReadAheadMask) & ~PrivateMap->ReadAheadMask;
 
     FileOffset2.QuadPart = EndNewOffset.QuadPart + (LONGLONG)ReadAheadLength;
@@ -621,14 +622,36 @@ CcScheduleReadAhead(
     /* Lock read ahead spin lock */
     KeAcquireSpinLock(&PrivateMap->ReadAheadSpinLock, &OldIrql);
 
-    /* Easy case: the file is sequentially read */
     if (FileObject->Flags & FO_SEQUENTIAL_ONLY)
     {
-        DPRINT1("CcScheduleReadAhead: FIXME\n");
-        ASSERT(FALSE);
+        /* Easy case: the file is sequentially read */
+        if (FileOffset2.QuadPart >= PrivateMap->ReadAheadOffset[1].QuadPart)
+        {
+            if (!FileOffset->QuadPart &&
+                PrivateMap->ReadAheadMask > (PAGE_SIZE - 1) &&
+                PrivateMap->ReadAheadMask >= (Length + (PAGE_SIZE - 1)))
+            {
+                FileOffset1.QuadPart = ROUND_TO_PAGES(Length);
+                FileOffset2.QuadPart = ReadAheadLength;
+
+                PrivateMap->ReadAheadOffset[0] = FileOffset1;
+                PrivateMap->ReadAheadLength[0] = (ReadAheadLength - FileOffset1.LowPart);
+
+                PrivateMap->ReadAheadOffset[1] = FileOffset2;
+                PrivateMap->ReadAheadLength[1] = ReadAheadLength;
+            }
+            else
+            {
+                DPRINT1("CcScheduleReadAhead: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            IsSchedule = TRUE;
+        }
     }
     else
     {
+        /* Other cases: try to find some logic in that mess... */
         if (NewOffset.HighPart == PrivateMap->BeyondLastByte2.HighPart &&
             (NewOffset.LowPart & ~7) == (PrivateMap->BeyondLastByte2.LowPart & ~7) &&
             PrivateMap->FileOffset2.HighPart == PrivateMap->BeyondLastByte1.HighPart &&
@@ -653,7 +676,7 @@ CcScheduleReadAhead(
                 PrivateMap->ReadAheadOffset[1] = FileOffset2;
                 PrivateMap->ReadAheadLength[1] = ReadAheadLength;
 
-                IsFlag = TRUE;
+                IsSchedule = TRUE;
             }
         }
         else if ((NewOffset.QuadPart - PrivateMap->FileOffset2.QuadPart) ==
@@ -670,19 +693,28 @@ CcScheduleReadAhead(
                 PrivateMap->ReadAheadOffset[1].HighPart = offset.HighPart;
                 PrivateMap->ReadAheadOffset[1].LowPart = (offset.LowPart & ~(PAGE_SIZE - 1));
 
-                IsFlag = TRUE;
+                IsSchedule = TRUE;
             }
         }
     }
 
-    if (!IsFlag || PrivateMap->Flags.ReadAheadActive)
+    /*  Have a job at the moment? */
+    if (!IsSchedule)
     {
+        /* No */
+        KeReleaseSpinLock(&PrivateMap->ReadAheadSpinLock, OldIrql);
+        return;
+    }
+
+    /* If read ahead is active now */
+    if (PrivateMap->Flags.ReadAheadActive)
+    {
+        /* Done */
         KeReleaseSpinLock(&PrivateMap->ReadAheadSpinLock, OldIrql);
         return;
     }
 
     RtlInterlockedSetBits(&PrivateMap->UlongFlags, PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE);
-
     KeReleaseSpinLock(&PrivateMap->ReadAheadSpinLock, OldIrql);
 
     Prcb = KeGetCurrentPrcb();
@@ -690,6 +722,7 @@ CcScheduleReadAhead(
     LookasideList = Prcb->PPLookasideList[5].P;
     LookasideList->TotalAllocates++;
 
+    /* Get a work item */
     WorkItem = (PWORK_QUEUE_ENTRY)InterlockedPopEntrySList(&LookasideList->ListHead);
     if (!WorkItem)
     {
@@ -708,6 +741,7 @@ CcScheduleReadAhead(
 
     if (!WorkItem) 
     {
+        /* Fail path: lock again, and revert read ahead active */
         KeAcquireSpinLock(&PrivateMap->ReadAheadSpinLock, &OldIrql);
         RtlInterlockedAndBits(&PrivateMap->UlongFlags, ~PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE);
         KeReleaseSpinLock(&PrivateMap->ReadAheadSpinLock, OldIrql);
@@ -716,6 +750,7 @@ CcScheduleReadAhead(
         return;
     }
 
+    /* Reference our FO so that it doesn't go in between */
     ObReferenceObject(FileObject);
 
     OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
@@ -723,9 +758,11 @@ CcScheduleReadAhead(
     SharedMap->Flags |= SHARE_FL_READ_AHEAD;
     KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
 
+    /* We want to do read ahead! */
     WorkItem->Function = ReadAhead;
     WorkItem->Parameters.Read.FileObject = FileObject;
 
+    /* Queue in the read ahead dedicated queue */
     CcPostWorkQueue(WorkItem, &CcExpressWorkQueue);
 }
 
