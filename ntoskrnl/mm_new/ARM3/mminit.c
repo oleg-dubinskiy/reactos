@@ -315,6 +315,7 @@ PFN_NUMBER MiNumberOfFreePages = 0;
 ULONG MmCritsectTimeoutSeconds = 150; // NT value: 720 * 60 * 60; (30 days)
 LARGE_INTEGER MmCriticalSectionTimeout;
 LARGE_INTEGER MmShortTime  = {{(-10 * 10000), -1}};  // 10 ms
+LARGE_INTEGER Mm30Milliseconds = {{(ULONG)(-30 * 10000), -1}}; // 30 ms
 LARGE_INTEGER MmHalfSecond = {{(-500 * 10000), -1}}; // 0.5 second
 LARGE_INTEGER MmOneSecond = {{(-1000 * 10000), -1}}; // 1 second
 

@@ -137,6 +137,7 @@ extern PVOID MiSystemViewStart;
 extern SIZE_T MmSystemViewSize;
 extern LARGE_INTEGER MmHalfSecond;
 extern LARGE_INTEGER MmShortTime;
+extern LARGE_INTEGER Mm30Milliseconds;
 extern SIZE_T MmSharedCommit;
 extern SIZE_T MmTotalCommittedPages;
 extern MMPDE ValidKernelPde;
@@ -3702,18 +3703,26 @@ MiFlushSectionInternal(
     PSUBSECTION subsection;
     PMSUBSECTION MappedSubsection;
     PVOID FlushData = NULL;
+    PPFN_NUMBER MdlPage;
+    PPFN_NUMBER LastMdlPage;
     PMMPTE Pte;
+    PMMPTE FirstWrittenPte;
     PMMPTE LastWrittenPte;
     MMPTE TempPte;
     PMMPFN Pfn;
     KEVENT event;
+    LARGE_INTEGER StartOffset;
+    LARGE_INTEGER EndOffset;
     PFN_NUMBER PageNumber;
+    ULONG ClusterSize;
+    ULONG RetryCount;
     BOOLEAN IsSingleFlush;
     BOOLEAN IsLocked;
     BOOLEAN IsAlowWrite;
     BOOLEAN IsWriteInProgress;
     BOOLEAN IsDereferenceSegment = FALSE;
     KIRQL OldIrql;
+    NTSTATUS Status;
 
     DPRINT("MiFlushSectionInternal: Ptes %p:%p, Subsections %X:%X, Flags %X\n",
            StartPte, LastPte, StartSubsection, LastSubsection, Flags);
@@ -3765,7 +3774,14 @@ MiFlushSectionInternal(
         MappedSubsection = NULL;
 
         Pte = StartPte;
+
+        FirstWrittenPte = NULL;
         LastWrittenPte = NULL;
+
+        StartOffset.QuadPart = 0;
+        LastMdlPage = NULL;
+
+        ClusterSize = 0x10; // MmModifiedWriteClusterSize;
 
         ASSERT((ControlArea->u.Flags.Image == 0) &&
                (FilePointer != NULL) &&
@@ -3842,7 +3858,7 @@ MiFlushSectionInternal(
                 if (MiIsPteOnPdeBoundary(Pte) &&
                     !MiCheckProtoPtePageState(Pte, OldIrql, &IsLocked))
                 {
-                    Pte = (PMMPTE)((ULONG_PTR)Pte + PAGE_SIZE);
+                    Pte = Add2Ptr(Pte, PAGE_SIZE);
 
                     if (LastWrittenPte)
                     {
@@ -3889,19 +3905,73 @@ MiFlushSectionInternal(
 
                     if (Pfn->u3.e1.Modified || Pfn->u3.e1.WriteInProgress)
                     {
-                        DPRINT1("MiFlushSectionInternal: FIXME\n");
-                        ASSERT(FALSE);
+                        if ((Flags & 0x2) && Pfn->u3.e1.WriteInProgress)
+                        {
+                            DPRINT1("MiFlushSectionInternal: FIXME\n");
+                            ASSERT(FALSE);
+                        }
+
+                        if (!LastWrittenPte)
+                        {
+                            LastMdlPage = MmGetMdlPfnArray(Mdl);
+
+                            ASSERT(subsection->SubsectionBase != NULL);
+                            StartOffset.QuadPart = ((Pfn->PteAddress - subsection->SubsectionBase) * PAGE_SIZE);
+
+                            if (subsection->ControlArea->u.Flags.Image)
+                            {
+                                StartOffset.QuadPart += (subsection->StartingSector * MM_SECTOR_SIZE);
+                            }
+                            else
+                            {
+                                LARGE_INTEGER TmpSize;
+
+                                TmpSize.LowPart = subsection->StartingSector;
+                                TmpSize.HighPart = subsection->u.SubsectionFlags.StartingSector4132;
+
+                                StartOffset.QuadPart += (TmpSize.QuadPart * PAGE_SIZE);
+                            }
+
+                            Mdl->Next = NULL;
+                            Mdl->Size = (sizeof(MDL) + (sizeof(PFN_NUMBER) * ClusterSize));
+                            Mdl->MdlFlags = MDL_PAGES_LOCKED;
+                            Mdl->StartVa = ULongToPtr(Pfn->u3.e1.PageColor * PAGE_SIZE);
+                            Mdl->ByteCount = 0;
+                            Mdl->ByteOffset = 0;
+
+                            FirstWrittenPte = Pte;
+                        }
+
+                        LastWrittenPte = Pte;
+                        Mdl->ByteCount += PAGE_SIZE;
+
+                        if (Mdl->ByteCount == (ClusterSize * PAGE_SIZE))
+                            IsAlowWrite = TRUE;
+
+                        if (!TempPte.u.Hard.Valid)
+                        {
+                            MiUnlinkPageFromList(Pfn);
+                            MiReferenceUnusedPageAndBumpLockCount(Pfn);
+                        }
+                        else
+                        {
+                            MiReferenceUsedPageAndBumpLockCount(Pfn);
+                        }
+
+                        ASSERT(Pfn->u3.e1.Rom == 0);
+                        Pfn->u3.e1.Modified = 0;
+
+                        *LastMdlPage = PageNumber;
+                        LastMdlPage++;
                     }
                     else if (LastWrittenPte)
                     {
-                        DPRINT1("MiFlushSectionInternal: FIXME\n");
-                        ASSERT(FALSE);
+                        IsAlowWrite = TRUE;
                     }
                 }
                 else if (LastWrittenPte)
                 {
-                    DPRINT1("MiFlushSectionInternal: FIXME\n");
-                    ASSERT(FALSE);
+                    IsAlowWrite = TRUE;
                 }
 
                 Pte++;
@@ -3915,8 +3985,127 @@ StartFlush:
 
                 IsAlowWrite = FALSE;
 
-                DPRINT1("MiFlushSectionInternal: FIXME\n");
-                ASSERT(FALSE);
+                if (subsection->ControlArea->u.Flags.Image)
+                {
+                    EndOffset.QuadPart = (subsection->StartingSector + subsection->NumberOfFullSectors);
+                    EndOffset.QuadPart *= MM_SECTOR_SIZE;
+                }
+                else
+                {
+                    EndOffset.LowPart = subsection->StartingSector;
+                    EndOffset.HighPart = subsection->u.SubsectionFlags.StartingSector4132;
+
+                    EndOffset.QuadPart += subsection->NumberOfFullSectors;
+                    EndOffset.QuadPart *= PAGE_SIZE;
+                }
+
+                EndOffset.QuadPart += subsection->u.SubsectionFlags.SectorEndOffset;
+
+                if (EndOffset.QuadPart < (StartOffset.QuadPart + Mdl->ByteCount))
+                {
+                    ASSERT((ULONG_PTR)(EndOffset.QuadPart - StartOffset.QuadPart) > (Mdl->ByteCount - PAGE_SIZE));
+                    Mdl->ByteCount = (EndOffset.QuadPart - StartOffset.QuadPart);
+                }
+
+                RetryCount = 0;
+
+                if (!FlushData)
+                {
+                    while (TRUE)
+                    {
+                        KeClearEvent(&event);
+
+                        Status = IoSynchronousPageWrite(FilePointer, Mdl, &StartOffset, &event, OutIoStatus);
+
+                        if (!NT_SUCCESS(Status))
+                        {
+                            DPRINT1("MiFlushSectionInternal: Status %X\n", Status);
+                            OutIoStatus->Status = Status;
+                        }
+                        else
+                        {
+                            KeWaitForSingleObject(&event, WrPageOut, KernelMode, FALSE, NULL);
+                        }
+
+                        if (Mdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA)
+                            MmUnmapLockedPages(Mdl->MappedSystemVa, Mdl);
+
+                        if (OutIoStatus->Status != STATUS_INSUFFICIENT_RESOURCES &&
+                            OutIoStatus->Status != STATUS_WORKING_SET_QUOTA &&
+                            OutIoStatus->Status != STATUS_NO_MEMORY)
+                        {
+                            break;
+                        }
+
+                        RetryCount--;
+
+                        if (!(RetryCount & 0x1F))
+                            break;
+
+                        KeDelayExecutionThread(KernelMode, FALSE, &Mm30Milliseconds);
+                    }
+
+                    MdlPage = MmGetMdlPfnArray(Mdl);
+
+                    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+                    if (!MiIsPteOnPdeBoundary(Pte) && !(MiAddressToPte(Pte)->u.Hard.Valid))
+                        MiMakeSystemAddressValidPfn(Pte, OldIrql);
+
+                    if (!NT_SUCCESS(OutIoStatus->Status))
+                    {
+                        NTSTATUS sts = OutIoStatus->Status;
+                        PMMPFN pfn;
+
+                        DPRINT1("MiFlushSectionInternal: OutIoStatus->Status %X\n", sts);
+
+                        OutIoStatus->Information = 0;
+
+                        while (MdlPage < LastMdlPage)
+                        {
+                            pfn = MI_PFN_ELEMENT(*MdlPage);
+
+                            ASSERT(pfn->u3.e1.Rom == 0);
+                            pfn->u3.e1.Modified = 1;
+
+                            MiDereferencePfnAndDropLockCount(pfn);
+                            MdlPage++;
+                        }
+
+                        if ((sts != STATUS_INSUFFICIENT_RESOURCES && sts != STATUS_WORKING_SET_QUOTA && sts != STATUS_NO_MEMORY) ||
+                            ClusterSize == 1 ||
+                            Mdl->ByteCount <= PAGE_SIZE)
+                        {
+                            OutIoStatus->Information += (((LastWrittenPte - StartPte) * PAGE_SIZE) - Mdl->ByteCount);
+                            LastWrittenPte = NULL;
+                            subsection = LastSubsection;
+                            break;
+                        }
+
+                        ASSERT(FirstWrittenPte != NULL);
+                        ASSERT(LastWrittenPte != NULL);
+                        ASSERT(FirstWrittenPte != LastWrittenPte);
+
+                        Pte = FirstWrittenPte;
+
+                        if (!(MiAddressToPte(Pte)->u.Hard.Valid))
+                            MiMakeSystemAddressValidPfn(Pte, OldIrql);
+
+                        ClusterSize = 1;
+                    }
+                    else
+                    {
+                        for (; MdlPage < LastMdlPage; MdlPage++)
+                            MiDereferencePfnAndDropLockCount(MI_PFN_ELEMENT(*MdlPage));
+                    }
+                }
+                else
+                {
+                    DPRINT1("MiFlushSectionInternal: FIXME\n");
+                    ASSERT(FALSE);
+                }
+
+                LastWrittenPte = NULL;
             }
 
             ASSERT(MappedSubsection->DereferenceList.Flink == NULL);
