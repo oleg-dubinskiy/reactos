@@ -1347,6 +1347,42 @@ MiReferenceUsedPageAndBumpLockCount(
     }
 }
 
+/* References a locked page and updates the counter
+   Used in all other cases except MmProbeAndLockPages
+*/
+FORCEINLINE
+VOID
+MiReferenceUnusedPageAndBumpLockCount(
+    _In_ PMMPFN Pfn)
+{
+    USHORT NewRefCount;
+
+    /* Make sure the page isn't used yet */
+    ASSERT(Pfn->u2.ShareCount == 0);
+    ASSERT(Pfn->u3.e1.PageLocation != ActiveAndValid);
+
+#if 0 // log spam ..
+    /* Is it a prototype PTE? */
+    if (Pfn->u3.e1.PrototypePte && Pfn->OriginalPte.u.Soft.Prototype)
+    {
+        /* FIXME: We should charge commit */
+        DbgPrint("MiReferenceUnusedPageAndBumpLockCount: Not charging commit for prototype PTE\n");
+    }
+#endif
+
+    /* More locked pages! */
+    InterlockedIncrementSizeT(&MmSystemLockPagesCount);
+
+    /* Update the reference count */
+    NewRefCount = InterlockedIncrement16((PSHORT)&Pfn->u3.e2.ReferenceCount);
+    if (NewRefCount != 1)
+    {
+        /* Someone had already locked the page, so undo our bump */
+        ASSERT(NewRefCount < 2500);
+        InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+    }
+}
+
 #ifdef _M_AMD64
   #error FIXME
 #else
