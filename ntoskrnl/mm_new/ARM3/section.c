@@ -7465,10 +7465,7 @@ MmCreateSection(
         {
             /* This is a previously mapped file. */
             if (AllocationAttributes & SEC_IMAGE)
-            {
-                DPRINT("MmCreateSection: FIXME MiFlushDataSection \n");
-                //MiFlushDataSection(File);
-            }
+                MiFlushDataSection(File);
 
             /* Free the new control area */
             ExFreePoolWithTag(NewControlArea, 'aCmM');
