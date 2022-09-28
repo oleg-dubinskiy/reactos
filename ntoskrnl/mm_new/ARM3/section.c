@@ -4537,7 +4537,18 @@ NTAPI
 MiRemoveImageHeaderPage(
     _In_ PFN_NUMBER PageFrameNumber)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMMPFN Pfn;
+    KIRQL OldIrql;
+
+    DPRINT("MiRemoveImageHeaderPage: PageFrameNumber %p\n", PageFrameNumber);
+
+    Pfn = MI_PFN_ELEMENT(PageFrameNumber);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+    MiDecrementReferenceCount(Pfn, PageFrameNumber);
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    return;
 }
 
 CHAR
