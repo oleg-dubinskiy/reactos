@@ -4884,7 +4884,6 @@ MiCreateImageFileMap(
     PSECTION_IMAGE_INFORMATION ImageInfo;
     ULONG_PTR ImageBase;
     ULONG_PTR VirtualAddress;
-    //MMPTE TempPte;
     MMPTE ProtoTemplate;
     MMPTE TempPteDemandZero;
     PMMPTE BasePte = NULL;
@@ -4954,50 +4953,29 @@ MiCreateImageFileMap(
     PeHeaderPfn = MI_PFN_ELEMENT(BasePte->u.Hard.PageFrameNumber);
 
     DosHeader = (PIMAGE_DOS_HEADER)PeHeader;
-    DPRINT("MiCreateImageFileMap: DosHeader %p, FileSize %IX64, PeHeaderSize %X\n", DosHeader, FileSize, PeHeaderSize);
+
+    DPRINT("MiCreateImageFileMap: DosHeader %p, FileSize %I64X, PeHeaderSize %X\n", DosHeader, FileSize, PeHeaderSize);
 
     Status = MiValidateDosHeader(DosHeader, FileSize, PeHeaderSize);
     if (!NT_SUCCESS(Status))
-        DPRINT1("MiCreateImageFileMap: FIXME! Status %X\n", Status);
-        //return Status;
-
-#if 0
-    if (DosHeader->e_magic != 0x5A4D)
     {
-        DPRINT1("MiCreateImageFileMap: ErrorExit1. Status %X, File '%wZ'\n", Status, &FileObject->FileName);
-        Status = STATUS_INVALID_IMAGE_NOT_MZ;
+        DPRINT1("MiCreateImageFileMap: Status %X\n", Status);
         goto ErrorExit1;
     }
-
-    if ((ULONG)DosHeader->e_lfanew > (ULONG)FileSize)
-    {
-        DPRINT1("MiCreateImageFileMap: ErrorExit1. Status %X, File '%wZ'\n", Status, &FileObject->FileName);
-        Status = STATUS_INVALID_IMAGE_PROTECT;
-        goto ErrorExit1;
-    }
-
-    if ((ULONG)(DosHeader->e_lfanew + MI_PE_HEADER_MAX_SIZE) <= DosHeader->e_lfanew)
-    {
-        DPRINT1("MiCreateImageFileMap: ErrorExit1. Status %X, File '%wZ'\n", Status, &FileObject->FileName);
-        Status = STATUS_INVALID_IMAGE_PROTECT;
-        goto ErrorExit1;
-    }
-#endif
 
     if ((ULONG)(DosHeader->e_lfanew + MI_PE_HEADER_MAX_SIZE) <= PAGE_SIZE)
     {
-      #if 0
         if (DosHeader->e_lfanew + sizeof(IMAGE_NT_HEADERS) > PeHeaderSize)
         {
-            DPRINT1("MiCreateImageFileMap: ErrorExit1. Status %X, File '%wZ'\n", Status, &FileObject->FileName);
+            DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_PROTECT. '%wZ'\n", &FileObject->FileName);
             Status = STATUS_INVALID_IMAGE_PROTECT;
+            ASSERT(FALSE);
             goto ErrorExit1;
         }
-      #endif
 
         /* The size of the PE header does not exceed one page */
         NtHeader = (PIMAGE_NT_HEADERS)((ULONG_PTR)DosHeader + DosHeader->e_lfanew);
-        NtHeaderSize = PeHeaderSize - DosHeader->e_lfanew;
+        NtHeaderSize = (PeHeaderSize - DosHeader->e_lfanew);
     }
     else
     {
@@ -5005,7 +4983,7 @@ MiCreateImageFileMap(
         PeHeaderBuffer = ExAllocatePoolWithTag(NonPagedPool, PeHeaderBufferMaxSize, 'xxmM');
         if (!PeHeaderBuffer)
         {
-            DPRINT1("MiCreateImageFileMap: ErrorExit1. Status %X, File '%wZ'\n", Status, &FileObject->FileName);
+            DPRINT1("MiCreateImageFileMap: STATUS_INSUFFICIENT_RESOURCES. '%wZ'\n", &FileObject->FileName);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto ErrorExit1;
         }
@@ -5015,7 +4993,7 @@ MiCreateImageFileMap(
 
         KeClearEvent(&Event);
 
-        Offset.LowPart = (ULONG)(ULONG_PTR)(PAGE_ALIGN(DosHeader->e_lfanew));
+        Offset.LowPart = (ULONG)(ULONG_PTR)PAGE_ALIGN(DosHeader->e_lfanew);
 
         Status = IoPageRead(FileObject, &HeaderMdl.Mdl, &Offset, &Event, &IoStatusBlock);
         if (Status == STATUS_PENDING)
@@ -5041,13 +5019,13 @@ MiCreateImageFileMap(
         if (PeHeaderSize != PeHeaderBufferMaxSize &&
             PeHeaderSize < (OffsetToNtHeader + sizeof(IMAGE_NT_HEADERS)))
         {
-            DPRINT1("MiCreateImageFileMap: ErrorExit1. Status %X, File '%wZ'\n", Status, &FileObject->FileName);
+            DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_PROTECT. '%wZ'\n", &FileObject->FileName);
             Status = STATUS_INVALID_IMAGE_PROTECT;
             goto ErrorExit1;
         }
 
-        NtHeader = (PIMAGE_NT_HEADERS)((ULONG_PTR)PeHeaderBuffer + OffsetToNtHeader);
-        NtHeaderSize = PeHeaderSize - OffsetToNtHeader;
+        NtHeader = Add2Ptr(PeHeaderBuffer, OffsetToNtHeader);
+        NtHeaderSize = (PeHeaderSize - OffsetToNtHeader);
     }
 
     DPRINT("MiCreateImageFileMap: FIXME MiVerifyImageHeader\n");
@@ -5071,7 +5049,7 @@ MiCreateImageFileMap(
     TotalNumberOfPtes = BYTES_TO_PAGES(SizeOfImage);
     if (!TotalNumberOfPtes)
     {
-        DPRINT1("MiCreateImageFileMap: ErrorExit1. File '%wZ'\n", &FileObject->FileName);
+        DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
         Status = STATUS_INVALID_IMAGE_FORMAT;
         goto ErrorExit1;
     }
@@ -5083,6 +5061,7 @@ MiCreateImageFileMap(
     }
 
     NumberOfSections = NtHeader->FileHeader.NumberOfSections;
+
     DPRINT("MiCreateImageFileMap: NumberOfSections %X\n", NumberOfSections);
 
     if (ImageAlignment >= PAGE_SIZE)
@@ -5105,7 +5084,7 @@ MiCreateImageFileMap(
 
     if (!ControlArea)
     {
-        DPRINT1("MiCreateImageFileMap: ErrorExit1. File '%wZ'\n", &FileObject->FileName);
+        DPRINT1("MiCreateImageFileMap: STATUS_INSUFFICIENT_RESOURCES. '%wZ'\n", &FileObject->FileName);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto ErrorExit1;
     }
@@ -5118,10 +5097,10 @@ MiCreateImageFileMap(
 
     size = (sizeof(SEGMENT) + sizeof(SECTION_IMAGE_INFORMATION) + (TotalNumberOfPtes - 1) * sizeof(MMPTE));
 
-    Segment = ExAllocatePoolWithTag((POOL_TYPE)0x80000001, size, 'tSmM');
+    Segment = ExAllocatePoolWithTag((PagedPool + 0x80000000), size, 'tSmM');
     if (!Segment)
     {
-        DPRINT1("MiCreateImageFileMap: ErrorExit2. Status %X, File '%wZ'\n", Status, &FileObject->FileName);
+        DPRINT1("MiCreateImageFileMap: STATUS_INSUFFICIENT_RESOURCES. '%wZ'\n", &FileObject->FileName);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto ErrorExit2;
     }
@@ -5137,7 +5116,7 @@ MiCreateImageFileMap(
 
     RtlZeroMemory(Segment->ThePtes, (TotalNumberOfPtes * sizeof(MMPTE)));
     Segment->PrototypePte = Segment->ThePtes;
-    PeHeaderPfn->u2.Blink = (PFN_NUMBER)&Segment->ThePtes[0];
+    PeHeaderPfn->u2.Blink = (PFN_NUMBER)Segment->PrototypePte;
 
     ImageInfo = (PSECTION_IMAGE_INFORMATION)&Segment->ThePtes[TotalNumberOfPtes + 1];
     RtlZeroMemory(ImageInfo, sizeof(SECTION_IMAGE_INFORMATION));
@@ -5187,7 +5166,7 @@ MiCreateImageFileMap(
 
     if (ImageBase & (0x10000 - 1))
     {
-        DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+        DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
         Status = STATUS_INVALID_IMAGE_FORMAT;
         goto ErrorExit2;
     }
@@ -5198,7 +5177,7 @@ MiCreateImageFileMap(
 
     if (SizeOfHeaders >= SizeOfImage)
     {
-        DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+        DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
         Status = STATUS_INVALID_IMAGE_FORMAT;
         goto ErrorExit2;
     }
@@ -5253,34 +5232,39 @@ MiCreateImageFileMap(
     else
     {
         PtesInSubsection = ((SizeOfHeaders + (ImageAlignment - 1)) / PAGE_SIZE) & (~(ImageAlignment - 1) / PAGE_SIZE);
+
         Subsection->PtesInSubsection = PtesInSubsection;
+
         //DPRINT("MiCreateImageFileMap: Subsection %p, Subsection->NextSubsection %p\n", Subsection, Subsection->NextSubsection);
-        //DPRINT("MiCreateImageFileMap: UnusedPtes %X, PtesInSubsection %X\n", Subsection->UnusedPtes, Subsection->PtesInSubsection);
+        //DPRINT("MiCreateImageFileMap: UnusedPtes %X, PtesInSubsection %X\n", Subsection->UnusedPtes, PtesInSubsection);
 
         Pte = Segment->PrototypePte;
         Subsection->SubsectionBase = Pte;
+
         //DPRINT("MiCreateImageFileMap: Subsection->SubsectionBase %p\n", Subsection->SubsectionBase);
 
         if (!SizeOfHeaders)
         {
-            DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
-            Status = STATUS_INVALID_IMAGE_FORMAT;
-            goto ErrorExit2;
-        }
-        if ((SizeOfHeaders + ImageAlignment - 1) <= SizeOfHeaders)
-        {
-            DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
-            Status = STATUS_INVALID_IMAGE_FORMAT;
-            goto ErrorExit2;
-        }
-        if (Subsection->PtesInSubsection > TotalNumberOfPtes)
-        {
-            DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+            DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
             Status = STATUS_INVALID_IMAGE_FORMAT;
             goto ErrorExit2;
         }
 
-        TotalNumberOfPtes -= Subsection->PtesInSubsection;
+        if ((SizeOfHeaders + ImageAlignment - 1) <= SizeOfHeaders)
+        {
+            DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
+            Status = STATUS_INVALID_IMAGE_FORMAT;
+            goto ErrorExit2;
+        }
+
+        if (PtesInSubsection > TotalNumberOfPtes)
+        {
+            DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
+            Status = STATUS_INVALID_IMAGE_FORMAT;
+            goto ErrorExit2;
+        }
+
+        TotalNumberOfPtes -= PtesInSubsection;
 
         Subsection->NumberOfFullSectors = (SizeOfHeaders / MM_SECTOR_SIZE);
 
@@ -5291,7 +5275,7 @@ MiCreateImageFileMap(
         ProtoTemplate.u.Soft.Protection = MM_READONLY;
         Segment->SegmentPteTemplate.u.Long = ProtoTemplate.u.Long;
 
-        for (ix = 0; ix < Subsection->PtesInSubsection; ix++)
+        for (ix = 0; ix < PtesInSubsection; ix++)
         {
             if (CurrentSize >= SizeOfHeaders)
                 Pte->u.Long = 0;
@@ -5310,28 +5294,28 @@ MiCreateImageFileMap(
 
     if (NtHeaderSize >= (BYTE_OFFSET(NtHeader) + OffsetToSectionHeaders + SizeOfSectionHeaders + sizeof(IMAGE_SECTION_HEADER)))
     {
-        SectionHeaders = (PIMAGE_SECTION_HEADER)((ULONG_PTR)NtHeader + OffsetToSectionHeaders);
+        SectionHeaders = Add2Ptr(NtHeader, OffsetToSectionHeaders);
     }
     else if (PeHeaderBuffer)
     {
         if (NtHeaderSize < OffsetToSectionHeaders + SizeOfSectionHeaders)
             SectionHeaders = NULL;
         else
-            SectionHeaders = (PIMAGE_SECTION_HEADER)((ULONG_PTR)NtHeader + OffsetToSectionHeaders);
+            SectionHeaders = Add2Ptr(NtHeader, OffsetToSectionHeaders);
     }
 
     if (!SectionHeaders)
     {
         if ((ULONG)((ULONG)DosHeader->e_lfanew + OffsetToSectionHeaders + SizeOfSectionHeaders) <= (ULONG)DosHeader->e_lfanew)
         {
-            DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+            DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
             Status = STATUS_INVALID_IMAGE_FORMAT;
             goto ErrorExit2;
         }
 
         if ((BYTE_OFFSET((ULONG)DosHeader->e_lfanew + OffsetToSectionHeaders) + SizeOfSectionHeaders) > PeHeaderBufferMaxSize)
         {
-            DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+            DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
             Status = STATUS_INVALID_IMAGE_FORMAT;
             goto ErrorExit2;
         }
@@ -5341,7 +5325,7 @@ MiCreateImageFileMap(
             PeHeaderBuffer = ExAllocatePoolWithTag(NonPagedPool, PeHeaderBufferMaxSize, 'xxmM');
             if (!PeHeaderBuffer)
             {
-                DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+                DPRINT1("MiCreateImageFileMap: STATUS_INSUFFICIENT_RESOURCES. '%wZ'\n", &FileObject->FileName);
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto ErrorExit2;
             }
@@ -5350,7 +5334,7 @@ MiCreateImageFileMap(
             MmBuildMdlForNonPagedPool(&HeaderMdl.Mdl);
         }
 
-        SectionHeaders = (PIMAGE_SECTION_HEADER)((ULONG_PTR)PeHeaderBuffer + BYTE_OFFSET((ULONG)DosHeader->e_lfanew + OffsetToSectionHeaders));
+        SectionHeaders = Add2Ptr(PeHeaderBuffer, BYTE_OFFSET((ULONG)DosHeader->e_lfanew + OffsetToSectionHeaders));
         Offset.LowPart = (ULONG)(ULONG_PTR)(PAGE_ALIGN((ULONG)DosHeader->e_lfanew + OffsetToSectionHeaders));
 
         KeClearEvent(&Event);
@@ -5367,7 +5351,7 @@ MiCreateImageFileMap(
 
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+            DPRINT1("MiCreateImageFileMap: Status %X, '%wZ'\n", Status, &FileObject->FileName);
 
             if (Status != STATUS_FILE_LOCK_CONFLICT && Status != STATUS_FILE_IS_OFFLINE)
                 Status = STATUS_INVALID_FILE_FOR_SECTION;
@@ -5379,7 +5363,7 @@ MiCreateImageFileMap(
 
         if (PeHeaderSize < (BYTE_OFFSET((ULONG)DosHeader->e_lfanew + OffsetToSectionHeaders) + SizeOfSectionHeaders))
         {
-            DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+            DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
             Status = STATUS_INVALID_IMAGE_FORMAT;
             goto ErrorExit2;
         }
@@ -5396,7 +5380,7 @@ MiCreateImageFileMap(
 
             if ((SectionHeaders->SizeOfRawData + SectionHeaders->PointerToRawData) < SectionHeaders->PointerToRawData)
             {
-                DPRINT1("MiCreateImageFileMap: invalid section/file size '%wZ'\n", &FileObject->FileName);
+                DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
                 Status = STATUS_INVALID_IMAGE_FORMAT;
                 goto ErrorExit2;
             }
@@ -5431,7 +5415,7 @@ MiCreateImageFileMap(
 
             if ((ULONG)(SectionHeaders->PointerToRawData + SectionHeaders->SizeOfRawData) < SectionHeaders->PointerToRawData)
             {
-                DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+                DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
                 Status = STATUS_INVALID_IMAGE_FORMAT;
                 goto ErrorExit2;
             }
@@ -5445,14 +5429,14 @@ MiCreateImageFileMap(
 
             if (VirtualAddress != (ImageBase + SectionHeaders->VirtualAddress) || !SectionVirtualSize)
             {
-                DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+                DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
                 Status = STATUS_INVALID_IMAGE_FORMAT;
                 goto ErrorExit2;
             }
 
             if ((ULONG)(SectionVirtualSize + ImageAlignment - 1) <= SectionVirtualSize)
             {
-                DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+                DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
                 Status = STATUS_INVALID_IMAGE_FORMAT;
                 goto ErrorExit2;
             }
@@ -5460,7 +5444,7 @@ MiCreateImageFileMap(
             Subsection->PtesInSubsection = (((ULONG)(SectionVirtualSize + ImageAlignment - 1)) / PAGE_SIZE) & (~(ImageAlignment - 1) / PAGE_SIZE);
             if (Subsection->PtesInSubsection > TotalNumberOfPtes)
             {
-                DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+                DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
                 Status = STATUS_INVALID_IMAGE_FORMAT;
                 goto ErrorExit2;
             }
@@ -5473,7 +5457,7 @@ MiCreateImageFileMap(
 
             if ((ULONG)AlignedSectionEnd < SectionHeaders->PointerToRawData)
             {
-                DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+                DPRINT1("MiCreateImageFileMap: STATUS_INVALID_IMAGE_FORMAT. '%wZ'\n", &FileObject->FileName);
                 Status = STATUS_INVALID_IMAGE_FORMAT;
                 goto ErrorExit2;
             }
@@ -5516,7 +5500,7 @@ MiCreateImageFileMap(
                 }
             }
 
-            DPRINT("MiCreateImageFileMap: ProtoTemplate [%p], TempPteDemandZero [%p]\n", ProtoTemplate.u.Long, TempPteDemandZero.u.Long);
+            DPRINT("MiCreateImageFileMap: [%p], [%p]\n", ProtoTemplate.u.Long, TempPteDemandZero.u.Long);
 
             Segment->SegmentPteTemplate = ProtoTemplate;
             CurrentSize = 0;
@@ -5572,7 +5556,7 @@ MiCreateImageFileMap(
 
         if (!PeHeaderBuffer && SizeOfHeaders < PAGE_SIZE)
         {
-            RtlZeroMemory((PVOID)((ULONG_PTR)PeHeader + SizeOfHeaders), (PAGE_SIZE - SizeOfHeaders));
+            RtlZeroMemory(Add2Ptr(PeHeader, SizeOfHeaders), (PAGE_SIZE - SizeOfHeaders));
             IsZeroHeaderEnd = TRUE;
         }
 
@@ -5584,7 +5568,7 @@ MiCreateImageFileMap(
             ASSERT(FALSE);
             if (0)//!MiChargeCommitment(CommitCharged, 0))
             {
-                DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+                DPRINT1("MiCreateImageFileMap: STATUS_COMMITMENT_LIMIT. '%wZ'\n", &FileObject->FileName);
                 CommitCharged = 0;
                 Status = STATUS_COMMITMENT_LIMIT;
                 goto ErrorExit2;
@@ -5608,7 +5592,7 @@ MiCreateImageFileMap(
         NewControlArea = ExAllocatePoolWithTag(NonPagedPool, size, 'iCmM');
         if (!NewControlArea)
         {
-            DPRINT1("MiCreateImageFileMap: ErrorExit2. File '%wZ'\n", &FileObject->FileName);
+            DPRINT1("MiCreateImageFileMap: STATUS_INSUFFICIENT_RESOURCES. '%wZ'\n", &FileObject->FileName);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto ErrorExit2;
         }
@@ -5712,17 +5696,17 @@ ErrorExit2:
 
     if (Segment)
     {
-#if 0
+      #if 0
         if (CommitCharged)
         {
             ASSERT(CommitCharged == Segment->NumberOfCommittedPages);
 
             ASSERT((SSIZE_T)CommitCharged >= 0);
-            //ASSERT(MmTotalCommittedPages >= CommitCharged);
-            //InterlockedExchangeAdd((volatile PLONG)&MmTotalCommittedPages, -CommitCharged);
+            ASSERT(MmTotalCommittedPages >= CommitCharged);
             InterlockedExchangeAdd((volatile PLONG)&MmSharedCommit, -CommitCharged);
         }
-#endif
+      #endif
+
         if (Segment->SegmentFlags.ExtraSharedWowSubsections == 0)
         {
             MMPTE TempPte;
@@ -5731,8 +5715,8 @@ ErrorExit2:
             {
                 TempPte.u.Long = Segment->PrototypePte[ix].u.Long;
 
-                ASSERT((TempPte.u.Hard.Valid == 0) &&
-                       ((TempPte.u.Soft.Prototype == 1) || (TempPte.u.Soft.Transition == 0)));
+                ASSERT(TempPte.u.Hard.Valid == 0);
+                ASSERT((TempPte.u.Soft.Prototype == 1) || (TempPte.u.Soft.Transition == 0));
             }
         }
     }
