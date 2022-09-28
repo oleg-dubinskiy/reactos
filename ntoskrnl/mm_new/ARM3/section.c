@@ -4687,35 +4687,27 @@ MiValidateDosHeader(
     _In_ ULONGLONG FileSize,
     _In_ ULONG PeHeaderSize)
 {
-    DPRINT("MiValidateDosHeader: %p, FileSize %IX64, PeHeaderSize %X\n", DosHeader, FileSize, PeHeaderSize);
+    DPRINT("MiValidateDosHeader: %p, FileSize %I64X, PeHeaderSize %X\n", DosHeader, FileSize, PeHeaderSize);
 
     if (DosHeader->e_magic != 0x5A4D)
     {
-        DPRINT1("MiValidateDosHeader: STATUS_INVALID_IMAGE_NOT_MZ\n");
-        DPRINT1("MiValidateDosHeader: DosHeader %p, FileSize %IX64, PeHeaderSize %X\n", DosHeader, FileSize, PeHeaderSize);
-        DPRINT1("MiValidateDosHeader: DosHeader->e_magic %X\n", DosHeader->e_magic);
+        DPRINT1("MiValidateDosHeader: STATUS_INVALID_IMAGE_NOT_MZ (%X)\n", DosHeader->e_magic);
+        DPRINT1("MiValidateDosHeader: %p, %I64X, %X\n", DosHeader, FileSize, PeHeaderSize);
         return STATUS_INVALID_IMAGE_NOT_MZ;
     }
 
     if ((ULONG)DosHeader->e_lfanew > (ULONG)FileSize)
     {
         DPRINT1("MiValidateDosHeader: STATUS_INVALID_IMAGE_PROTECT\n");
+        ASSERT(FALSE);
         return STATUS_INVALID_IMAGE_PROTECT;
     }
 
     if ((ULONG)(DosHeader->e_lfanew + MI_PE_HEADER_MAX_SIZE) <= DosHeader->e_lfanew)
     {
         DPRINT1("MiValidateDosHeader: STATUS_INVALID_IMAGE_PROTECT\n");
+        ASSERT(FALSE);
         return STATUS_INVALID_IMAGE_PROTECT;
-    }
-
-    if ((ULONG)(DosHeader->e_lfanew + MI_PE_HEADER_MAX_SIZE) <= PAGE_SIZE)
-    {
-        if (DosHeader->e_lfanew + sizeof(IMAGE_NT_HEADERS) > PeHeaderSize)
-        {
-            DPRINT1("MiValidateDosHeader: STATUS_INVALID_IMAGE_PROTECT\n");
-            return STATUS_INVALID_IMAGE_PROTECT;
-        }
     }
 
     return STATUS_SUCCESS;
