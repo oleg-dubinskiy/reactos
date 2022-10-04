@@ -12,6 +12,8 @@
 #define MI_POOL_COPY_BYTES    0x200
 #define MI_MAX_TRANSFER_SIZE  (0x40 * _1KB) // 64 Kb
 
+extern MI_PFN_CACHE_ATTRIBUTE MiPlatformCacheAttributes[2][MmMaximumCacheType];
+extern BOOLEAN MiWriteCombiningPtes;
 extern PVOID MmPagedPoolEnd;
 extern KGUARDED_MUTEX MmSectionCommitMutex;
 extern SIZE_T MmSharedCommit;
@@ -1155,13 +1157,152 @@ MiGetPageProtection(
 
 VOID
 NTAPI
-MiFlushTbAndCapture(IN PMMVAD Vad,
-                    IN PMMPTE Pte,
-                    IN ULONG ProtectionMask,
-                    IN PMMPFN Pfn,
-                    IN BOOLEAN UpdateDirty)
+MiFlushTbAndCapture(
+    _In_ PMMVAD Vad,
+    _In_ PMMPTE Pte,
+    _In_ ULONG ProtectionMask,
+    _In_ PMMPFN Pfn,
+    _In_ BOOLEAN UpdateDirty)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    //PVOID Address; 
+    MMPTE PreviousPte;
+    MMPTE TempPte;
+    PFN_NUMBER PageNumber;
+    ULONG CacheAttribute;
+    ULONG CacheType;
+    KIRQL OldIrql;
+
+    DPRINT("MiFlushTbAndCapture: %p, %p, %X, Pfn %p, %X\n", Vad, Pte, ProtectionMask, Pfn, UpdateDirty);
+
+     /* User for sanity checking later on */
+    ASSERT(Pte <= MiHighestUserPte);
+    //Address = MiPteToAddress(Pte);
+
+    PageNumber = Pte->u.Hard.PageFrameNumber;
+
+    /* Build the PTE and acquire the PFN lock */
+    MI_MAKE_HARDWARE_PTE_USER(&TempPte, Pte, ProtectionMask, PageNumber);
+
+    /* Lock the PFN database */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    PreviousPte = *Pte;
+
+    if (!Pfn)
+    {
+        if (ProtectionMask >> 3 == 1)
+        {
+            CacheType = MmNonCached;
+        }
+        else if (ProtectionMask >> 3 == 3 && (ProtectionMask & 7))
+        {
+            CacheType = MmWriteCombined;
+        }
+        else
+        {
+            CacheType = MmCached;
+        }
+
+        CacheAttribute = MiPlatformCacheAttributes[1][CacheType];
+
+        if (CacheAttribute == MiNonCached)
+        {
+            TempPte.u.Hard.WriteThrough = 1;
+            TempPte.u.Hard.CacheDisable = 1;
+        }
+        else if (CacheAttribute == MiCached)
+        {
+            TempPte.u.Hard.WriteThrough = 0;
+            TempPte.u.Hard.CacheDisable = 0;
+        }
+        else if (CacheAttribute == MiWriteCombined)
+        {
+            if (MiWriteCombiningPtes)
+            {
+                TempPte.u.Hard.WriteThrough = 1;
+                TempPte.u.Hard.CacheDisable = 0;
+            }
+            else
+            {
+                TempPte.u.Hard.WriteThrough = 0;
+                TempPte.u.Hard.CacheDisable = 1;
+            }
+        }
+
+        if (ProtectionMask & 4)
+            MI_MAKE_DIRTY_PAGE(&TempPte);
+    }
+    else
+    {
+        if (Pfn->u3.e1.CacheAttribute == MiNonCached)
+        {
+            if ((ProtectionMask & 0x18) != MM_NOCACHE)
+            {
+                ProtectionMask &= ~0x10;
+                ProtectionMask |= MM_NOCACHE;
+                MI_MAKE_HARDWARE_PTE_USER(&TempPte, Pte, ProtectionMask, PageNumber);
+            }
+        }
+        else if (Pfn->u3.e1.CacheAttribute == MiCached)
+        {
+            if (ProtectionMask & 0x18)
+            {
+                ProtectionMask &= ~0x18;
+                MI_MAKE_HARDWARE_PTE_USER(&TempPte, Pte, ProtectionMask, PageNumber);
+            }
+        }
+        else if (Pfn->u3.e1.CacheAttribute == MiWriteCombined)
+        {
+            if ((ProtectionMask & MM_WRITECOMBINE) != MM_WRITECOMBINE)
+            {
+                ProtectionMask |= MM_WRITECOMBINE;
+                MI_MAKE_HARDWARE_PTE_USER(&TempPte, Pte, ProtectionMask, PageNumber);
+            }
+        }
+    }
+
+    MI_UPDATE_VALID_PTE(Pte, TempPte);
+
+    /* Flush the TLB */
+    ASSERT(PreviousPte.u.Hard.Valid == 1);
+    //FIXME should be:
+    //KeFlushSingleTb(Address, 0);
+    KeFlushCurrentTb();
+    ASSERT(PreviousPte.u.Hard.Valid == 1);
+
+    if (UpdateDirty)
+    {
+        ASSERT(Pfn != NULL);
+        ASSERT(KeGetCurrentIrql() > APC_LEVEL);
+
+        if (!Pfn->u3.e1.Modified && PreviousPte.u.Hard.Dirty)
+        {
+            ASSERT(Pfn->u3.e1.Rom == 0);
+            Pfn->u3.e1.Modified = 1;
+
+            if (!Pfn->OriginalPte.u.Soft.Prototype &&
+                !Pfn->u3.e1.WriteInProgress)
+            {
+                DPRINT1("MiFlushTbAndCapture: FIXME MiReleasePageFileSpace()\n");
+                ASSERT(FALSE);
+            }
+        }
+    }
+
+    if (Vad->u.VadFlags.VadType == VadWriteWatch)
+    {
+        ASSERT((PsGetCurrentProcess()->Flags & PSF_WRITE_WATCH_BIT) != 0);
+        ASSERT(Pfn->u3.e1.PrototypePte == 0);
+
+        if (PreviousPte.u.Hard.Dirty)
+        {
+            DPRINT1("MiFlushTbAndCapture: FIXME MiCaptureWriteWatchDirtyBit()\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    /* Release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
 }
 
 NTSTATUS
