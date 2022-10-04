@@ -1321,6 +1321,7 @@ MiSetProtectionOnSection(
     PMMPDE Pde;
     PMMPTE Pte;
     PMMPTE LastPte;
+    PMMPTE Proto;
     MMPTE TempPte;
     MMPTE PteContents;
     PMMPFN Pfn;
@@ -1508,6 +1509,9 @@ EndWriteCopy:
     }
 
     /* Loop all the PTEs now */
+    Pde = MiAddressToPde(StartingAddress);
+    Pte = MiAddressToPte(StartingAddress);
+
     MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
 
     QuotaCharge = 0;
@@ -1536,6 +1540,8 @@ EndWriteCopy:
         }
         else if (PteContents.u.Hard.Valid)
         {
+            ProtectionMask2 = ProtectionMask;
+
             /* Get the PFN entry */
             Pfn = MiGetPfnEntry(PFN_FROM_PTE(&PteContents));
 
@@ -1558,8 +1564,26 @@ EndWriteCopy:
             }
             else if (Pfn->u3.e1.PrototypePte)
             {
-                DPRINT1("MiSetProtectionOnSection: FIXME\n");
-                ASSERT(FALSE);
+                VirtualAddress = (ULONG_PTR)MiPteToAddress(Pte);
+
+                Proto = MI_GET_PROTOTYPE_PTE_FOR_VPN(FoundVad, (VirtualAddress / PAGE_SIZE));
+
+                if (Pfn->PteAddress != Proto)
+                {
+                    if (MiCopyOnWrite((PVOID)VirtualAddress, Pte))
+                    {
+                        if (IsWriteCopy && !PteContents.u.Hard.CopyOnWrite)
+                            QuotaCharge++;
+                    }
+
+                    MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
+                    continue;
+                }
+
+                if (!IsWriteCopy && PteContents.u.Hard.CopyOnWrite)
+                    QuotaCharge++;
+
+                DPRINT("MiSetProtectionOnSection: FIXME MiLocateWsle()\n");
             }
             else
             {
@@ -1599,17 +1623,12 @@ EndWriteCopy:
                 Pte->u.Soft.Protection = ProtectionMask;
             }
         }
-        else if (PteContents.u.Soft.Transition)
+        else
         {
             ASSERT(FoundVad->u.VadFlags.VadType != VadRotatePhysical);
 
             DPRINT1("MiSetProtectionOnSection: FIXME\n");
             ASSERT(FALSE);
-        }
-        else
-        {
-            /* The PTE is already demand-zero, just update the protection mask */
-            Pte->u.Soft.Protection = ProtectionMask;
         }
 
         Pte++;

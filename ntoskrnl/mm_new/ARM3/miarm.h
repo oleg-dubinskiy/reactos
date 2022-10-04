@@ -1879,6 +1879,13 @@ MiCheckPdeForPagedPool(
     _In_ PVOID Address
 );
 
+BOOLEAN
+NTAPI
+MiCopyOnWrite(
+    _In_ PVOID Address,
+    _In_ PMMPTE Pte
+);
+
 /* ARM3\pfnlist.c */
 PFN_NUMBER
 NTAPI
