@@ -240,4 +240,12 @@ CcDeallocateBcb(
     _In_ PCC_BCB Bcb
 );
 
+VOID
+NTAPI
+CcUnpinFileDataEx(
+    _In_ PCC_BCB Bcb,
+    _In_ BOOLEAN IsNoWrite,
+    _In_ ULONG Type
+);
+
 /* EOF */

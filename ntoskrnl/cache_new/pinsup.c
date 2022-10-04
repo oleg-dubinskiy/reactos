@@ -105,46 +105,56 @@ CcUnpinFileDataEx(
         }
     }
 
-    if (!Bcb->PinCount)
+    if (Bcb->PinCount)
     {
-        if (Bcb->Reserved1[0])
-        {
-            DPRINT1("CcUnpinFileDataEx: FIXME\n");
-            ASSERT(FALSE);
-        }
-        else
-        {
-            KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[4]);
+        if (!IsNoWrite)
+            ExReleaseResourceLite(&Bcb->BcbResource);
 
-            RemoveEntryList(&Bcb->Link);
-
-            if (SharedMap->SectionSize.QuadPart > CACHE_OVERALL_SIZE &&
-                (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
-            {
-                DPRINT1("CcUnpinFileDataEx: FIXME\n");
-                ASSERT(FALSE);
-            }
-
-            KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[4]);
-
-            if (Bcb->BaseAddress)
-                CcFreeVirtualAddress(Bcb->Vacb);
-
-            if (!IsNoWrite)
-                ExReleaseResourceLite(&Bcb->BcbResource);
-
-            ASSERT(Bcb->BcbResource.ActiveCount == 0);
-
-            KeReleaseInStackQueuedSpinLock(&LockHandle);
-
-            CcDeallocateBcb(Bcb);
-        }
+        KeReleaseInStackQueuedSpinLock(&LockHandle);
+        return;
     }
-    else
+
+    if (Bcb->Reserved1[0])
+    {
+        if (Bcb->BaseAddress)
+        {
+            CcFreeVirtualAddress(Bcb->Vacb);
+
+            Bcb->BaseAddress = NULL;
+            Bcb->Vacb = NULL;
+        }
+
+        if (!IsNoWrite)
+            ExReleaseResourceLite(&Bcb->BcbResource);
+
+        KeReleaseInStackQueuedSpinLock(&LockHandle);
+        return;
+    }
+
+    KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[4]);
+
+    RemoveEntryList(&Bcb->Link);
+
+    if (SharedMap->SectionSize.QuadPart > CACHE_OVERALL_SIZE &&
+        (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
     {
         DPRINT1("CcUnpinFileDataEx: FIXME\n");
         ASSERT(FALSE);
     }
+
+    KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[4]);
+
+    if (Bcb->BaseAddress)
+        CcFreeVirtualAddress(Bcb->Vacb);
+
+    if (!IsNoWrite)
+        ExReleaseResourceLite(&Bcb->BcbResource);
+
+    ASSERT(Bcb->BcbResource.ActiveCount == 0);
+
+    KeReleaseInStackQueuedSpinLock(&LockHandle);
+
+    CcDeallocateBcb(Bcb);
 }
 
 BOOLEAN
