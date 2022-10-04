@@ -60,6 +60,12 @@ CcFindBcb(
             if (FileOffset->LowPart >= Bcb->BeyondLastByte.LowPart)
                 break;
 
+            if (FileOffset->LowPart >= Bcb->FileOffset.LowPart)
+            {
+                Result = TRUE;
+                break;
+            }
+
             DPRINT1("CcFindBcb: FIXME\n");
             ASSERT(FALSE);
         }
