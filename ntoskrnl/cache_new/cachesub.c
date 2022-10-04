@@ -884,11 +884,54 @@ CcSetReadAheadGranularity(
 
 VOID
 NTAPI
-CcUnpinRepinnedBcb(IN PVOID Bcb,
-                   IN BOOLEAN WriteThrough,
-                   OUT PIO_STATUS_BLOCK IoStatus)
+CcUnpinRepinnedBcb(
+    _In_ PVOID InBcb,
+    _In_ BOOLEAN WriteThrough,
+    _Out_ PIO_STATUS_BLOCK IoStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PCC_BCB Bcb = InBcb;
+    PSHARED_CACHE_MAP SharedMap;
+
+    SharedMap = Bcb->SharedCacheMap;
+    IoStatus->Status = STATUS_SUCCESS;
+
+    if (!WriteThrough)
+    {
+        CcUnpinFileDataEx(Bcb, TRUE, 0);
+        IoStatus->Status = STATUS_SUCCESS;
+        return;
+    }
+
+    if (SharedMap->Flags & 0x200)
+        ExAcquireResourceExclusiveLite(&Bcb->BcbResource, TRUE);
+
+    if (!Bcb->Reserved1[0])
+    {
+        CcUnpinFileDataEx(Bcb, FALSE, 0);
+        return;
+    }
+
+    ASSERT(Bcb->BaseAddress != NULL);
+
+    MmSetAddressRangeModified(Bcb->BaseAddress, Bcb->Length);
+
+    CcUnpinFileDataEx(Bcb, TRUE, 2);
+
+    MmFlushSection(Bcb->SharedCacheMap->FileObject->SectionObjectPointer, &Bcb->FileOffset, Bcb->Length, IoStatus, 1);
+
+    ASSERT(IoStatus->Status != STATUS_ENCOUNTERED_WRITE_IN_PROGRESS);
+
+    if (IoStatus->Status == STATUS_VERIFY_REQUIRED ||
+        IoStatus->Status == STATUS_FILE_LOCK_CONFLICT ||
+        IoStatus->Status == STATUS_ENCOUNTERED_WRITE_IN_PROGRESS)
+    {
+        CcSetDirtyPinnedData(Bcb, NULL);
+    }
+
+    CcUnpinFileDataEx(Bcb, FALSE, 0);
+
+    if (!IsListEmpty(&CcDeferredWrites))
+        CcPostDeferredWrites();
 }
 
 INIT_FUNCTION

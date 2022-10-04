@@ -248,4 +248,10 @@ CcUnpinFileDataEx(
     _In_ ULONG Type
 );
 
+VOID
+NTAPI
+CcPostDeferredWrites(
+    VOID
+);
+
 /* EOF */
