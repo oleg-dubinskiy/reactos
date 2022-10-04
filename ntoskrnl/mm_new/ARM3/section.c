@@ -147,6 +147,7 @@ extern SIZE_T MmAllocationFragment;
 extern ULONG MmVirtualBias;
 extern PMM_SESSION_SPACE MmSessionSpace;
 extern MMPTE ValidKernelPdeLocal;
+extern BOOLEAN MiWriteCombiningPtes;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1732,12 +1733,16 @@ MiMapViewOfPhysicalSection(
     {
         if (CacheAttribute == MiWriteCombined)
         {
-            // FIXME MiWriteCombiningPtes
+            if (MiWriteCombiningPtes)
             {
-                TempPte.u.Hard.CacheDisable = 1;
-                TempPte.u.Hard.WriteThrough = 0;
+                TempPte.u.Hard.WriteThrough = 1;
+                TempPte.u.Hard.CacheDisable = 0;
             }
-
+            else
+            {
+                TempPte.u.Hard.WriteThrough = 0;
+                TempPte.u.Hard.CacheDisable = 1;
+            }
         }
         else if (CacheAttribute == MiNonCached)
         {

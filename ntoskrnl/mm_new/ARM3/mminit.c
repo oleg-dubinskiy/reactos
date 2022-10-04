@@ -345,6 +345,8 @@ ULONG MmReadClusterSize = 7;
 /* The page support stack S-LIST */
 SLIST_HEADER MmInPageSupportSListHead;
 
+BOOLEAN MiWriteCombiningPtes = FALSE;
+
 extern MMPFNLIST MmStandbyPageListByPriority[8];
 extern LIST_ENTRY MmLoadedUserImageList;
 extern KGUARDED_MUTEX MmPagedPoolMutex;
