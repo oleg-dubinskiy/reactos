@@ -221,8 +221,88 @@ CcPinFileData(
 
     if (CcFindBcb(SharedMap, FileOffset, &EndFileOffset, &Bcb))
     {
-        DPRINT1("CcPinFileData: FIXME\n");
-        ASSERT(FALSE);
+        if (!(SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
+            IsNoWrite = TRUE;
+
+        if (Bcb->BaseAddress)
+        {
+            if (PinFlags & PIN_WAIT)
+            {
+                Bcb->PinCount++;
+                KeReleaseInStackQueuedSpinLock(&LockHandle);
+                IsLocked = FALSE;
+
+                if (!IsNoWrite)
+                {
+                    if (PinFlags & PIN_EXCLUSIVE)
+                        ExAcquireResourceExclusiveLite(&Bcb->BcbResource, TRUE);
+                    else
+                        ExAcquireSharedStarveExclusive(&Bcb->BcbResource, TRUE);
+                }
+            }
+            else
+            {
+                DPRINT1("CcPinFileData: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            *OutBuffer = Add2Ptr(Bcb->BaseAddress, (FileOffset->LowPart - Bcb->FileOffset.LowPart));
+
+            Result = TRUE;
+            goto Finish;
+        }
+        else
+        {
+            *OutBuffer = Add2Ptr(*OutBuffer, (Bcb->FileOffset.LowPart - FileOffset->LowPart));
+
+            offset.QuadPart = Bcb->FileOffset.QuadPart;
+            length.QuadPart = Bcb->Length;
+
+            if (PinFlags & PIN_WAIT)
+            {
+                Bcb->PinCount++;
+                KeReleaseInStackQueuedSpinLock(&LockHandle);
+                IsLocked = FALSE;
+
+                if (!IsNoWrite)
+                {
+                    if (PinFlags & PIN_EXCLUSIVE)
+                        ExAcquireResourceExclusiveLite(&Bcb->BcbResource, TRUE);
+                    else
+                        ExAcquireSharedStarveExclusive(&Bcb->BcbResource, TRUE);
+                }
+
+                if (PinFlags & PIN_NO_READ)
+                {
+                    Result = TRUE;
+                    goto Finish;
+                }
+
+                CcMapAndRead(SharedMap, &offset, length.LowPart, 0, TRUE, *OutBuffer);
+
+                KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+                if (!Bcb->BaseAddress)
+                {
+                    Bcb->BaseAddress = *OutBuffer;
+                    Bcb->Vacb = Vacb;
+                    Vacb = NULL;
+                }
+                KeReleaseInStackQueuedSpinLock(&LockHandle);
+
+                *OutBuffer = Add2Ptr(Bcb->BaseAddress, (FileOffset->LowPart - Bcb->FileOffset.LowPart));
+
+                Result = TRUE;
+                goto Finish;
+            }
+
+            DPRINT1("CcPinFileData: FIXME\n");
+            ASSERT(FALSE);
+
+            *OutBuffer = Add2Ptr(Bcb->BaseAddress, (FileOffset->LowPart - Bcb->FileOffset.LowPart));
+
+            Result = TRUE;
+            goto Finish;
+        }
     }
     else
     {
