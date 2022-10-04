@@ -560,9 +560,15 @@ CcRemapBcb(IN PVOID Bcb)
 
 VOID
 NTAPI
-CcRepinBcb(IN PVOID Bcb)
+CcRepinBcb(
+    _In_ PVOID InBcb)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    KLOCK_QUEUE_HANDLE LockHandle;
+    PCC_BCB Bcb = InBcb;
+
+    KeAcquireInStackQueuedSpinLock(&Bcb->SharedCacheMap->BcbSpinLock, &LockHandle);
+    Bcb->PinCount++;
+    KeReleaseInStackQueuedSpinLock(&LockHandle);
 }
 
 VOID
