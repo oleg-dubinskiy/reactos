@@ -642,8 +642,18 @@ CcScheduleReadAhead(
             }
             else
             {
-                DPRINT1("CcScheduleReadAhead: FIXME\n");
-                ASSERT(FALSE);
+                FileOffset1.QuadPart = (PrivateMap->ReadAheadOffset[1].QuadPart + ReadAheadLength);
+
+                if (FileOffset1.QuadPart < FileOffset2.QuadPart)
+                    FileOffset1 = FileOffset2;
+
+                PrivateMap->ReadAheadOffset[0] = FileOffset1;
+                PrivateMap->ReadAheadLength[0] = ReadAheadLength;
+
+                PrivateMap->ReadAheadOffset[1] = FileOffset2;
+                PrivateMap->ReadAheadLength[1] = ReadAheadLength;
+
+                FileOffset2.QuadPart = (FileOffset1.QuadPart + ReadAheadLength);
             }
 
             IsSchedule = TRUE;
