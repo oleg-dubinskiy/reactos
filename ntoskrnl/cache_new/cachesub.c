@@ -25,8 +25,11 @@ ULONG CcPinReadWait;
 ULONG CcPinReadNoWait;
 ULONG CcIdleDelayTick;
 
+extern SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
 extern LIST_ENTRY CcExpressWorkQueue;
 extern LARGE_INTEGER CcNoDelay;
+extern ULONG CcTotalDirtyPages;
+extern LAZY_WRITER LazyWriter;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -790,10 +793,81 @@ CcScheduleReadAhead(
 
 VOID
 NTAPI
-CcSetDirtyPinnedData(IN PVOID BcbVoid,
-                     IN OPTIONAL PLARGE_INTEGER Lsn)
+CcSetDirtyPinnedData(
+    _In_ PVOID BcbVoid,
+    _In_ PLARGE_INTEGER Lsn OPTIONAL)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PSHARED_CACHE_MAP SharedMap;
+    KLOCK_QUEUE_HANDLE LockHandle;
+    PCC_BCB Bcbs[2];
+    PCC_BCB* pBcbs;
+    ULONG DirtyPages;
+
+    DPRINT("CcSetDirtyPinnedData: BcbVoid %p\n", BcbVoid);
+
+    Bcbs[0] = BcbVoid;
+    Bcbs[1] = NULL;
+
+    if (Bcbs[0]->NodeTypeCode != 0x02FA)
+    {
+        pBcbs = Bcbs;
+    }
+    else
+    {
+        DPRINT1("CcSetDirtyPinnedData: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    while (*pBcbs)
+    {
+        Bcbs[0] = *(pBcbs++);
+
+        ASSERT(((ULONG_PTR)Bcbs[0] & 1) != 1);
+
+        SharedMap = Bcbs[0]->SharedCacheMap;
+
+        KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+
+        if (!Bcbs[0]->Reserved1[0])
+        {
+            DirtyPages = (Bcbs[0]->Length / PAGE_SIZE);
+
+            Bcbs[0]->Reserved1[0] = 1;
+
+            if (Lsn)
+            {
+                DPRINT1("CcSetDirtyPinnedData: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueMasterLock]);
+
+            if (!SharedMap->DirtyPages && !(SharedMap->Flags & 0x2))
+            {
+                if (!LazyWriter.ScanActive)
+                    CcScheduleLazyWriteScan(FALSE);
+
+                RemoveEntryList(&SharedMap->SharedCacheMapLinks);
+                InsertTailList(&CcDirtySharedCacheMapList.SharedCacheMapLinks, &SharedMap->SharedCacheMapLinks);
+            }
+            
+            CcTotalDirtyPages += DirtyPages;
+            SharedMap->DirtyPages += DirtyPages;
+
+            KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueMasterLock]);
+        }
+
+        if (Lsn)
+        {
+            DPRINT1("CcSetDirtyPinnedData: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (Bcbs[0]->BeyondLastByte.QuadPart > SharedMap->ValidDataGoal.QuadPart)
+            SharedMap->ValidDataGoal = Bcbs[0]->BeyondLastByte;
+
+        KeReleaseInStackQueuedSpinLock(&LockHandle);
+    }
 }
 
 VOID
