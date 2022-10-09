@@ -753,7 +753,7 @@ CcSetActiveVacb(
     DPRINT("CcSetActiveVacb: ActiveVacb %p\n", SharedMap->ActiveVacb);
 
     if (SharedMap->ActiveVacb)
-        goto Exit1;
+        goto Exit;
 
     if (IsVacbLocked == ((SharedMap->Flags & SHARE_FL_VACB_LOCKED) != 0))
     {
@@ -761,14 +761,11 @@ CcSetActiveVacb(
         SharedMap->ActivePage = ActivePage;
 
         *OutVacb = NULL;
-        goto Exit1;
+        goto Exit;
     }
 
     if (!IsVacbLocked)
-    {
-       KeReleaseSpinLock(&SharedMap->ActiveVacbSpinLock, OldIrql);
        goto Exit;
-    }
 
     SharedMap->ActiveVacb = *OutVacb;
     SharedMap->ActivePage = ActivePage;
@@ -796,7 +793,7 @@ CcSetActiveVacb(
         return;
     }
 
-Exit1:
+Exit:
 
     if (IsVacbLocked)
     {
@@ -808,14 +805,8 @@ Exit1:
         KeReleaseSpinLock(&SharedMap->ActiveVacbSpinLock, OldIrql);
     }
 
-Exit:
-
     if (*OutVacb)
-    {
-        DPRINT1("CcSetActiveVacb: FIXME CcFreeActiveVacb()\n");
-        ASSERT(FALSE);
-        //CcFreeActiveVacb(SharedMap, *OutVacb, ActivePage, IsVacbLocked);
-    }
+        CcFreeActiveVacb(SharedMap, *OutVacb, ActivePage, IsVacbLocked);
 }
 
 VOID
