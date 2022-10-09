@@ -828,6 +828,7 @@ CcFreeActiveVacb(
 {
     PVOID NeedToZero;
     PVACB NeedToZeroVacb;
+    LARGE_INTEGER Offset;
     ULONG Size;
     KIRQL OldIrql;
 
@@ -871,8 +872,8 @@ CcFreeActiveVacb(
         return;
     }
 
-    DPRINT("CcFreeActiveVacb: FIXME CcSetDirtyInMask\n");
-    ASSERT(FALSE);
+    Offset.QuadPart = (ActivePage * PAGE_SIZE);
+    CcSetDirtyInMask(SharedMap, &Offset, PAGE_SIZE);
 
     OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
     KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
