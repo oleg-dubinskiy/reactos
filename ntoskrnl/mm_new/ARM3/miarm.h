@@ -1886,6 +1886,19 @@ MiCopyOnWrite(
     _In_ PMMPTE Pte
 );
 
+PMI_PAGE_SUPPORT_BLOCK
+NTAPI
+MiGetInPageSupportBlock(
+    _In_ KIRQL OldIrql,
+    _Out_ NTSTATUS* OutStatus
+);
+
+VOID
+NTAPI
+MiFreeInPageSupportBlock(
+    _In_ PMI_PAGE_SUPPORT_BLOCK Support
+);
+
 /* ARM3\pfnlist.c */
 PFN_NUMBER
 NTAPI
