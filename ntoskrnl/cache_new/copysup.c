@@ -34,6 +34,85 @@ CcCopyReadExceptionFilter(
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
+PBITMAP_RANGE
+NTAPI
+CcFindBitmapRangeToDirty(
+    _In_ PMBCB Mbcb,
+    _In_ LONGLONG InputPage,
+    _Inout_ PULONG* pBitmap)
+{
+    PBITMAP_RANGE CurrentRange;
+    PBITMAP_RANGE NewRange = NULL;
+    PLIST_ENTRY HeadList;
+    LONGLONG BasePage;
+
+    DPRINT1("CcFindBitmapRangeToDirty: %p, %I64X, %p\n", Mbcb, InputPage, pBitmap);
+
+    HeadList = &Mbcb->BitmapRanges;
+    BasePage = (InputPage & ~(0x1000 - 1));
+
+    CurrentRange = CONTAINING_RECORD(Mbcb->BitmapRanges.Flink, BITMAP_RANGE, Links);
+
+    do
+    {
+        if (BasePage == CurrentRange->BasePage)
+            return CurrentRange;
+
+        if (CurrentRange->DirtyPages || NewRange)
+        {
+            if (BasePage > CurrentRange->BasePage)
+                HeadList = &CurrentRange->Links;
+        }
+        else
+        {
+            NewRange = CurrentRange;
+        }
+
+        if (CurrentRange->Links.Flink == &Mbcb->BitmapRanges)
+            break;
+
+        CurrentRange = CONTAINING_RECORD(CurrentRange->Links.Flink, BITMAP_RANGE, Links);
+
+        if (CurrentRange->BasePage > BasePage && NewRange)
+            break;
+    }
+    while (TRUE);
+
+    if (NewRange)
+    {
+        RemoveEntryList(&NewRange->Links);
+    }
+    else
+    {
+        NewRange = ExAllocatePoolWithTag(NonPagedPool, sizeof(*NewRange), 'rBcC');
+        if (!NewRange)
+        {
+            DPRINT1("CcFindBitmapRangeToDirty: Allocate failed\n");
+            return NULL;
+        }
+
+        RtlZeroMemory(NewRange, sizeof(*NewRange));
+    }
+
+    InsertHeadList(HeadList, &NewRange->Links);
+
+    NewRange->BasePage = BasePage;
+    NewRange->FirstDirtyPage = 0xFFFFFFFF;
+    NewRange->LastDirtyPage = 0;
+
+    if (!NewRange->Bitmap)
+    {
+        ASSERT(*pBitmap != NULL);
+
+        NewRange->Bitmap = *pBitmap;
+        *pBitmap = NULL;
+
+        DPRINT1("CcFindBitmapRangeToDirty: %X\n", NewRange->Bitmap);
+    }
+
+    return NewRange;
+}
+
 VOID
 NTAPI
 CcSetDirtyInMask(
