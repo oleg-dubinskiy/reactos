@@ -8,6 +8,15 @@
 
 /* GLOBALS ********************************************************************/
 
+extern LIST_ENTRY CcDeferredWrites;
+extern ULONG CcTotalDirtyPages;
+extern ULONG CcDirtyPageThreshold;
+extern PFN_NUMBER MmAvailablePages;
+extern ULONG MmThrottleTop;
+extern ULONG MmThrottleBottom;
+extern MMPFNLIST MmModifiedPageListHead;
+extern KSPIN_LOCK CcDeferredWriteSpinLock;
+extern LARGE_INTEGER CcIdleDelay;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -29,13 +38,102 @@ CcCopyReadExceptionFilter(
 
 BOOLEAN
 NTAPI
-CcCanIWrite(IN PFILE_OBJECT FileObject,
-            IN ULONG BytesToWrite,
-            IN BOOLEAN Wait,
-            IN UCHAR Retrying)
+CcCanIWrite(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ ULONG BytesToWrite,
+    _In_ BOOLEAN Wait,
+    _In_ UCHAR Retrying)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PFSRTL_COMMON_FCB_HEADER FsContext;
+    PSHARED_CACHE_MAP SharedMap;
+    DEFERRED_WRITE DeferredWrite;
+    KEVENT Event;
+    ULONG Size;
+    ULONG Pages;
+    KIRQL OldIrql;
+    BOOLEAN IsSmallThreshold = FALSE;
+
+    DPRINT("CcCanIWrite: FileObject %p, BytesToWrite %X\n", FileObject, BytesToWrite);
+
+    if (FileObject->Flags & FO_WRITE_THROUGH)
+        return TRUE;
+
+    if (IoIsFileOriginRemote(FileObject) && Retrying < 0xFD)
+        return TRUE;
+
+    if (BytesToWrite < 0x40000)
+        Size = BytesToWrite;
+    else
+        Size = 0x40000;
+
+    Pages = ((Size + (PAGE_SIZE - 1)) / PAGE_SIZE);
+
+    FsContext = FileObject->FsContext;
+
+    if (Retrying >= 0xFE || (FsContext->Flags & FSRTL_FLAG_LIMIT_MODIFIED_PAGES))
+    {
+        if (Retrying != 0xFF)
+            OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+        if (FileObject->SectionObjectPointer)
+        {
+            SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+
+            if (SharedMap && SharedMap->DirtyPageThreshold && SharedMap->DirtyPages)
+            {
+                if (SharedMap->DirtyPageThreshold < (SharedMap->DirtyPages + Pages))
+                   IsSmallThreshold = TRUE;
+            }
+        }
+
+        if (Retrying != 0xFF)
+          KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+    }
+
+    if ((Retrying || IsListEmpty(&CcDeferredWrites)) &&
+        CcDirtyPageThreshold > (CcTotalDirtyPages + Pages))
+    {
+        if (MmAvailablePages > MmThrottleTop && !IsSmallThreshold)
+            return TRUE;
+
+        if (MmModifiedPageListHead.Total < 1000 &&
+            MmAvailablePages > MmThrottleBottom &&
+            !IsSmallThreshold)
+        {
+            return TRUE;
+        }
+    }
+
+    if (!Wait)
+        return FALSE;
+
+    if (IsListEmpty(&CcDeferredWrites))
+    {
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+        CcScheduleLazyWriteScan(TRUE);
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    DeferredWrite.NodeTypeCode = NODE_TYPE_DEFERRED_WRITE;
+    DeferredWrite.NodeByteSize = sizeof(DEFERRED_WRITE);
+
+    DeferredWrite.FileObject = FileObject;
+    DeferredWrite.BytesToWrite = BytesToWrite;
+    DeferredWrite.Event = &Event;
+    DeferredWrite.LimitModifiedPages = ((FsContext->Flags & FSRTL_FLAG_LIMIT_MODIFIED_PAGES) != 0);
+
+    if (Retrying)
+        ExInterlockedInsertHeadList(&CcDeferredWrites, &DeferredWrite.DeferredWriteLinks, &CcDeferredWriteSpinLock);
+    else
+        ExInterlockedInsertTailList(&CcDeferredWrites, &DeferredWrite.DeferredWriteLinks, &CcDeferredWriteSpinLock);
+
+    do
+        CcPostDeferredWrites();
+    while (KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, &CcIdleDelay) != STATUS_SUCCESS);
+
+    return TRUE;
 }
 
 BOOLEAN

@@ -30,6 +30,7 @@ extern LIST_ENTRY CcExpressWorkQueue;
 extern LARGE_INTEGER CcNoDelay;
 extern ULONG CcTotalDirtyPages;
 extern LAZY_WRITER LazyWriter;
+extern LIST_ENTRY CcDeferredWrites;
 
 /* FUNCTIONS ******************************************************************/
 
