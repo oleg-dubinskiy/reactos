@@ -34,6 +34,16 @@ CcCopyReadExceptionFilter(
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
+VOID
+NTAPI
+CcSetDirtyInMask(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 BOOLEAN
 NTAPI
 CcMapAndCopy(
@@ -46,8 +56,257 @@ CcMapAndCopy(
     _In_ PLARGE_INTEGER ValidDataLength,
     _In_ BOOLEAN Wait)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PETHREAD CurrentThread = PsGetCurrentThread();
+    IO_STATUS_BLOCK IoStatus;
+    LARGE_INTEGER offset;
+    LARGE_INTEGER fileOffset;
+    PVOID CacheBuffer;
+    PVACB Vacb = NULL;
+    ULONG CopyLen;
+    ULONG ActivePage;
+    ULONG flags;
+    ULONG InputLength = Length;
+    ULONG ByteOffset;
+    ULONG Size;
+    ULONG ReceivedLength;
+    ULONG ClusterSize;
+    ULONG OldReadClusterSize;
+    UCHAR OldForwardClusterOnly;
+    BOOLEAN IsLongerOnePage;
+    BOOLEAN IsWriteThrough;
+    BOOLEAN IsSetActiveVacb = TRUE;
+    BOOLEAN Result = FALSE;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT1("CcMapAndCopy: %p, [%I64X], %X, %X, %p\n",
+           SharedMap, (FileOffset ? FileOffset->QuadPart : 0ll), Length, Wait, Buffer);
+
+    fileOffset.QuadPart = FileOffset->QuadPart;
+    ByteOffset = (fileOffset.LowPart & (PAGE_SIZE - 1));
+
+    /* Save previous values */
+    OldForwardClusterOnly = CurrentThread->ForwardClusterOnly;
+    OldReadClusterSize = CurrentThread->ReadClusterSize;
+
+    if ((FileObject->Flags & FO_WRITE_THROUGH) && !Wait)
+        return FALSE;
+
+    IsWriteThrough = FALSE;
+
+    if (IoIsFileOriginRemote(FileObject) &&
+        !CcCanIWrite(FileObject, Length, 0, 0xFD))
+    {
+        IsWriteThrough = TRUE;
+
+        if (!(SharedMap->Flags & 0x8000))
+        {
+            OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+            SharedMap->Flags |= 0x8000;
+            KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+        }
+    }
+
+    if (IsWriteThrough && !Wait)
+        return FALSE;
+
+    _SEH2_TRY
+    {
+        while (Length)
+        {
+            Size = 0;
+            flags = 1;
+
+            CacheBuffer = CcGetVirtualAddress(SharedMap, fileOffset, &Vacb, &ReceivedLength);
+            ASSERT(CacheBuffer != NULL);
+
+            if (ReceivedLength > Length)
+                ReceivedLength = Length;
+
+            Size = ReceivedLength;
+            Length -= ReceivedLength;
+
+            ReceivedLength += ByteOffset;
+            CacheBuffer = Add2Ptr(CacheBuffer, -ByteOffset);
+
+            offset.HighPart = fileOffset.HighPart;
+            offset.LowPart = (fileOffset.LowPart - ByteOffset);
+
+            while (TRUE)
+            {
+                IsLongerOnePage = (ReceivedLength > PAGE_SIZE);
+
+                IsSetActiveVacb = (!Length &&
+                                   ReceivedLength < PAGE_SIZE &&
+                                   InputLength <= 0x800 &&
+                                   !IsWriteThrough);
+
+                if (SharedMap->NeedToZero)
+                    CcFreeActiveVacb(SharedMap, NULL, 0, FALSE);
+
+                if (!(CopyFlags & flags))
+                {
+                    CurrentThread->ForwardClusterOnly = 1;
+
+                    if (IsLongerOnePage && (CopyFlags & 4))
+                        ClusterSize = 1;
+                    else
+                        ClusterSize = 0;
+
+                    CurrentThread->ReadClusterSize = ClusterSize;
+
+                    if (!MmCheckCachedPageState(CacheBuffer, 0) && !Wait)
+                    {
+                        Result = FALSE;
+                        goto Finish;
+                    }
+                    else
+                    {
+                        //_SEH2_TRY
+
+                        if (!IsLongerOnePage)
+                            CopyLen = ReceivedLength;
+                        else
+                            CopyLen = PAGE_SIZE;
+
+                        RtlCopyMemory(Add2Ptr(CacheBuffer, ByteOffset), Buffer, (CopyLen - ByteOffset));
+
+                        //_SEH2_EXCEPT()
+
+                        //_SEH2_END;
+                    }
+
+                    /* Restore claster variables */
+                    CurrentThread->ForwardClusterOnly = OldForwardClusterOnly;
+                    CurrentThread->ReadClusterSize = OldReadClusterSize;
+                }
+                else
+                {
+                    if (!IsLongerOnePage)
+                        CopyLen = ReceivedLength;
+                    else
+                        CopyLen = PAGE_SIZE;
+
+                    Status = MmCopyToCachedPage(CacheBuffer,
+                                                Buffer,
+                                                ByteOffset,
+                                                (CopyLen - ByteOffset),
+                                                offset.QuadPart >= ValidDataLength->QuadPart);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        DPRINT1("CcMapAndCopy: Status %X\n", Status);
+                        ExRaiseStatus(FsRtlNormalizeNtstatus(IoStatus.Status, STATUS_UNEXPECTED_IO_ERROR));
+                    }
+                }
+
+                if (IsSetActiveVacb)
+                {
+                    ActivePage = (Vacb->Overlay.FileOffset.QuadPart / PAGE_SIZE);
+                    ActivePage +=  (((ULONG_PTR)CacheBuffer - (ULONG_PTR)Vacb->BaseAddress) / PAGE_SIZE);
+
+                    offset.LowPart += ReceivedLength;
+
+                    CcSetActiveVacb(SharedMap, &Vacb, ActivePage, TRUE);
+
+                    Vacb = NULL;
+                    Result = TRUE;
+                    goto Finish;
+                }
+
+                if (InputLength <= 0x800 && !IsWriteThrough)
+                    CcSetDirtyInMask(SharedMap, &offset, ReceivedLength);
+
+                Buffer = Add2Ptr(Buffer, (PAGE_SIZE - ByteOffset));
+
+                ByteOffset = 0;
+
+                if (!IsLongerOnePage)
+                    break;
+
+                CacheBuffer = Add2Ptr(CacheBuffer, PAGE_SIZE);
+                ReceivedLength -= PAGE_SIZE;
+                offset.LowPart += PAGE_SIZE;
+
+                flags = (ReceivedLength > PAGE_SIZE ? 2 : 4);
+            }
+
+            if (Length <= 0x10000)
+            {
+                if (IsWriteThrough)
+                    MmSetAddressRangeModified(CacheBuffer, Size);
+                else
+                    CcSetDirtyInMask(SharedMap, &fileOffset, Size);
+            }
+            else
+            {
+                DPRINT1("CcMapAndCopy: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            CcFreeVirtualAddress(Vacb);
+
+            Vacb = NULL;
+
+            if (Length < PAGE_SIZE)
+            {
+                if (!(CopyFlags & 4))
+                    CopyFlags = 0;
+            }
+            else
+            {
+                CopyFlags |= 1;
+            }
+
+            fileOffset.QuadPart += Size;
+        }
+
+        Result = TRUE;
+
+Finish:
+        ;
+    }
+    _SEH2_FINALLY
+    {
+        /* Restore claster variables */
+        CurrentThread->ForwardClusterOnly = OldForwardClusterOnly;
+        CurrentThread->ReadClusterSize = OldReadClusterSize;
+
+        if (Vacb)
+            CcFreeVirtualAddress(Vacb);
+
+        if (!IsSetActiveVacb || _SEH2_AbnormalTermination())
+        {
+            if (IsWriteThrough)
+            {
+                if (_SEH2_AbnormalTermination() && Size)
+                    MmSetAddressRangeModified(CacheBuffer, Size);
+
+                MmFlushSection(SharedMap->FileObject->SectionObjectPointer, FileOffset, InputLength, &IoStatus, 1);
+
+                ASSERT(IoStatus.Status != STATUS_ENCOUNTERED_WRITE_IN_PROGRESS);
+
+                if (NT_SUCCESS(IoStatus.Status))
+                {
+                    fileOffset.QuadPart = (FileOffset->QuadPart + InputLength);
+
+                    if (SharedMap->ValidDataGoal.QuadPart < fileOffset.QuadPart)
+                        SharedMap->ValidDataGoal.QuadPart = fileOffset.QuadPart;
+                }
+                else
+                {
+                   if (!_SEH2_AbnormalTermination())
+                       ExRaiseStatus(FsRtlNormalizeNtstatus(IoStatus.Status, STATUS_UNEXPECTED_IO_ERROR));
+                }
+            }
+            else if (_SEH2_AbnormalTermination() && Size)
+            {
+                CcSetDirtyInMask(SharedMap, &fileOffset, Size);
+            }
+        }
+    }
+    _SEH2_END;
+
+    return Result;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/

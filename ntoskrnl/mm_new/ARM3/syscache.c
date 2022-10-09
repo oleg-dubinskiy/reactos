@@ -726,4 +726,17 @@ MmUnmapViewInSystemCache(
     MiCheckControlArea(ControlArea, OldIrql);
 }
 
+NTSTATUS
+NTAPI
+MmCopyToCachedPage(
+    _In_ PVOID SystemCacheAddress,
+    _In_ PVOID InBuffer,
+    _In_ ULONG Offset,
+    _In_ ULONG CountInBytes,
+    _In_ BOOLEAN IsNeedZeroPage)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* EOF */
