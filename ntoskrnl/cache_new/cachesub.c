@@ -31,6 +31,8 @@ extern LARGE_INTEGER CcNoDelay;
 extern ULONG CcTotalDirtyPages;
 extern LAZY_WRITER LazyWriter;
 extern LIST_ENTRY CcDeferredWrites;
+extern ULONG CcPagesYetToWrite;
+extern LIST_ENTRY CcCleanSharedCacheMapList;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -199,11 +201,21 @@ CcAcquireByteRangeForWrite(
     _In_ ULONG Length,
     _Out_ PLARGE_INTEGER OutFileOffset,
     _Out_ ULONG* OutLength,
-    _Out_ PVOID* OutParam6)
+    _Out_ PVOID* OutBcb)
 {
     KLOCK_QUEUE_HANDLE LockHandle;
+    PBITMAP_RANGE BitmapRange;
+    PLARGE_INTEGER FileOffset;
+    LARGE_INTEGER EndFileOffset;
+    LONGLONG CurrentPage;
+    LONGLONG LastPage = 0x7FFFFFFFFFFFFFFF;
+    PULONG pBitmap;
+    PULONG pEndBitmap;
     PCC_BCB Bcb;
-    BOOLEAN IsFlag = FALSE;
+    PMBCB Mbcb;
+    ULONG BitMask;
+    ULONG OriginalFirstDirtyPage;
+    BOOLEAN FindType = FALSE;
     BOOLEAN Result = FALSE;
 
     DPRINT("CcAcquireByteRangeForWrite: SharedMap %p, Length %X\n", SharedMap, Length);
@@ -213,11 +225,130 @@ CcAcquireByteRangeForWrite(
 
     KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
 
-    if (SharedMap->Mbcb)
+    Mbcb = SharedMap->Mbcb;
+
+    if (Mbcb && Mbcb->DirtyPages && (Mbcb->PagesToWrite || Length))
     {
-        DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
-        ASSERT(FALSE);
+        DPRINT("CcAcquireByteRangeForWrite: Mbcb %p, OutLength %X\n", Mbcb, Length);
+
+        if (Offset)
+        {
+            CurrentPage = (Offset->QuadPart / PAGE_SIZE);
+            LastPage = ((Offset->QuadPart + Length - 1) / PAGE_SIZE);
+
+            BitmapRange = CcFindBitmapRangeToClean(Mbcb, CurrentPage);
+
+            if (LastPage < (BitmapRange->BasePage + BitmapRange->FirstDirtyPage) ||
+                CurrentPage > (BitmapRange->BasePage + BitmapRange->LastDirtyPage))
+            {
+                goto FindBcb;
+            }
+
+            if (LastPage < (BitmapRange->BasePage + BitmapRange->LastDirtyPage))
+            {
+                pEndBitmap = &BitmapRange->Bitmap[(ULONG)(LastPage - BitmapRange->BasePage) / 32];
+                DPRINT("CcAcquireByteRangeForWrite: pEndBitmap %p\n", pEndBitmap);
+            }
+            else
+            {
+                pEndBitmap = &BitmapRange->Bitmap[BitmapRange->LastDirtyPage / 32];
+                DPRINT("CcAcquireByteRangeForWrite: pEndBitmap %p\n", pEndBitmap);
+            }
+        }
+        else
+        {
+            if (!Length)
+                CurrentPage = Mbcb->ResumeWritePage;
+            else
+                CurrentPage = 0;
+
+            BitmapRange = CcFindBitmapRangeToClean(Mbcb, CurrentPage);
+
+            if (CurrentPage > (BitmapRange->BasePage + BitmapRange->LastDirtyPage))
+                CurrentPage = (BitmapRange->BasePage + BitmapRange->FirstDirtyPage);
+
+            pEndBitmap = &BitmapRange->Bitmap[BitmapRange->LastDirtyPage / 32];
+            DPRINT("CcAcquireByteRangeForWrite: pEndBitmap %p\n", pEndBitmap);
+        }
+
+        if (CurrentPage < (BitmapRange->BasePage + BitmapRange->FirstDirtyPage))
+            CurrentPage = (BitmapRange->BasePage + BitmapRange->FirstDirtyPage);
+
+        pBitmap = &BitmapRange->Bitmap[(ULONG)(CurrentPage - BitmapRange->BasePage) / 32];
+        BitMask = (-1 << (CurrentPage % 32));
+
+        OriginalFirstDirtyPage = (ULONG)(CurrentPage - BitmapRange->BasePage);
+
+        if (!(*pBitmap & BitMask))
+        {
+            BitMask = 0xFFFFFFFF;
+            CurrentPage &= ~0x1F;
+
+            do
+            {
+                pBitmap++;
+                CurrentPage += 32;
+
+                if (pBitmap <= pEndBitmap)
+                    continue;
+
+                if (!Length)
+                {
+                    ASSERT(OriginalFirstDirtyPage >= BitmapRange->FirstDirtyPage);
+                    BitmapRange->LastDirtyPage = (OriginalFirstDirtyPage - 1);
+                }
+
+                do
+                {
+                    BitmapRange = CONTAINING_RECORD(BitmapRange->Links.Flink, BITMAP_RANGE, Links);
+
+                    if (&BitmapRange->Links == &Mbcb->BitmapRanges)
+                    {
+                        if (Length)
+                            goto FindBcb;
+
+                        BitmapRange = CONTAINING_RECORD(BitmapRange->Links.Flink, BITMAP_RANGE, Links);
+                    }
+                }
+                while (!BitmapRange->DirtyPages);
+
+                if ((LastPage < (BitmapRange->BasePage + BitmapRange->FirstDirtyPage)) ||
+                    (CurrentPage > (BitmapRange->BasePage + BitmapRange->LastDirtyPage)))
+                {
+                    goto FindBcb;
+                }
+
+                pBitmap = &BitmapRange->Bitmap[BitmapRange->FirstDirtyPage / 32];
+                pEndBitmap = &BitmapRange->Bitmap[BitmapRange->LastDirtyPage / 32];
+
+                CurrentPage = (BitmapRange->BasePage + (BitmapRange->FirstDirtyPage & ~0x1F));
+                OriginalFirstDirtyPage = BitmapRange->FirstDirtyPage;
+            }
+            while (!(*pBitmap));
+        }
+
+        BitMask = (~BitMask + 1);
+
+        while (!(*pBitmap & BitMask))
+        {
+            BitMask <<= 1;
+            CurrentPage++;
+        }
+
+        if (!Offset)
+            goto Finish;
+
+        if (CurrentPage >= ((Offset->QuadPart + Length + (PAGE_SIZE - 1)) / PAGE_SIZE))
+            goto FindBcb;
+
+        if (IsListEmpty(&SharedMap->BcbList))
+            goto Finish;
+
+        FindType = TRUE;
+        goto FindBcb;
     }
+
+FindBcb:
 
     while (TRUE)
     {
@@ -225,19 +356,16 @@ CcAcquireByteRangeForWrite(
 
         if (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE)
         {
-            PLARGE_INTEGER StartOffset;
-            LARGE_INTEGER EndOffset;
-
             if (Offset)
-                StartOffset = Offset;
+                FileOffset = Offset;
             else
-                StartOffset = (PLARGE_INTEGER)&SharedMap->BeyondLastFlush;
+                FileOffset = (PLARGE_INTEGER)&SharedMap->BeyondLastFlush;
 
-            if (StartOffset->QuadPart)
+            if (FileOffset->QuadPart)
             {
-                EndOffset.QuadPart = StartOffset->QuadPart + PAGE_SIZE;
+                EndFileOffset.QuadPart = (FileOffset->QuadPart + PAGE_SIZE);
 
-                if (!CcFindBcb(SharedMap, StartOffset, &EndOffset, &Bcb))
+                if (!CcFindBcb(SharedMap, FileOffset, &EndFileOffset, &Bcb))
                     Bcb = CONTAINING_RECORD(Bcb->Link.Blink, CC_BCB, Link);
             }
         }
@@ -253,67 +381,97 @@ CcAcquireByteRangeForWrite(
             if (Offset && ((Offset->QuadPart + Length) <= Bcb->FileOffset.QuadPart))
                 break;
 
-            if (*OutLength == 0)
+            if (*OutLength)
             {
                 if (!Bcb->Reserved1[0] ||
-                    (Offset && (Offset->QuadPart >= Bcb->BeyondLastByte.QuadPart)) ||
-                    (!Offset && (Bcb->FileOffset.QuadPart < SharedMap->BeyondLastFlush)))
+                    Bcb->FileOffset.QuadPart != (OutFileOffset->QuadPart + *OutLength) ||
+                    (*OutLength + Bcb->Length) > 0x10000 ||
+                    Bcb->PinCount ||
+                    !(Bcb->FileOffset.QuadPart & (0x2000000 - 1)))
                 {
-                    Bcb = CONTAINING_RECORD(Bcb->Link.Blink, CC_BCB, Link);
-                    continue;
+                    break;
                 }
-
-                DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
-                ASSERT(FALSE);
             }
-            else
+            else if (!Bcb->Reserved1[0] ||
+                     (Offset && Offset->QuadPart >= Bcb->BeyondLastByte.QuadPart) ||
+                     (!Offset && Bcb->FileOffset.QuadPart < SharedMap->BeyondLastFlush))
             {
-                if (!Bcb->Reserved1[0])
-                    break;
-
-                if (Bcb->FileOffset.QuadPart != (OutFileOffset->QuadPart + *OutLength))
-                    break;
-
-                if ((*OutLength + Bcb->Length) > 0x10000)
-                    break;
-
-                if (Bcb->PinCount)
-                    break;
-
-                if (!(Bcb->FileOffset.QuadPart & (CACHE_OVERALL_SIZE - 1)))
-                    break;
+                Bcb = CONTAINING_RECORD(Bcb->Link.Blink, CC_BCB, Link);
+                continue;
+            }
+            else if (FindType && CurrentPage <= (ULONG)(Bcb->FileOffset.QuadPart / PAGE_SIZE))
+            {
+                goto Finish;
             }
 
             Bcb->PinCount++;
 
             KeReleaseInStackQueuedSpinLock(&LockHandle);
 
-            if ((SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) &&
-                !(SharedMap->Flags & 2))
+            if ((SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) && !(SharedMap->Flags & 0x2))
             {
-                DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
-                ASSERT(FALSE);
+                if (!ExAcquireResourceExclusiveLite(&Bcb->BcbResource, (*OutLength == 0)))
+                {
+                    CcUnpinFileDataEx(Bcb, TRUE, 0);
+                    KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+                    break;
+                }
+
+                KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+
+                if (!Bcb->Reserved1[0])
+                {
+                    KeReleaseInStackQueuedSpinLock(&LockHandle);
+                    CcUnpinFileDataEx(Bcb, FALSE, 0);
+                    KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+
+                    if (*OutLength)
+                        break;
+
+                    Bcb = CONTAINING_RECORD(SharedMap->BcbList.Blink, CC_BCB, Link);
+                    continue;
+                }
             }
             else
             {
+                CcUnpinFileDataEx(Bcb, TRUE, 2);
+                KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+            }
+
+            FindType = FALSE;
+
+            if (!(*OutLength))
+                *OutFileOffset = Bcb->FileOffset;
+
+            *OutBcb = Bcb;
+            *OutLength += Bcb->Length;
+
+            if (SharedMap->FlushToLsnRoutine)
+            {
                 DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
                 ASSERT(FALSE);
             }
 
-            DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
-            ASSERT(FALSE);
+            Bcb = CONTAINING_RECORD(Bcb->Link.Blink, CC_BCB, Link);
         }
 
-        if (IsFlag)
+        if (FindType)
         {
-            DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
-            ASSERT(FALSE);
+            ASSERT(*OutLength == 0);
+            goto Finish;
         }
 
         if (*OutLength)
         {
-            DPRINT1("CcAcquireByteRangeForWrite: FIXME\n");
-            ASSERT(FALSE);
+            if (Offset)
+                break;
+
+            SharedMap->BeyondLastFlush = (*OutLength + OutFileOffset->QuadPart);
+
+            if (SharedMap->PagesToWrite > (*OutLength / PAGE_SIZE))
+                SharedMap->PagesToWrite -= (*OutLength / PAGE_SIZE);
+            else
+                SharedMap->PagesToWrite = 0;
 
             break;
         }
@@ -330,6 +488,97 @@ CcAcquireByteRangeForWrite(
         Result = TRUE;
 
     return Result;
+
+Finish:
+
+    while (*pBitmap & BitMask)
+    {
+        if (*OutLength >= 0x10)
+            break;
+
+        if (Offset && ((*OutLength + CurrentPage) >= (ULONG)((Offset->QuadPart + Length + (PAGE_SIZE - 1)) / PAGE_SIZE)))
+            break;
+
+        ASSERT(pBitmap <= (&BitmapRange->Bitmap[BitmapRange->LastDirtyPage / 32]));
+        *pBitmap -= BitMask;
+
+        *OutLength = (*OutLength + 1);
+
+        BitMask <<= 1;
+        if (BitMask)
+            continue;
+
+        BitMask = 1;
+
+        pBitmap++;
+        if (pBitmap > pEndBitmap)
+            break;
+    }
+
+    if (Mbcb->PagesToWrite > *OutLength)
+        Mbcb->PagesToWrite -= *OutLength;
+    else
+        Mbcb->PagesToWrite = 0;
+
+    ASSERT(Mbcb->DirtyPages >= *OutLength);
+
+    Mbcb->DirtyPages -= *OutLength;
+    BitmapRange->DirtyPages -= *OutLength;
+
+    KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueMasterLock]);
+
+    CcTotalDirtyPages -= (*OutLength);
+    SharedMap->DirtyPages -= (*OutLength);
+
+    if (CcPagesYetToWrite > *OutLength)
+        CcPagesYetToWrite -= *OutLength;
+    else
+        CcPagesYetToWrite = 0;
+
+    if (!SharedMap->DirtyPages)
+    {
+        RemoveEntryList(&SharedMap->SharedCacheMapLinks);
+
+        if (KdDebuggerEnabled && !KdDebuggerNotPresent &&
+            !SharedMap->OpenCount &&
+            !SharedMap->DirtyPages)
+        {
+            DPRINT1("CC: SharedMap->OpenCount == 0 && DirtyPages == 0 && going onto CleanList!\n");
+            DbgBreakPoint();
+        }
+
+        InsertTailList(&CcCleanSharedCacheMapList, &SharedMap->SharedCacheMapLinks);
+    }
+
+    KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueMasterLock]);
+
+    if (!BitmapRange->DirtyPages)
+    {
+        BitmapRange->FirstDirtyPage = 0xFFFFFFFF;
+        BitmapRange->LastDirtyPage = 0;
+
+        Mbcb->ResumeWritePage = (BitmapRange->BasePage + PAGE_SIZE);
+    }
+    else
+    {
+        if (BitmapRange->FirstDirtyPage == OriginalFirstDirtyPage)
+            BitmapRange->FirstDirtyPage = ((ULONG)(CurrentPage - BitmapRange->BasePage) + *OutLength);
+
+        if (!Length)
+            Mbcb->ResumeWritePage = (CurrentPage + *OutLength);
+    }
+
+    if (IsListEmpty(&SharedMap->BcbList))
+        SharedMap->PagesToWrite = Mbcb->PagesToWrite;
+
+    KeReleaseInStackQueuedSpinLock(&LockHandle);
+
+    OutFileOffset->QuadPart = ((LONGLONG)CurrentPage * PAGE_SIZE);
+
+    *OutLength *= PAGE_SIZE;
+    *OutBcb = NULL;
+
+    return TRUE;
 }
 
 BOOLEAN
