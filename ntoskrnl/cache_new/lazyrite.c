@@ -674,10 +674,17 @@ CcLazyWriteScan(VOID)
         if (IsGoToNextMap(SharedMap, TargetPages))
         {
             counter++;
-            if (counter >= 20)
+            if (counter >= 20 && !(SharedMap->Flags & (0x20 | 0x800)))
             {
-                DPRINT1("CcLazyWriteScan: FIXME\n");
-                ASSERT(FALSE);
+                SharedMap->DirtyPages++;
+                SharedMap->Flags |= 0x20;
+                KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+                counter = 0;
+
+                OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+                SharedMap->Flags &= ~0x20;
+                SharedMap->DirtyPages--;
             }
 
             goto NextMap;
