@@ -34,6 +34,22 @@ CcCopyReadExceptionFilter(
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
+BOOLEAN
+NTAPI
+CcMapAndCopy(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PVOID Buffer,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ ULONG CopyFlags,
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PLARGE_INTEGER ValidDataLength,
+    _In_ BOOLEAN Wait)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 BOOLEAN
@@ -384,14 +400,144 @@ CcCopyRead(
 
 BOOLEAN
 NTAPI
-CcCopyWrite(IN PFILE_OBJECT FileObject,
-            IN PLARGE_INTEGER FileOffset,
-            IN ULONG Length,
-            IN BOOLEAN Wait,
-            IN PVOID Buffer)
+CcCopyWrite(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ BOOLEAN Wait,
+    _In_ PVOID Buffer)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PSHARED_CACHE_MAP SharedMap;
+    PFSRTL_ADVANCED_FCB_HEADER Fcb;
+    LARGE_INTEGER ValidDataLength;
+    LARGE_INTEGER fileOffset;
+    LARGE_INTEGER size;
+    PVOID StartAddress;
+    PVOID EndAddress;
+    PVOID NeedToZero;
+    PVACB Vacb;
+    ULONG ActivePage;
+    ULONG CopyFlags;
+    ULONG length;
+    BOOLEAN IsVacbLocked;
+    BOOLEAN Result;
+    KIRQL OldIrql;
+
+    DPRINT("CcCopyWrite: %p, [%I64X], %X, %X, %p\n",
+           FileObject, (FileOffset ? FileOffset->QuadPart : 0ll), Length, Wait, Buffer);
+
+    if ((FileObject->Flags & FO_WRITE_THROUGH) && !Wait)
+        return FALSE;
+
+    SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+    fileOffset = *FileOffset;
+
+    CcGetActiveVacb(SharedMap, &Vacb, &ActivePage, &IsVacbLocked);
+
+    if (Vacb)
+    {
+        if (ActivePage == (ULONG)(fileOffset.QuadPart / PAGE_SIZE) &&
+            Length && !(FileObject->Flags & FO_WRITE_THROUGH))
+        {
+            length = (PAGE_SIZE - (fileOffset.LowPart & (PAGE_SIZE - 1)));
+
+            if (length > Length)
+                length = Length;
+
+//            _SEH2_TRY
+{
+            StartAddress = Add2Ptr(Vacb->BaseAddress, (fileOffset.LowPart & (0x40000 - 1)));
+
+            if (SharedMap->NeedToZero)
+            {
+                KeAcquireSpinLock(&SharedMap->ActiveVacbSpinLock, &OldIrql);
+
+                NeedToZero = SharedMap->NeedToZero;
+
+                if (NeedToZero && Vacb == SharedMap->NeedToZeroVacb)
+                {
+                    EndAddress = Add2Ptr(StartAddress, length);
+
+                    if ((ULONG_PTR)EndAddress > (ULONG_PTR)NeedToZero)
+                    {
+                        if ((ULONG_PTR)StartAddress > (ULONG_PTR)NeedToZero)
+                            RtlZeroMemory(NeedToZero, ((ULONG_PTR)StartAddress - (ULONG_PTR)NeedToZero));
+
+                        SharedMap->NeedToZero = EndAddress;
+                    }
+                }
+
+                KeReleaseSpinLock(&SharedMap->ActiveVacbSpinLock, OldIrql);
+            }
+
+            RtlCopyMemory(StartAddress, Buffer, length);
+}
+//            _SEH2_EXCEPT()
+{
+}
+//            _SEH2_END;
+
+            Buffer = Add2Ptr(Buffer, length);
+            fileOffset.QuadPart += length;
+
+            Length -= length;
+
+            if (!Length)
+            {
+                CcSetActiveVacb(SharedMap, &Vacb, ActivePage, TRUE);
+                return TRUE;
+            }
+
+            IsVacbLocked = TRUE;
+        }
+
+        CcFreeActiveVacb(SharedMap, Vacb, ActivePage, IsVacbLocked);
+    }
+    else if (SharedMap->NeedToZero)
+    {
+        CcFreeActiveVacb(SharedMap, NULL, 0, FALSE);
+    }
+
+    CopyFlags = 2;
+
+    if (!(fileOffset.LowPart & (PAGE_SIZE - 1)) && Length >= PAGE_SIZE)
+        CopyFlags |= 1;
+
+    if (!((fileOffset.LowPart + Length) & (PAGE_SIZE - 1)))
+        CopyFlags |= 4;
+
+
+    Fcb = (PFSRTL_ADVANCED_FCB_HEADER)FileObject->FsContext;
+
+    if (Fcb->Flags & FSRTL_FLAG_ADVANCED_HEADER)
+    {
+        ExAcquireFastMutex(Fcb->FastMutex);
+        ValidDataLength.QuadPart = Fcb->ValidDataLength.QuadPart;
+        ExReleaseFastMutex(Fcb->FastMutex);
+    }
+    else
+    {
+        ValidDataLength.QuadPart = Fcb->ValidDataLength.QuadPart;
+    }
+
+    size.HighPart = fileOffset.HighPart;
+    size.LowPart = (fileOffset.LowPart & ~(PAGE_SIZE - 1));
+
+    size.QuadPart = (ValidDataLength.QuadPart - size.QuadPart);
+
+    if (size.QuadPart > 0)
+    {
+        if (size.QuadPart <= PAGE_SIZE)
+            CopyFlags |= 4;
+    }
+    else
+    {
+        CopyFlags |= (1 | 4);
+    }
+
+    Result = CcMapAndCopy(SharedMap, Buffer, &fileOffset, Length, CopyFlags, FileObject, &ValidDataLength, Wait);
+
+    return Result;
 }
 
 VOID
