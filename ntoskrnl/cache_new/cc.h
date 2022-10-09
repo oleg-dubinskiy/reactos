@@ -11,6 +11,8 @@
 #define BCB_MAPPING_GRANULARITY       (2 * VACB_MAPPING_GRANULARITY)
 #define CACHE_OVERALL_SIZE            (32 * _1MB) // VACB_SIZE_OF_FIRST_LEVEL (win)
 
+#define MBCB_BITMAP_RANGE             0x1000000 // 16 Mb (32 * 512 Kb)
+
 #define READAHEAD_DISABLED    0x1
 #define WRITEBEHIND_DISABLED  0x2
 
@@ -252,6 +254,14 @@ VOID
 NTAPI
 CcPostDeferredWrites(
     VOID
+);
+
+VOID
+NTAPI
+CcSetDirtyInMask(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length
 );
 
 /* EOF */

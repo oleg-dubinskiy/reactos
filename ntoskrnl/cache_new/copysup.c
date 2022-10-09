@@ -8,6 +8,7 @@
 
 /* GLOBALS ********************************************************************/
 
+extern SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
 extern LIST_ENTRY CcDeferredWrites;
 extern ULONG CcTotalDirtyPages;
 extern ULONG CcDirtyPageThreshold;
@@ -17,6 +18,7 @@ extern ULONG MmThrottleBottom;
 extern MMPFNLIST MmModifiedPageListHead;
 extern KSPIN_LOCK CcDeferredWriteSpinLock;
 extern LARGE_INTEGER CcIdleDelay;
+extern LAZY_WRITER LazyWriter;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -120,7 +122,151 @@ CcSetDirtyInMask(
     _In_ PLARGE_INTEGER FileOffset,
     _In_ ULONG Length)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    KLOCK_QUEUE_HANDLE LockHandle;
+    PBITMAP_RANGE BitmapRange;
+    LONGLONG CurrentPage;
+    LONGLONG LastPage;
+    PVACB* pVacb;
+    PULONG pBitmap;
+    PULONG Bitmap = NULL;
+    PMBCB Mbcb;
+    ULONG Bit;
+
+    DPRINT1("CcSetDirtyInMask: %p, [%I64X], %X\n", SharedMap, (FileOffset ? FileOffset->QuadPart : 0ll), Length);
+
+    ASSERT((FileOffset->QuadPart / MBCB_BITMAP_RANGE) == ((FileOffset->QuadPart + Length - 1) / MBCB_BITMAP_RANGE));
+
+    CurrentPage = (FileOffset->QuadPart / PAGE_SIZE);
+    LastPage = ((FileOffset->QuadPart + Length - 1) / PAGE_SIZE);
+
+    ASSERT((SharedMap->SectionSize.QuadPart / PAGE_SIZE) > LastPage);
+
+    do
+    {
+        while (TRUE)
+        {
+            if (SharedMap->SectionSize.QuadPart > 0x200000)
+            {
+                DPRINT1("CcSetDirtyInMask: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+
+            Mbcb = SharedMap->Mbcb;
+            if (!Mbcb)
+            {
+                Mbcb = ExAllocatePoolWithTag(NonPagedPool, sizeof(*Mbcb), 'cBcC');
+                if (!Mbcb)
+                {
+                    DPRINT1("CcSetDirtyInMask: Allocate failed!\n");
+                    goto Exit;
+                }
+
+                RtlZeroMemory(Mbcb, sizeof(*Mbcb));
+
+                Mbcb->NodeTypeCode = NODE_TYPE_MBCB;
+
+                InitializeListHead(&Mbcb->BitmapRanges);
+                InsertTailList(&Mbcb->BitmapRanges, &Mbcb->BitmapRange1.Links);
+
+                Mbcb->BitmapRange1.FirstDirtyPage = 0xFFFFFFFF;
+                Mbcb->BitmapRange1.Bitmap = (PULONG)&Mbcb->BitmapRange2;
+
+                SharedMap->Mbcb = Mbcb;
+            }
+
+            if (LastPage < 0x200 || Mbcb->NodeTypeCode == 0x02F9)
+                break;
+
+            ASSERT(Bitmap != NULL);
+
+            if (Mbcb->BitmapRange1.DirtyPages)
+            {
+                DPRINT1("CcSetDirtyInMask: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            DPRINT1("CcSetDirtyInMask: FIXME\n");
+            ASSERT(FALSE);
+
+            KeReleaseInStackQueuedSpinLock(&LockHandle);
+        }
+
+        BitmapRange = CcFindBitmapRangeToDirty(Mbcb, CurrentPage, &Bitmap);
+        if (!BitmapRange)
+            break;
+
+        if (CurrentPage < (BitmapRange->BasePage + BitmapRange->FirstDirtyPage))
+            BitmapRange->FirstDirtyPage = (CurrentPage - BitmapRange->BasePage);
+
+        if (LastPage > (BitmapRange->BasePage + BitmapRange->LastDirtyPage))
+            BitmapRange->LastDirtyPage = (LastPage - BitmapRange->BasePage);
+
+        KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueMasterLock]);
+
+        if (!SharedMap->DirtyPages)
+        {
+            if (!LazyWriter.ScanActive)
+                CcScheduleLazyWriteScan(FALSE);
+
+            RemoveEntryList(&SharedMap->SharedCacheMapLinks);
+            InsertTailList(&CcDirtySharedCacheMapList.SharedCacheMapLinks, &SharedMap->SharedCacheMapLinks);
+
+            Mbcb->ResumeWritePage = CurrentPage;
+        }
+
+        pBitmap = &BitmapRange->Bitmap[(ULONG)(CurrentPage - BitmapRange->BasePage) / 32];
+        Bit = 1 << (CurrentPage & 0x1F);
+
+        for (; CurrentPage <= LastPage; CurrentPage++)
+        {
+            if (!(*pBitmap & Bit))
+            {
+                CcTotalDirtyPages++;
+                Mbcb->DirtyPages++;
+                BitmapRange->DirtyPages++;
+                SharedMap->DirtyPages++;
+
+                *pBitmap |= Bit;
+            }
+
+            Bit <<= 1;
+
+            if (!Bit)
+            {
+                Bit = 1;
+                pBitmap++;
+            }
+        }
+
+        LastPage = (FileOffset->QuadPart + Length);
+
+        if (SharedMap->ValidDataGoal.QuadPart < LastPage)
+            SharedMap->ValidDataGoal.QuadPart = LastPage;
+
+        KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueMasterLock]);
+    }
+    while (!Bit);
+
+Exit:
+
+    if (Bitmap)
+    {
+        pVacb = (PVACB *)Bitmap;
+
+        DPRINT1("CcSetDirtyInMask: %p\n", Bitmap);
+
+        KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+
+        DPRINT1("CcSetDirtyInMask: FIXME CcVacbLevelFreeList\n");
+        ASSERT(FALSE);
+        *pVacb = 0;
+
+        KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+    }
+
+    KeReleaseInStackQueuedSpinLock(&LockHandle);
 }
 
 BOOLEAN
