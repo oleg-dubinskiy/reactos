@@ -161,6 +161,36 @@ CcAllocateInitializeBcb(
     return Bcb;
 }
 
+PBITMAP_RANGE
+NTAPI
+CcFindBitmapRangeToClean(
+    _In_ PMBCB Mbcb,
+    _In_ LONGLONG DirtyPage)
+{
+    PBITMAP_RANGE CurrentRange;
+
+    DPRINT("CcFindBitmapRangeToClean: Mbcb %p, DirtyPage %I64X\n", Mbcb, DirtyPage);
+
+    CurrentRange = CONTAINING_RECORD(Mbcb->BitmapRanges.Flink, BITMAP_RANGE, Links);
+
+    do
+    {
+        if (&CurrentRange->Links == &Mbcb->BitmapRanges)
+        {
+            ASSERT(DirtyPage != 0);
+            DirtyPage = 0;
+        }
+        else if (DirtyPage <= (CurrentRange->BasePage + CurrentRange->LastDirtyPage))
+        {
+            if (CurrentRange->DirtyPages)
+                return CurrentRange;
+        }
+
+        CurrentRange = CONTAINING_RECORD(CurrentRange->Links.Flink, BITMAP_RANGE, Links);
+    }
+    while (TRUE);
+}
+
 BOOLEAN
 NTAPI
 CcAcquireByteRangeForWrite(
