@@ -1000,12 +1000,66 @@ Exit:
 
 LARGE_INTEGER
 NTAPI
-CcGetFlushedValidData(IN PSECTION_OBJECT_POINTERS SectionObjectPointer,
-                      IN BOOLEAN CcInternalCaller)
+CcGetFlushedValidData(
+    _In_ PSECTION_OBJECT_POINTERS SectionObjectPointers,
+    _In_ BOOLEAN CcInternalCaller)
 {
-    LARGE_INTEGER Result = {{0}};
-    UNIMPLEMENTED_DBGBREAK();
-    return Result;
+    LARGE_INTEGER ValidDataLength;
+    PSHARED_CACHE_MAP SharedMap;
+    PBITMAP_RANGE BitmapRange;
+    PCC_BCB Bcb;
+    PMBCB Mbcb;
+
+    DPRINT("CcGetFlushedValidData: %p, %X\n", SectionObjectPointers, CcInternalCaller);
+
+    if (CcInternalCaller)
+    {
+        SharedMap = SectionObjectPointers->SharedCacheMap;
+    }
+    else
+    {
+        DPRINT1("CcGetFlushedValidData: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    ASSERT(SharedMap != NULL);
+
+    ValidDataLength.QuadPart = SharedMap->ValidDataGoal.QuadPart;
+
+    if (SharedMap->DirtyPages)
+    {
+        Mbcb = SharedMap->Mbcb;
+
+        if (Mbcb && Mbcb->DirtyPages)
+        {
+            BitmapRange = CcFindBitmapRangeToClean(Mbcb, 0);
+            ASSERT(BitmapRange->FirstDirtyPage != MAXULONG);
+
+            ValidDataLength.QuadPart = ((BitmapRange->BasePage + BitmapRange->FirstDirtyPage) * PAGE_SIZE);
+        }
+
+        for (Bcb = CONTAINING_RECORD(SharedMap->BcbList.Flink, CC_BCB, Link);
+             &Bcb->Link != &SharedMap->BcbList;
+             Bcb = CONTAINING_RECORD(Bcb->Link.Flink, CC_BCB, Link))
+        {
+            if (Bcb->NodeTypeCode == NODE_TYPE_BCB && Bcb->Reserved1[0])
+                break;
+        }
+
+        if (&Bcb->Link != &SharedMap->BcbList)
+        {
+            if (ValidDataLength.QuadPart > Bcb->FileOffset.QuadPart)
+                ValidDataLength.QuadPart = Bcb->FileOffset.QuadPart;
+        }
+    }
+
+    if (CcInternalCaller)
+        return ValidDataLength;
+
+    DPRINT1("CcGetFlushedValidData: FIXME\n");
+    ASSERT(FALSE);
+
+    return ValidDataLength;
 }
 
 PVOID
