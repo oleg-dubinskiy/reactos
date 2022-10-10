@@ -379,6 +379,69 @@ CcPostDeferredWrites(VOID)
     UNIMPLEMENTED_DBGBREAK();
 }
 
+NTSTATUS
+NTAPI
+CcSetValidData(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PLARGE_INTEGER FileSize)
+{
+    FILE_END_OF_FILE_INFORMATION FileInfo;
+    PDEVICE_OBJECT DeviceObject;
+    PIO_STACK_LOCATION IoStack;
+    IO_STATUS_BLOCK IoStatus;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    DPRINT("CcSetValidData: FileObject %p, %I64X\n", FileObject, (FileSize ? FileSize->QuadPart : 0ll));
+
+    FileInfo.EndOfFile.QuadPart = FileSize->QuadPart;
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    DeviceObject = IoGetRelatedDeviceObject(FileObject);
+
+    Irp = IoAllocateIrp(DeviceObject->StackSize, 0);
+    if (!Irp)
+    {
+        DPRINT1("CcSetValidData: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Irp->AssociatedIrp.SystemBuffer = &FileInfo;
+
+    Irp->UserIosb = &IoStatus;
+    Irp->UserEvent = &Event;
+
+    Irp->Flags = (IRP_SYNCHRONOUS_PAGING_IO | IRP_PAGING_IO);
+    Irp->RequestorMode = KernelMode;
+
+    Irp->Tail.Overlay.Thread = PsGetCurrentThread();
+    Irp->Tail.Overlay.OriginalFileObject = FileObject;
+
+    IoStack = IoGetNextIrpStackLocation(Irp);
+    IoStack->MajorFunction = IRP_MJ_SET_INFORMATION;
+    IoStack->FileObject = FileObject;
+    IoStack->DeviceObject = DeviceObject;
+
+    IoStack->Parameters.SetFile.Length = sizeof(FILE_END_OF_FILE_INFORMATION);
+    IoStack->Parameters.SetFile.FileInformationClass = FileEndOfFileInformation;
+    IoStack->Parameters.SetFile.FileObject = NULL;
+    IoStack->Parameters.SetFile.AdvanceOnly = 1;
+
+    Status = IoCallDriver(DeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("CcSetValidData: Status %X\n", Status);
+        IoStatus.Status = Status;
+    }
+
+    return IoStatus.Status;
+}
+
 VOID
 FASTCALL
 CcWriteBehind(
