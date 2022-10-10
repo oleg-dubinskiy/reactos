@@ -147,8 +147,12 @@ CcSetDirtyInMask(
         {
             if (SharedMap->SectionSize.QuadPart > 0x200000)
             {
-                DPRINT1("CcSetDirtyInMask: FIXME\n");
-                ASSERT(FALSE);
+                if (!CcPrefillVacbLevelZone(1, &LockHandle, FALSE, FALSE, NULL))
+                    return;
+
+                Bitmap = (PULONG)CcAllocateVacbLevel(FALSE);
+
+                KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle.OldIrql);
             }
 
             KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
