@@ -414,6 +414,28 @@ CcAllocateVacbLevel(
     return ReturnEntry;
 }
 
+VOID
+NTAPI
+CcDeallocateVacbLevel(
+    _In_ PVOID* Entry,
+    _In_ BOOLEAN WithBcbs)
+{
+    if (WithBcbs)
+    {
+        *Entry = CcVacbLevelWithBcbsFreeList;
+        CcVacbLevelWithBcbsFreeList = Entry;
+
+        CcVacbLevelWithBcbsEntries++;
+    }
+    else
+    {
+        *Entry = CcVacbLevelFreeList;
+        CcVacbLevelFreeList = Entry;
+
+        CcVacbLevelEntries++;
+    }
+}
+
 BOOLEAN
 NTAPI
 CcPrefillVacbLevelZone(

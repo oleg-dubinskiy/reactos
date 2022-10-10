@@ -293,4 +293,11 @@ CcAllocateVacbLevel(
     _In_ BOOLEAN WithBcbs
 );
 
+VOID
+NTAPI
+CcDeallocateVacbLevel(
+    _In_ PVOID* Entry,
+    _In_ BOOLEAN WithBcbs
+);
+
 /* EOF */
