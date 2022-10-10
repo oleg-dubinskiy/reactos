@@ -4,6 +4,7 @@
 #include <ntoskrnl.h>
 #define NDEBUG
 #include <debug.h>
+#include "miarm.h"
 
 /* GLOBALS ********************************************************************/
 
@@ -147,8 +148,87 @@ MmSetAddressRangeModified(
     _In_ PVOID Address,
     _In_ SIZE_T Length)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PMMPFN Pfn;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    MMPTE TempPte;
+    ULONG Number = 0;
+    KIRQL OldIrql;
+    BOOLEAN Result = FALSE;
+
+    DPRINT("MmSetAddressRangeModified: Address %p, Length %p\n", Address, Length);
+
+    Pte = MiAddressToPte(Address);
+    LastPte = MiAddressToPte(Add2Ptr(Address, (Length - 1)));
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    do
+    {
+        TempPte.u.Long = Pte->u.Long;
+
+        if (!TempPte.u.Hard.Valid)
+            goto Next;
+
+        Pfn = MI_PFN_ELEMENT(TempPte.u.Hard.PageFrameNumber);
+
+        ASSERT(Pfn->u3.e1.Rom == 0);
+        Pfn->u3.e2.ShortFlags |= 1;
+
+        if (!Pfn->OriginalPte.u.Soft.Prototype &&
+            !Pfn->u3.e1.WriteInProgress)
+        {
+            DPRINT1("MmSetAddressRangeModified: FIXME MiReleasePageFileSpace()\n");
+            ASSERT(FALSE);
+        }
+
+        if (MI_IS_PAGE_DIRTY(&TempPte))
+            Result = TRUE;
+
+        MI_MAKE_CLEAN_PAGE(&TempPte);
+
+        ASSERT(Pte->u.Hard.Valid == 1);
+        ASSERT(TempPte.u.Hard.Valid == 1);
+        ASSERT(Pte->u.Hard.PageFrameNumber == TempPte.u.Hard.PageFrameNumber);
+
+        Pte->u.Long = TempPte.u.Long;
+
+        if (Number != 0x21)
+        {
+            Number++;
+            //FIXME: FlushArray
+        }
+Next:
+        Address = Add2Ptr(Address, PAGE_SIZE);
+        Pte++;
+    }
+    while (Pte <= LastPte);
+
+    if (Number == 0)
+    {
+        ;
+    }
+    else if (Number == 1)
+    {
+        /* Flush the TLB */
+        //FIXME: Use KeFlushSingleTb() instead
+        KeFlushEntireTb(TRUE, TRUE);
+    }
+    else if (Number == 0x21)
+    {
+        //FIXME: MiFlushType
+        //FIXME: KxFlushEntireTb();
+        KeFlushEntireTb(TRUE, TRUE);
+    }
+    else
+    {
+        //FIXME: KeFlushMultipleTb(Number, FlushArray, 1);
+        KeFlushEntireTb(TRUE, TRUE);
+    }
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    return Result;
 }
 
 NTSTATUS
