@@ -657,6 +657,73 @@ CcGetVirtualAddress(
     return (PVOID)((ULONG_PTR)Vacb->BaseAddress + VacbOffset);
 }
 
+PVOID
+NTAPI
+CcGetVirtualAddressIfMapped(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LONGLONG FileOffset,
+    _Out_ PVACB* OutVacb,
+    _Out_ ULONG* OutLength)
+{
+    PVOID Address = NULL;
+    PVACB Vacb;
+    ULONG VacbOffset;
+    KIRQL OldIrql;
+
+    DPRINT("CcGetVirtualAddressIfMapped: SharedMap %p, Offset %I64X\n", SharedMap, FileOffset);
+
+    ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+
+    /* Calculate the offset in VACB */
+    VacbOffset = (FileOffset & (VACB_MAPPING_GRANULARITY - 1));
+
+    *OutLength = (VACB_MAPPING_GRANULARITY - VacbOffset);
+
+    /* Lock */
+    ExAcquirePushLockExclusive((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+
+    ASSERT(FileOffset <= SharedMap->SectionSize.QuadPart);
+
+    /* Get pointer to Vacb */
+    if ((SharedMap->SectionSize.QuadPart <= CACHE_OVERALL_SIZE))
+    {
+        /* Size of file < 32 MB*/
+        Vacb = SharedMap->Vacbs[(ULONG)FileOffset >> VACB_OFFSET_SHIFT];
+    }
+    else
+    {
+        /* This file is large (more than 32 MB) */
+        DPRINT1("CcGetVirtualAddress: FIXME CcGetVacbLargeOffset\n");
+        ASSERT(FALSE); Vacb = NULL;
+    }
+
+    *OutVacb = Vacb;
+
+    if (Vacb)
+    {
+        /* Increment counters */
+        if (!(Vacb->Overlay.ActiveCount))
+            SharedMap->VacbActiveCount++;
+
+        Vacb->Overlay.ActiveCount++;
+
+        /* Updating lists */
+        RemoveEntryList(&Vacb->LruList);
+        InsertTailList(&CcVacbLru, &Vacb->LruList);
+
+        /* Add an offset to the base */
+        Address = Add2Ptr(Vacb->BaseAddress, VacbOffset);
+    }
+
+    /* Unlock */
+    KeReleaseQueuedSpinLock(LockQueueVacbLock, OldIrql);
+    ExReleasePushLockExclusive((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
+
+    /* Return the virtual address */
+    return Address;
+}
+
 VOID
 NTAPI
 CcFreeVirtualAddress(

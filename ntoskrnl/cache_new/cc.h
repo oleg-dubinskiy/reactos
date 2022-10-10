@@ -107,6 +107,15 @@ CcGetVirtualAddress(
     _Out_ ULONG* OutReceivedLength
 );
 
+PVOID
+NTAPI
+CcGetVirtualAddressIfMapped(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LONGLONG FileOffset,
+    _Out_ PVACB* OutVacb,
+    _Out_ ULONG* OutLength
+);
+
 VOID
 NTAPI
 CcFreeVirtualAddress(
