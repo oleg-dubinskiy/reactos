@@ -4235,8 +4235,40 @@ MmFlushSection(
 
     if (FileOffset)
     {
-        DPRINT1("MmFlushSection: FIXME\n");
-        ASSERT(FALSE);
+        PteOffset = (UINT64)(FileOffset->QuadPart / PAGE_SIZE);
+
+        while (PteOffset >= (UINT64)Subsection->PtesInSubsection)
+        {
+            PteOffset -= Subsection->PtesInSubsection;
+
+            if (!Subsection->NextSubsection)
+            {
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                return STATUS_SUCCESS;
+            }
+
+            Subsection = Subsection->NextSubsection;
+        }
+
+        ASSERT(PteOffset < (UINT64)Subsection->PtesInSubsection);
+
+        LastPteOffset = (PteOffset + (((Length + BYTE_OFFSET(FileOffset->LowPart)) - 1) / PAGE_SIZE));
+        LastSubsection = Subsection;
+
+        while (LastPteOffset >= (UINT64)LastSubsection->PtesInSubsection)
+        {
+            LastPteOffset -= LastSubsection->PtesInSubsection;
+
+            if (!LastSubsection->NextSubsection)
+            {
+                LastPteOffset = (LastSubsection->PtesInSubsection - 1);
+                break;
+            }
+
+            LastSubsection = LastSubsection->NextSubsection;
+        }
+
+        ASSERT(LastPteOffset < LastSubsection->PtesInSubsection);
     }
     else
     {
@@ -4308,8 +4340,7 @@ MmFlushSection(
     }
     else
     {
-        DPRINT1("MmFlushSection: FIXME\n");
-        ASSERT(FALSE);
+        Status = MiFlushSectionInternal(SectionProto, LastProto, Subsection, LastSubsection, Flags, OutIoStatus);
     }
 
     Thread->ForwardClusterOnly = OldForwardClusterOnly;
