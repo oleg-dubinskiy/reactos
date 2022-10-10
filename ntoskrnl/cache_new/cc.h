@@ -287,4 +287,10 @@ CcPrefillVacbLevelZone(
     _In_ PSHARED_CACHE_MAP SharedMap
 );
 
+PVOID*
+NTAPI
+CcAllocateVacbLevel(
+    _In_ BOOLEAN WithBcbs
+);
+
 /* EOF */

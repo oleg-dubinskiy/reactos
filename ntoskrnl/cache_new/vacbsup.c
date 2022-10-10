@@ -384,6 +384,36 @@ CcUnmapVacbArray(
     return TRUE;
 }
 
+PVOID*
+NTAPI
+CcAllocateVacbLevel(
+    _In_ BOOLEAN WithBcbs)
+{
+    PVOID* ReturnEntry;
+
+    if (WithBcbs)
+    {
+        ReturnEntry = CcVacbLevelWithBcbsFreeList;
+
+        CcVacbLevelWithBcbsFreeList = CcVacbLevelWithBcbsFreeList[0];
+        CcVacbLevelWithBcbsEntries--;
+    }
+    else
+    {
+        ReturnEntry = CcVacbLevelFreeList;
+
+        CcVacbLevelFreeList = CcVacbLevelFreeList[0];
+        CcVacbLevelEntries--;
+    }
+
+    ReturnEntry[0] = NULL;
+
+    ASSERT(RtlCompareMemory(ReturnEntry, (ReturnEntry + 1),
+           (VACB_LEVEL_BLOCK_SIZE - sizeof(PVACB))) == (VACB_LEVEL_BLOCK_SIZE - sizeof(PVACB)));
+
+    return ReturnEntry;
+}
+
 BOOLEAN
 NTAPI
 CcPrefillVacbLevelZone(
