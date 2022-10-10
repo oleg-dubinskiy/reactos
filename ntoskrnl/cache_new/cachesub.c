@@ -18,6 +18,7 @@ ULONG CcFastReadResourceMiss;
 ULONG CcFastReadWait;
 ULONG CcLazyWriteIos;
 ULONG CcLazyWritePages;
+ULONG CcLazyWriteHotSpots;
 ULONG CcMapDataWait;
 ULONG CcMapDataNoWait;
 ULONG CcPinMappedDataCount;
@@ -719,7 +720,11 @@ CcFlushCache(
     PSHARED_CACHE_MAP SharedMap;
     IO_STATUS_BLOCK ioStatus;
     LARGE_INTEGER fileSize;
+    LARGE_INTEGER TickCount;
+    LARGE_INTEGER EndTickCount;
     PFSRTL_COMMON_FCB_HEADER FcbHeader;
+    PVACB Vacb = NULL;
+    ULONG TotalFlushed = 0;
     ULONG Flags;
     ULONG Size;
     BOOLEAN IsSaveStatus = FALSE;
@@ -834,12 +839,24 @@ CcFlushCache(
     else
         Size = 1;
 
+    if (IsLazyWrite)
+    {
+        KeQueryTickCount(&EndTickCount);
+        EndTickCount.QuadPart += CcIdleDelayTick;
+    }
+
     while (TRUE)
     {
         PLARGE_INTEGER offset;
-        PVOID Param6;
-        LARGE_INTEGER fileOffset;
+        PVOID Address;
+        PVOID Bcb;
+        LARGE_INTEGER OffsetForFlush;
+        ULONG MappedLength;
+        ULONG HotSpot;
         ULONG length;
+        ULONG size;
+        BOOLEAN IsHotSpot;
+        BOOLEAN IsSetDirty;
 
         if (!SharedMap->PagesToWrite && IsLazyWrite && !PendingTeardown)
             break;
@@ -857,11 +874,103 @@ CcFlushCache(
         else
             offset = NULL;
 
-        if (!CcAcquireByteRangeForWrite(SharedMap, offset, length, &fileOffset, &Size, &Param6))
+        if (!CcAcquireByteRangeForWrite(SharedMap, offset, length, &OffsetForFlush, &Size, &Bcb))
             break;
 
-        DPRINT1("CcFlushCache: FIXME\n");
-        ASSERT(FALSE);
+        size = Size;
+        HotSpot = 0;
+
+        do
+        {
+            Address = CcGetVirtualAddressIfMapped(SharedMap,
+                                                  (OffsetForFlush.QuadPart + Size - size),
+                                                  &Vacb,
+                                                  &MappedLength);
+            if (Address)
+            {
+                if (MappedLength > size)
+                    MappedLength = size;
+
+                IsHotSpot = ((MmSetAddressRangeModified(Address, MappedLength) || HotSpot) &&
+                             SharedMap->ValidDataLength.QuadPart > (OffsetForFlush.QuadPart + Size) &&
+                             (SharedMap->LazyWritePassCount & 0xF) &&
+                             IsLazyWrite &&
+                             !PendingTeardown &&
+                             !(SharedMap->Flags & 0x200));
+
+                HotSpot = (ULONG)IsHotSpot;
+
+                CcFreeVirtualAddress(Vacb);
+            }
+            else if (MappedLength > size)
+            {
+                MappedLength = size;
+            }
+
+            size -= MappedLength;
+        }
+        while (size);
+
+        CcLazyWriteHotSpots += HotSpot;
+
+        if (!HotSpot)
+        {
+            MmFlushSection(SharedMap->FileObject->SectionObjectPointer, &OffsetForFlush, Size, OutIoStatus, Flags);
+
+            if (!NT_SUCCESS(OutIoStatus->Status))
+            {
+                DPRINT1("CcFlushCache: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                if (!(SharedMap->Flags & 0x400))
+                {
+                    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+                    SharedMap->Flags |= 0x400;
+                    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+                }
+
+                if (IsLazyWrite)
+                {
+                    CcLazyWriteIos++;
+                    CcLazyWritePages += (Size + (PAGE_SIZE - 1)) / PAGE_SIZE;
+                }
+
+                IsSetDirty = FALSE;
+            }
+        }
+        else
+        {
+            IsSetDirty = TRUE;
+        }
+
+        CcReleaseByteRangeFromWrite(SharedMap, &OffsetForFlush, Size, Bcb, IsSetDirty);
+
+        TotalFlushed += Size;
+
+        if (TotalFlushed >= 0x40000 && !IsListEmpty(&CcDeferredWrites))
+        {
+            CcPostDeferredWrites();
+            TotalFlushed = 0;
+        }
+
+        if (IsLazyWrite && !PendingTeardown)
+        {
+            KeQueryTickCount(&TickCount);
+
+            if (TickCount.QuadPart > EndTickCount.QuadPart)
+            {
+                OutIoStatus->Information = 0x8A5E;
+                break;
+            }
+        }
+
+        if (FileOffset)
+        {
+            DPRINT1("CcFlushCache: FIXME\n");
+            ASSERT(FALSE);
+        }
     }
 
     OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
@@ -872,8 +981,13 @@ CcFlushCache(
         !(SharedMap->Flags & SHARE_FL_WRITE_QUEUED) &&
         !SharedMap->DirtyPages)
     {
-        DPRINT1("CcFlushCache: FIXME\n");
-        ASSERT(FALSE);
+        RemoveEntryList(&SharedMap->SharedCacheMapLinks);
+        InsertTailList(&CcDirtySharedCacheMapList.SharedCacheMapLinks, &SharedMap->SharedCacheMapLinks);
+
+        LazyWriter.OtherWork = TRUE;
+
+        if (!LazyWriter.ScanActive)
+            CcScheduleLazyWriteScan(FALSE);
     }
 
     KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
