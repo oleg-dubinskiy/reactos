@@ -12,6 +12,10 @@ PVACB CcVacbs;
 PVACB CcBeyondVacbs;
 LIST_ENTRY CcVacbLru;
 LIST_ENTRY CcVacbFreeList;
+PVOID* CcVacbLevelFreeList = NULL;
+ULONG CcVacbLevelEntries = 0;
+PVOID* CcVacbLevelWithBcbsFreeList = NULL;
+ULONG CcVacbLevelWithBcbsEntries = 0;
 
 extern SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
 extern ULONG CcTotalDirtyPages;
@@ -376,6 +380,107 @@ CcUnmapVacbArray(
     ExReleasePushLockShared((PEX_PUSH_LOCK)&SharedMap->VacbPushLock);
 
     DPRINT("CcUnmapVacbArray: FIXME CcDrainVacbLevelZone()\n");
+
+    return TRUE;
+}
+
+BOOLEAN
+NTAPI
+CcPrefillVacbLevelZone(
+    _In_ ULONG ToLevel,
+    _Out_ PKLOCK_QUEUE_HANDLE OutLockHandle,
+    _In_ BOOLEAN IsModifiedNoWrite,
+    _In_ BOOLEAN LockMode,
+    _In_ PSHARED_CACHE_MAP SharedMap)
+{
+    PVOID* NewLevelEntry;
+    ULONG Size;
+
+    DPRINT1("CcPrefillVacbLevelZone: ToLevel %X (%X)\n", ToLevel, IsModifiedNoWrite);
+
+    if (LockMode)
+    {
+        ASSERT(SharedMap != NULL);
+        KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, OutLockHandle);
+        KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+    }
+    else
+    {
+        OutLockHandle->OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+    }
+
+    while (ToLevel > CcVacbLevelEntries ||
+           (IsModifiedNoWrite && !CcVacbLevelWithBcbsFreeList))
+    {
+        if (LockMode)
+        {
+            KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+            KeReleaseInStackQueuedSpinLock(OutLockHandle);
+        }
+        else
+        {
+            KeReleaseQueuedSpinLock(LockQueueVacbLock, OutLockHandle->OldIrql);
+        }
+
+        if (IsModifiedNoWrite && !CcVacbLevelWithBcbsFreeList)
+        {
+            Size = ((2 * (0x80 * sizeof(PVOID))) + 8);
+
+            NewLevelEntry = ExAllocatePoolWithTag(NonPagedPool, Size, 'lVcC');
+            if (!NewLevelEntry)
+            {
+                DPRINT1("CcPrefillVacbLevelZone: Allocate failed\n");
+                return FALSE;
+            }
+
+            RtlZeroMemory(NewLevelEntry, Size);
+
+            if (LockMode)
+            {
+                ASSERT(SharedMap != NULL);
+                KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, OutLockHandle);
+                KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+            }
+            else
+            {
+                OutLockHandle->OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+            }
+
+            NewLevelEntry[0] = CcVacbLevelWithBcbsFreeList;
+            CcVacbLevelWithBcbsFreeList = NewLevelEntry;
+
+            CcVacbLevelWithBcbsEntries++;
+        }
+        else
+        {
+            Size = ((0x80 * sizeof(PVOID)) + 8);
+
+            NewLevelEntry = ExAllocatePoolWithTag(NonPagedPool, Size, 'lVcC');
+            if (!NewLevelEntry)
+            {
+                DPRINT1("CcPrefillVacbLevelZone: Allocate failed\n");
+                return FALSE;
+            }
+
+            RtlZeroMemory(NewLevelEntry, Size);
+
+            if (LockMode)
+            {
+                ASSERT(SharedMap != NULL);
+                KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, OutLockHandle);
+                KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+            }
+            else
+            {
+                OutLockHandle->OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+            }
+
+            NewLevelEntry[0] = CcVacbLevelFreeList;
+            CcVacbLevelFreeList = NewLevelEntry;
+
+            CcVacbLevelEntries++;
+        }
+    }
 
     return TRUE;
 }

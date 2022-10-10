@@ -11,6 +11,10 @@
 #define BCB_MAPPING_GRANULARITY       (2 * VACB_MAPPING_GRANULARITY)
 #define CACHE_OVERALL_SIZE            (32 * _1MB) // VACB_SIZE_OF_FIRST_LEVEL (win)
 
+#define VACB_NUMBER_OF_LEVELS         7
+#define VACB_LAST_INDEX_FOR_LEVEL     (0x80 - 1)
+#define VACB_LEVEL_BLOCK_SIZE         ((VACB_LAST_INDEX_FOR_LEVEL + 1) * sizeof(PVOID))
+
 #define MBCB_BITMAP_RANGE             0x1000000 // 16 Mb (32 * 512 Kb)
 
 #define READAHEAD_DISABLED    0x1
@@ -271,6 +275,16 @@ CcSetDirtyInMask(
     _In_ PSHARED_CACHE_MAP SharedMap,
     _In_ PLARGE_INTEGER FileOffset,
     _In_ ULONG Length
+);
+
+BOOLEAN
+NTAPI
+CcPrefillVacbLevelZone(
+    _In_ ULONG ToLevel,
+    _Out_ PKLOCK_QUEUE_HANDLE OutLockHandle,
+    _In_ BOOLEAN IsModifiedNoWrite,
+    _In_ BOOLEAN LockMode,
+    _In_ PSHARED_CACHE_MAP SharedMap
 );
 
 /* EOF */
