@@ -651,6 +651,61 @@ Exit:
     return Result;
 }
 
+VOID
+NTAPI
+CcReleaseByteRangeFromWrite(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ PCC_BCB FirstBcb,
+    _In_ BOOLEAN IsSetDirty)
+{
+    LARGE_INTEGER CurrentOffset;
+    PCC_BCB CurrentBcb;
+    PCC_BCB NextBcb;
+    BOOLEAN IsNoWrite;
+
+    DPRINT("CcReleaseByteRangeFromWrite: FirstBcb %p, IsSetDirty %X\n", FirstBcb, IsSetDirty);
+
+    if (!FirstBcb)
+    {
+        ASSERT(Length != 0);
+
+        if (IsSetDirty)
+            CcSetDirtyInMask(SharedMap, FileOffset, Length);
+
+        return;
+    }
+
+    ASSERT(FirstBcb->NodeTypeCode == NODE_TYPE_BCB);
+
+    CurrentBcb = FirstBcb;
+
+    do
+    {
+        NextBcb = CONTAINING_RECORD(CurrentBcb->Link.Flink, CC_BCB, Link);
+
+        if (CurrentBcb->NodeTypeCode == NODE_TYPE_BCB)
+        {
+            CurrentOffset = CurrentBcb->FileOffset;
+
+            if (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE)
+            {
+                IsNoWrite = ((SharedMap->Flags & 0x2) != 0);
+                CcUnpinFileDataEx(CurrentBcb, IsNoWrite, 2);
+            }
+
+            if (IsSetDirty)
+                CcSetDirtyPinnedData(CurrentBcb, NULL);
+
+            CcUnpinFileDataEx(CurrentBcb, TRUE, 0);
+        }
+
+        CurrentBcb = NextBcb;
+    }
+    while (FileOffset->QuadPart != CurrentOffset.QuadPart);
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 VOID
