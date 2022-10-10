@@ -449,6 +449,7 @@ CcWriteBehind(
     _In_ IO_STATUS_BLOCK* OutIoStatus)
 {
     KLOCK_QUEUE_HANDLE LockHandle;
+    LARGE_INTEGER validDataLength;
     PVACB ActiveVacb = NULL;
     ULONG ActivePage;
     ULONG TargetPages;
@@ -541,8 +542,22 @@ CcWriteBehind(
 
     if (SharedMap->Flags & (0x400 | 0x8000))
     {
-        DPRINT1("CcWriteBehind: FIXME\n");
-        ASSERT(FALSE);
+        if (SharedMap->ValidDataLength.QuadPart <= SharedMap->ValidDataGoal.QuadPart &&
+            SharedMap->ValidDataLength.QuadPart != 0x7FFFFFFFFFFFFFFF &&
+            SharedMap->FileSize.QuadPart)
+        {
+            validDataLength = CcGetFlushedValidData(SharedMap->FileObject->SectionObjectPointer, TRUE);
+
+            if (validDataLength.QuadPart >= SharedMap->ValidDataLength.QuadPart)
+            {
+                KeReleaseInStackQueuedSpinLock(&LockHandle);
+                Status = CcSetValidData(SharedMap->FileObject, &validDataLength);
+                KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+
+                if (NT_SUCCESS(Status))
+                    SharedMap->ValidDataLength = validDataLength;
+            }
+        }
     }
 
     KeReleaseInStackQueuedSpinLock(&LockHandle);
