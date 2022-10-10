@@ -73,8 +73,10 @@ CcFindBcb(
                 break;
             }
 
-            DPRINT1("CcFindBcb: FIXME\n");
-            ASSERT(FALSE);
+            if (EndFileOffset->LowPart >= Bcb->FileOffset.LowPart)
+                EndFileOffset->LowPart = Bcb->FileOffset.LowPart;
+
+            Bcb = CONTAINING_RECORD(Bcb->Link.Flink, CC_BCB, Link);
         }
     }
     else
