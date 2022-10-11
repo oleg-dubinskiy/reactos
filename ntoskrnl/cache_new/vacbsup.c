@@ -16,12 +16,50 @@ PVOID* CcVacbLevelFreeList = NULL;
 ULONG CcVacbLevelEntries = 0;
 PVOID* CcVacbLevelWithBcbsFreeList = NULL;
 ULONG CcVacbLevelWithBcbsEntries = 0;
+ULONG CcMaxVacbLevelsSeen = 1;
 
 extern SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
 extern ULONG CcTotalDirtyPages;
 extern LAZY_WRITER LazyWriter;
 
 /* FUNCTIONS ******************************************************************/
+
+VOID
+NTAPI
+CcDrainVacbLevelZone(VOID)
+{
+    PVOID VacbArray;
+    KIRQL OldIrql;
+
+    while (CcVacbLevelEntries > (4 * CcMaxVacbLevelsSeen) ||
+           CcVacbLevelWithBcbsEntries > 2)
+    {
+        VacbArray = 0;
+
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+
+        if (CcVacbLevelEntries <= (4 * CcMaxVacbLevelsSeen))
+        {
+            if (CcVacbLevelWithBcbsEntries > 2)
+            {
+                VacbArray = CcVacbLevelWithBcbsFreeList;
+                CcVacbLevelWithBcbsFreeList = *CcVacbLevelWithBcbsFreeList;
+                CcVacbLevelWithBcbsEntries--;
+            }
+        }
+        else
+        {
+            VacbArray = CcVacbLevelFreeList;
+            CcVacbLevelFreeList = *CcVacbLevelFreeList;
+            CcVacbLevelEntries--;
+        }
+
+        KeReleaseQueuedSpinLock(LockQueueVacbLock, OldIrql);
+
+        if (VacbArray)
+            ExFreePool(VacbArray);
+    }
+}
 
 PLIST_ENTRY
 NTAPI
