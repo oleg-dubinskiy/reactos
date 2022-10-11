@@ -214,10 +214,7 @@ CcDeleteSharedCacheMap(
     ObDereferenceObject(SharedMap->FileObject);
 
     if (SharedMap->Mbcb)
-    {
-        DPRINT1("CcDeleteSharedCacheMap: FIXME\n");
-        ASSERT(FALSE);
-    }
+        CcDeleteMbcb(SharedMap);
 
     if (SharedMap->UninitializeEvent)
     {
