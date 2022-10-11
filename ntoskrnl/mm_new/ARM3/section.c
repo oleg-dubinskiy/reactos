@@ -7312,6 +7312,8 @@ MmCreateSection(
 
             if (File->SectionObjectPointer->DataSectionObject)
             {
+                ControlAreaFile = NULL;
+
                 OldIrql = MiLockPfnDb(APC_LEVEL);
 
                 ControlArea = (PCONTROL_AREA)(File->SectionObjectPointer->DataSectionObject);
