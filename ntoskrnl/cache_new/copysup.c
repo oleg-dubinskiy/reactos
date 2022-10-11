@@ -50,7 +50,7 @@ CcFindBitmapRangeToDirty(
     PLIST_ENTRY HeadList;
     LONGLONG BasePage;
 
-    DPRINT1("CcFindBitmapRangeToDirty: %p, %I64X, %p\n", Mbcb, InputPage, pBitmap);
+    DPRINT("CcFindBitmapRangeToDirty: %p, %I64X, %p\n", Mbcb, InputPage, pBitmap);
 
     HeadList = &Mbcb->BitmapRanges;
     BasePage = (InputPage & ~(0x1000 - 1));
@@ -134,7 +134,7 @@ CcSetDirtyInMask(
     PMBCB Mbcb;
     ULONG Bit;
 
-    DPRINT1("CcSetDirtyInMask: %p, [%I64X], %X\n", SharedMap, (FileOffset ? FileOffset->QuadPart : 0ll), Length);
+    DPRINT("CcSetDirtyInMask: %p, [%I64X], %X\n", SharedMap, (FileOffset ? FileOffset->QuadPart : 0ll), Length);
 
     ASSERT((FileOffset->QuadPart / MBCB_BITMAP_RANGE) == ((FileOffset->QuadPart + Length - 1) / MBCB_BITMAP_RANGE));
 
@@ -272,7 +272,7 @@ Exit:
     {
         pVacb = (PVACB *)Bitmap;
 
-        DPRINT1("CcSetDirtyInMask: %p\n", Bitmap);
+        DPRINT("CcSetDirtyInMask: %p\n", Bitmap);
 
         KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
 
@@ -321,7 +321,7 @@ CcMapAndCopy(
     KIRQL OldIrql;
     NTSTATUS Status;
 
-    DPRINT1("CcMapAndCopy: %p, [%I64X], %X, %X, %p\n",
+    DPRINT("CcMapAndCopy: %p, [%I64X], %X, %X, %p\n",
            SharedMap, (FileOffset ? FileOffset->QuadPart : 0ll), Length, Wait, Buffer);
 
     fileOffset.QuadPart = FileOffset->QuadPart;

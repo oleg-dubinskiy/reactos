@@ -448,7 +448,7 @@ CcPrefillVacbLevelZone(
     PVOID* NewLevelEntry;
     ULONG Size;
 
-    DPRINT1("CcPrefillVacbLevelZone: ToLevel %X (%X)\n", ToLevel, IsModifiedNoWrite);
+    DPRINT("CcPrefillVacbLevelZone: ToLevel %X (%X)\n", ToLevel, IsModifiedNoWrite);
 
     if (LockMode)
     {
