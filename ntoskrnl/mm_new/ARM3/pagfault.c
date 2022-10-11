@@ -3630,8 +3630,20 @@ UserFault:
 
             if (protectionCode == MM_NOACCESS)
             {
-                DPRINT1("MmAccessFault: FIXME\n");
-                ASSERT(FALSE);
+                Status = STATUS_ACCESS_VIOLATION;
+
+                DPRINT1("MmAccessFault: MiCheckPdeForPagedPool(%p)\n", Address);
+                MiCheckPdeForPagedPool(Address);
+
+                if (Pde->u.Hard.Valid == 1)
+                    Status = STATUS_SUCCESS;
+
+                if (Status == STATUS_ACCESS_VIOLATION)
+                {
+                    DPRINT1("MmAccessFault: FIXME\n");
+                    ASSERT(FALSE);
+                }
+
                 goto Exit2;
             }
 
