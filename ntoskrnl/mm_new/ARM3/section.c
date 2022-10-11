@@ -369,24 +369,25 @@ MiConvertStaticSubsections(
         if (MappedSubsection->DereferenceList.Flink)
             goto Next;
 
-        if (MappedSubsection->u.SubsectionFlags.SubsectionStatic && MappedSubsection->SubsectionBase)
+        if (MappedSubsection->u.SubsectionFlags.SubsectionStatic)
+        {
+            MappedSubsection->u.SubsectionFlags.SubsectionStatic = 0;
+            MappedSubsection->u2.SubsectionFlags2.SubsectionConverted = 1;
+
+            MappedSubsection->NumberOfMappedViews = 1;
+
+            MiRemoveViewsFromSection(MappedSubsection, MappedSubsection->PtesInSubsection);
+
+            DPRINT1("MiConvertStaticSubsections: FIXME MiSubsectionsConvertedToDynamic\n");
+        }
+        else if (MappedSubsection->SubsectionBase)
         {
             DPRINT("MiConvertStaticSubsections: FIXME\n");
             ASSERT(FALSE);
             goto Next;
         }
 
-        MappedSubsection->u2.SubsectionFlags2.SubsectionConverted = 1;
-        MappedSubsection->u.SubsectionFlags.SubsectionStatic = 0;
-
-        MappedSubsection->NumberOfMappedViews = 1;
-
-        MiRemoveViewsFromSection(MappedSubsection, MappedSubsection->PtesInSubsection);
-
-        DPRINT("MiConvertStaticSubsections: FIXME MiSubsectionsConvertedToDynamic\n");
-
 Next:
-
         MappedSubsection = (PMSUBSECTION)MappedSubsection->NextSubsection;
     }
 }
