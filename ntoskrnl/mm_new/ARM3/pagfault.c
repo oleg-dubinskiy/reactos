@@ -2589,7 +2589,10 @@ MiDispatchFault(
                 /* Is there a non-image VAD? */
                 if (Vad &&
                     Vad->u.VadFlags.VadType != VadImageMap &&
-                    !Vad->u2.VadFlags2.ExtendableFile)
+                    !Vad->u2.VadFlags2.ExtendableFile &&
+                    MmAvailablePages > 20000 &&
+                    (!Process->Vm.Flags.MaximumWorkingSetHard || Process->Vm.MaximumWorkingSetSize >= (Process->Vm.WorkingSetSize + 8)) &&
+                    !Recursive)
                 {
                     PteCount = 8;
 
@@ -2600,9 +2603,28 @@ MiDispatchFault(
                     }
                     else
                     {
-                        DPRINT1("MiDispatchFault: FIXME! (%X:%X)\n", Vad->FirstPrototypePte, Vad->LastContiguousPte);
-                        ASSERT(FALSE);
-                        ix = 0;//FIXME
+                        PSUBSECTION Subsection = (PSUBSECTION)&Vad->ControlArea[1];
+
+                        DPRINT1("MiDispatchFault: %p (%p:%p)\n", SectionProto, Vad->FirstPrototypePte, Vad->LastContiguousPte);
+
+                        ix = 1;
+
+                        for (; Subsection; Subsection = Subsection->NextSubsection)
+                        {
+                            if (!Subsection->SubsectionBase)
+                                continue;
+
+                            if (SectionProto < Subsection->SubsectionBase)
+                                continue;
+
+                            if (SectionProto >= &Subsection->SubsectionBase[Subsection->PtesInSubsection])
+                                continue;
+
+                            ix = (&Subsection->SubsectionBase[Subsection->PtesInSubsection] - SectionProto);
+                            DPRINT1("MiDispatchFault: ix %X\n", ix);
+
+                            break;
+                        }
                     }
 
                     if (ix < 8)
