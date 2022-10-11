@@ -10,6 +10,9 @@
 
 extern PVACB CcVacbs;
 extern PVACB CcBeyondVacbs;
+extern ULONG CcPagesYetToWrite;
+extern ULONG CcTotalDirtyPages;
+extern LIST_ENTRY CcCleanSharedCacheMapList;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -60,6 +63,7 @@ CcUnpinFileDataEx(
 {
     KLOCK_QUEUE_HANDLE LockHandle;
     PSHARED_CACHE_MAP SharedMap;
+    ULONG PageCount;
 
     DPRINT("CcUnpinFileDataEx: Bcb %p, IsNoWrite %X, Type %X\n", Bcb, IsNoWrite, Type);
 
@@ -93,8 +97,41 @@ CcUnpinFileDataEx(
         }
         case 2:
         {
-            DPRINT1("CcUnpinFileDataEx: FIXME\n");
-            ASSERT(FALSE);
+            if (!Bcb->Reserved1[0])
+                break;
+
+            Bcb->Reserved1[0] = 0;
+            Bcb->Reserved3 = 0;
+            Bcb->Reserved4 = 0;
+
+            PageCount = (Bcb->Length / PAGE_SIZE);
+
+            KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[5]);
+
+            CcTotalDirtyPages -= PageCount;
+            SharedMap->DirtyPages -= PageCount;
+
+            if (CcPagesYetToWrite <= PageCount)
+                CcPagesYetToWrite = 0;
+            else
+                CcPagesYetToWrite -= PageCount;
+
+            if (!SharedMap->DirtyPages && SharedMap->OpenCount)
+            {
+                RemoveEntryList(&SharedMap->SharedCacheMapLinks);
+
+                if (KdDebuggerEnabled && !KdDebuggerNotPresent &&
+                    !SharedMap->OpenCount &&
+                    !SharedMap->DirtyPages)
+                {
+                    DPRINT1("CC: SharedMap->OpenCount == 0 && DirtyPages == 0 && going onto CleanList!\n");
+                    DbgBreakPoint();
+                }
+
+                InsertTailList(&CcCleanSharedCacheMapList, &SharedMap->SharedCacheMapLinks);
+            }
+
+            KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[5]);
             break;
         }
         default:

@@ -30,6 +30,8 @@ typedef union _CC_BCB
         LARGE_INTEGER FileOffset;
         LIST_ENTRY Link;
         LARGE_INTEGER BeyondLastByte;
+        UINT64 Reserved3;
+        UINT64 Reserved4;
         PVACB Vacb;
         ULONG PinCount;
         ERESOURCE BcbResource;
