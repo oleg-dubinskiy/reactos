@@ -626,8 +626,63 @@ MiGetProtoPteAddressExtended(
     _In_ PMMVAD Vad,
     _In_ ULONG_PTR Vpn)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PCONTROL_AREA ControlArea;
+    PSUBSECTION Subsection;
+    ULONG_PTR PteOffset;
+    ULONG PtesInSubsection;
+
+    ControlArea = Vad->ControlArea;
+
+    if (ControlArea->u.Flags.GlobalOnlyPerSession)
+        Subsection = (PSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+    else
+        Subsection = (PSUBSECTION)&ControlArea[1];
+
+    while (TRUE)
+    {
+        if (Subsection->SubsectionBase)
+        {
+            if (Vad->FirstPrototypePte >= Subsection->SubsectionBase &&
+                Vad->FirstPrototypePte < &Subsection->SubsectionBase[Subsection->PtesInSubsection])
+            {
+                break;
+            }
+        }
+
+        Subsection = Subsection->NextSubsection;
+        if (!Subsection)
+        {
+            DPRINT1("MiGetProtoPteAddressExtended: return NULL\n");
+            return NULL;
+        }
+    }
+
+    ASSERT(Subsection->SubsectionBase != NULL);
+
+    PteOffset = (Vpn + Vad->FirstPrototypePte - Subsection->SubsectionBase - Vad->StartingVpn - Subsection->PtesInSubsection);
+
+    ASSERT(PteOffset < 0xF0000000);
+
+    PtesInSubsection = Subsection->PtesInSubsection;
+    PteOffset += PtesInSubsection;
+
+    while (PteOffset >= PtesInSubsection)
+    {
+        Subsection = Subsection->NextSubsection;
+        if (!Subsection)
+        {
+            DPRINT1("MiGetProtoPteAddressExtended: return NULL\n");
+            return NULL;
+        }
+
+        PteOffset -= PtesInSubsection;
+        PtesInSubsection = Subsection->PtesInSubsection;
+    }
+
+    ASSERT(Subsection->SubsectionBase != NULL);
+    ASSERT(PteOffset < Subsection->PtesInSubsection);
+
+    return &Subsection->SubsectionBase[PteOffset];
 }
 
 NTSTATUS
