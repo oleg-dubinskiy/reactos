@@ -325,6 +325,57 @@ CcWaitForUninitializeCacheMap(
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 
+BOOLEAN
+NTAPI
+CcIsThereDirtyData(
+    _In_ PVPB Vpb)
+{
+    PSHARED_CACHE_MAP SharedMap;
+    ULONG ix = 0;
+    KIRQL OldIrql;
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    for (SharedMap = CONTAINING_RECORD(CcDirtySharedCacheMapList.SharedCacheMapLinks.Flink, SHARED_CACHE_MAP, SharedCacheMapLinks);
+         ;
+         SharedMap = CONTAINING_RECORD(SharedMap->SharedCacheMapLinks.Flink, SHARED_CACHE_MAP, SharedCacheMapLinks))
+    {
+        if (&SharedMap->SharedCacheMapLinks == &CcDirtySharedCacheMapList.SharedCacheMapLinks)
+        {
+            KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+            return FALSE;
+        }
+
+        if (!(SharedMap->Flags & 0x800))
+        {
+            if (SharedMap->FileObject->Vpb == Vpb &&
+                SharedMap->DirtyPages &&
+                !(SharedMap->FileObject->Flags & 0x8000))
+            {
+                break;
+            }
+        }
+
+        ix++;
+
+        if (ix >= 20 && !(SharedMap->Flags & (0x800 | 0x20)))
+        {
+            SharedMap->DirtyPages++;
+            SharedMap->Flags |= 0x20;
+            KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+            ix = 0;
+
+            OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+            SharedMap->Flags &= ~0x20;
+            SharedMap->DirtyPages--;
+        }
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+    return TRUE;
+}
+
 PFILE_OBJECT
 NTAPI
 CcGetFileObjectFromBcb(PVOID Bcb)

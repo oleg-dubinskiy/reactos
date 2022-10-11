@@ -36,14 +36,6 @@ CcGetLsnForFileObject(IN PFILE_OBJECT FileObject,
     return Result;
 }
 
-BOOLEAN
-NTAPI
-CcIsThereDirtyData(IN PVPB Vpb)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
-}
-
 VOID
 NTAPI
 CcSetAdditionalCacheAttributes(IN PFILE_OBJECT FileObject,
