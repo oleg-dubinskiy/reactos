@@ -3,7 +3,7 @@
 
 #include <hal.h>
 
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 #include "apic.h"

@@ -7,7 +7,7 @@
 #include "../../../drivers/usb/usbuhci/hardware.h"
 #include "apic.h"
 
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 /* GLOBALS *******************************************************************/
