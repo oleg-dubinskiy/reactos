@@ -29,6 +29,7 @@ extern LARGE_INTEGER CcCollisionDelay;
 extern LAZY_WRITER LazyWriter;
 extern LIST_ENTRY CcIdleWorkerThreadList;
 extern ULONG CcIdleDelayTick;
+extern ULONG CcTotalDirtyPages;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -94,6 +95,84 @@ CcUnmapAndPurge(
 
     if (SharedMap->Flags & SHARE_FL_TRUNCATE_SIZE)
         CcPurgeCacheSection(SharedMap->FileObject->SectionObjectPointer, NULL, 0, FALSE);
+}
+
+VOID
+NTAPI
+CcDeleteMbcb(
+    _In_ PSHARED_CACHE_MAP SharedMap)
+{
+    KLOCK_QUEUE_HANDLE LockHandle;
+    PBITMAP_RANGE BitmapRange;
+    PLIST_ENTRY Entry;
+    LIST_ENTRY list;
+    PMBCB Mbcb;
+    BOOLEAN IsDrainLevel = FALSE;
+
+    DPRINT("CcDeleteMbcb: SharedMap %p\n", SharedMap);
+
+    InitializeListHead(&list);
+
+    KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
+
+    Mbcb = SharedMap->Mbcb;
+    if (!Mbcb)
+    {
+        KeReleaseInStackQueuedSpinLock(&LockHandle);
+        goto Exit;
+    }
+
+    KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueMasterLock]);
+    CcTotalDirtyPages -= Mbcb->DirtyPages;
+    SharedMap->DirtyPages -= Mbcb->DirtyPages;
+    KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueMasterLock]);
+
+    while (!IsListEmpty(&Mbcb->BitmapRanges))
+    {
+        BitmapRange = CONTAINING_RECORD(Mbcb->BitmapRanges.Flink, BITMAP_RANGE, Links);
+
+        RemoveEntryList(&BitmapRange->Links);
+
+        if (BitmapRange->Bitmap &&
+            BitmapRange->Bitmap != (PULONG)&Mbcb->BitmapRange2)
+        {
+            IsDrainLevel = TRUE;
+
+            if (BitmapRange->DirtyPages)
+                RtlZeroMemory(BitmapRange->Bitmap, VACB_LEVEL_BLOCK_SIZE);
+
+            KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+            CcDeallocateVacbLevel((PVOID *)BitmapRange->Bitmap, FALSE);
+            KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+        }
+
+        if (BitmapRange < (PBITMAP_RANGE)Mbcb ||
+            BitmapRange >= (PBITMAP_RANGE)((PCHAR)Mbcb + sizeof(MBCB)))
+        {
+            InsertTailList(&list, &BitmapRange->Links);
+        }
+    }
+
+    SharedMap->Mbcb = NULL;
+
+    KeReleaseInStackQueuedSpinLock(&LockHandle);
+
+    while (!IsListEmpty(&list))
+    {
+        Entry = RemoveHeadList(&list);
+        BitmapRange = CONTAINING_RECORD(Entry, BITMAP_RANGE, Links);
+        ExFreePool(BitmapRange);
+    }
+
+    CcDeallocateBcb((PCC_BCB)Mbcb);
+
+Exit:
+
+    if (IsDrainLevel)
+    {
+        DPRINT1("CcDeleteSharedCacheMap: FIXME CcDrainVacbLevelZone()\n");
+        ASSERT(FALSE);
+    }
 }
 
 VOID
