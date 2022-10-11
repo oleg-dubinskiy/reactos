@@ -4235,6 +4235,8 @@ MmFlushSection(
     PCONTROL_AREA ControlArea;
     PSUBSECTION Subsection;
     PSUBSECTION LastSubsection;
+    PSUBSECTION TempSubsection;
+    PSUBSECTION LastTempSubsection;
     PMMPTE SectionProto;
     PMMPTE LastProto;
     PETHREAD Thread;
@@ -4359,8 +4361,43 @@ MmFlushSection(
 
     if (!MiReferenceSubsection((PMSUBSECTION)LastSubsection))
     {
-        DPRINT1("MmFlushSection: FIXME\n");
-        ASSERT(FALSE);
+        ASSERT(Subsection != LastSubsection);
+
+        TempSubsection = Subsection->NextSubsection;
+        LastTempSubsection = NULL;
+
+        while (TempSubsection != LastSubsection)
+        {
+            ASSERT(TempSubsection != NULL);
+
+            if ((PMSUBSECTION)TempSubsection->SubsectionBase)
+                LastTempSubsection = TempSubsection;
+
+            TempSubsection = TempSubsection->NextSubsection;
+        }
+
+        if (!LastTempSubsection)
+        {
+            ASSERT(Subsection != NULL);
+            ASSERT(Subsection->SubsectionBase != NULL);
+
+            TempSubsection = Subsection;
+        }
+        else
+        {
+            TempSubsection = LastTempSubsection;
+        }
+
+        if (!MiReferenceSubsection((PMSUBSECTION)TempSubsection))
+        {
+            DPRINT1("MmFlushSection: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        ASSERT(TempSubsection->SubsectionBase != NULL);
+
+        LastSubsection = TempSubsection;
+        LastPteOffset = (LastSubsection->PtesInSubsection - 1);
     }
 
     ControlArea->NumberOfMappedViews++;
