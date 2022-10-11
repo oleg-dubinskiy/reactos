@@ -300,4 +300,10 @@ CcDeallocateVacbLevel(
     _In_ BOOLEAN WithBcbs
 );
 
+VOID
+NTAPI
+CcDrainVacbLevelZone(
+    VOID
+);
+
 /* EOF */

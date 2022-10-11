@@ -169,10 +169,7 @@ CcDeleteMbcb(
 Exit:
 
     if (IsDrainLevel)
-    {
-        DPRINT1("CcDeleteSharedCacheMap: FIXME CcDrainVacbLevelZone()\n");
-        ASSERT(FALSE);
-    }
+        CcDrainVacbLevelZone();
 }
 
 VOID
