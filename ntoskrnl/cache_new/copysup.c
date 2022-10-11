@@ -19,6 +19,8 @@ extern MMPFNLIST MmModifiedPageListHead;
 extern KSPIN_LOCK CcDeferredWriteSpinLock;
 extern LARGE_INTEGER CcIdleDelay;
 extern LAZY_WRITER LazyWriter;
+extern PVOID* CcVacbLevelFreeList;
+extern ULONG CcVacbLevelEntries;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -187,14 +189,25 @@ CcSetDirtyInMask(
 
             if (Mbcb->BitmapRange1.DirtyPages)
             {
-                DPRINT1("CcSetDirtyInMask: FIXME\n");
-                ASSERT(FALSE);
+                RtlCopyMemory(Bitmap, Mbcb->BitmapRange1.Bitmap, (2 * sizeof(BITMAP_RANGE)));
+                RtlZeroMemory(Mbcb->BitmapRange1.Bitmap, (2 * sizeof(BITMAP_RANGE)));
             }
 
-            DPRINT1("CcSetDirtyInMask: FIXME\n");
-            ASSERT(FALSE);
+            Mbcb->BitmapRange1.Bitmap = Bitmap;
+            Bitmap = NULL;
+
+            InsertTailList(&Mbcb->BitmapRanges, &Mbcb->BitmapRange2.Links);
+            Mbcb->BitmapRange2.BasePage = 0x7FFFFFFFFFFFFFFF;
+            Mbcb->BitmapRange2.FirstDirtyPage = 0xFFFFFFFF;
+
+            InsertTailList(&Mbcb->BitmapRanges, &Mbcb->BitmapRange3.Links);
+            Mbcb->BitmapRange3.BasePage = 0x7FFFFFFFFFFFFFFF;
+            Mbcb->BitmapRange3.FirstDirtyPage = 0xFFFFFFFF;
+
+            Mbcb->NodeTypeCode = 0x02F9;
 
             KeReleaseInStackQueuedSpinLock(&LockHandle);
+            continue;
         }
 
         BitmapRange = CcFindBitmapRangeToDirty(Mbcb, CurrentPage, &Bitmap);
@@ -263,9 +276,9 @@ Exit:
 
         KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
 
-        DPRINT1("CcSetDirtyInMask: FIXME CcVacbLevelFreeList\n");
-        ASSERT(FALSE);
-        *pVacb = 0;
+        *pVacb = (PVACB)CcVacbLevelFreeList;
+        CcVacbLevelFreeList = (PVOID *)pVacb;
+        CcVacbLevelEntries++;
 
         KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
     }
