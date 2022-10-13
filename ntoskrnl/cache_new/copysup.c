@@ -789,14 +789,9 @@ CcCopyRead(
         }
 
         if (Length)
-        {
-            DPRINT1("CcCopyRead: FIXME. Length %X\n", Length);
-            ASSERT(FALSE);
-        }
+            CcFreeActiveVacb(SharedMap, Vacb, ActivePage, IsVacbLocked);
         else
-        {
             CcSetActiveVacb(SharedMap, &Vacb, ActivePage, IsVacbLocked);
-        }
     }
 
     while (Length)
