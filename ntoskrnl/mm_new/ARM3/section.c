@@ -7177,10 +7177,28 @@ ErrorExit:
 BOOLEAN
 NTAPI
 MmCanFileBeTruncated(
-    _In_ PSECTION_OBJECT_POINTERS SectionPointer,
+    _In_ PSECTION_OBJECT_POINTERS SectionPointers,
     _In_ PLARGE_INTEGER NewFileSize)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    LARGE_INTEGER fileSize;
+    KIRQL OldIrql;
+
+    DPRINT("MmCanFileBeTruncated: %p, [%I64X]\n", SectionPointers, (NewFileSize ? NewFileSize->QuadPart : 0LL));
+
+    if (NewFileSize)
+    {
+        fileSize.QuadPart = NewFileSize->QuadPart;
+        NewFileSize = &fileSize;
+    }
+
+    if (MiCanFileBeTruncatedInternal(SectionPointers, NewFileSize, FALSE, &OldIrql))
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        DPRINT("MmCanFileBeTruncated: return TRUE\n");
+        return TRUE;
+    }
+
+    DPRINT1("MmCanFileBeTruncated: return FALSE\n");
     return FALSE;
 }
 
