@@ -303,6 +303,7 @@ CcMapAndCopy(
     LARGE_INTEGER offset;
     LARGE_INTEGER fileOffset;
     PVOID CacheBuffer;
+    PVOID Address;
     PVACB Vacb = NULL;
     ULONG CopyLen;
     ULONG ActivePage;
@@ -361,6 +362,7 @@ CcMapAndCopy(
 
             CacheBuffer = CcGetVirtualAddress(SharedMap, fileOffset, &Vacb, &ReceivedLength);
             ASSERT(CacheBuffer != NULL);
+            Address = CacheBuffer;
 
             if (ReceivedLength > Length)
                 ReceivedLength = Length;
@@ -437,7 +439,7 @@ CcMapAndCopy(
                     if (!NT_SUCCESS(Status))
                     {
                         DPRINT1("CcMapAndCopy: Status %X\n", Status);
-                        ExRaiseStatus(FsRtlNormalizeNtstatus(IoStatus.Status, STATUS_UNEXPECTED_IO_ERROR));
+                        ExRaiseStatus(FsRtlNormalizeNtstatus(Status, STATUS_UNEXPECTED_IO_ERROR));
                     }
                 }
 
@@ -475,14 +477,20 @@ CcMapAndCopy(
             if (Length <= 0x10000)
             {
                 if (IsWriteThrough)
-                    MmSetAddressRangeModified(CacheBuffer, Size);
+                    MmSetAddressRangeModified(Address, Size);
                 else
                     CcSetDirtyInMask(SharedMap, &fileOffset, Size);
             }
             else
             {
-                DPRINT1("CcMapAndCopy: FIXME\n");
-                ASSERT(FALSE);
+                MmSetAddressRangeModified(Address, Size);
+
+                MmFlushSection(SharedMap->FileObject->SectionObjectPointer, &fileOffset, Size, &IoStatus, 1);
+
+                ASSERT(IoStatus.Status != STATUS_ENCOUNTERED_WRITE_IN_PROGRESS);
+
+                if (!NT_SUCCESS(IoStatus.Status))
+                    ExRaiseStatus(FsRtlNormalizeNtstatus(IoStatus.Status, STATUS_UNEXPECTED_IO_ERROR));
             }
 
             CcFreeVirtualAddress(Vacb);
