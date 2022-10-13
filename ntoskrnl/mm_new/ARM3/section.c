@@ -7172,6 +7172,42 @@ ErrorExit:
     return STATUS_INSUFFICIENT_RESOURCES;
 }
 
+VOID
+NTAPI
+MiCheckForControlAreaDeletion(
+    _In_ PCONTROL_AREA ControlArea)
+{
+    DPRINT("MiCheckForControlAreaDeletion: ControlArea %p\n", ControlArea);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    //ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    if (ControlArea->NumberOfPfnReferences ||
+        ControlArea->NumberOfMappedViews ||
+        ControlArea->NumberOfSectionReferences)
+    {
+        return;
+    }
+
+    ControlArea->u.Flags.BeingDeleted = 1;
+
+    ASSERT(ControlArea->u.Flags.FilePointerNull == 0);
+    ControlArea->u.Flags.FilePointerNull = 1;
+
+    if (ControlArea->u.Flags.Image)
+        MiRemoveImageSectionObject(ControlArea->FilePointer, (PLARGE_CONTROL_AREA)ControlArea);
+    else
+        ControlArea->FilePointer->SectionObjectPointer->DataSectionObject = NULL;
+
+    if (ControlArea->DereferenceList.Flink)
+    {
+        DPRINT1("MiCheckForControlAreaDeletion: FIXME \n");
+        ASSERT(FALSE);
+    }
+
+    DPRINT("MiCheckForControlAreaDeletion: FIXME MmDereferenceSegmentHeader (paging)\n");
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 BOOLEAN
