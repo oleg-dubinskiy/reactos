@@ -3595,8 +3595,8 @@ MmAccessFault(
 
         if (!(WorkingSet->PageFaultCount & 0xFFF) && (MmAvailablePages < 1024))
         {
-            DPRINT1("MmAccessFault: FIXME! MmAvailablePages %X\n", MmAvailablePages);
-            ASSERT(FALSE);//DbgBreakPoint();
+            if (!PsGetCurrentThread()->MemoryMaker)
+                KeDelayExecutionThread(KernelMode, FALSE, &MmShortTime);
         }
 
         /* We are done! */
