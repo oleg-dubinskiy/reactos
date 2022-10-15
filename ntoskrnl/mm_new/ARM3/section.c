@@ -3751,7 +3751,7 @@ NTSTATUS
 NTAPI 
 MiFlushSectionInternal(
     _In_ PMMPTE StartPte,
-    _In_ PMMPTE LastPte,
+    _In_ PMMPTE EndPte,
     _In_ PSUBSECTION StartSubsection,
     _In_ PSUBSECTION LastSubsection,
     _In_ ULONG Flags,
@@ -3767,6 +3767,7 @@ MiFlushSectionInternal(
     PPFN_NUMBER MdlPage;
     PPFN_NUMBER LastMdlPage;
     PMMPTE Pte;
+    PMMPTE LastPte;
     PMMPTE FirstWrittenPte;
     PMMPTE LastWrittenPte;
     MMPTE TempPte;
@@ -3786,7 +3787,7 @@ MiFlushSectionInternal(
     NTSTATUS Status;
 
     DPRINT("MiFlushSectionInternal: Ptes %p:%p, Subsections %X:%X, Flags %X\n",
-           StartPte, LastPte, StartSubsection, LastSubsection, Flags);
+           StartPte, EndPte, StartSubsection, LastSubsection, Flags);
 
     if (Flags & 0x4)
         IsSingleFlush = FALSE;
@@ -3808,7 +3809,7 @@ MiFlushSectionInternal(
         ASSERT(FALSE);
     }
 
-    LastPte++;
+    EndPte++;
 
     while (TRUE)
     {
@@ -3879,6 +3880,8 @@ MiFlushSectionInternal(
         {
             if (LastSubsection != subsection)
                 LastPte = &subsection->SubsectionBase[subsection->PtesInSubsection];
+            else
+                LastPte = EndPte;
 
             if (!subsection->SubsectionBase)
             {
