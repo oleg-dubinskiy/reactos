@@ -3904,8 +3904,9 @@ MiFlushSectionInternal(
 
             if (MappedSubsection->DereferenceList.Flink)
             {
-                DPRINT1("MiFlushSectionInternal: FIXME\n");
-                ASSERT(FALSE);
+                RemoveEntryList(&MappedSubsection->DereferenceList);
+                AlloccatePoolForSubsectionPtes(MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
+                MappedSubsection->DereferenceList.Flink = NULL;
             }
 
             if (!IsDereferenceSegment)
@@ -4179,8 +4180,8 @@ StartFlush:
             if (!MappedSubsection->NumberOfMappedViews &&
                 !MappedSubsection->u.SubsectionFlags.SubsectionStatic)
             {
-                DPRINT1("MiFlushSectionInternal: FIXME\n");
-                ASSERT(FALSE);
+                InsertTailList(&MmUnusedSubsectionList, &MappedSubsection->DereferenceList);
+                FreePoolForSubsectionPtes(MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
             }
 
             if (IsWriteInProgress || subsection == LastSubsection)
