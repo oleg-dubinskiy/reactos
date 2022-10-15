@@ -468,7 +468,7 @@ MmUnmapViewInSystemCache(
     PMMPFN Pfn;
     PFN_NUMBER StartPageNumber;
     PFN_NUMBER PageNumber;
-    ULONG Idx = 0;
+    ULONG Idx;
     ULONG ix;
     BOOLEAN IsLocked = FALSE;
     KIRQL OldIrql;
@@ -483,7 +483,7 @@ MmUnmapViewInSystemCache(
 
     DPRINT("MmUnmapViewInSystemCache: StartPte %p, LastPte %p\n", StartPte, LastPte);
 
-    StartPageNumber = (MiAddressToPte(StartPte))->u.Hard.PageFrameNumber;
+    StartPageNumber = MiAddressToPte(StartPte)->u.Hard.PageFrameNumber;
     StartPfn = MI_PFN_ELEMENT(StartPageNumber);
 
     ControlArea = Section->Segment->ControlArea;
@@ -493,7 +493,7 @@ MmUnmapViewInSystemCache(
            (ControlArea->u.Flags.PhysicalMemory == 0) &&
            (ControlArea->u.Flags.GlobalOnlyPerSession == 0));
 
-    for (Pte = StartPte; Pte < LastPte; Pte++, Idx++)
+    for (Pte = StartPte, Idx = 0; Pte < LastPte; )
     {
         TempPte.u.Long = Pte->u.Long;
         CacheChunkPte[Idx] = TempPte;
@@ -507,7 +507,7 @@ MmUnmapViewInSystemCache(
                 continue;
             }
 
-            Pfn = MI_PFN_ELEMENT(Pte->u.Hard.PageFrameNumber);
+            Pfn = MI_PFN_ELEMENT(TempPte.u.Hard.PageFrameNumber);
 
             DPRINT("MmUnmapViewInSystemCache: FIXME MiTerminateWsle()\n");
 
@@ -522,10 +522,7 @@ MmUnmapViewInSystemCache(
                     Subsection = (PMSUBSECTION)MiSubsectionPteToSubsection(&Pfn->OriginalPte);
             }
 
-            MI_ERASE_PTE(Pte);
-
-            BaseAddress = ((PCHAR)BaseAddress + PAGE_SIZE);
-            continue;
+            goto Next;
         }
 
         if (!TempPte.u.Soft.Prototype)
@@ -539,61 +536,59 @@ MmUnmapViewInSystemCache(
         }
 
         if (!FileObject)
-        {
-            MI_ERASE_PTE(Pte);
-            BaseAddress = ((PCHAR)BaseAddress + PAGE_SIZE);
-            continue;
-        }
+            goto Next;
 
         SectionProto = MiGetProtoPtr(&TempPte);
 
-        if (!Subsection)
+        if (Subsection)
+            goto Next;
+
+        ProtoPde = MiAddressToPte(SectionProto);
+
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        if (!ProtoPde->u.Hard.Valid)
         {
-            ProtoPde = MiAddressToPte(SectionProto);
-
-            OldIrql = MiLockPfnDb(APC_LEVEL);
-
-            if (!ProtoPde->u.Hard.Valid)
+            if (IsLocked)
             {
-                if (IsLocked)
-                {
-                    DPRINT1("MmUnmapViewInSystemCache: FIXME MiMakeSystemAddressValidPfnSystemWs \n");
-                    ASSERT(FALSE);
-                }
-                else
-                {
-                    DPRINT1("MmUnmapViewInSystemCache: FIXME MiMakeSystemAddressValidPfn \n");
-                    ASSERT(FALSE);
-                }
-            }
-
-            TempProto.u.Long = SectionProto->u.Long;
-
-            if (TempProto.u.Hard.Valid)
-            {
-                PageNumber = TempProto.u.Hard.PageFrameNumber;
-                Pfn = MI_PFN_ELEMENT(PageNumber);
-                SectionProto = &Pfn->OriginalPte;
-            }
-            else if (TempProto.u.Soft.Transition && !TempProto.u.Soft.Prototype)
-            {
-                PageNumber = TempProto.u.Trans.PageFrameNumber;
-                Pfn = MI_PFN_ELEMENT(PageNumber);
-                SectionProto = &Pfn->OriginalPte;
+                DPRINT1("MmUnmapViewInSystemCache: FIXME MiMakeSystemAddressValidPfnSystemWs \n");
+                ASSERT(FALSE);
             }
             else
             {
-                ASSERT(TempProto.u.Soft.Prototype == 1);
+                DPRINT1("MmUnmapViewInSystemCache: FIXME MiMakeSystemAddressValidPfn \n");
+                ASSERT(FALSE);
             }
-
-            Subsection = (PMSUBSECTION)MiSubsectionPteToSubsection(SectionProto);
-
-            MiUnlockPfnDb(OldIrql, APC_LEVEL);
         }
 
+        TempProto.u.Long = SectionProto->u.Long;
+
+        if (TempProto.u.Hard.Valid)
+        {
+            PageNumber = TempProto.u.Hard.PageFrameNumber;
+            Pfn = MI_PFN_ELEMENT(PageNumber);
+            SectionProto = &Pfn->OriginalPte;
+        }
+        else if (TempProto.u.Soft.Transition && !TempProto.u.Soft.Prototype)
+        {
+            PageNumber = TempProto.u.Trans.PageFrameNumber;
+            Pfn = MI_PFN_ELEMENT(PageNumber);
+            SectionProto = &Pfn->OriginalPte;
+        }
+        else
+        {
+            ASSERT(TempProto.u.Soft.Prototype == 1);
+        }
+
+        Subsection = (PMSUBSECTION)MiSubsectionPteToSubsection(SectionProto);
+
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+Next:
         MI_ERASE_PTE(Pte);
 
-        BaseAddress = ((PCHAR)BaseAddress + PAGE_SIZE);
+        BaseAddress = Add2Ptr(BaseAddress, PAGE_SIZE);
+        Idx++;
+        Pte++;
     }
 
     if (IsLocked)
@@ -620,7 +615,7 @@ MmUnmapViewInSystemCache(
         if (!CacheChunkPte[ix].u.Hard.Valid)
             continue;
 
-        PageNumber = (CacheChunkPte[ix].u.Long / PAGE_SIZE);
+        PageNumber = CacheChunkPte[ix].u.Hard.PageFrameNumber;
         Pfn = MI_PFN_ELEMENT(PageNumber);
 
         ASSERT(KeGetCurrentIrql() > APC_LEVEL);

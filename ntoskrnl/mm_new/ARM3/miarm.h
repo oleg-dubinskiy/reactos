@@ -1320,7 +1320,7 @@ MiReferenceUsedPageAndBumpLockCount(
         Pfn->OriginalPte.u.Soft.Prototype)
     {
         /* FIXME: We should charge commit */
-        DbgPrint("MiReferenceUsedPageAndBumpLockCount: Not charging commit for prototype PTE\n");
+        ;//DbgPrint("MiReferenceUsedPageAndBumpLockCount: Not charging commit for prototype PTE\n");
     }
 
     /* More locked pages! */
@@ -2093,6 +2093,12 @@ NTAPI
 MiRemoveMappedView(
     _In_ PEPROCESS Process,
     _In_ PMMVAD Vad
+);
+
+VOID
+NTAPI
+MiCheckForControlAreaDeletion(
+    _In_ PCONTROL_AREA ControlArea
 );
 
 /* ARM3\session.c */
