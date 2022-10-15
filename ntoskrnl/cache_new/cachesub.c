@@ -757,7 +757,7 @@ CcFlushCache(
 
     SharedMap = SectionObjectPointers->SharedCacheMap;
 
-    DPRINT("CcFlushCache: SharedMap %p, Length %X\n", SharedMap, Length);
+    DPRINT("CcFlushCache: %p, %I64X, %X\n", SharedMap, (FileOffset?FileOffset->QuadPart:0), Length);
 
     if (SharedMap)
     {
