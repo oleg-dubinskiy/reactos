@@ -1872,6 +1872,12 @@ MiIsAddressValid(
     _In_ PVOID Address
 );
 
+VOID
+FASTCALL
+MiRestoreTransitionPte(
+    _In_ PMMPFN Pfn
+);
+
 /* ARM3\pagfault.c */
 NTSTATUS
 FASTCALL

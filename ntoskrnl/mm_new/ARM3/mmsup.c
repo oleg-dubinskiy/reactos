@@ -10,6 +10,10 @@
 
 extern MM_SYSTEMSIZE MmSystemSize;
 extern ULONG MmProductType;
+extern PMMWSL MmSystemCacheWorkingSetList;
+extern PVOID MmPagedPoolEnd;
+extern PVOID MmSpecialPoolStart;
+extern PVOID MmSpecialPoolEnd;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -51,6 +55,119 @@ MiIsAddressValid(
 
     DPRINT1("MiIsAddressValid: Address %p valid\n", Address);
     return TRUE;
+}
+
+VOID
+FASTCALL
+MiRestoreTransitionPte(
+    _In_ PMMPFN Pfn)
+{
+    PEPROCESS Process = NULL;
+    PCONTROL_AREA ControlArea;
+    PSUBSECTION Subsection;
+    PMMPFN RestorePfn;
+    PMMPTE Pte;
+    PMMPTE pte;
+    PFN_NUMBER PageTableFrameIndex;
+
+    DPRINT("MiRestoreTransitionPte: Pfn %p\n", Pfn);
+
+    ASSERT(Pfn->u3.e1.PageLocation == StandbyPageList);
+
+    if (Pfn->u3.e1.PrototypePte)
+    {
+        ASSERT((((ULONG_PTR)Pfn->PteAddress >= (ULONG_PTR)MmPagedPoolStart) && ((ULONG_PTR)Pfn->PteAddress <= (ULONG_PTR)MmPagedPoolEnd)) ||
+                (((ULONG_PTR)Pfn->PteAddress >= (ULONG_PTR)MmSpecialPoolStart) && ((ULONG_PTR)Pfn->PteAddress <= (ULONG_PTR)MmSpecialPoolEnd)));
+
+        ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+        //ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+        pte = MiAddressToPte(Pfn->PteAddress);
+
+        if (pte->u.Hard.Valid)
+        {
+            ASSERT(MI_IS_PAGE_LARGE(pte) == FALSE);
+            Pte = Pfn->PteAddress;
+        }
+        else
+        {
+            Process = PsGetCurrentProcess();
+
+            DPRINT1("MiRestoreTransitionPte: FIXME\n");
+            ASSERT(FALSE);Pte = 0;
+        }
+
+        ASSERT(Pte->u.Hard.Valid == 0);
+        ASSERT(Pte->u.Trans.PageFrameNumber == (((ULONG_PTR)Pfn - (ULONG_PTR)MmPfnDatabase) / sizeof(MMPFN)));
+
+        if (Pfn->OriginalPte.u.Soft.Prototype)
+        {
+            Subsection = MiSubsectionPteToSubsection(&Pfn->OriginalPte);
+            ControlArea = Subsection->ControlArea;
+
+            ControlArea->NumberOfPfnReferences--;
+            ASSERT((LONG)ControlArea->NumberOfPfnReferences >= 0);
+
+            MiCheckForControlAreaDeletion(ControlArea);
+        }
+    }
+    else
+    {
+        Pte = Pfn->PteAddress;
+
+        if (Pte < MiAddressToPte(MmSystemCacheWorkingSetList) || MI_IS_SESSION_PTE(Pte))
+        {
+            Process = PsGetCurrentProcess();
+
+            DPRINT1("MiRestoreTransitionPte: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        ASSERT(Pte->u.Hard.Valid == 0);
+        ASSERT(Pte->u.Trans.PageFrameNumber == (((ULONG_PTR)Pfn - (ULONG_PTR)MmPfnDatabase) / sizeof(MMPFN)));
+
+        DPRINT1("MiRestoreTransitionPte: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    ASSERT(Pfn->OriginalPte.u.Hard.Valid == 0);
+    ASSERT(!((Pfn->OriginalPte.u.Soft.Prototype == 0) && (Pfn->OriginalPte.u.Soft.Transition == 1)));
+
+    MI_WRITE_INVALID_PTE(Pte, Pfn->OriginalPte);
+
+    if (Process)
+    {
+        DPRINT1("MiRestoreTransitionPte: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    Pfn->u4.Priority = 3;
+
+    PageTableFrameIndex = Pfn->u4.PteFrame;
+    RestorePfn = MI_PFN_ELEMENT(PageTableFrameIndex);
+
+    if (RestorePfn->u2.ShareCount == 1)
+    {
+        MiDecrementShareCount(RestorePfn, PageTableFrameIndex);
+        return;
+    }
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    //ASSERT(MmPfnOwner == KeGetCurrentThread());
+    ASSERT(PageTableFrameIndex > 0);
+
+    ASSERT(MI_PFN_ELEMENT(PageTableFrameIndex) == RestorePfn);
+    ASSERT(RestorePfn->u2.ShareCount != 0);
+
+    if (RestorePfn->u3.e1.PageLocation != ActiveAndValid &&
+        RestorePfn->u3.e1.PageLocation != StandbyPageList)
+    {
+        DPRINT1("MiRestoreTransitionPte: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    RestorePfn->u2.ShareCount--;
+    ASSERT(RestorePfn->u2.ShareCount < 0xF000000);
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/

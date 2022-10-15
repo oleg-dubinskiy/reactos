@@ -1958,14 +1958,6 @@ MiFreeInPageSupportBlock(
     InterlockedPushEntrySList(&MmInPageSupportSListHead, &Support->ListEntry);
 }
 
-VOID
-FASTCALL
-MiRestoreTransitionPte(
-    _In_ PMMPFN Pfn)
-{
-    UNIMPLEMENTED_DBGBREAK();
-}
-
 NTSTATUS
 NTAPI
 MiResolveTransitionFault(
