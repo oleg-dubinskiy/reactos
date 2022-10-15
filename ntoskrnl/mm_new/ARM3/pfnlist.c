@@ -218,8 +218,100 @@ NTAPI
 MiRemovePageFromList(
     _In_ PMMPFNLIST ListHead)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    PMMCOLOR_TABLES ColorHead;
+    PMMPFN Pfn;
+    PFN_NUMBER PageFrameIndex;
+    MMLISTS ListName;
+    ULONG CacheAttribute;
+    ULONG PageColor;
+
+    DPRINT("MiRemovePageFromList: ListHead %p\n", ListHead);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    //ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    ASSERT(ListHead != &MmStandbyPageListHead);
+
+    if (!ListHead->Total)
+    {
+        DPRINT1("MiRemovePageFromList: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+    }
+
+    ListName = ListHead->ListName;
+    ASSERT(ListName != ModifiedPageList);
+
+    ListHead->Total--;
+    PageFrameIndex = ListHead->Flink;
+    Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+
+    DPRINT("MiRemovePageFromList: FIXME MiLogPfnInformation()\n");
+
+    ListHead->Flink = Pfn->u1.Flink;
+
+    Pfn->u1.Flink = 0;
+    Pfn->u2.Blink = 0;
+
+    if (ListHead->Flink == 0xFFFFFFFF)
+        ListHead->Blink = 0xFFFFFFFF;
+    else
+        MI_PFN_ELEMENT(ListHead->Flink)->u2.Blink = 0xFFFFFFFF;
+
+    ASSERT(ListName <= StandbyPageList);
+
+    if (MmAvailablePages == MmHighMemoryThreshold)
+        KeClearEvent(MiHighMemoryEvent);
+    else if (MmAvailablePages == MmLowMemoryThreshold)
+        KeSetEvent(MiLowMemoryEvent, 0, FALSE);
+
+    MmAvailablePages--;
+
+    if (ListName == StandbyPageList)
+    {
+        if (Pfn->u3.e1.PrototypePte)
+            MmTransitionSharedPages--;
+        else
+            MmTransitionPrivatePages--;
+
+        MiRestoreTransitionPte(Pfn);
+    }
+
+    if (MmAvailablePages < MmMinimumFreePages)
+    {
+        DPRINT1("MiRemovePageFromList: FIXME MiObtainFreePages()\n");
+        ASSERT(FALSE);
+    }
+
+    ASSERT(PageFrameIndex != 0);
+    ASSERT((PageFrameIndex <= MmHighestPhysicalPage) && (PageFrameIndex >= MmLowestPhysicalPage));
+
+    PageColor = Pfn->u3.e1.PageColor;
+    CacheAttribute = Pfn->u3.e1.CacheAttribute;
+
+    ASSERT(Pfn->u3.e1.RemovalRequested == 0);
+    ASSERT(Pfn->u3.e1.Rom == 0);
+
+    Pfn->u3.e2.ShortFlags = 0;
+    Pfn->u3.e1.PageColor = PageColor;
+    Pfn->u3.e1.CacheAttribute = CacheAttribute;
+
+    if (ListName > FreePageList)
+        return PageFrameIndex;
+
+    ColorHead = &MmFreePagesByColor[ListName][(PageFrameIndex & MmSecondaryColorMask)];
+
+    ASSERT(ColorHead->Flink == PageFrameIndex);
+    ColorHead->Flink = Pfn->OriginalPte.u.Long;
+
+    if (ColorHead->Flink == 0xFFFFFFFF)
+        ColorHead->Blink = ULongToPtr(0xFFFFFFFF);
+    else
+        MI_PFN_ELEMENT(ColorHead->Flink)->u4.PteFrame = 0x1FFFFFF;
+
+    ASSERT(ColorHead->Count >= 1);
+    ColorHead->Count--;
+
+    return PageFrameIndex;
 }
 
 PFN_NUMBER
