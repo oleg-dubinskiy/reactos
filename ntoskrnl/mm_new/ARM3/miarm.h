@@ -2307,7 +2307,7 @@ MiPhysicalViewRemover(
     _In_ PMMVAD Vad
 );
 
-TABLE_SEARCH_RESULT
+NTSTATUS
 NTAPI
 MiFindEmptyAddressRangeInTree(
     _In_ SIZE_T Length,
