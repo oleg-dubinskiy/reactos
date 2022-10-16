@@ -172,6 +172,116 @@ MiGetPreviousNode(
     return NULL;
 }
 
+VOID
+NTAPI
+MiReturnPageTablePageCommitment(
+    _In_ ULONG_PTR StartingAddress,
+    _In_ ULONG_PTR EndingAddress,
+    _In_ PEPROCESS Process,
+    _In_ PMMADDRESS_NODE PreviousNode,
+    _In_ PMMADDRESS_NODE NextNode)
+{
+    RTL_BITMAP BitMapHeader;
+    SIZE_T NumberToClear;
+    ULONG StartingIndex;
+    ULONG EndingIndex;
+    LONG StartPdeOffset;
+    LONG EndPdeOffset;
+    LONG PreviousPage;
+    LONG NextPage;
+
+    //DPRINT1("MiReturnPageTablePageCommitment: %X, %X, %p\n", StartingAddress, EndingAddress, Process);
+
+    ASSERT(StartingAddress != EndingAddress);
+
+    StartingIndex = (StartingAddress / 0x10000);
+    EndingIndex = (EndingAddress / 0x10000);
+
+    if (PreviousNode)
+    {
+        PreviousPage = MiAddressToPdeOffset(PreviousNode->EndingVpn * PAGE_SIZE);
+
+        if (((PreviousNode->EndingVpn * PAGE_SIZE) & ~(0x10000 - 1)) == (StartingAddress & ~(0x10000 - 1)))
+            StartingIndex++;
+    }
+    else
+    {
+        PreviousPage = -1;
+    }
+
+    if (NextNode)
+    {
+        NextPage = MiAddressToPdeOffset(NextNode->StartingVpn * PAGE_SIZE);
+
+        if (((NextNode->StartingVpn * PAGE_SIZE) & ~(0x10000 - 1)) == (EndingAddress & ~(0x10000 - 1)))
+            EndingIndex--;
+    }
+    else
+    {
+        NextPage = (MiAddressToPdeOffset(MmHighestUserAddress) + 1);
+    }
+
+    ASSERT(PreviousPage <= NextPage);
+
+    StartPdeOffset = MiAddressToPdeOffset(StartingAddress);
+    EndPdeOffset = MiAddressToPdeOffset(EndingAddress);
+
+    if (PreviousPage == StartPdeOffset)
+        StartPdeOffset++;
+
+    if (NextPage == EndPdeOffset)
+        EndPdeOffset--;
+
+    if (StartingIndex <= EndingIndex)
+    {
+        BitMapHeader.SizeOfBitMap = (MiLastVadBit + 1);
+        BitMapHeader.Buffer = MI_VAD_BITMAP;
+
+        NumberToClear = (EndingIndex - StartingIndex + 1);
+        RtlClearBits(&BitMapHeader, StartingIndex, NumberToClear);
+
+        if (MmWorkingSetList->VadBitMapHint > StartingIndex)
+            MmWorkingSetList->VadBitMapHint = StartingIndex;
+    }
+
+    if (StartPdeOffset > EndPdeOffset)
+        return;
+
+    NumberToClear = (EndPdeOffset - StartPdeOffset + 1);
+
+    DPRINT("MiReturnPageTablePageCommitment: %X, %X, %X\n", StartPdeOffset, EndPdeOffset, NumberToClear);
+
+    while (StartPdeOffset <= EndPdeOffset)
+    {
+        if (!(((ULONG)(MmWorkingSetList->CommittedPageTables[StartPdeOffset / 0x20]) >> (StartPdeOffset & (0x20 - 1))) & 1))
+        {
+            //test bit failed
+            DPRINT1("MiReturnPageTablePageCommitment: %X\n", MmWorkingSetList->CommittedPageTables[StartPdeOffset / 0x20]);
+            ASSERT(FALSE);
+        }
+
+        MmWorkingSetList->CommittedPageTables[StartPdeOffset / 0x20] &= ~(1 << (StartPdeOffset & (0x20 - 1)));
+        StartPdeOffset++;
+    }
+
+    MmWorkingSetList->NumberOfCommittedPageTables -= NumberToClear;
+
+    ASSERT((SSIZE_T)(NumberToClear) >= 0);
+    ASSERT(MmTotalCommittedPages >= (NumberToClear));
+
+    InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -NumberToClear);
+
+    PsReturnProcessPageFileQuota(Process, NumberToClear);
+
+    if (Process->JobStatus & 0x10)
+    {
+        DPRINT1("MiReturnPageTablePageCommitment: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    Process->CommitCharge -= NumberToClear;
+}
+
 TABLE_SEARCH_RESULT
 NTAPI
 MiFindEmptyAddressRangeInTree(

@@ -4593,11 +4593,14 @@ NtFreeVirtualMemory(
     PETHREAD CurrentThread = PsGetCurrentThread();
     PEPROCESS CurrentProcess = PsGetCurrentProcess();
     KPROCESSOR_MODE PreviousMode = KeGetPreviousMode();
+    PMMADDRESS_NODE PreviousNode;
+    PMMADDRESS_NODE NextNode;
     PMMSUPPORT AddressSpace;
     PEPROCESS Process;
     PMMPTE StartPte;
     PMMPTE EndPte;
     PMMVAD Vad;
+    PMMVAD vad = NULL;
     PVOID BaseAddress;
     LONG_PTR AlreadyDecommitted;
     LONG_PTR CommitReduction = 0;
@@ -4747,6 +4750,9 @@ NtFreeVirtualMemory(
         }
     }
 
+    PreviousNode = MiGetPreviousNode((PMMADDRESS_NODE)Vad);
+    NextNode = MiGetNextNode((PMMADDRESS_NODE)Vad);
+
     /* Now we can try the operation. First check if this is a RELEASE or a DECOMMIT */
     if (FreeType & MEM_RELEASE)
     {
@@ -4800,6 +4806,7 @@ NtFreeVirtualMemory(
 
             /* Finally remove the VAD from the VAD tree */
             ASSERT(Process->VadRoot.NumberGenericTableElements >= 1);
+            vad = Vad;
             MiRemoveNode((PMMADDRESS_NODE)Vad, &Process->VadRoot);
         }
         else
@@ -4851,6 +4858,7 @@ NtFreeVirtualMemory(
 
                     /* Finally remove the VAD from the VAD tree */
                     ASSERT(Process->VadRoot.NumberGenericTableElements >= 1);
+                    vad = Vad;
                     MiRemoveNode((PMMADDRESS_NODE)Vad, &Process->VadRoot);
                 }
                 else
@@ -4874,6 +4882,7 @@ NtFreeVirtualMemory(
                     ASSERT(FALSE);
 
                     /* After analyzing the VAD, set it to NULL so that we don't free it in the exit path */
+                    NextNode = (PMMADDRESS_NODE)Vad;
                     Vad = NULL;
                 }
             }
@@ -4903,7 +4912,7 @@ NtFreeVirtualMemory(
                     Vad->u.VadFlags.CommitCharge -= CommitReduction;
 
                     Vad->EndingVpn = ((StartingAddress - 1) / PAGE_SIZE);
-                    //PreviousVad = (PMMVAD)Vad;
+                    PreviousNode = (PMMADDRESS_NODE)Vad;
                 }
                 else
                 {
@@ -4916,6 +4925,8 @@ NtFreeVirtualMemory(
                     */
                     DPRINT1("NtFreeVirtualMemory: Case B not handled\n");
                     ASSERT(FALSE);
+                    //PreviousNode = (PMMADDRESS_NODE)Vad;
+                    //NextNode = (PMMADDRESS_NODE)NewVad;
                 }
 
                 /* After analyzing the VAD, set it to NULL so that we don't free it in the exit path */
@@ -4931,6 +4942,11 @@ NtFreeVirtualMemory(
         */
         MiDeleteVirtualAddresses(StartingAddress, EndingAddress, NULL);
         MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+        MiReturnPageTablePageCommitment(StartingAddress, EndingAddress, Process, PreviousNode, NextNode);
+
+        if (vad)
+            MiRemoveVadCharges(vad, Process);
 
         RegionSize = ((PCHAR)EndingAddress - (PCHAR)StartingAddress + 1);
 

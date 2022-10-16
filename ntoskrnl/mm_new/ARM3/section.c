@@ -3112,10 +3112,13 @@ MiUnmapViewOfSection(
 {
     PETHREAD CurrentThread = PsGetCurrentThread();
     PEPROCESS CurrentProcess = PsGetCurrentProcess();
+    PMMADDRESS_NODE PreviousNode;
+    PMMADDRESS_NODE NextNode;
     PMMVAD Vad;
     PVOID DbgBase = NULL;
     SIZE_T RegionSize;
     ULONG_PTR StartingAddress;
+    ULONG_PTR EndingAddress;
     KAPC_STATE ApcState;
     BOOLEAN Attached = FALSE;
     NTSTATUS Status;
@@ -3167,6 +3170,7 @@ MiUnmapViewOfSection(
     ASSERT(Process == PsGetCurrentProcess());
 
     StartingAddress = (Vad->StartingVpn * PAGE_SIZE);
+    EndingAddress = ((Vad->EndingVpn * PAGE_SIZE) | 0xFFF);
 
     /* We need the base address for the debugger message on image-backed VADs */
     if (Vad->u.VadFlags.VadType == VadImageMap)
@@ -3196,6 +3200,9 @@ MiUnmapViewOfSection(
             goto Exit1;
         }
     }
+
+    PreviousNode = MiGetPreviousNode((PMMADDRESS_NODE)Vad);
+    NextNode = MiGetNextNode((PMMADDRESS_NODE)Vad);
 
     if (Vad->u.VadFlags.VadType != VadRotatePhysical)
     {
@@ -3247,7 +3254,7 @@ MiUnmapViewOfSection(
     MiRemoveMappedView(Process, Vad);
 
     /* Remove commitment */
-    DPRINT("MiUnmapViewOfSection: FIXME MiReturnPageTablePageCommitment\n");
+    MiReturnPageTablePageCommitment(StartingAddress, EndingAddress, Process, PreviousNode, NextNode);
 
     /* Update performance counter and release the lock */
     Process->VirtualSize -= RegionSize;

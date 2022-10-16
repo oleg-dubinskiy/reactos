@@ -2331,6 +2331,12 @@ MiGetNextNode(
     _In_ PMMADDRESS_NODE Node
 );
 
+PMMADDRESS_NODE
+NTAPI
+MiGetPreviousNode(
+    _In_ PMMADDRESS_NODE Node
+);
+
 NTSTATUS
 NTAPI
 MiFindEmptyAddressRangeDownBasedTree(
@@ -2345,6 +2351,16 @@ VOID
 NTAPI
 MiInsertBasedSection(
     _In_ PSECTION Section
+);
+
+VOID
+NTAPI
+MiReturnPageTablePageCommitment(
+    _In_ ULONG_PTR StartingAddress,
+    _In_ ULONG_PTR EndingAddress,
+    _In_ PEPROCESS Process,
+    _In_ PMMADDRESS_NODE PreviousNode,
+    _In_ PMMADDRESS_NODE NextNode
 );
 
 /* ARM3\virtual.c */

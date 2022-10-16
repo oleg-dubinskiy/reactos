@@ -127,6 +127,8 @@ MmDeleteTeb(
 {
     PETHREAD Thread = PsGetCurrentThread();
     PMM_AVL_TABLE VadTree = &Process->VadRoot;
+    PMMADDRESS_NODE PreviousNode;
+    PMMADDRESS_NODE NextNode;
     PMMVAD Vad;
     ULONG_PTR TebEnd;
 
@@ -161,6 +163,13 @@ MmDeleteTeb(
     ASSERT(Vad->u.VadFlags.NoChange == TRUE);
     ASSERT(Vad->u2.VadFlags2.OneSecured == TRUE);
     ASSERT(Vad->u2.VadFlags2.MultipleSecured == FALSE);
+
+    MiRemoveVadCharges(Vad, Process);
+
+    PreviousNode = MiGetPreviousNode((PMMADDRESS_NODE)Vad);
+    NextNode = MiGetNextNode((PMMADDRESS_NODE)Vad);
+
+    MiReturnPageTablePageCommitment((ULONG_PTR)Teb, TebEnd, Process, PreviousNode, NextNode);
 
     /* Lock the working set */
     MiLockProcessWorkingSetUnsafe(Process, Thread);
