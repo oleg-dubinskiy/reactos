@@ -751,13 +751,49 @@ CcGetVacbMiss(
         OutVacb->Overlay.ActiveCount = 1;
 
         SetVacb(SharedMap, SectionOffset, OutVacb);
+
+        return OutVacb;
+    }
+
+    if (!OutVacb->Overlay.ActiveCount)
+        SharedMap->VacbActiveCount++;
+
+    OutVacb->Overlay.ActiveCount++;
+
+    if (LockMode)
+    {
+        KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+        KeReleaseInStackQueuedSpinLock(LockHandle);
     }
     else
     {
-        DPRINT1("CcGetVacbMiss: FIXME CcUnmapVacb()\n");
-        ASSERT(FALSE);
+        KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle->OldIrql);
     }
 
+    CcUnmapVacb(Vacb, SharedMap, FALSE);
+
+    if (LockMode)
+    {
+        KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, LockHandle);
+        KeAcquireQueuedSpinLockAtDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+    }
+    else
+    {
+        LockHandle->OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+    }
+
+    ASSERT((Vacb->Overlay.ActiveCount) != 0);
+    Vacb->Overlay.ActiveCount--;
+
+    ASSERT((SharedMap->VacbActiveCount) != 0);
+    SharedMap->VacbActiveCount--;
+
+    Vacb->SharedCacheMap = NULL;
+
+    RemoveEntryList(&Vacb->LruList);
+    InsertHeadList(&CcVacbFreeList, &Vacb->LruList);
+
+    DPRINT("CcGetVacbMiss: return %p\n", OutVacb);
     return OutVacb;
 }
 
