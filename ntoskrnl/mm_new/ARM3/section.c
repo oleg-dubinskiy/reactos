@@ -397,7 +397,170 @@ NTAPI
 MiSegmentDelete(
     _In_ PSEGMENT Segment)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    SEGMENT_FLAGS SegmentFlags = Segment->SegmentFlags;
+    PCONTROL_AREA ControlArea = Segment->ControlArea;
+    PSUBSECTION Subsection;
+    PMSUBSECTION MappedSubsection;
+    PEVENT_COUNTER Event;
+    PMMPTE Proto;
+    PMMPTE LastProto;
+    PMMPTE ProtoPte;
+    MMPTE TempProto;
+    SIZE_T NumberOfCommittedPages;
+    KIRQL OldIrql;
+
+    DPRINT("MiSegmentDelete: Segment %p, SegmentFlags %X\n", Segment, SegmentFlags);
+
+    ASSERT(ControlArea->u.Flags.BeingDeleted == 1);
+    ASSERT(ControlArea->WritableUserReferences == 0);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (ControlArea->DereferenceList.Flink)
+    {
+        DPRINT1("MiSegmentDelete: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    if (ControlArea->u.Flags.Image || ControlArea->u.Flags.File)
+    {
+        if (ControlArea->u.Flags.DebugSymbolsLoaded)
+        {
+            DPRINT1("MiSegmentDelete: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else
+        {
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+        }
+
+        Event = ControlArea->WaitingForDeletion;
+        ControlArea->WaitingForDeletion = NULL;
+
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        if (Event)
+            KeSetEvent(&Event->Event, 0, FALSE);
+
+        if (!ControlArea->u.Flags.BeingCreated)
+            ObDereferenceObject(ControlArea->FilePointer);
+
+        if (!ControlArea->u.Flags.Image)
+        {
+            if (!ControlArea->u.Flags.Rom)
+                Subsection = (PSUBSECTION)(ControlArea + 1);
+            else
+                Subsection = (PSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+
+            ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 0);
+
+            if (ControlArea->FilePointer)
+            {
+                MappedSubsection = (PMSUBSECTION)Subsection;
+
+                OldIrql = MiLockPfnDb(APC_LEVEL);
+
+                while (MappedSubsection)
+                {
+                    if (MappedSubsection->DereferenceList.Flink)
+                    {
+                        RemoveEntryList(&MappedSubsection->DereferenceList);
+                        FreePoolForSubsectionPtes(MappedSubsection->PtesInSubsection + MappedSubsection->UnusedPtes);
+                    }
+
+                    MappedSubsection = (PMSUBSECTION)MappedSubsection->NextSubsection;
+                }
+
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                if (Subsection->SubsectionBase)
+                    ExFreePool(Subsection->SubsectionBase);
+            }
+
+            Subsection = Subsection->NextSubsection;
+
+            while (Subsection)
+            {
+                PSUBSECTION NextSubsection;
+
+                if (Subsection->SubsectionBase)
+                    ExFreePool(Subsection->SubsectionBase);
+
+                NextSubsection = Subsection->NextSubsection;
+                ExFreePool(Subsection);
+                Subsection = NextSubsection;
+            }
+
+            NumberOfCommittedPages = Segment->NumberOfCommittedPages;
+            if (NumberOfCommittedPages)
+            {
+                DPRINT1("MiSegmentDelete: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            ExFreePool(ControlArea);
+            ExFreePool(Segment);
+
+            return;
+        }
+    }
+
+    if (!ControlArea->u.Flags.GlobalOnlyPerSession && !ControlArea->u.Flags.Rom)
+        Subsection = (PSUBSECTION)(ControlArea + 1);
+    else
+        Subsection = (PSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+
+    Proto = Subsection->SubsectionBase;
+    LastProto = (Proto + Segment->NonExtendedPtes);
+
+    ProtoPte = MiAddressToPte(Proto);
+
+    ProbeForReadPointer(Proto);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (!ProtoPte->u.Hard.Valid)
+        MiMakeSystemAddressValidPfn(Proto, OldIrql);
+
+    for (; Proto < LastProto; Proto++)
+    {
+        if (MiIsPteOnPdeBoundary(Proto) && Proto != Subsection->SubsectionBase)
+        {
+            DPRINT1("MiSegmentDelete: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        TempProto.u.Long = Proto->u.Long;
+
+        if (TempProto.u.Hard.Valid)
+        {
+            DPRINT1("MiSegmentDelete: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else if (!TempProto.u.Soft.Prototype)
+        {
+            DPRINT1("MiSegmentDelete: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else
+        {
+            ASSERT(SegmentFlags.LargePages == 0);
+        }
+    }
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    NumberOfCommittedPages = Segment->NumberOfCommittedPages;
+    if (NumberOfCommittedPages)
+    {
+        DPRINT1("MiSegmentDelete: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    ExFreePool(ControlArea);
+    ExFreePool(Segment);
 }
 
 VOID
