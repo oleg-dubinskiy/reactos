@@ -135,6 +135,51 @@ CcInitializeVacbs(VOID)
         InsertTailList(&CcVacbFreeList, &CurrentVacb->LruList);
 }
 
+PVACB
+NTAPI
+CcGetVacbLargeOffset(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LONGLONG FileOffset)
+{
+    PVACB* Vacbs = SharedMap->Vacbs;
+    PVACB Vacb;
+    ULONG Level = 0;
+    ULONG Bits;
+
+    DPRINT("CcGetVacbLargeOffset: SharedMap %p, FileOffset %I64X\n", SharedMap, FileOffset);
+
+    ASSERT(SharedMap->SectionSize.QuadPart > CACHE_OVERALL_SIZE);
+
+    Bits = (VACB_OFFSET_SHIFT + VACB_LEVEL_SHIFT);
+
+    do
+    {
+        Level++;
+        Bits += VACB_LEVEL_SHIFT;
+    }
+    while ((1LL << Bits) < SharedMap->SectionSize.QuadPart);
+
+    Bits -= VACB_LEVEL_SHIFT;
+
+    Vacb = Vacbs[FileOffset >> Bits];
+
+    for (; Vacb && Level; Level--)
+    {
+        FileOffset &= ((1LL << Bits) - 1);
+        Bits -= VACB_LEVEL_SHIFT;
+
+        Vacbs = (PVACB *)Vacb;
+        Vacb = Vacbs[FileOffset >> Bits];
+    }
+
+    if (Vacb)
+    {
+        ASSERT((Vacb >= CcVacbs) && (Vacb < CcBeyondVacbs));
+    }
+
+    return Vacb;
+}
+
 NTSTATUS
 NTAPI
 CcCreateVacbArray(
@@ -356,14 +401,9 @@ CcUnmapVacbArray(
         if (Start.QuadPart < SharedMap->SectionSize.QuadPart)
         {
             if (SharedMap->SectionSize.QuadPart <= CACHE_OVERALL_SIZE)
-            {
                 Vacb = SharedMap->Vacbs[Start.LowPart / VACB_MAPPING_GRANULARITY];
-            }
             else
-            {
-                DPRINT("CcUnmapVacbArray: FIXME CcGetVacbLargeOffset()\n");
-                ASSERT(FALSE);Vacb = NULL;
-            }
+                Vacb = CcGetVacbLargeOffset(SharedMap, Start.QuadPart);
 
             if (Vacb)
             {
@@ -752,14 +792,9 @@ CcGetVacbMiss(
     _SEH2_END;
 
     if (SharedMap->SectionSize.QuadPart <= CACHE_OVERALL_SIZE)
-    {
         OutVacb = SharedMap->Vacbs[SectionOffset.LowPart / VACB_MAPPING_GRANULARITY];
-    }
     else
-    {
-        DPRINT1("CcGetVacbMiss: FIXME CcGetVacbLargeOffset()\n");
-        ASSERT(FALSE);
-    }
+        OutVacb = CcGetVacbLargeOffset(SharedMap, SectionOffset.QuadPart);
 
     if (!OutVacb)
     {
@@ -854,17 +889,11 @@ CcGetVirtualAddress(
 
     /* Get pointer to Vacb */
     if (SharedMap->SectionSize.QuadPart <= CACHE_OVERALL_SIZE)
-    {
         /* Size of file < 32 MB*/
         Vacb = SharedMap->Vacbs[FileOffset.LowPart / VACB_MAPPING_GRANULARITY];
-    }
     else
-    {
         /* This file is large (more than 32 MB) */
-        DPRINT1("CcGetVirtualAddress: FIXME CcGetVacbLargeOffset\n");
-        ASSERT(FALSE);
-        Vacb = NULL;
-    }
+        Vacb = CcGetVacbLargeOffset(SharedMap, FileOffset.QuadPart);
 
     if (Vacb)
     {
@@ -937,16 +966,11 @@ CcGetVirtualAddressIfMapped(
 
     /* Get pointer to Vacb */
     if ((SharedMap->SectionSize.QuadPart <= CACHE_OVERALL_SIZE))
-    {
         /* Size of file < 32 MB*/
         Vacb = SharedMap->Vacbs[(ULONG)FileOffset >> VACB_OFFSET_SHIFT];
-    }
     else
-    {
         /* This file is large (more than 32 MB) */
-        DPRINT1("CcGetVirtualAddress: FIXME CcGetVacbLargeOffset\n");
-        ASSERT(FALSE); Vacb = NULL;
-    }
+        Vacb = CcGetVacbLargeOffset(SharedMap, FileOffset);
 
     *OutVacb = Vacb;
 
