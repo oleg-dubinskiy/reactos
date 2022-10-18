@@ -145,6 +145,8 @@ CcCreateVacbArray(
     PLIST_ENTRY BcbEntry;
     ULONG NewSize;
     ULONG AllocSize;
+    ULONG Level;
+    ULONG Bits;
     BOOLEAN IsExtended = FALSE;
     BOOLEAN IsBcbList = FALSE;
 
@@ -161,12 +163,12 @@ CcCreateVacbArray(
         NewSize = 0xFFFFFFFF;
         DPRINT("CcCreateVacbArray: NewSize %X\n", NewSize);
     }
-    else if (AllocationSize.LowPart <= (VACB_MAPPING_GRANULARITY * sizeof(PVACB)))
+    else if (AllocationSize.LowPart <= (VACB_MAPPING_GRANULARITY * sizeof(PVACB))) // <= 1 Mb
     {
         NewSize = (CC_DEFAULT_NUMBER_OF_VACBS * sizeof(PVACB));
         DPRINT("CcCreateVacbArray: NewSize %X\n", NewSize);
     }
-    else
+    else // 1 Mb - 4 Gb
     {
         NewSize = ((AllocationSize.LowPart / VACB_MAPPING_GRANULARITY) * sizeof(PVACB));
         DPRINT("CcCreateVacbArray: NewSize %X\n", NewSize);
@@ -174,7 +176,7 @@ CcCreateVacbArray(
 
     AllocSize = NewSize;
 
-    if (NewSize == (CC_DEFAULT_NUMBER_OF_VACBS * sizeof(PVACB)))
+    if (NewSize == (CC_DEFAULT_NUMBER_OF_VACBS * sizeof(PVACB))) // <= 1 Mb
     {
         NewVacbs = SharedMap->InitialVacbs;
     }
@@ -191,15 +193,32 @@ CcCreateVacbArray(
 
             if (NewSize == 0x200)
             {
-                AllocSize += sizeof(LIST_ENTRY);
+                AllocSize += sizeof(CC_VACB_REFERENCE);
                 IsExtended = TRUE;
             }
         }
-        else
+        else // > 32 Mb
         {
+            NewSize = VACB_LEVEL_BLOCK_SIZE;
+            AllocSize = (NewSize + sizeof(CC_VACB_REFERENCE));
+
+            Level = 0;
+            Bits = (VACB_OFFSET_SHIFT + VACB_LEVEL_SHIFT);
+
+            do
+            {
+                Level++;
+                Bits += VACB_LEVEL_SHIFT;
+            }
+            while ((1LL << Bits) < AllocationSize.QuadPart);
+
+            if (Level >= CcMaxVacbLevelsSeen)
+            {
+                ASSERT(Level <= VACB_NUMBER_OF_LEVELS);
+                CcMaxVacbLevelsSeen = (Level + 1);
+            }
+
             IsExtended = TRUE;
-            DPRINT1("CcCreateVacbArray: FIXME! NewSize %X\n", NewSize);
-            ASSERT(FALSE);
         }
 
         NewVacbs = ExAllocatePoolWithTag(NonPagedPool, AllocSize, 'pVcC');
@@ -215,8 +234,8 @@ CcCreateVacbArray(
 
     if (IsExtended)
     {
-        AllocSize -= sizeof(LIST_ENTRY);
-        RtlZeroMemory(Add2Ptr(NewVacbs, AllocSize), sizeof(LIST_ENTRY));
+        AllocSize -= sizeof(CC_VACB_REFERENCE);
+        RtlZeroMemory(Add2Ptr(NewVacbs, AllocSize), sizeof(CC_VACB_REFERENCE));
     }
 
     if (IsBcbList)

@@ -14,6 +14,7 @@
 #define VACB_NUMBER_OF_LEVELS         7
 #define VACB_LAST_INDEX_FOR_LEVEL     (0x80 - 1)
 #define VACB_LEVEL_BLOCK_SIZE         ((VACB_LAST_INDEX_FOR_LEVEL + 1) * sizeof(PVOID))
+#define VACB_LEVEL_SHIFT              7
 
 #define MBCB_BITMAP_RANGE             0x1000000 // 16 Mb (32 * 512 Kb)
 
@@ -90,6 +91,12 @@ typedef enum _WORK_QUEUE_FUNCTIONS
     LazyWriteScan = 3,
     SetDone = 4,
 } WORK_QUEUE_FUNCTIONS, *PWORK_QUEUE_FUNCTIONS;
+
+typedef struct _CC_VACB_REFERENCE
+{
+    LONG Reference;
+    LONG SpecialReference;
+} CC_VACB_REFERENCE, *PCC_VACB_REFERENCE;
 
 VOID
 NTAPI
