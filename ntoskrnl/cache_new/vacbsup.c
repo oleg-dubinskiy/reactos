@@ -353,6 +353,24 @@ CcDeallocateVacbLevel(
     }
 }
 
+PCC_VACB_REFERENCE
+NTAPI
+VacbLevelReference(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PVACB* Vacbs,
+    _In_ ULONG Level)
+{
+    PCC_VACB_REFERENCE VacbReference;
+    ULONG Offset = VACB_LEVEL_BLOCK_SIZE;
+
+    if (!Level && (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
+        Offset += VACB_LEVEL_BLOCK_SIZE;
+
+    VacbReference = Add2Ptr(Vacbs, Offset);
+
+    return VacbReference;
+}
+
 VOID
 NTAPI
 SetVacb(
