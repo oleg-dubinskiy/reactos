@@ -755,8 +755,14 @@ CcGetVacbMiss(
         }
         else
         {
-            DPRINT1("CcGetVacbMiss: FIXME CcPrefillVacbLevelZone()\n");
-            ASSERT(FALSE);
+            if (!CcPrefillVacbLevelZone((CcMaxVacbLevelsSeen - 1),
+                                        LockHandle,
+                                        (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE),
+                                        LockMode,
+                                        SharedMap))
+            {
+                ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+            }
         }
     }
     _SEH2_FINALLY
