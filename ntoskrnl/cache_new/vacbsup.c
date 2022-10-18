@@ -418,6 +418,132 @@ IsVacbLevelReferenced(
 
 VOID
 NTAPI
+CcSetVacbLargeOffset(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LONGLONG FileOffset,
+    _In_ PVACB Vacb)
+{
+    PVACB* vacbs[VACB_NUMBER_OF_LEVELS];
+    ULONG indexes[VACB_NUMBER_OF_LEVELS];
+    PVACB* Vacbs = SharedMap->Vacbs;
+    PVACB* NextVacbs;
+    ULONG Level = 0;
+    ULONG Bits;
+    ULONG Index;
+    ULONG ix = 0;
+    BOOLEAN IsAllocWithBcbs;
+    BOOLEAN Special;
+
+    DPRINT("CcSetVacbLargeOffset: %p, %I64X, %p\n", SharedMap, FileOffset, Vacb);
+
+    ASSERT(SharedMap->SectionSize.QuadPart > CACHE_OVERALL_SIZE);
+
+    Bits = (VACB_OFFSET_SHIFT + VACB_LEVEL_SHIFT);
+
+    do
+    {
+        Level++;
+        Bits += VACB_LEVEL_SHIFT;
+    }
+    while ((1LL << Bits) < SharedMap->SectionSize.QuadPart);
+
+    Bits -= VACB_LEVEL_SHIFT;
+
+    do
+    {
+        Level--;
+
+        Index = (FileOffset >> Bits);
+        ASSERT(Index <= VACB_LAST_INDEX_FOR_LEVEL);
+
+        indexes[ix] = Index;
+        vacbs[ix] = Vacbs;
+
+        ix++;
+
+        NextVacbs = (PVACB *)Vacbs[Index];
+        if (!NextVacbs)
+        {
+            ASSERT(Vacb != VACB_SPECIAL_DEREFERENCE);
+            ASSERT(Vacb != NULL);
+
+            IsAllocWithBcbs = (((SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) != 0) && !Level);
+
+            NextVacbs = (PVACB *)CcAllocateVacbLevel(IsAllocWithBcbs);
+
+            if (IsAllocWithBcbs)
+            {
+                DPRINT1("CcSetVacbLargeOffset: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            Vacbs[Index] = (PVACB)NextVacbs;
+            ReferenceVacbLevel(SharedMap, Vacbs, (Level + 1), 1, FALSE);
+        }
+
+        Vacbs = NextVacbs;
+
+        FileOffset &= ((1LL << Bits) - 1);
+        Bits -= VACB_LEVEL_SHIFT;
+    }
+    while (Level);
+
+    if (Vacb < VACB_SPECIAL_DEREFERENCE)
+    {
+        Index = (FileOffset >> Bits);
+        Vacbs[Index] = Vacb;
+
+        Special = FALSE;
+    }
+    else
+    {
+        if (Vacb == VACB_SPECIAL_DEREFERENCE)
+            Vacb = NULL;
+
+        Special = TRUE;
+    }
+
+    if (Vacb)
+    {
+        ReferenceVacbLevel(SharedMap, Vacbs, Level, 1, Special);
+        return;
+    }
+
+    while (TRUE)
+    {
+        ReferenceVacbLevel(SharedMap, Vacbs, Level, -1, Special);
+
+        Special = FALSE;
+
+        if (IsVacbLevelReferenced(SharedMap, Vacbs, Level))
+            break;
+
+        if (!ix)
+            break;
+
+        ix--;
+
+        IsAllocWithBcbs = FALSE;
+
+        if (!Level && (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
+        {
+            DPRINT1("CcSetVacbLargeOffset: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        Level++;
+
+        CcDeallocateVacbLevel((PVOID *)Vacbs, IsAllocWithBcbs);
+
+        Index = indexes[ix];
+        Vacbs = vacbs[ix];
+
+        Vacbs[Index] = NULL;
+    }
+}
+
+VOID
+NTAPI
 SetVacb(
     _In_ PSHARED_CACHE_MAP SharedMap,
     _In_ LARGE_INTEGER SectionOffset,
@@ -431,8 +557,7 @@ SetVacb(
         return;
     }
 
-    DPRINT1("SetVacb: FIXME CcSetVacbLargeOffset()\n");
-    ASSERT(FALSE);
+    CcSetVacbLargeOffset(SharedMap, SectionOffset.QuadPart, Vacb);
 }
 
 VOID

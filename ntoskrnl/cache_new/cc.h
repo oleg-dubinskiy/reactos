@@ -15,6 +15,7 @@
 #define VACB_LAST_INDEX_FOR_LEVEL     (0x80 - 1)
 #define VACB_LEVEL_BLOCK_SIZE         ((VACB_LAST_INDEX_FOR_LEVEL + 1) * sizeof(PVOID))
 #define VACB_LEVEL_SHIFT              7
+#define VACB_SPECIAL_DEREFERENCE      (PVACB)(-2)
 
 #define MBCB_BITMAP_RANGE             0x1000000 // 16 Mb (32 * 512 Kb)
 
