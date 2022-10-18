@@ -401,6 +401,21 @@ ReferenceVacbLevel(
     else
         VacbReference->SpecialReference += Amount;
 }
+
+ULONG
+NTAPI
+IsVacbLevelReferenced(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PVACB* Vacbs,
+    _In_ ULONG Level)
+{
+    PCC_VACB_REFERENCE VacbReference;
+
+    VacbReference = VacbLevelReference(SharedMap, Vacbs, Level);
+
+    return (VacbReference->Reference | VacbReference->SpecialReference);
+}
+
 VOID
 NTAPI
 SetVacb(
