@@ -373,6 +373,36 @@ VacbLevelReference(
 
 VOID
 NTAPI
+ReferenceVacbLevel(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PVACB* Vacbs,
+    _In_ ULONG Level,
+    _In_ LONG Amount,
+    _In_ BOOLEAN Special)
+{
+    PCC_VACB_REFERENCE VacbReference;
+
+    VacbReference = VacbLevelReference(SharedMap, Vacbs, Level);
+
+    if (Amount <= 0)
+    {
+        if (!Special)
+        {
+            ASSERT(VacbReference->Reference >= (0 - Amount));
+        }
+        else
+        {
+            ASSERT(VacbReference->SpecialReference >= (0 - Amount));
+        }
+    }
+
+    if (!Special)
+        VacbReference->Reference += Amount;
+    else
+        VacbReference->SpecialReference += Amount;
+}
+VOID
+NTAPI
 SetVacb(
     _In_ PSHARED_CACHE_MAP SharedMap,
     _In_ LARGE_INTEGER SectionOffset,
