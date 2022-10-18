@@ -301,6 +301,58 @@ CcCreateVacbArray(
     return STATUS_SUCCESS;
 }
 
+PVOID*
+NTAPI
+CcAllocateVacbLevel(
+    _In_ BOOLEAN WithBcbs)
+{
+    PVOID* ReturnEntry;
+
+    if (WithBcbs)
+    {
+        ReturnEntry = CcVacbLevelWithBcbsFreeList;
+
+        CcVacbLevelWithBcbsFreeList = CcVacbLevelWithBcbsFreeList[0];
+        CcVacbLevelWithBcbsEntries--;
+    }
+    else
+    {
+        ReturnEntry = CcVacbLevelFreeList;
+
+        CcVacbLevelFreeList = CcVacbLevelFreeList[0];
+        CcVacbLevelEntries--;
+    }
+
+    ReturnEntry[0] = NULL;
+
+    ASSERT(RtlCompareMemory(ReturnEntry, (ReturnEntry + 1),
+           (VACB_LEVEL_BLOCK_SIZE - sizeof(PVACB))) == (VACB_LEVEL_BLOCK_SIZE - sizeof(PVACB)));
+
+    return ReturnEntry;
+}
+
+VOID
+NTAPI
+CcDeallocateVacbLevel(
+    _In_ PVOID* Entry,
+    _In_ BOOLEAN WithBcbs)
+{
+    if (WithBcbs)
+    {
+        *Entry = CcVacbLevelWithBcbsFreeList;
+        CcVacbLevelWithBcbsFreeList = Entry;
+
+        CcVacbLevelWithBcbsEntries++;
+    }
+    else
+    {
+        *Entry = CcVacbLevelFreeList;
+        CcVacbLevelFreeList = Entry;
+
+        CcVacbLevelEntries++;
+    }
+}
+
 VOID
 NTAPI
 SetVacb(
@@ -479,58 +531,6 @@ CcUnmapVacbArray(
     DPRINT("CcUnmapVacbArray: FIXME CcDrainVacbLevelZone()\n");
 
     return TRUE;
-}
-
-PVOID*
-NTAPI
-CcAllocateVacbLevel(
-    _In_ BOOLEAN WithBcbs)
-{
-    PVOID* ReturnEntry;
-
-    if (WithBcbs)
-    {
-        ReturnEntry = CcVacbLevelWithBcbsFreeList;
-
-        CcVacbLevelWithBcbsFreeList = CcVacbLevelWithBcbsFreeList[0];
-        CcVacbLevelWithBcbsEntries--;
-    }
-    else
-    {
-        ReturnEntry = CcVacbLevelFreeList;
-
-        CcVacbLevelFreeList = CcVacbLevelFreeList[0];
-        CcVacbLevelEntries--;
-    }
-
-    ReturnEntry[0] = NULL;
-
-    ASSERT(RtlCompareMemory(ReturnEntry, (ReturnEntry + 1),
-           (VACB_LEVEL_BLOCK_SIZE - sizeof(PVACB))) == (VACB_LEVEL_BLOCK_SIZE - sizeof(PVACB)));
-
-    return ReturnEntry;
-}
-
-VOID
-NTAPI
-CcDeallocateVacbLevel(
-    _In_ PVOID* Entry,
-    _In_ BOOLEAN WithBcbs)
-{
-    if (WithBcbs)
-    {
-        *Entry = CcVacbLevelWithBcbsFreeList;
-        CcVacbLevelWithBcbsFreeList = Entry;
-
-        CcVacbLevelWithBcbsEntries++;
-    }
-    else
-    {
-        *Entry = CcVacbLevelFreeList;
-        CcVacbLevelFreeList = Entry;
-
-        CcVacbLevelEntries++;
-    }
 }
 
 BOOLEAN
