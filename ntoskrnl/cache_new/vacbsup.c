@@ -1477,6 +1477,7 @@ CcExtendVacbArray(
     KLOCK_QUEUE_HANDLE LockHandle;
     PVACB* OldVacbs;
     PVACB* NewVacbs;
+    PVACB* Vacbs;
     PLIST_ENTRY HeadList;
     PLIST_ENTRY OldEntry;
     PLIST_ENTRY BcbEntry;
@@ -1485,10 +1486,13 @@ CcExtendVacbArray(
     ULONG AllocSize;
     ULONG NewVacbsSize;
     ULONG OldVacbsSize;
+    ULONG Bits;
+    ULONG Level;
+    ULONG NewLevel;
     BOOLEAN IsExtendSection = FALSE;
     BOOLEAN IsBcbList = FALSE;
 
-    DPRINT1("CcExtendVacbArray: SharedMap %X, AllocationSize %I64X\n", SharedMap, AllocationSize.QuadPart);
+    DPRINT1("CcExtendVacbArray: SharedMap %p, AllocationSize %I64X\n", SharedMap, AllocationSize.QuadPart);
 
     if ((ULONGLONG)AllocationSize.QuadPart >= (16ull * _1TB)) // 0x00001000 00000000
     {
@@ -1652,10 +1656,91 @@ CcExtendVacbArray(
     if (AllocationSize.QuadPart <= SharedMap->SectionSize.QuadPart)
         return STATUS_SUCCESS;
 
-    DPRINT1("CcExtendVacbArray: FIXME\n");
-    ASSERT(FALSE);
+    Level = 1;
 
-//Exit:
+    for (Bits = (VACB_OFFSET_SHIFT + VACB_LEVEL_SHIFT); ; Bits += VACB_LEVEL_SHIFT)
+    {
+        if ((1LL << Bits) >= SharedMap->SectionSize.QuadPart)
+            break;
+
+        Level++;
+    }
+
+    NewLevel = Level;
+
+    while ((AllocationSize.QuadPart - 1) >> Bits)
+    {
+        NewLevel++;
+        Bits += VACB_LEVEL_SHIFT;
+    }
+
+    if (NewLevel <= Level)
+        goto Exit;
+
+    if (NewLevel >= CcMaxVacbLevelsSeen)
+    {
+        ASSERT(NewLevel <= VACB_NUMBER_OF_LEVELS);
+        CcMaxVacbLevelsSeen = (NewLevel + 1);
+    }
+
+    if (!CcPrefillVacbLevelZone((NewLevel - Level), &LockHandle, FALSE, IsBcbList, SharedMap))
+    {
+        DPRINT1("CcExtendVacbArray: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (Level == 1)
+        CcCalculateVacbLevelLockCount(SharedMap, SharedMap->Vacbs, 0);
+
+    if (IsVacbLevelReferenced(SharedMap, SharedMap->Vacbs, (Level - 1)))
+    {
+        while (NewLevel > Level)
+        {
+            ASSERT(CcVacbLevelEntries != 0);
+            Vacbs = (PVACB *)CcAllocateVacbLevel(FALSE);
+
+            Vacbs[0] = (PVACB)SharedMap->Vacbs;
+
+            Level++;
+            ReferenceVacbLevel(SharedMap, Vacbs, Level, 1, FALSE);
+
+            SharedMap->Vacbs = Vacbs;
+        }
+
+        SharedMap->SectionSize.QuadPart = AllocationSize.QuadPart;
+
+        if (IsBcbList)
+        {
+            KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+            KeReleaseInStackQueuedSpinLock(&LockHandle);
+        }
+        else
+        {
+            KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle.OldIrql);
+        }
+
+        goto Exit;
+    }
+
+    if (Level == 1 && (SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
+    {
+        DPRINT1("CcExtendVacbArray: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    SharedMap->SectionSize.QuadPart = AllocationSize.QuadPart;
+
+    if (IsBcbList)
+    {
+        KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueVacbLock]);
+        KeReleaseInStackQueuedSpinLock(&LockHandle);
+    }
+    else
+    {
+        KeReleaseQueuedSpinLock(LockQueueVacbLock, LockHandle.OldIrql);
+    }
+
+Exit:
 
     SharedMap->SectionSize.QuadPart = AllocationSize.QuadPart;
 
