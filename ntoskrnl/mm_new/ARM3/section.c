@@ -3679,7 +3679,7 @@ MiCreateDataFileMap(
         }
     }
 
-    if (FileSize >= ((16 * _1PB) & ~(PAGE_SIZE - 1)))
+    if (FileSize >= ((16 * _1PB) - PAGE_SIZE))
     {
         DPRINT1("MiCreateDataFileMap: STATUS_SECTION_TOO_BIG\n");
         return STATUS_SECTION_TOO_BIG;
@@ -6979,7 +6979,7 @@ MmExtendSection(
     KeEnterCriticalRegionThread(CurrentThread);
     ExAcquireResourceExclusiveLite(&MmSectionExtendResource, TRUE);
 
-    if (OutSectionSize->QuadPart > 0x3FFFFFFFFFF000)
+    if (OutSectionSize->QuadPart > ((16 * _1PB) - PAGE_SIZE)) // 0x003FFFFF FFFFF000
     {
         ExReleaseResourceLite(&MmSectionExtendResource);
         KeLeaveCriticalRegionThread(CurrentThread);
