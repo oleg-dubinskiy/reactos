@@ -197,7 +197,7 @@ CcCreateVacbArray(
 
     DPRINT("CcCreateVacbArray: SharedMap %p AllocationSize %I64X\n", SharedMap, AllocationSize.QuadPart);
 
-    if ((ULONGLONG)AllocationSize.QuadPart >= (4ull * _1TB))
+    if ((ULONGLONG)AllocationSize.QuadPart >= (16ull * _1TB)) // 0x00001000 00000000
     {
         DPRINT1("CcCreateVacbArray: STATUS_SECTION_TOO_BIG\n");
         return STATUS_SECTION_TOO_BIG;
@@ -1440,7 +1440,7 @@ CcExtendVacbArray(
 
     DPRINT1("CcExtendVacbArray: SharedMap %X, AllocationSize %I64X\n", SharedMap, AllocationSize.QuadPart);
 
-    if (AllocationSize.HighPart & ~(PAGE_SIZE - 1))
+    if ((ULONGLONG)AllocationSize.QuadPart >= (16ull * _1TB)) // 0x00001000 00000000
     {
         DPRINT1("CcExtendVacbArray: STATUS_SECTION_TOO_BIG\n");
         return STATUS_SECTION_TOO_BIG;
