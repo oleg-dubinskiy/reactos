@@ -231,9 +231,8 @@ CcDeleteSharedCacheMap(
     {
         if (SharedMap->SectionSize.QuadPart > CACHE_OVERALL_SIZE)
         {
-            DPRINT1("CcDeleteSharedCacheMap: FIXME\n");
-            ASSERT(FALSE);
-        }
+            ASSERT(!IsVacbLevelReferenced(SharedMap, SharedMap->Vacbs, 1));
+        } 
 
         ExFreePool(SharedMap->Vacbs);
     }

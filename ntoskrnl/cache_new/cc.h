@@ -316,4 +316,12 @@ CcDrainVacbLevelZone(
     VOID
 );
 
+ULONG
+NTAPI
+IsVacbLevelReferenced(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PVACB* Vacbs,
+    _In_ ULONG Level
+);
+
 /* EOF */
