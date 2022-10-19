@@ -1418,6 +1418,56 @@ CcFreeActiveVacb(
     CcFreeVirtualAddress(Vacb);
 }
 
+VOID
+NTAPI
+CcCalculateVacbLevelLockCount(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ PVACB* Vacbs,
+    _In_ ULONG Level)
+{
+    PCC_VACB_REFERENCE VacbReference;
+    PVACB* vacbs = Vacbs;
+    PVACB Vacb;
+    PCC_BCB Bcb;
+    PLIST_ENTRY Entry;
+    LONG Reference = 0;
+    ULONG ix;
+
+    DPRINT("CcCalculateVacbLevelLockCount: SharedMap %p, Vacbs %p, Level %X\n", SharedMap, Vacbs, Level);
+
+    for (ix = 0x80; ix; ix--)
+    {
+        Vacb = *vacbs;
+        if (Vacb)
+            Reference++;
+
+        vacbs++;
+    }
+
+    if (!(SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) || Level)
+        goto Exit;
+
+    Entry = (PLIST_ENTRY)vacbs;
+    Bcb = CONTAINING_RECORD(Entry->Blink, CC_BCB, Link);
+
+    ix = 0;
+    do
+    {
+        if (Bcb->NodeTypeCode == NODE_TYPE_BCB)
+            Reference++;
+        else
+            ix++;
+
+        Bcb = CONTAINING_RECORD(Bcb->Link.Blink, CC_BCB, Link);
+    }
+    while (ix <= 0x3F);
+
+Exit:
+
+    VacbReference = VacbLevelReference(SharedMap, Vacbs, Level);
+    VacbReference->Reference = Reference;
+}
+
 NTSTATUS
 NTAPI
 CcExtendVacbArray(
