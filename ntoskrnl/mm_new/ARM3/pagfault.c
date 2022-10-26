@@ -1388,7 +1388,7 @@ MiResolveMappedFileFault(
     PMDL Mdl;
     LARGE_INTEGER StartingOffset;
     LARGE_INTEGER TempOffset;
-    ULONGLONG Size;
+    //ULONGLONG Size;
     PFN_NUMBER PageFrameIndex;
     ULONG AvailablePages;
     ULONG ClusterSize = 0;
@@ -1402,7 +1402,8 @@ MiResolveMappedFileFault(
 
     if (MmAvailablePages < 0x80)
     {
-        DPRINT("MiResolveMappedFileFault: FIXME MiEnsureAvailablePageOrWait()\n");
+        DPRINT1("MiResolveMappedFileFault: FIXME MiEnsureAvailablePageOrWait()\n");
+        ASSERT(FALSE);
         return 0xC7303001;
     }
 
@@ -1413,77 +1414,104 @@ MiResolveMappedFileFault(
 
     if (ControlArea->u.Flags.FailAllIo)
     {
-        DPRINT("MiResolveMappedFileFault: STATUS_IN_PAGE_ERROR\n");
+        DPRINT1("MiResolveMappedFileFault: STATUS_IN_PAGE_ERROR\n");
         return STATUS_IN_PAGE_ERROR;
     }
 
     if (Pte >= &Subsection->SubsectionBase[Subsection->PtesInSubsection])
     {
-        DPRINT("MiResolveMappedFileFault: STATUS_ACCESS_VIOLATION\n");
+        DPRINT1("MiResolveMappedFileFault: STATUS_ACCESS_VIOLATION\n");
         return STATUS_ACCESS_VIOLATION;
     }
 
     DPRINT("MiResolveMappedFileFault: ControlArea->u.LongFlags %X\n", ControlArea->u.LongFlags);
 
-    if (!ControlArea->u.Flags.Rom)
+    if (ControlArea->u.Flags.Rom)
     {
-        CurrentThread = PsGetCurrentThread();
+        //ASSERT(XIPConfigured == TRUE);
 
-        PageBlock = MiGetInPageSupportBlock(OldIrql, &Status);
-        if (!PageBlock)
-        {
-            DPRINT("MiResolveMappedFileFault: return %X\n", Status);
-            ASSERT(!NT_SUCCESS(Status));
-            return Status;
-        }
+        /* Don't handle yet */
+        DPRINT1("MiResolveMappedFileFault: FIXME\n");
+        ASSERT(FALSE);
+        return STATUS_PAGE_FAULT_TRANSITION;
+    }
 
-        *OutPageBlock = PageBlock;
+    CurrentThread = PsGetCurrentThread();
 
-        StartMdlPage = &PageBlock->MdlPages[0];
-        RtlFillMemoryUlong(StartMdlPage, (0x10 * sizeof(PFN_NUMBER)), 0xF1F1F1F1);
+    PageBlock = MiGetInPageSupportBlock(OldIrql, &Status);
+    if (!PageBlock)
+    {
+        DPRINT("MiResolveMappedFileFault: return %X\n", Status);
+        ASSERT(!NT_SUCCESS(Status));
+        return Status;
+    }
 
+    *OutPageBlock = PageBlock;
+
+    StartMdlPage = &PageBlock->MdlPages[0];
+    RtlFillMemoryUlong(StartMdlPage, (0x10 * sizeof(PFN_NUMBER)), 0xF1F1F1F1);
+
+    if (MiInPageSinglePages)
+    {
+        AvailablePages = 0;
+        MiInPageSinglePages--;
+    }
+    else
+    {
         AvailablePages = MmAvailablePages;
-        StartProto = Pte;
-        ReadSize = PAGE_SIZE;
+    }
 
-        if (MiInPageSinglePages)
+    CurrentMdlPage = StartMdlPage;
+    StartProto = Pte;
+    ReadSize = PAGE_SIZE;
+
+    if (!CurrentThread->DisablePageFaultClustering)
+    {
+        if (!ControlArea->u.Flags.NoModifiedWriting &&
+            (AvailablePages > (2 * MmFreeGoal) ||
+             (AvailablePages > 0x80 && (ControlArea->u.Flags.Image || CurrentThread->ForwardClusterOnly))))
         {
-            AvailablePages = 0;
-            MiInPageSinglePages--;
-        }
+            ASSERT(AvailablePages > (MM_MAXIMUM_READ_CLUSTER_SIZE + 16));
 
-        CurrentMdlPage = StartMdlPage;
-
-        if (!CurrentThread->DisablePageFaultClustering)
-        {
-            if (!ControlArea->u.Flags.NoModifiedWriting &&
-                (AvailablePages > (2 * MmFreeGoal) ||
-                 (AvailablePages > 0x80 && (ControlArea->u.Flags.Image || CurrentThread->ForwardClusterOnly))))
+            if (ControlArea->u.Flags.Image)
             {
-                ASSERT(AvailablePages > (MM_MAXIMUM_READ_CLUSTER_SIZE + 16));
-
-                if (ControlArea->u.Flags.Image)
-                {
-                    if (Subsection->u.SubsectionFlags.Protection & MM_EXECUTE)
-                        ClusterSize = MmCodeClusterSize;
-                    else
-                        ClusterSize = MmDataClusterSize;
-                }
+                if (Subsection->u.SubsectionFlags.Protection & MM_EXECUTE)
+                    ClusterSize = MmCodeClusterSize;
                 else
+                    ClusterSize = MmDataClusterSize;
+            }
+            else
+            {
+                ASSERT(CurrentThread->ReadClusterSize <= MM_MAXIMUM_READ_CLUSTER_SIZE);
+                ClusterSize = CurrentThread->ReadClusterSize;
+            }
+
+            EndMdlPage = &PageBlock->MdlPages[ClusterSize];
+
+            DPRINT("MiResolveMappedFileFault: StartMdlPage %p, EndMdlPage %p\n", StartMdlPage, EndMdlPage);
+
+            for (NextProto = &Pte[1];
+                 NextProto < &Subsection->SubsectionBase[Subsection->PtesInSubsection];
+                 NextProto++, CurrentMdlPage++)
+            {
+                if (MiIsPteOnPdeBoundary(NextProto) ||
+                    CurrentMdlPage >= EndMdlPage ||
+                    NextProto->u.Long != StartProto->u.Long)
                 {
-                    ASSERT(CurrentThread->ReadClusterSize <= MM_MAXIMUM_READ_CLUSTER_SIZE);
-                    ClusterSize = CurrentThread->ReadClusterSize;
+                    break;
                 }
 
-                EndMdlPage = &PageBlock->MdlPages[ClusterSize];
+                ControlArea->NumberOfPfnReferences++;
+                ReadSize += PAGE_SIZE;
+            }
 
-                DPRINT("MiResolveMappedFileFault: StartMdlPage %p, EndMdlPage %p\n", StartMdlPage, EndMdlPage);
-
-                for (NextProto = &Pte[1];
-                     NextProto < &Subsection->SubsectionBase[Subsection->PtesInSubsection];
-                     NextProto++, CurrentMdlPage++)
+            if (CurrentMdlPage < EndMdlPage && !CurrentThread->ForwardClusterOnly)
+            {
+                for (NextProto = (Pte - 1);
+                     NextProto >= &Subsection->SubsectionBase[0];
+                     NextProto--, CurrentMdlPage++)
                 {
-                    if (MiIsPteOnPdeBoundary(NextProto) ||
+                    if (BYTE_OFFSET(NextProto) == (PAGE_SIZE - sizeof(MMPTE)) ||
                         CurrentMdlPage >= EndMdlPage ||
                         NextProto->u.Long != StartProto->u.Long)
                     {
@@ -1494,85 +1522,46 @@ MiResolveMappedFileFault(
                     ReadSize += PAGE_SIZE;
                 }
 
-                if (CurrentMdlPage < EndMdlPage && !CurrentThread->ForwardClusterOnly)
-                {
-                    for (NextProto = (Pte - 1);
-                         NextProto >= &Subsection->SubsectionBase[0];
-                         NextProto--, CurrentMdlPage++)
-                    {
-                        if (BYTE_OFFSET(NextProto) == (PAGE_SIZE - sizeof(MMPTE)) ||
-                            CurrentMdlPage >= EndMdlPage ||
-                            NextProto->u.Long != StartProto->u.Long)
-                        {
-                            break;
-                        }
-
-                        ControlArea->NumberOfPfnReferences++;
-                        ReadSize += PAGE_SIZE;
-                    }
-
-                    StartProto = (NextProto + 1);
-                }
+                StartProto = (NextProto + 1);
             }
         }
-        else
-        {
-            DPRINT("MiResolveMappedFileFault: CurrentMdlPage %p\n", CurrentMdlPage);
-        }
+    }
+    else
+    {
+        DPRINT("MiResolveMappedFileFault: CurrentMdlPage %p\n", CurrentMdlPage);
+    }
 
-        Size = (((ULONG_PTR)(StartProto - Subsection->SubsectionBase)) * PAGE_SIZE);
+    if (ControlArea->u.Flags.Image)
+    {
+        StartingOffset.QuadPart = (StartProto - Subsection->SubsectionBase);
+        StartingOffset.QuadPart *= PAGE_SIZE;
+        StartingOffset.QuadPart += (Subsection->StartingSector * 0x200LL);
 
-        if (ControlArea->u.Flags.Image)
-        {
-            StartingOffset.QuadPart = ((Subsection->StartingSector * MM_SECTOR_SIZE) + Size);
+        TempOffset.QuadPart = ((ULONGLONG)Subsection->StartingSector + Subsection->NumberOfFullSectors);
+        TempOffset.QuadPart *= 0x200;
+    }
+    else
+    {
+        ASSERT(Subsection->SubsectionBase != NULL);
 
-            TempOffset.QuadPart = (Subsection->StartingSector + Subsection->NumberOfFullSectors);
-            TempOffset.QuadPart *= MM_SECTOR_SIZE;
-        }
-        else
-        {
-            ASSERT(Subsection->SubsectionBase != NULL);
+        TempOffset.LowPart = Subsection->StartingSector;
+        TempOffset.HighPart = Subsection->u.SubsectionFlags.StartingSector4132;
 
-            StartingOffset.HighPart = Subsection->u.SubsectionFlags.StartingSector4132;
-            StartingOffset.LowPart = Subsection->StartingSector;
+        StartingOffset.QuadPart = TempOffset.QuadPart;
+        StartingOffset.QuadPart += (StartProto - Subsection->SubsectionBase);
+        StartingOffset.QuadPart *= PAGE_SIZE;
 
-            TempOffset = StartingOffset;
+        TempOffset.QuadPart += Subsection->NumberOfFullSectors;
+        TempOffset.QuadPart *= PAGE_SIZE;
+    }
 
-            StartingOffset.QuadPart += Size;
+    TempOffset.QuadPart += Subsection->u.SubsectionFlags.SectorEndOffset;
 
-            TempOffset.QuadPart += Subsection->NumberOfFullSectors;
-            TempOffset.QuadPart *= PAGE_SIZE;
-        }
+    ASSERT(StartingOffset.QuadPart < TempOffset.QuadPart);
+    DPRINT("MiResolveMappedFileFault: StartingOffset %I64X, TempOffset %I64X\n", StartingOffset.QuadPart, TempOffset.QuadPart);
 
-        TempOffset.QuadPart += Subsection->u.SubsectionFlags.SectorEndOffset;
-
-        ASSERT(StartingOffset.QuadPart < TempOffset.QuadPart);
-        DPRINT("MiResolveMappedFileFault: StartingOffset %I64X, TempOffset %I64X\n", StartingOffset.QuadPart, TempOffset.QuadPart);
-
-        for (MdlPage = StartMdlPage; MdlPage < CurrentMdlPage; MdlPage++)
-        {
-            if (Process == HYDRA_PROCESS)
-            {
-                MmSessionSpace->Color++;
-                PageColor = (MmSessionSpace->Color & MmSecondaryColorMask);
-            }
-            else if (Process)
-            {
-                Process->NextPageColor++;
-                PageColor = (Process->NextPageColor & MmSecondaryColorMask);
-            }
-            else
-            {
-                DPRINT("MiResolveMappedFileFault: Prcb->PageColor %X\n", Prcb->PageColor);
-                Prcb->PageColor++;
-
-                PageColor = (Prcb->PageColor & Prcb->SecondaryColorMask);
-                PageColor |= Prcb->NodeShiftedColor;
-            }
-
-            *MdlPage = MiRemoveAnyPage(PageColor);
-        }
-
+    for (MdlPage = StartMdlPage; MdlPage < CurrentMdlPage; MdlPage++)
+    {
         if (Process == HYDRA_PROCESS)
         {
             MmSessionSpace->Color++;
@@ -1585,59 +1574,69 @@ MiResolveMappedFileFault(
         }
         else
         {
-            DPRINT("MiResolveMappedFileFault: Prcb->PageColor %X\n", Prcb->PageColor);
             Prcb->PageColor++;
             PageColor = (Prcb->PageColor & Prcb->SecondaryColorMask);
             PageColor |= Prcb->NodeShiftedColor;
         }
 
-        InterlockedIncrement((volatile PLONG)&Prcb->MmPageReadIoCount);
-        InterlockedExchangeAdd((volatile PLONG)&Prcb->MmPageReadCount, (ReadSize / PAGE_SIZE));
-
-        if (ControlArea->u.Flags.Image &&
-            (StartingOffset.QuadPart > (TempOffset.QuadPart - ReadSize)))
-        {
-            ASSERT((ULONG)(TempOffset.QuadPart - StartingOffset.QuadPart) > (ReadSize - PAGE_SIZE));
-            ReadSize = ALIGN_UP_BY((TempOffset.LowPart - StartingOffset.LowPart), MM_SECTOR_SIZE);
-            PageFrameIndex = MiRemoveZeroPage(PageColor);
-        }
-        else
-        {
-            PageFrameIndex = MiRemoveAnyPage(PageColor);
-        }
-
-        ControlArea->NumberOfPfnReferences++;
-
-        *CurrentMdlPage = PageFrameIndex;
-
-        Mdl = &PageBlock->Mdl;
-        MmInitializeMdl(Mdl, MiPteToAddress(StartProto), ReadSize);
-        Mdl->MdlFlags |= (MDL_IO_PAGE_READ | MDL_PAGES_LOCKED);
-
-        if (ReadSize > ((ClusterSize + 1) * PAGE_SIZE))
-        {
-            DPRINT1("KeBugCheckEx()\n");
-            ASSERT(FALSE);
-            KeBugCheckEx(0x1A, 0x777, (ULONG_PTR)Mdl, (ULONG_PTR)Subsection, TempOffset.LowPart);
-        }
-
-        MiInitializeReadInProgressPfn(Mdl, StartProto, &PageBlock->Event, TRUE);
-
-        PageBlock->StartingOffset.QuadPart = StartingOffset.QuadPart;
-        PageBlock->FilePointer = ControlArea->FilePointer;
-        PageBlock->Pfn = &MmPfnDatabase[PageBlock->MdlPages[Pte - StartProto]];
-        PageBlock->StartProto = StartProto;
-
-        return 0xC0033333;
+        *MdlPage = MiRemoveAnyPage(PageColor);
     }
 
-    //ASSERT(XIPConfigured == TRUE);
+    if (Process == HYDRA_PROCESS)
+    {
+        MmSessionSpace->Color++;
+        PageColor = (MmSessionSpace->Color & MmSecondaryColorMask);
+    }
+    else if (Process)
+    {
+        Process->NextPageColor++;
+        PageColor = (Process->NextPageColor & MmSecondaryColorMask);
+    }
+    else
+    {
+        Prcb->PageColor++;
+        PageColor = (Prcb->PageColor & Prcb->SecondaryColorMask);
+        PageColor |= Prcb->NodeShiftedColor;
+    }
 
-    /* Don't handle yet */
-    DPRINT1("MiResolveMappedFileFault: FIXME\n");
-    ASSERT(FALSE);
+    InterlockedIncrement(&Prcb->MmPageReadIoCount);
+    InterlockedExchangeAdd(&Prcb->MmPageReadCount, (ReadSize / PAGE_SIZE));
 
-    return STATUS_PAGE_FAULT_TRANSITION;
+    if (ControlArea->u.Flags.Image &&
+        (StartingOffset.QuadPart > (TempOffset.QuadPart - ReadSize)))
+    {
+        ASSERT((ULONG)(TempOffset.QuadPart - StartingOffset.QuadPart) > (ReadSize - PAGE_SIZE));
+        ReadSize = ALIGN_UP_BY((TempOffset.LowPart - StartingOffset.LowPart), MM_SECTOR_SIZE);
+        PageFrameIndex = MiRemoveZeroPage(PageColor);
+    }
+    else
+    {
+        PageFrameIndex = MiRemoveAnyPage(PageColor);
+    }
+
+    ControlArea->NumberOfPfnReferences++;
+
+    *CurrentMdlPage = PageFrameIndex;
+
+    Mdl = &PageBlock->Mdl;
+    MmInitializeMdl(Mdl, MiPteToAddress(StartProto), ReadSize);
+    Mdl->MdlFlags |= (MDL_IO_PAGE_READ | MDL_PAGES_LOCKED);
+
+    if (ReadSize > ((ClusterSize + 1) * PAGE_SIZE))
+    {
+        DPRINT1("KeBugCheckEx()\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0x1A, 0x777, (ULONG_PTR)Mdl, (ULONG_PTR)Subsection, TempOffset.LowPart);
+    }
+
+    MiInitializeReadInProgressPfn(Mdl, StartProto, &PageBlock->Event, TRUE);
+
+    PageBlock->StartingOffset.QuadPart = StartingOffset.QuadPart;
+    PageBlock->FilePointer = ControlArea->FilePointer;
+    PageBlock->Pfn = MI_PFN_ELEMENT(PageBlock->MdlPages[Pte - StartProto]);
+    PageBlock->StartProto = StartProto;
+
+    return 0xC0033333;
 }
 
 VOID
@@ -3632,8 +3631,7 @@ UserFault:
 
                 if (Status == STATUS_ACCESS_VIOLATION)
                 {
-                    DPRINT1("MmAccessFault: FIXME\n");
-                    ASSERT(FALSE);
+                    DPRINT1("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
                 }
 
                 goto Exit2;
@@ -3978,7 +3976,6 @@ UserFault:
             if (Status == STATUS_ACCESS_VIOLATION)
             {
                 DPRINT1("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
-                ASSERT(FALSE);
             }
 
             /* Not supported */
