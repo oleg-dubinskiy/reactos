@@ -1747,4 +1747,56 @@ Exit:
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+CcAdjustVacbLevelLockCount(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LONGLONG FileOffset,
+    _In_ LONG AdjustLevel)
+{
+    PCC_VACB_REFERENCE VacbReference;
+    PVACB* Vacbs = SharedMap->Vacbs;
+    LONGLONG fileOffset = FileOffset;
+    ULONG Level = 0;
+    ULONG Bits;
+
+    DPRINT("CcAdjustVacbLevelLockCount: SharedMap %p, FileOffset %I64X\n", SharedMap, FileOffset);
+
+    ASSERT(SharedMap->SectionSize.QuadPart > CACHE_OVERALL_SIZE);
+
+    Bits = (VACB_OFFSET_SHIFT + VACB_LEVEL_SHIFT);
+
+    do
+    {
+        Level++;
+        Bits += VACB_LEVEL_SHIFT;
+    }
+    while ((1LL << Bits) < SharedMap->SectionSize.QuadPart);
+
+    Bits -= VACB_LEVEL_SHIFT;
+
+    do
+    {
+        Vacbs = (PVACB *)Vacbs[FileOffset >> Bits];
+
+        FileOffset &= ((1LL << Bits) - 1);
+
+        Bits -= VACB_LEVEL_SHIFT;
+        Level--;
+    }
+    while (Level);
+
+    ReferenceVacbLevel(SharedMap, Vacbs, 0, AdjustLevel, FALSE);
+
+    if (IsVacbLevelReferenced(SharedMap, Vacbs, 0))
+        return;
+
+    VacbReference = VacbLevelReference(SharedMap, Vacbs, 0);
+    VacbReference->SpecialReference++;
+
+    fileOffset = (fileOffset & ~(CACHE_OVERALL_SIZE - 1));
+
+    CcSetVacbLargeOffset(SharedMap, fileOffset, VACB_SPECIAL_DEREFERENCE);
+}
+
 /* EOF */
