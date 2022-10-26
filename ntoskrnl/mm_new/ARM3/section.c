@@ -3668,9 +3668,7 @@ MiCreateDataFileMap(
 
             fileSize.QuadPart = (LONGLONG)*maximumSize;
 
-            DPRINT1("MiCreateDataFileMap: FsRtlSetFileSize\n");
-            ASSERT(FALSE);
-            Status = STATUS_NOT_IMPLEMENTED;//FsRtlSetFileSize(File, &fileSize);
+            Status = FsRtlSetFileSize(File, &fileSize);
             if (!NT_SUCCESS(Status))
             {
                 DPRINT("MiCreateDataFileMap: Status %X\n", Status);
@@ -7029,9 +7027,7 @@ MmExtendSection(
 
             FileSize.QuadPart = OutSectionSize->QuadPart;
 
-            DPRINT1("MmExtendSection: FIXME\n");
-            ASSERT(FALSE);
-            Status = 0;//FsRtlSetFileSize(ControlArea->FilePointer, &FileSize);
+            Status = FsRtlSetFileSize(ControlArea->FilePointer, &FileSize);
             if (!NT_SUCCESS(Status))
             {
                 ExReleaseResourceLite(&MmSectionExtendSetResource);
