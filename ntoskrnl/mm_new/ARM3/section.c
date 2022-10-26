@@ -141,7 +141,6 @@ extern LARGE_INTEGER Mm30Milliseconds;
 extern SIZE_T MmSharedCommit;
 extern SIZE_T MmTotalCommittedPages;
 extern MMPDE ValidKernelPde;
-extern PFN_NUMBER MmAvailablePages;
 extern ULONG MmSecondaryColorMask;
 extern SIZE_T MmAllocationFragment;
 extern ULONG MmVirtualBias;

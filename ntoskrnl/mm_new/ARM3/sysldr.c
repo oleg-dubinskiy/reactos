@@ -32,7 +32,6 @@ BOOLEAN MmEnforceWriteProtection = FALSE; // FIXME: should be TRUE, but that wou
 
 extern ULONG MmTotalFreeSystemPtes[MaximumPtePoolTypes];
 extern SIZE_T MmDriverCommit;
-extern PFN_NUMBER MmAvailablePages;
 extern ULONG MmSecondaryColorMask;
 extern MMPTE DemandZeroPte;
 extern BOOLEAN MiLargePageAllDrivers;

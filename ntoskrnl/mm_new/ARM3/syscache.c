@@ -26,7 +26,6 @@ extern PVOID MmSystemCacheEnd;
 extern ULONG MmSecondaryColorMask;
 extern PMMWSL MmSystemCacheWorkingSetList;
 extern PFN_NUMBER MmResidentAvailablePages;
-extern PFN_NUMBER MmAvailablePages;
 extern volatile LONG KiTbFlushTimeStamp;
 
 /* FUNCTIONS ******************************************************************/

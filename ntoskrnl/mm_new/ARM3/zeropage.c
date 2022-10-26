@@ -11,7 +11,6 @@
 KEVENT MmZeroingPageEvent;
 
 extern MM_MEMORY_CONSUMER MiMemoryConsumers[MC_MAXIMUM];
-extern PFN_NUMBER MmAvailablePages;
 extern ULONG MmSecondaryColorMask;
 extern MMPFNLIST MmFreePageListHead;
 extern MMPFNLIST MmZeroedPageListHead;

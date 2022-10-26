@@ -12,7 +12,6 @@ extern SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
 extern LIST_ENTRY CcDeferredWrites;
 extern ULONG CcTotalDirtyPages;
 extern ULONG CcDirtyPageThreshold;
-extern PFN_NUMBER MmAvailablePages;
 extern ULONG MmThrottleTop;
 extern ULONG MmThrottleBottom;
 extern MMPFNLIST MmModifiedPageListHead;

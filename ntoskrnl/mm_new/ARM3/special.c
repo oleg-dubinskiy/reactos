@@ -46,7 +46,6 @@ PFN_COUNT MiSpecialPagesNonPagedMaximum;
 
 BOOLEAN MmSpecialPoolCatchOverruns = TRUE;
 
-extern PFN_NUMBER MmAvailablePages;
 extern PMMPTE MmSystemPteBase;
 extern ULONG MmSecondaryColorMask;
 extern ULONG MmNumberOfSystemPtes;

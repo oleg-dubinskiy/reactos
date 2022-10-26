@@ -60,7 +60,6 @@ extern PMMCOLOR_TABLES MmFreePagesByColor[FreePageList + 1];
 extern PFN_NUMBER MmLowestPhysicalPage;
 extern ULONG MmSecondaryColorMask;
 extern KEVENT MmZeroingPageEvent;
-extern PFN_NUMBER MmAvailablePages;
 extern PFN_NUMBER MmLowMemoryThreshold;
 extern PFN_NUMBER MmHighMemoryThreshold;
 extern PKEVENT MiLowMemoryEvent;

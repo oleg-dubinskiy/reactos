@@ -32,7 +32,6 @@ extern EX_PUSH_LOCK HandleTableListLock;
 extern MM_MEMORY_CONSUMER MiMemoryConsumers[MC_MAXIMUM];
 extern PFN_NUMBER MmLowestPhysicalPage;
 extern PFN_NUMBER MmHighestPhysicalPage;
-extern PFN_NUMBER MmAvailablePages;
 extern PFN_COUNT MiUsedSwapPages;
 extern PFN_COUNT MiFreeSwapPages;
 extern LIST_ENTRY MmLoadedUserImageList;

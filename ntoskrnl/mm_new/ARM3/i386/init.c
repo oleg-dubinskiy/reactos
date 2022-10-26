@@ -58,7 +58,6 @@ extern PVOID MmNonPagedPoolExpansionStart;
 extern SIZE_T MmSizeOfPagedPoolInBytes;
 extern ULONG_PTR MxPfnAllocation;
 extern PFN_NUMBER MmMaximumNonPagedPoolInPages;
-extern PFN_NUMBER MmAvailablePages;
 extern PMMPTE MmFirstReservedMappingPte;
 extern PMMPTE MmLastReservedMappingPte;
 extern PMMPTE MiFirstReservedZeroingPte;

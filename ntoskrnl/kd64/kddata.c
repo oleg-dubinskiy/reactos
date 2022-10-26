@@ -93,7 +93,6 @@ VOID NTAPI RtlpBreakWithStatusInstruction(VOID);
   extern PFN_NUMBER MmResidentAvailablePages;
   extern MMSUPPORT MmSystemCacheWs;
   extern PMMPFN MmPfnDatabase;
-  extern PFN_NUMBER MmAvailablePages;
   extern LIST_ENTRY MmLoadedUserImageList;
   extern ULONG MmNumberOfPagingFiles;
   extern PVOID MmUnloadedDrivers;

@@ -29,7 +29,6 @@ extern MI_PFN_CACHE_ATTRIBUTE MiPlatformCacheAttributes[2][MmMaximumCacheType];
 extern PMMPTE MiSessionLastPte;
 extern PMM_SESSION_SPACE MmSessionSpace;
 extern PVOID MmHyperSpaceEnd;
-extern PFN_NUMBER MmAvailablePages;
 extern PVOID MiSessionImageStart;
 extern PVOID MiSessionImageEnd;
 extern PVOID MiSessionViewStart;   // 0xBE000000

@@ -30,8 +30,6 @@ static HANDLE MiBalancerThreadHandle = NULL;
 static KEVENT MiBalancerEvent;
 static KTIMER MiBalancerTimer;
 
-extern PFN_NUMBER MmAvailablePages;
-
 /* FUNCTIONS ******************************************************************/
 
 INIT_FUNCTION
