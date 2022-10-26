@@ -324,4 +324,12 @@ IsVacbLevelReferenced(
     _In_ ULONG Level
 );
 
+VOID
+NTAPI
+CcAdjustVacbLevelLockCount(
+    _In_ PSHARED_CACHE_MAP SharedMap,
+    _In_ LONGLONG FileOffset,
+    _In_ LONG AdjustLevel
+);
+
 /* EOF */

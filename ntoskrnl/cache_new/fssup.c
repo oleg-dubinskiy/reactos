@@ -174,6 +174,55 @@ Exit:
 
 VOID
 NTAPI
+CcDeleteBcbs(
+    _In_ PSHARED_CACHE_MAP SharedCacheMap)
+{
+    PLIST_ENTRY Entry;
+    PCC_BCB Bcb;
+    KIRQL OldIrql;
+
+    DPRINT("CcDeleteBcbs: SharedCacheMap %p\n", SharedCacheMap);
+
+    for (Entry = SharedCacheMap->BcbList.Flink;
+         Entry != &SharedCacheMap->BcbList;
+         )
+    {
+        Bcb = CONTAINING_RECORD(Entry, CC_BCB, Link);
+
+        Entry = Entry->Flink;
+
+        if (Bcb->NodeTypeCode != NODE_TYPE_BCB)
+            continue;
+
+        ASSERT(Bcb->PinCount == 0);
+
+        RemoveEntryList(&Bcb->Link);
+
+        if (SharedCacheMap->SectionSize.QuadPart > 0x2000000 &&
+            (SharedCacheMap->Flags & SHARE_FL_MODIFIED_NO_WRITE))
+        {
+            CcAdjustVacbLevelLockCount(SharedCacheMap, Bcb->FileOffset.QuadPart, -1);
+        }
+
+        if (Bcb->BaseAddress)
+            CcFreeVirtualAddress(Bcb->Vacb);
+
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+        if (Bcb->Reserved1[0])
+        {
+            CcTotalDirtyPages -= (Bcb->Length / PAGE_SIZE);
+            SharedCacheMap->DirtyPages -= (Bcb->Length / PAGE_SIZE);
+        }
+
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        CcDeallocateBcb(Bcb);
+    }
+}
+
+VOID
+NTAPI
 CcDeleteSharedCacheMap(
     _In_ PSHARED_CACHE_MAP SharedMap,
     _In_ KIRQL OldIrql,
@@ -195,10 +244,7 @@ CcDeleteSharedCacheMap(
     KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
 
     if (!IsListEmpty(&SharedMap->BcbList))
-    {
-        DPRINT1("CcDeleteSharedCacheMap: FIXME\n");
-        ASSERT(FALSE);
-    }
+        CcDeleteBcbs(SharedMap);
 
     CcUnmapAndPurge(SharedMap);
 
