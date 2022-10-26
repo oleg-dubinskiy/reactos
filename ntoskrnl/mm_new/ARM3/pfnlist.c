@@ -29,6 +29,10 @@ ULONG MmStandbyRePurposed;
 ULONG MmTransitionSharedPages;
 ULONG MmTransitionPrivatePages;
 ULONG MmTotalPagesForPagingFile;
+KEVENT MmAvailablePagesEvent;
+KEVENT MmAvailablePagesEventHigh;
+ULONG MiAvailablePagesEventLowSets;
+ULONG MiAvailablePagesEventHighSets;
 
 MMPFNLIST MmZeroedPageListHead = {0, ZeroedPageList, LIST_HEAD, LIST_HEAD};
 MMPFNLIST MmFreePageListHead = {0, FreePageList, LIST_HEAD, LIST_HEAD};
@@ -77,6 +81,17 @@ MiIncrementAvailablePages(
     /* Increment available pages */
     MmAvailablePages++;
     //DPRINT("MiIncrementAvailablePages: MmAvailablePages %X\n", MmAvailablePages);
+
+    if (MmAvailablePages == 0x80)
+    {
+        KeSetEvent(&MmAvailablePagesEventHigh, 0, FALSE);
+        MiAvailablePagesEventHighSets++;
+    }
+    else if (MmAvailablePages == 2)
+    {
+        KeSetEvent(&MmAvailablePagesEvent, 0, FALSE);
+        MiAvailablePagesEventLowSets++;
+    }
 
     /* Check if we've reached the configured low memory threshold */
     if (MmAvailablePages == MmLowMemoryThreshold)
@@ -1150,7 +1165,59 @@ FASTCALL
 MiInsertStandbyListAtFront(
     _In_ PFN_NUMBER PageFrameIndex)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMMPFNLIST ListHead;
+    PFN_NUMBER Flink;
+    PMMPFN Pfn;
+
+    DPRINT("MiInsertStandbyListAtFront: PageFrameIndex %X\n", PageFrameIndex);
+
+    /* Make sure the lock is held */
+    MI_ASSERT_PFN_LOCK_HELD();
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    /* Make sure the PFN is valid */
+    ASSERT((PageFrameIndex != 0) &&
+           (PageFrameIndex <= MmHighestPhysicalPage) &&
+           (PageFrameIndex >= MmLowestPhysicalPage));
+
+    /* Grab the PFN and validate it is the right kind of PFN being inserted */
+    Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+
+    ASSERT(Pfn->u4.MustBeCached == 0);
+
+    ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+    ASSERT(Pfn->u3.e1.PrototypePte == 1);
+    ASSERT(Pfn->u3.e1.Rom != 1);
+
+    /* One more transition page on a list */
+    MmTransitionSharedPages++;
+
+    /* Get the standby page list and increment its count */
+    ListHead = &MmStandbyPageListByPriority [Pfn->u4.Priority];
+    ASSERT_LIST_INVARIANT(ListHead);
+    ListHead->Total++;
+
+    /* Make the head of the list point to this page now */
+    Flink = ListHead->Flink;
+    ListHead->Flink = PageFrameIndex;
+
+    /* Make the page point to the previous head, and back to the list */
+    Pfn->u1.Flink = Flink;
+    Pfn->u2.Blink = LIST_HEAD;
+
+    /* Was the list empty? */
+    if (Flink != LIST_HEAD)
+        /* It wasn't, so update the backlink of the previous head page */
+        MI_PFN_ELEMENT(Flink)->u2.Blink = PageFrameIndex;
+    else
+        /* It was empty, so have it loop back around to this new page */
+        ListHead->Blink = PageFrameIndex;
+
+    /* Move the page onto its new location */
+    Pfn->u3.e1.PageLocation = StandbyPageList;
+
+    /* Increment number of available pages */
+    MiIncrementAvailablePages();
 }
 
 VOID

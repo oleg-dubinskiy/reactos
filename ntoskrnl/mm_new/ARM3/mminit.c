@@ -372,6 +372,8 @@ extern MMPDE ValidKernelPde;
 extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
 extern PVOID MiDebugMapping;
 extern PMMPTE MmDebugPte;
+extern KEVENT MmAvailablePagesEvent;
+extern KEVENT MmAvailablePagesEventHigh;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1544,6 +1546,8 @@ MmArmInitSystem(
         /* Set up the zero page event */
         KeInitializeEvent(&MmZeroingPageEvent, NotificationEvent, FALSE);
         KeInitializeEvent(&MmCollidedFlushEvent, NotificationEvent, FALSE);
+        KeInitializeEvent(&MmAvailablePagesEvent, NotificationEvent, TRUE);
+        KeInitializeEvent(&MmAvailablePagesEventHigh, NotificationEvent, TRUE);
 
         /* Initialize the dead stack S-LIST */
         InitializeSListHead(&MmDeadStackSListHead);
