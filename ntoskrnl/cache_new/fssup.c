@@ -964,6 +964,73 @@ CcSetDirtyPageThreshold(IN PFILE_OBJECT FileObject,
 
 VOID
 NTAPI
+CcPurgeAndClearCacheSection(
+    PSHARED_CACHE_MAP SharedMap,
+    PLARGE_INTEGER FileSize)
+{
+    IO_STATUS_BLOCK IoStatus;
+    LARGE_INTEGER FileOffset;
+    PVACB Vacb;
+    PVOID Address;
+    ULONG LengthForZero;
+    ULONG ReceivedLength;
+    BOOLEAN IsHandle = TRUE;
+
+    DPRINT("CcPurgeAndClearCacheSection: SharedMap %p, FileSize %I64x\n", SharedMap, (FileSize ? FileSize->QuadPart : 0));
+
+    if (SharedMap->Flags & 0x2000)
+    {
+        if (!((ULONG_PTR)FileSize & 1))
+            return;
+
+        FileSize = (PLARGE_INTEGER)((ULONG_PTR)FileSize ^ 1);
+    }
+
+    if (!(FileSize->LowPart & (PAGE_SIZE - 1)))
+        goto Finish;
+
+    FileOffset.QuadPart = FileSize->QuadPart;
+    FileSize = &FileOffset;
+
+    if (!SharedMap->Section || !SharedMap->Vacbs)
+    {
+        MmFlushSection(SharedMap->FileObject->SectionObjectPointer, FileSize, 1, &IoStatus, 0);
+        ASSERT(IoStatus.Status != STATUS_ENCOUNTERED_WRITE_IN_PROGRESS);
+        goto Finish;
+    }
+
+    LengthForZero = (PAGE_SIZE - (FileOffset.LowPart & (PAGE_SIZE - 1)));
+    Address = CcGetVirtualAddress(SharedMap, FileOffset, &Vacb, &ReceivedLength);
+
+    _SEH2_TRY
+    {
+        RtlZeroMemory(Address, LengthForZero);
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        DPRINT1("CcPurgeAndClearCacheSection: FIXME\n");
+        ASSERT(FALSE);
+    }
+    _SEH2_END;
+
+    if (IsHandle)
+    {
+        if (FileOffset.QuadPart > SharedMap->ValidDataGoal.QuadPart)
+            MmSetAddressRangeModified(Address, 1);
+        else
+            CcSetDirtyInMask(SharedMap, &FileOffset, LengthForZero);
+
+        FileOffset.QuadPart += LengthForZero;
+    }
+
+    CcFreeVirtualAddress(Vacb);
+
+Finish:
+    CcPurgeCacheSection(SharedMap->FileObject->SectionObjectPointer, FileSize, 0, FALSE);
+}
+
+VOID
+NTAPI
 CcSetFileSizes(
     _In_ PFILE_OBJECT FileObject,
     _In_ PCC_FILE_SIZES FileSizes)
