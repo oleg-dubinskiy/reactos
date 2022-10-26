@@ -1070,7 +1070,19 @@ NTAPI
 MiDereferenceControlArea(
      _In_ PCONTROL_AREA ControlArea)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    KIRQL OldIrql;
+
+    DPRINT("MiDereferenceControlArea: ControlArea %p\n", ControlArea);
+
+    /* Lock the PFN database */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    /* Drop reference counts */
+    ControlArea->NumberOfMappedViews--;
+    ControlArea->NumberOfUserReferences--;
+
+    /* Check if it's time to delete the CA. This releases the lock */
+    MiCheckControlArea(ControlArea, OldIrql);
 }
 
 PVOID
