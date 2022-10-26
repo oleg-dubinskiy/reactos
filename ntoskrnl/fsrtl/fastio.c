@@ -1976,3 +1976,71 @@ FsRtlRegisterFileSystemFilterCallbacks(
 
     return STATUS_SUCCESS;
 }
+
+NTSTATUS
+NTAPI
+FsRtlSetFileSize(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PLARGE_INTEGER NewFileSize)
+{
+    FILE_END_OF_FILE_INFORMATION FileEndInfo;
+    PDEVICE_OBJECT DeviceObject;
+    PIO_STACK_LOCATION IoStack;
+    IO_STATUS_BLOCK IoStatus;
+    KEVENT Event;
+    PIRP Irp;
+    BOOLEAN OldErrorMode;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("FsRtlSetFileSize: FileObject %p\n", FileObject);
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    FileEndInfo.EndOfFile.QuadPart = NewFileSize->QuadPart;
+    DeviceObject = IoGetRelatedDeviceObject(FileObject);
+
+    Irp = IoAllocateIrp(DeviceObject->StackSize, FALSE);
+    if (!Irp)
+    {
+        DPRINT1("FsRtlSetFileSize: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    OldErrorMode = IoSetThreadHardErrorMode(FALSE);
+
+    Irp->UserIosb = &IoStatus;
+    Irp->UserEvent = &Event;
+    Irp->Tail.Overlay.Thread = PsGetCurrentThread();
+
+    IoStack = IoGetNextIrpStackLocation(Irp);
+
+    Irp->Flags = (IRP_SYNCHRONOUS_PAGING_IO | IRP_PAGING_IO);
+    Irp->RequestorMode = KernelMode;
+    Irp->Tail.Overlay.OriginalFileObject = FileObject;
+    Irp->AssociatedIrp.SystemBuffer = &FileEndInfo;
+
+    IoStack->MajorFunction = IRP_MJ_SET_INFORMATION;
+    IoStack->FileObject = FileObject;
+    IoStack->DeviceObject = DeviceObject;
+
+    IoStack->Parameters.SetFile.Length = sizeof(FileEndInfo);
+    IoStack->Parameters.SetFile.FileInformationClass = FileEndOfFileInformation;
+
+    Status = IoCallDriver(DeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        DPRINT("FsRtlSetFileSize: Wait on Event %p\n", &Event);
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("FsRtlSetFileSize: Status %X\n", Status);
+        IoStatus.Status = Status;
+    }
+
+    IoSetThreadHardErrorMode(OldErrorMode);
+
+    return IoStatus.Status;
+}

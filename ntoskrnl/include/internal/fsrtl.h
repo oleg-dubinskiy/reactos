@@ -150,6 +150,13 @@ FsRtlReleaseFileForCcFlush(
     _In_ PFILE_OBJECT FileObject
 );
 
+NTSTATUS
+NTAPI
+FsRtlSetFileSize(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PLARGE_INTEGER NewFileSize
+);
+
 //
 // Global data inside the File System Runtime Library
 //
