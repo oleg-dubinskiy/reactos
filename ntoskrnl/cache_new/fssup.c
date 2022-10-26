@@ -1151,8 +1151,18 @@ CcSetFileSizes(
     {
         KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
 
-        DPRINT1("CcSetFileSizes: FIXME\n");
-        ASSERT(FALSE);
+        if (!FileSize.QuadPart)
+        {
+            if (SharedMap->Mbcb)
+                CcDeleteMbcb(SharedMap);
+
+            if (!IsListEmpty(&SharedMap->BcbList))
+                CcDeleteBcbs(SharedMap);
+        }
+
+        CcPurgeAndClearCacheSection(SharedMap, &FileSize);
+
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
     }
 
     SharedMap->OpenCount--;
