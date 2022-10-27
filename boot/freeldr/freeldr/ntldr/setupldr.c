@@ -188,7 +188,7 @@ LoadReactOSSetup(
     CHAR BootPath[MAX_PATH];
     CHAR BootOptions2[256];
     PCSTR LoadOptions;
-    PSTR BootOptions;
+    PSTR BootOptions = NULL;
     BOOLEAN BootFromFloppy;
     BOOLEAN Success;
     ULONG i, ErrorLine;
@@ -278,6 +278,7 @@ LoadReactOSSetup(
     if (ArgValue && *ArgValue)
         RtlStringCbCopyA(BootOptions2, sizeof(BootOptions2), ArgValue);
 
+    BootOptions = BootOptions2;
     TRACE("BootOptions: '%s'\n", BootOptions2);
 
     /* Check if a ramdisk file was given */
@@ -319,36 +320,39 @@ LoadReactOSSetup(
 
     TRACE("BootPath: '%s', SystemPath: '%s'\n", BootPath, SystemPath);
 
-    /* Get load options - debug and non-debug */
-    if (!InfFindFirstLine(InfHandle, "SetupData", "OsLoadOptions", &InfContext))
+    if (!BootOptions)
     {
-        ERR("Failed to find 'SetupData/OsLoadOptions'\n");
-        return EINVAL;
+        /* Get load options - debug and non-debug */
+        if (!InfFindFirstLine(InfHandle, "SetupData", "OsLoadOptions", &InfContext))
+        {
+            ERR("Failed to find 'SetupData/OsLoadOptions'\n");
+            return EINVAL;
+        }
+
+        if (!InfGetDataField(&InfContext, 1, &LoadOptions))
+        {
+            ERR("Failed to get load options\n");
+            return EINVAL;
+        }
+
+    #if DBG
+        /* Get debug load options and use them */
+        if (InfFindFirstLine(InfHandle, "SetupData", "SetupDebugOptions", &InfContext))
+        {
+            PCSTR DbgLoadOptions;
+
+            if (InfGetDataField(&InfContext, 1, &DbgLoadOptions))
+                LoadOptions = DbgLoadOptions;
+        }
+    #endif
+
+        /* Copy LoadOptions (original string will be freed) */
+        BootOptions = FrLdrTempAlloc(strlen(LoadOptions) + 1, TAG_BOOT_OPTIONS);
+        ASSERT(BootOptions);
+        strcpy(BootOptions, LoadOptions);
+
+        TRACE("BootOptions: '%s'\n", BootOptions);
     }
-
-    if (!InfGetDataField(&InfContext, 1, &LoadOptions))
-    {
-        ERR("Failed to get load options\n");
-        return EINVAL;
-    }
-
-#if DBG
-    /* Get debug load options and use them */
-    if (InfFindFirstLine(InfHandle, "SetupData", "DbgOsLoadOptions", &InfContext))
-    {
-        PCSTR DbgLoadOptions;
-
-        if (InfGetDataField(&InfContext, 1, &DbgLoadOptions))
-            LoadOptions = DbgLoadOptions;
-    }
-#endif
-
-    /* Copy LoadOptions (original string will be freed) */
-    BootOptions = FrLdrTempAlloc(strlen(LoadOptions) + 1, TAG_BOOT_OPTIONS);
-    ASSERT(BootOptions);
-    strcpy(BootOptions, LoadOptions);
-
-    TRACE("BootOptions: '%s'\n", BootOptions);
 
     /* Allocate and minimally-initialize the Loader Parameter Block */
     AllocateAndInitLPB(_WIN32_WINNT_WS03, &LoaderBlock);

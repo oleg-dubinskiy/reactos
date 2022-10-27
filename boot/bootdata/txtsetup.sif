@@ -86,56 +86,72 @@ FreeSysPartDiskSpace=450
 ; "MouseDrivers.Load" sections.
 ;
 [SourceDisksFiles]
-acpi.sys     = 1,,,,,,,4,1,,,1,4
-nmidebug.sys = 1,,,,,,x,4,,,,1,4
-sacdrv.sys   = 1,,,,,,x,4,,,,1,4
-uniata.sys   = 1,,,,,,x,4,,,,1,4
-buslogic.sys = 1,,,,,,x,4,,,,1,4
-storahci.sys = 1,,,,,,x,4,,,,1,4
+acpi.sys     = 1,,,,,,x,4,1,,,1,4
+;ahcix86.sys  = 1,,,,,,x,4,,,,1,4
+atapi.sys    = 1,,,,,,x,4,,,,1,4
 blue.sys     = 1,,,,,,x,4,,,,1,4
-vgafonts.cab = 1,,,,,,,1,,,,1,1
+btrfs.sys    = 1,,,,,,x,4,,,,1,4
+buslogic.sys = 1,,,,,,x,4,,,,1,4
+cdfs.sys     = 1,,,,,,x,4,,,,1,4
+cdrom.sys    = 1,,,,,,x,4,,,,1,4
+;class2.sys   = 1,,,,,,x,4,,,,1,4
+classpnp.sys = 1,,,,,,x,4,,,,1,4
+cmbatt.sys   = 1,,,,,,x,4,,,,1,4
+compbatt.sys = 1,,,,,,x,4,,,,1,4
+disk.sys     = 1,,,,,,x,4,,,,1,4
+;dmio.sys     = 1,,,,,,,4,,,,1,4
+;dmload.sys   = 1,,,,,,,4,,,,1,4
+iastor.sys   = 1,,,,,,x,4,,,,1,4
+intelide.sys = 1,,,,,,x,4,,,,1,4
+isapnp.sys   = 1,,,,,,x,4,,,,1,4
+;jraid.sys   = 1,,,,,,x,4,,,,1,4
+fastfat.sys  = 1,,,,,,x,4,,,,1,4
+floppy.sys   = 1,,,,,,x,4,,,,1,4
+ftdisk.sys   = 1,,,,,,x,4,,,,1,4
+kbdclass.sys = 1,,,,,,x,4,,,,1,4
+nmidebug.sys = 1,,,,,,x,4,,,,1,4
+mountmgr.sys = 1,,,,,,x,4,,,,1,4
+partmgr.sys  = 1,,,,,,x,4,,,,1,4
+pci.sys      = 1,,,,,,x,4,,,,1,4
+pciide.sys   = 1,,,,,,x,4,,,,1,4
+scsiport.sys = 1,,,,,,x,4,,,,1,4
+storport.sys = 1,,,,,,x,4,,,,1,4
+ramdisk.sys  = 1,,,,,,x,4,,,,1,4
+sacdrv.sys   = 1,,,,,,x,4,,,,1,4
+serial.sys   = 1,,,,,,x,4,,,,1,4
+serenum.sys  = 1,,,,,,x,4,,,,1,4
+storahci.sys = 1,,,,,,x,4,,,,1,4
+;uniata.sys   = 1,,,,,,x,4,,,,1,4
+usbccgp.sys  = 1,,,,,,x,4,,,,1,4
+usbd.sys     = 1,,,,,,x,4,,,,1,4
+usbhub.sys   = 1,,,,,,x,4,,,,1,4
+usbohci.sys  = 1,,,,,,x,4,,,,1,4
+usbehci.sys  = 1,,,,,,x,4,,,,1,4
+usbuhci.sys  = 1,,,,,,x,4,,,,1,4
+usbstor.sys  = 1,,,,,,x,4,,,,1,4
+
+battc.sys    = 1,,,,,,,4,,,,1,4
 bootvid.dll  = 1,,,,,,,2,,,,1,2
 c_437.nls    = 1,,,,,,,2,,,,1,2
 c_1252.nls   = 1,,,,,,,2,,,,1,2
-cdfs.sys     = 1,,,,,,x,4,,,,1,4
-cdrom.sys    = 1,,,,,,x,4,,,,1,4
-class2.sys   = 1,,,,,,x,4,,,,1,4
-isapnp.sys   = 1,,,,,,,4,,,,1,4
+kbdhid.sys   = 1,,,,,,,4,,,,1,4
 kdcom.dll    = 1,,,,,,,2,,,,1,2
-kdvbox.dll   = 1,,,,,,,2,,,,1,2
-disk.sys     = 1,,,,,,x,4,,,,1,4
-floppy.sys   = 1,,,,,,x,4,,,,1,4
+;kdvbox.dll   = 1,,,,,,,2,,,,1,2
+ksecdd.sys   = 1,,,,,,,4,,,,1,4
 i8042prt.sys = 1,,,,,,,4,,,,1,4
 hidclass.sys = 1,,,,,,,4,,,,1,4
 hidparse.sys = 1,,,,,,,4,,,,1,4
 hidusb.sys   = 1,,,,,,,4,,,,1,4
-usbccgp.sys  = 1,,,,,,x,4,,,,1,4
-usbd.sys     = 1,,,,,,x,4,,,,1,4
-usbhub.sys   = 1,,,,,,x,4,,,,1,4
-usbport.sys  = 1,,,,,,x,4,,,,1,4
-usbuhci.sys  = 1,,,,,,x,4,,,,1,4
-usbohci.sys  = 1,,,,,,x,4,,,,1,4
-usbehci.sys  = 1,,,,,,x,4,,,,1,4
-usbstor.sys  = 1,,,,,,x,4,,,,1,4
-kbdhid.sys   = 1,,,,,,,4,,,,1,4
-kbdclass.sys = 1,,,,,,x,4,,,,1,4
 l_intl.nls   = 1,,,,,,,2,,,,1,2
-pci.sys      = 1,,,,,,,4,,,,1,4
-scsiport.sys = 1,,,,,,x,4,,,,1,4
-storport.sys = 1,,,,,,x,4,,,,1,4
-fastfat.sys  = 1,,,,,,x,4,,,,1,4
-btrfs.sys    = 1,,,,,,x,4,,,,1,4
-ramdisk.sys  = 1,,,,,,x,4,,,,1,4
-classpnp.sys = 1,,,,,,,4,,,,1,4
-pciide.sys   = 1,,,,,,,4,,,,1,4
+ntdll.dll    = 1,,,,,,,2,,,,1,2
 pciidex.sys  = 1,,,,,,,4,,,,1,4
 pcix.sys     = 1,,,,,,,4,,,,1,4
 pcmcia.sys   = 1,,,,,,,4,,,,1,4
 swenum.sys   = 1,,,,,,,4,,,,1,4
-ntdll.dll    = 1,,,,,,,2,,,,1,2
+vgafonts.cab = 1,,,,,,,1,,,,1,1
+;volsnap.sys  = 1,,,,,,,4,,,,1,4
+usbport.sys  = 1,,,,,,,4,,,,1,4
 wmilib.sys   = 1,,,,,,,4,,,,1,4
-ksecdd.sys   = 1,,,,,,,4,,,,1,4
-mountmgr.sys = 1,,,,,,x,4,,,,1,4
 
 [SourceDisksFiles.x86]
 
@@ -148,60 +164,125 @@ mountmgr.sys = 1,,,,,,x,4,,,,1,4
 [SystemPartitionFiles]
 
 [HardwareIdsDatabase]
-;*PNP0A00 = isapnp
-*PNP0A03 = pci
-*PNP0A08 = pci
-*PNP0C08 = acpi
-;PCI\CC_0601 = isapnp
-PCI\CC_0604 = pci
-PCI\VEN_104B&CC_0100 = buslogic
-PCI\CC_0101 = pciide
-PCI\CC_0104 = uniata
-PCI\CC_0105 = uniata
-PCI\CC_0106 = uniata
-;PCI\CC_0106 = storahci
-*PNP0600 = uniata
-USB\CLASS_09 = usbhub
-USB\ROOT_HUB = usbhub
-USB\ROOT_HUB20 = usbhub
-PCI\CC_0C0300 = usbuhci
-PCI\CC_0C0310 = usbohci
-PCI\CC_0C0320 = usbehci
-USB\Class_08&SubClass_06&Prot_50 = usbstor
-HID_DEVICE_SYSTEM_KEYBOARD = kbdhid,{4D36E96B-E325-11CE-BFC1-08002BE10318}
-USB\COMPOSITE = usbccgp
-GenDisk = disk
-USB\Class_03 = hidusb
-GENERIC_HID_DEVICE = hidusb
+;*PNP0A00 = isapnp,{4D36E97D-E325-11CE-BFC1-08002BE10318}
+*PNP0A03 = pci,{4D36E97D-E325-11CE-BFC1-08002BE10318}
+*PNP0A08 = pci,{4D36E97D-E325-11CE-BFC1-08002BE10318}
+*PNP0C08 = acpi,{4D36E97D-E325-11CE-BFC1-08002BE10318}
+*PNP0501 = serial,{4D36E978-E325-11CE-BFC1-08002BE10318}
+*PNP0600 = atapi,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+*PNP0700 = fdc,{4D36E969-E325-11CE-BFC1-08002BE10318}
+
+*IBM3780 = i8042prt,{4D36E96F-E325-11CE-BFC1-08002BE10318}
+*CPQA0D7 = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}    
+*PNP0300 = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}    
+*PNP0301 = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}    
+*PNP0302 = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}    
 *PNP0303 = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}
-ROOT\SWENUM = swenum
+*PNP0304 = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}    
+*PNP0305 = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}    
+*PNP0306 = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}    
+*PNP0309 = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}    
+*PNP030A = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}    
+*PNP030B = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}
+*PNP0320 = i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}    
+*PNP0F03 = i8042prt,{4D36E96F-E325-11CE-BFC1-08002BE10318}    
+*PNP0F0B = i8042prt,{4D36E96F-E325-11CE-BFC1-08002BE10318}    
+*PNP0F0E = i8042prt,{4D36E96F-E325-11CE-BFC1-08002BE10318}    
+*PNP0F12 = i8042prt,{4D36E96F-E325-11CE-BFC1-08002BE10318}    
+*PNP0F13 = i8042prt,{4D36E96F-E325-11CE-BFC1-08002BE10318}    
+*PNP0F19 = i8042prt,{4D36E96F-E325-11CE-BFC1-08002BE10318}
+PS2_MOUSE = i8042prt,{4D36E96F-E325-11CE-BFC1-08002BE10318}    
+PS2_KEYBOARD= i8042prt,{4D36E96B-E325-11CE-BFC1-08002BE10318}    
+
+PCI\VEN_104B&CC_0100 = buslogic
+PCI\VEN_105A&DEV_4D33 = pciide,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_105A&DEV_4D33 = pciide,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_197B&DEV_2361&CC_010185 = pciide,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_1230 = intelide
+PCI\VEN_8086&DEV_1D02&CC_0106 = iaStor,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_2652&CC_0106 = iaStor,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_2653&CC_0106 = iaStor,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_2821&CC_0106 = iaStor,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_2824&CC_0106 = iaStor,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_2826&CC_0104 = iaStor,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_2829&CC_0106 = iaStor,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_2922&CC_0106 = iaStor,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_2923&CC_0106 = iaStor,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_3A03&CC_0106 = iaStor,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_3A23&CC_0106 = iaStor,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+
+PCI\VEN_8086&DEV_2411 = intelide
+PCI\VEN_8086&DEV_2421 = intelide
+PCI\VEN_8086&DEV_244A = intelide
+PCI\VEN_8086&DEV_244B = intelide
+PCI\VEN_8086&DEV_248A = intelide
+PCI\VEN_8086&DEV_248B = intelide
+PCI\VEN_8086&DEV_7199 = intelide
+PCI\VEN_8086&DEV_7601 = intelide
+PCI\VEN_8086&DEV_7000 = isapnp,{4D36E97D-E325-11CE-BFC1-08002BE10318}
+PCI\VEN_8086&DEV_7010 = intelide
+PCI\VEN_8086&DEV_7111 = intelide,{4D36E96A-E325-11CE-BFC1-08002BE10318}
+
+PCI\CC_0101 = pciide
+PCI\CC_0601 = isapnp,{4D36E97D-E325-11CE-BFC1-08002BE10318}
+PCI\CC_0604 = pci,{4D36E97D-E325-11CE-BFC1-08002BE10318}
+
+GenDisk = disk,{4D36E967-E325-11CE-BFC1-08002BE10318}
+GenCdrom = cdrom,{4D36E965-E325-11CE-BFC1-08002BE10318}
+
+PCI\CC_0C0300 = usbuhci,{36FC9E60-C465-11CF-8056-444553540000}
+PCI\CC_0C0310 = usbohci,{36FC9E60-C465-11CF-8056-444553540000}
+PCI\CC_0C0320 = usbehci,{36FC9E60-C465-11CF-8056-444553540000}
+USB\COMPOSITE = usbccgp,{36FC9E60-C465-11CF-8056-444553540000}
+USB\Class_03 = hidusb,{745A17A0-74D3-11D0-B6FE-00A0C90F57DA}
+USB\CLASS_09 = usbhub,{36FC9E60-C465-11CF-8056-444553540000}
+USB\ROOT_HUB = usbhub,{36FC9E60-C465-11CF-8056-444553540000}
+USB\ROOT_HUB20 = usbhub,{36FC9E60-C465-11CF-8056-444553540000}
+USB\CLASS_08&SUBCLASS_06&PROT_50 = usbstor,{36FC9E60-C465-11CF-8056-444553540000}
+
+GENERIC_HID_DEVICE = hidusb,{745A17A0-74D3-11D0-B6FE-00A0C90F57DA}
+HID_DEVICE_SYSTEM_KEYBOARD = kbdhid,{4D36E96B-E325-11CE-BFC1-08002BE10318}
+HID_DEVICE_SYSTEM_MOUSE = mouhid,{4D36E96F-E325-11CE-BFC1-08002BE10318}
+
+PCI\CC_0000 = VBE,{4D36E968-E325-11CE-BFC1-08002BE10318}
+PCI\CC_0001 = VBE,{4D36E968-E325-11CE-BFC1-08002BE10318}
+PCI\CC_0300 = VBE,{4D36E968-E325-11CE-BFC1-08002BE10318}
+PCI\CC_0301 = VBE,{4D36E968-E325-11CE-BFC1-08002BE10318}
+
+ROOT\FTDISK = ftdisk,{4D36E97D-E325-11CE-BFC1-08002BE10318}
+ROOT\SWENUM = swenum,{4D36E97D-E325-11CE-BFC1-08002BE10318}
 
 [BootBusExtenders.Load]
 acpi = acpi.sys
-pci = pci.sys
 isapnp = isapnp.sys
+pci = pci.sys
 
 [InputDevicesSupport.Load]
-usbehci = usbehci.sys
-usbohci = usbohci.sys
-usbuhci = usbuhci.sys
+hidusb = hidusb.sys
 usbhub = usbhub.sys
 usbccgp = usbccgp.sys
-hidusb = hidusb.sys
 usbstor = usbstor.sys
 
 [Keyboard.Load]
 kbdhid = kbdhid.sys
 i8042prt = i8042prt.sys
 
+[MouseDrivers.Load]
+mouclass = mouclass.sys
+mouhid = mouhid.sys
+
 [BusExtenders.Load]
 pciide = pciide.sys
+usbehci = usbehci.sys
+usbohci = usbohci.sys
+usbuhci = usbuhci.sys
 
 [SCSI.Load]
-uniata = uniata.sys
+;uniata = uniata.sys
+atapi = atapi.sys,4
 buslogic = buslogic.sys
-storahci = storahci.sys
 disk = disk.sys
+storahci = storahci.sys
 
 [Cabinets]
 Cabinet=reactos.cab
@@ -209,9 +290,11 @@ Cabinet=reactos.cab
 [SetupData]
 DefaultPath = \ReactOS
 OsLoadOptions = "/NOGUIBOOT /NODEBUG"
-DbgOsLoadOptions = "/NOGUIBOOT /KDSERIAL /DEBUGPORT=COM1 /FIRSTCHANCE"
+;DbgOsLoadOptions = "/NOGUIBOOT /KDSERIAL /DEBUGPORT=COM1 /FIRSTCHANCE"
 ;DbgOsLoadOptions = "/SOS /DEBUGPORT=SCREEN"
 ;DbgOsLoadOptions = "/NOGUIBOOT /DEBUGPORT=BOCHS"
+; "DbgOsLoadOptions" replaced on "SetupDebugOptions" (compatible with NT)
+SetupDebugOptions = "/NOGUIBOOT /KDSERIAL /DEBUGPORT=COM1 /FIRSTCHANCE"
 
 [NLS]
 AnsiCodepage     = c_1252.nls
@@ -220,50 +303,45 @@ UnicodeCasetable = l_intl.nls
 DefaultLayout    = 00000409
 DefaultLanguage  = 00000409
 
-[Computer.NTx86]
-pci_up = "Standard PC Uniprocessor"
-;pci_mp = "Standard PC Multiprocessor"
-acpi_up = "ACPI PC Uniprocessor"
-;acpi_mp = "ACPI PC Multiprocessor"
-xbox = "Original Xbox (x86 based)"
+[Computer]
+;acpiapic_mp = "ACPI Multiprocessor PC"
+acpiapic_up = "ACPI Uniprocessor PC"
+acpipic_up  = "Advanced Configuration and Power Interface (ACPI) PC"
+mps_up      = "MPS Uniprocessor PC"
+;mps_mp      = "MPS Multiprocessor PC"
+e_isa_up    = "Standard PC"
 
-[Computer.NTamd64]
-x64_up = "Standard x64 Uniprocessor"
+[Map.Computer]
+e_isa_up    = "PC Compatible Eisa/Isa HAL"
+mps_up      = "UP MPS 1.4 - APIC platform"
+;mps_mp      = "MPS 1.4 - APIC platform"
+acpipic_up  = "ACPI Compatible Eisa/Isa HAL"
+acpiapic_up = "ACPI 1.0 - APIC platform UP"
+;acpiapic_mp = "ACPI 1.0 - APIC platform MP"
 
-[Map.Computer.NTx86]
-;<id> = <pnp id string>
-pci_up = "PC UP"
-;pci_mp = "PC MP"
-acpi_up = "ACPI UP"
-;acpi_mp = "ACPI MP"
-xbox = "Xbox"
-
-[Map.Computer.NTamd64]
-x64_up = "ACPI UP"
-
-[Files.pci_up]
+[Files.e_isa_up]
 ntoskrnl.exe = 1,,,,,,,2,,,,1,2
 hal.dll      = 1,,,,,,,2,,,,1,2
 
-;[Files.pci_mp]
+[Files.mps_up]
+ntoskrnl.exe = 1,,,,,,,2,,,,1,2
+halapic.dll  = 1,,,,,,,2,,,hal.dll,1,2
+
+;[Files.mps_mp]
 ;ntkrnlmp.exe = 1,,,,,,,2,,,ntoskrnl.exe,1,2
 ;halmps.dll   = 1,,,,,,,2,,,hal.dll,1,2
 
-[Files.acpi_up]
+[Files.acpipic_up]
 ntoskrnl.exe = 1,,,,,,,2,,,,1,2
 halacpi.dll  = 1,,,,,,,2,,,hal.dll,1,2
 
-;[Files.acpi_mp]
+[Files.acpiapic_up]
+ntoskrnl.exe = 1,,,,,,,2,,,,1,2
+halaacpi.dll  = 1,,,,,,,2,,,hal.dll,1,2
+
+;[Files.acpiapic_mp]
 ;ntkrnlmp.exe = 1,,,,,,,2,,,ntoskrnl.exe,1,2
-;halacpi.dll  = 1,,,,,,,2,,,hal.dll,1,2
-
-[Files.xbox]
-ntoskrnl.exe = 1,,,,,,,2,,,,1,2
-halxbox.dll  = 1,,,,,,,2,,,hal.dll,1,2
-
-[Files.x64_up]
-ntoskrnl.exe = 1,,,,,,,2,,,,1,2
-hal.dll      = 1,,,,,,,2,,,,1,2
+;halmacpi.dll = 1,,,,,,,2,,,hal.dll,1,2
 
 [Display]
 ;<id> = <user friendly name>,<spare>,<service key name>,<height>,<width>,<bpp>
