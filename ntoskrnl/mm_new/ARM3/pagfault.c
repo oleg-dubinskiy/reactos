@@ -3334,6 +3334,11 @@ MmAccessFault(
             }
         }
 
+      #if !defined(ONE_CPU)
+        if (MI_IS_WRITE_ACCESS(FaultCode) && !Pte->u.Hard.Dirty)
+            MiSetDirtyBit(Address, Pte, TRUE);
+      #endif
+
         /* Nothing is actually wrong */
         DPRINT("Fault at IRQL %u is ok (%p)\n", OldIrql, Address);
         return STATUS_SUCCESS;
@@ -3415,8 +3420,10 @@ MmAccessFault(
                         }
                     }
 
+                  #if !defined(ONE_CPU)
                     if (MI_IS_WRITE_ACCESS(FaultCode) && !Pte->u.Hard.Dirty)
                         MiSetDirtyBit(Address, Pte, TRUE);
+                  #endif
                 }
 
                 /* Release PFN lock and return all good */
@@ -3474,8 +3481,38 @@ MmAccessFault(
         TempPte = *Pte;
         if (TempPte.u.Hard.Valid)
         {
-            DPRINT1("MmAccessFault: FIXME! TempPte.u.Hard.Valid\n");
-            ASSERT(FALSE);//DbgBreakPoint();
+            if (MI_IS_WRITE_ACCESS(FaultCode) &&
+                !(TempPte.u.Long & PTE_READWRITE) &&
+                !TempPte.u.Hard.CopyOnWrite)
+            {
+                DPRINT1("MmAccessFault: FIXME\n");
+                ASSERT(FALSE);//DbgBreakPoint();
+            }
+
+            if (IsSessionAddress &&
+                MI_IS_WRITE_ACCESS(FaultCode) && !TempPte.u.Hard.Write)
+            {
+                DPRINT1("MmAccessFault: FIXME\n");
+                ASSERT(FALSE);//DbgBreakPoint();
+            }
+            else
+            {
+                OldIrql = MiLockPfnDb(APC_LEVEL);
+
+              #if !defined(ONE_CPU)
+                if (MI_IS_WRITE_ACCESS(FaultCode) && !Pte->u.Hard.Dirty )
+                    MiSetDirtyBit (Address,Pte,TRUE);
+              #endif
+
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            }
+
+            MiUnlockWorkingSet(CurrentThread, WorkingSet);
+            ASSERT(WsLockIrql != MM_NOIRQL);
+            KeLowerIrql(WsLockIrql);
+
+            DPRINT("MmAccessFault: return STATUS_SUCCESS\n");
+            return STATUS_SUCCESS;
         }
 
         /* Check one kind of prototype PTE */
@@ -3650,8 +3687,10 @@ UserFault:
         if (!Pde->u.Hard.Valid)
             goto Exit3;
 
+      #if !defined(ONE_CPU)
         if (Pde->u.Hard.Dirty)
             MiSetDirtyBit(Pte, Pde, FALSE);
+      #endif
     }
     else if (MI_IS_PAGE_LARGE(Pde))
     {
@@ -3703,15 +3742,17 @@ UserFault:
             goto Exit2;
         }
 
-        if (!MI_IS_WRITE_ACCESS(FaultCode) || TempPte.u.Hard.Dirty)
-            goto Exit2;
-
-        if (!MiSetDirtyBit(Address, Pte, FALSE))
+      #if !defined(ONE_CPU)
+        if (MI_IS_WRITE_ACCESS(FaultCode) && !TempPte.u.Hard.Dirty)
         {
-            DPRINT1("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
-            ASSERT(FALSE);
-            Status = STATUS_ACCESS_VIOLATION;
+            if (!MiSetDirtyBit(Address, Pte, FALSE))
+            {
+                DPRINT1("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
+                ASSERT(FALSE);
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
+      #endif
 
         goto Exit2;
     }
