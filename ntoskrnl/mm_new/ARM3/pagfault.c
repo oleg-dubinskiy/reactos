@@ -244,6 +244,7 @@ MmSetExecuteOptions(
     return Status;
 }
 
+#if !defined(ONE_CPU)
 BOOLEAN
 NTAPI
 MiSetDirtyBit(
@@ -268,10 +269,7 @@ MiSetDirtyBit(
 
     TempPte.u.Hard.Dirty = 1;
     TempPte.u.Hard.Accessed = 1;
-
-  #if defined(CONFIG_SMP)
     TempPte.u.Hard.Writable = 1;
-  #endif
 
     ASSERT((Pte)->u.Hard.Valid == 1);
     ASSERT((TempPte).u.Hard.Valid == 1);
@@ -286,10 +284,7 @@ MiSetDirtyBit(
 
     if (!Pfn->OriginalPte.u.Soft.Prototype && !Pfn->u3.e1.WriteInProgress)
     {
-        DPRINT1("MiSetDirtyBit: FIXME MiReleasePageFileSpace()\n");
-        ASSERT(FALSE);
-
-        //MiReleasePageFileSpace(Pfn->OriginalPte.u.Long);
+        MiReleasePageFileSpace(Pfn->OriginalPte);
         Pfn->OriginalPte.u.Soft.PageFileHigh = 0;
     }
 
@@ -301,6 +296,7 @@ Exit:
     KeInvalidateTlbEntry(Address);
     return TRUE;
 }
+#endif
 
 NTSTATUS
 NTAPI
