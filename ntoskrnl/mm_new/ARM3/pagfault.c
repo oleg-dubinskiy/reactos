@@ -110,7 +110,7 @@ MiAccessCheck(
         if (StoreInstruction)
         {
             /* Is it writable?*/
-            if (MI_IS_PAGE_WRITEABLE(&TempPte) ||
+            if ((TempPte.u.Long & PTE_READWRITE) ||
                 MI_IS_PAGE_COPY_ON_WRITE(&TempPte))
             {
                 /* Then there's nothing to worry about */
@@ -931,7 +931,7 @@ MiResolveDemandZeroFault(
     else
     {
         /* Get a color, and see if we should grab a zero or non-zero page */
-        Color = MI_GET_NEXT_COLOR(); // ? CONFIG_SMP
+        Color = MI_GET_NEXT_COLOR();
 
         if (IsNeedAnyPage)
             /* Process or system doesn't want a zero page, grab anything */
@@ -974,7 +974,7 @@ MiResolveDemandZeroFault(
         MI_MAKE_HARDWARE_PTE(&TempPte, Pte, Pte->u.Soft.Protection, PageFrameNumber);
 
     /* Set it dirty if it's a writable page */
-    if (MI_IS_PAGE_WRITEABLE(&TempPte))
+    if (TempPte.u.Long & PTE_READWRITE)
         MI_MAKE_DIRTY_PAGE(&TempPte);
 
     /* Write it */
@@ -2226,7 +2226,7 @@ MiResolveTransitionFault(
                      MiDetermineUserGlobalPteMask(Pte);
 
     /* Is the PTE writeable? */
-    if (Pfn->u3.e1.Modified && MI_IS_PAGE_WRITEABLE(&TempPte) && !MI_IS_PAGE_COPY_ON_WRITE(&TempPte))
+    if (Pfn->u3.e1.Modified && (TempPte.u.Long & PTE_READWRITE) && !MI_IS_PAGE_COPY_ON_WRITE(&TempPte))
         /* Make it dirty */
         MI_MAKE_DIRTY_PAGE(&TempPte);
     else
@@ -3878,7 +3878,7 @@ UserFault:
                     MI_MAKE_HARDWARE_PTE(&TempPte, Pte, Pte->u.Soft.Protection, PageFrameIndex);
 
                 /* Write the dirty bit for writeable pages */
-                if (MI_IS_PAGE_WRITEABLE(&TempPte))
+                if (TempPte.u.Long & PTE_READWRITE)
                     MI_MAKE_DIRTY_PAGE(&TempPte);
 
                 /* And now write down the PTE, making the address valid */

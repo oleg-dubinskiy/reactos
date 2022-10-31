@@ -163,7 +163,7 @@ MmDbgCopyMemory(
         /* If we are going to write to the address, then check if its writable */
         Pte = MiAddressToPte(TargetAddress);
 
-        if ((Flags & MMDBG_COPY_WRITE) && (!MI_IS_PAGE_WRITEABLE(Pte)))
+        if ((Flags & MMDBG_COPY_WRITE) && !(Pte->u.Long & PTE_READWRITE))
         {
             /* Not writable, we need to do a physical copy */
             Flags |= MMDBG_COPY_PHYSICAL;

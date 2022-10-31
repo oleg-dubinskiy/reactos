@@ -79,7 +79,7 @@
 #define PFN_FROM_PTE(v) ((v)->u.Hard.PageFrameNumber)
 
 /* Macros for portable PTE modification */
-#if !defined(CONFIG_SMP)
+#if defined(ONE_CPU)
   #define MI_MAKE_DIRTY_PAGE(x)      ((x)->u.Hard.Dirty = 1)
   #define MI_MAKE_CLEAN_PAGE(x)      ((x)->u.Hard.Dirty = 0)
 #else

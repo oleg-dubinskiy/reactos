@@ -140,7 +140,7 @@ typedef struct _MMPTE_LIST
 typedef struct _MMPTE_HARDWARE
 {
     ULONG Valid:1;
-#ifndef CONFIG_SMP
+#ifdef ONE_CPU
     ULONG Write:1;
 #else
     ULONG Writable:1;
@@ -154,7 +154,7 @@ typedef struct _MMPTE_HARDWARE
     ULONG Global:1;
     ULONG CopyOnWrite:1;
     ULONG Prototype:1;
-#ifndef CONFIG_SMP
+#ifdef ONE_CPU
     ULONG reserved:1;
 #else
     ULONG Write:1;
@@ -253,7 +253,7 @@ typedef struct _MMPTE_LIST
 typedef struct _MMPTE_HARDWARE
 {
     ULONGLONG Valid:1;
-#ifndef CONFIG_SMP
+#ifdef ONE_CPU
     ULONGLONG Write:1;
 #else
     ULONGLONG Writable:1;
@@ -267,7 +267,7 @@ typedef struct _MMPTE_HARDWARE
     ULONGLONG Global:1;
     ULONGLONG CopyOnWrite:1;
     ULONGLONG Prototype:1;
-#ifndef CONFIG_SMP
+#ifdef ONE_CPU
     ULONGLONG reserved0:1;
 #else
     ULONGLONG Write:1;

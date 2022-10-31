@@ -840,7 +840,7 @@ MmProbeAndLockPages(
         if (Operation != IoReadAccess)
         {
             /* Check if the PTE is not writable */
-            if (!MI_IS_PAGE_WRITEABLE(Pte))
+            if (!(Pte->u.Long & PTE_READWRITE))
             {
                 /* Check if it's copy on write */
                 if (MI_IS_PAGE_COPY_ON_WRITE(Pte))
