@@ -19,6 +19,8 @@ extern KGUARDED_MUTEX MmSectionCommitMutex;
 extern SIZE_T MmSharedCommit;
 extern MMPTE MmDecommittedPte;
 extern MMPTE PrototypePte;
+extern PMM_SESSION_SPACE MmSessionSpace;
+extern volatile LONG KiTbFlushTimeStamp;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -515,94 +517,219 @@ MiDeleteSystemPageableVm(
     _In_ PMMPTE Pte,
     _In_ PFN_NUMBER PageCount,
     _In_ ULONG Flags,
-    _Out_ PPFN_NUMBER ValidPages)
+    _Out_ PFN_COUNT* OutPages)
 {
     PETHREAD CurrentThread = PsGetCurrentThread();
-    PFN_COUNT ActualPages = 0;
-    PMMPFN Pfn1;
-    PMMPFN Pfn2;
+    PMMSUPPORT WorkingSet;
+    MMPTE TempPte;
+    PMMPFN Pfn;
+    PMMPFN PteFramePfn;
     PFN_NUMBER PageFrameIndex;
     PFN_NUMBER PageTableIndex;
+    PFN_COUNT ActualPages = 0;
+    PFN_COUNT ValidPages = 0;
+    ULONG TbFlushEnties = 0;
+    ULONG WsIndex;
     KIRQL OldIrql;
+    BOOLEAN IsLocked = FALSE;
+
+    DPRINT("MiDeleteSystemPageableVm: Pte %p, PageCount %X, Flags %X\n", Pte, PageCount, Flags);
 
     ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
 
-    /* Lock the system working set */
-    MiLockWorkingSet(CurrentThread, &MmSystemCacheWs);
+    if (MI_IS_SESSION_PTE(Pte))
+        WorkingSet = &MmSessionSpace->GlobalVirtualAddress->Vm;
+    else
+        WorkingSet = &MmSystemCacheWs;
 
     /* Loop all pages */
-    for (; PageCount; Pte++, PageCount--)
+    while (PageCount)
     {
+        TempPte = *Pte;
+
         /* Make sure there's some data about the page */
-        if (!Pte->u.Long)
-            continue;
+        if (!TempPte.u.Long)
+            goto Next;
 
-        /* As always, only handle current ARM3 scenarios */
-        ASSERT(Pte->u.Soft.Prototype == 0);
-        ASSERT(Pte->u.Soft.Transition == 0);
-
-        /* Normally this is one possibility -- freeing a valid page */
-        if (!Pte->u.Hard.Valid)
+        if (TempPte.u.Hard.Valid)
         {
-            /* The only other ARM3 possibility is a demand zero page,
-               which would mean freeing some of the paged pool pages that haven't even been touched yet,
-               as part of a larger allocation.
+            /* Normally this is one possibility -- freeing a valid page */
+            if (!IsLocked)
+            {
+                /* Lock the system working set */
+                MiLockWorkingSet(CurrentThread, WorkingSet);
+                IsLocked = TRUE;
+            }
 
-               Right now, we shouldn't expect any page file information in the PTE
-            */
-            ASSERT(Pte->u.Soft.PageFileHigh == 0);
+            TempPte = *Pte;
+            if (!TempPte.u.Hard.Valid)
+                continue;
 
-            /* Destroy the PTE */
-            MI_ERASE_PTE(Pte);
+            /* Get the page PFN */
+            PageFrameIndex = (TempPte.u.Hard.PageFrameNumber);
+            Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+
+            WsIndex = Pfn->u1.WsIndex;
+            if (!WsIndex)
+            {
+                ValidPages++;
+
+                if (WorkingSet != &MmSystemCacheWs)
+                {
+                    DPRINT1("MiDeleteSystemPageableVm: FIXME\n");
+                    ASSERT(FALSE);
+                }
+            }
+            else
+            {
+                /* Should not have any working set data yet */
+                DPRINT1("MiDeleteSystemPageableVm: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            if (Pfn->u3.e1.PrototypePte)
+            {
+                ASSERT(WorkingSet != &MmSystemCacheWs);
+
+                DPRINT1("MiDeleteSystemPageableVm: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                /* Get the page table entry */
+                PageTableIndex = Pfn->u4.PteFrame;
+                PteFramePfn = MI_PFN_ELEMENT(PageTableIndex);
+
+                /* Lock the PFN database */
+                OldIrql = MiLockPfnDb(APC_LEVEL);
+
+                /* Delete it the page */
+                MI_SET_PFN_DELETED(Pfn);
+            }
+
+            if (PteFramePfn->u2.ShareCount != 1)
+            {
+                ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+                ASSERT(MmPfnOwner == KeGetCurrentThread());
+                ASSERT(PageTableIndex > 0);
+
+                ASSERT(MI_PFN_ELEMENT(PageTableIndex) == PteFramePfn);
+                ASSERT(PteFramePfn->u2.ShareCount != 0);
+
+                if (PteFramePfn->u3.e1.PageLocation != ActiveAndValid &&
+                    PteFramePfn->u3.e1.PageLocation != StandbyPageList)
+                {
+                    DPRINT1("MmUnmapViewInSystemCache: FIXME KeBugCheckEx()\n");
+                    ASSERT(FALSE);
+                }
+
+                PteFramePfn->u2.ShareCount--;
+                ASSERT(PteFramePfn->u2.ShareCount < 0xF000000);
+            }
+            else
+            {
+                /* Decrement the page table too */
+                MiDecrementShareCount(PteFramePfn, PageTableIndex);
+            }
+
+            MiDecrementShareCount(Pfn, PageFrameIndex);
+
+            /* Release the PFN database */
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+            /* Zero out the PTE */
+            Pte->u.Long = 0;
+
+            if ((Flags & 1) && TbFlushEnties != 0x21)
+            {
+                DPRINT1("MiDeleteSystemPageableVm: FIXME. TbFlushEnties %X\n", TbFlushEnties);
+                ASSERT(FALSE);
+                TbFlushEnties++;
+            }
 
             /* Actual legitimate pages */
             ActualPages++;
+            goto Next;
 
-            continue;
+            Pte->u.Soft.PageFileHigh = KiTbFlushTimeStamp;
+            if (!Pte->u.Soft.PageFileHigh && TbFlushEnties != 0x21)
+            {
+                DPRINT1("MiDeleteSystemPageableVm: FIXME. TbFlushEnties %X\n", TbFlushEnties);
+                ASSERT(FALSE);
+                TbFlushEnties++;
+            }
+
+            /* Actual legitimate pages */
+            ActualPages++;
+            goto Next;
         }
 
-        /* Get the page PFN */
-        PageFrameIndex = PFN_FROM_PTE(Pte);
-        Pfn1 = MiGetPfnEntry(PageFrameIndex);
+        if (TempPte.u.Soft.Prototype)
+        {
+            /* Prototype PTE */
+            ASSERT(WorkingSet != &MmSystemCacheWs);
 
-        /* Should not have any working set data yet */
-        ASSERT(Pfn1->u1.WsIndex == 0);
+            /* Zero out the PTE */
+            Pte->u.Long = 0;
 
-        /* Actual valid, legitimate, pages */
-        if (ValidPages)
-            (*ValidPages)++;
+            /* Actual legitimate pages */
+            ActualPages++;
+            goto Next;
+        }
 
-        /* Get the page table entry */
-        PageTableIndex = Pfn1->u4.PteFrame;
-        Pfn2 = MiGetPfnEntry(PageTableIndex);
+        if (!TempPte.u.Soft.Transition)
+        {
+            /* Demand zero page? */
+            if (TempPte.u.Soft.PageFileHigh)
+            {
+                OldIrql = MiLockPfnDb(APC_LEVEL);
+                MiReleasePageFileSpace(TempPte);
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            }
+
+            /* Zero out the PTE */
+            Pte->u.Long = 0;
+
+            /* Actual legitimate pages */
+            ActualPages++;
+            goto Next;
+        }
 
         /* Lock the PFN database */
         OldIrql = MiLockPfnDb(APC_LEVEL);
 
-        /* Delete it the page */
-        MI_SET_PFN_DELETED(Pfn1);
-        MiDecrementShareCount(Pfn1, PageFrameIndex);
+        TempPte = *Pte;
+        if (!TempPte.u.Soft.Transition)
+        {
+            /* Release the PFN database */
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            continue;
+        }
 
-        /* Decrement the page table too */
-        MiDecrementShareCount(Pfn2, PageTableIndex);
+        /* Transition PTE */
+        DPRINT1("MiDeleteSystemPageableVm: FIXME for transition PTE\n");
+        ASSERT(FALSE);
 
-        /* Release the PFN database */
-        MiUnlockPfnDb(OldIrql, APC_LEVEL);
-
-        /* Destroy the PTE */
-        MI_ERASE_PTE(Pte);
-
-        /* Actual legitimate pages */
-        ActualPages++;
+Next:
+        PageCount--;
+        Pte++;
     }
 
     /* Release the working set */
-    MiUnlockWorkingSet(CurrentThread, &MmSystemCacheWs);
+    if (IsLocked)
+        MiUnlockWorkingSet(CurrentThread, WorkingSet);
 
-    /* Flush the entire TLB */
-    KeFlushEntireTb(TRUE, TRUE);
+    /* Flush data */
+    if (TbFlushEnties)
+    {
+        DPRINT1("MiDeleteSystemPageableVm: FIXME\n");
+        ASSERT(FALSE);
+    }
 
-    /* Done */
+    /* Actual valid, legitimate, pages */
+    if (OutPages)
+        *OutPages = ValidPages;
+
     return ActualPages;
 }
 
