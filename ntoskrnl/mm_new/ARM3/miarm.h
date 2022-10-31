@@ -2505,6 +2505,12 @@ MmInitPagingFile(
     VOID
 );
 
+BOOLEAN
+NTAPI
+MiReleasePageFileSpace(
+    _In_ MMPTE PteContents
+);
+
 /* MiRemoveZeroPage will use inline code to zero out the page manually if only free pages are available.
    In some scenarios, we don't/can't run that piece of code and would rather only have a real zero page.
    If we can't have a zero page, then we'd like to have our own code to grab a free page and zero it out,

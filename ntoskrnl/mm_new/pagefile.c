@@ -48,6 +48,14 @@ MmInitPagingFile(VOID)
     MmNumberOfPagingFiles = 0;
 }
 
+BOOLEAN
+NTAPI
+MiReleasePageFileSpace(
+    _In_ MMPTE PteContents)
+{
+    UNIMPLEMENTED;
+    return FALSE;
+}
 
 /* SYSTEM CALLS ***************************************************************/
 
