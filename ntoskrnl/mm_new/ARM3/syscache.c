@@ -759,13 +759,13 @@ MmCopyToCachedPage(
 
     _SEH2_TRY
     {
-        ProbeForReadChar(InBuffer);
+        *(volatile CHAR *)InBuffer;
     }
     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
     {
-        DPRINT1("MmCopyToCachedPage: FIXME\n");
-        ASSERT(FALSE);
-        return _SEH2_GetExceptionCode();
+        Status = _SEH2_GetExceptionCode();
+        DPRINT1("MmCopyToCachedPage: Status %X\n", Status);
+        return Status;
     }
     _SEH2_END;
 
