@@ -3647,14 +3647,14 @@ MiCreateDataFileMap(
     {
         /* Get size via fs */
         Status = FsRtlGetFileSize(File, &fileSize);
-        if (Status == STATUS_FILE_IS_A_DIRECTORY)
-        {
-            DPRINT1("MiCreateDataFileMap: STATUS_FILE_IS_A_DIRECTORY\n");
-            return STATUS_INVALID_FILE_FOR_SECTION;
-        }
-
         if (!NT_SUCCESS(Status))
         {
+            if (Status == STATUS_FILE_IS_A_DIRECTORY)
+            {
+                DPRINT1("MiCreateDataFileMap: STATUS_FILE_IS_A_DIRECTORY\n");
+                return STATUS_INVALID_FILE_FOR_SECTION;
+            }
+
             DPRINT1("MiCreateDataFileMap: Status %X\n", Status);
             return Status;
         }
@@ -3685,6 +3685,8 @@ MiCreateDataFileMap(
                 DPRINT("MiCreateDataFileMap: Status %X\n", Status);
                 return Status;
             }
+
+            FileSize = (ULONGLONG)fileSize.QuadPart;
         }
     }
 
@@ -7415,7 +7417,7 @@ MmCanFileBeTruncated(
         return TRUE;
     }
 
-    DPRINT1("MmCanFileBeTruncated: return FALSE\n");
+    DPRINT("MmCanFileBeTruncated: return FALSE\n");
     return FALSE;
 }
 
