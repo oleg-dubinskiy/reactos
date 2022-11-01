@@ -2591,7 +2591,7 @@ MiDispatchFault(
                     {
                         PSUBSECTION Subsection = (PSUBSECTION)&Vad->ControlArea[1];
 
-                        DPRINT1("MiDispatchFault: %p (%p:%p)\n", SectionProto, Vad->FirstPrototypePte, Vad->LastContiguousPte);
+                        //DPRINT1("MiDispatchFault: %p (%p:%p)\n", SectionProto, Vad->FirstPrototypePte, Vad->LastContiguousPte);
 
                         ix = 1;
 
