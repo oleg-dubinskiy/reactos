@@ -1337,8 +1337,295 @@ CcZeroData(IN PFILE_OBJECT FileObject,
            IN PLARGE_INTEGER EndOffset,
            IN BOOLEAN Wait)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PDEVICE_OBJECT DeviceObject;
+    IO_STATUS_BLOCK IoStatus;
+    PPFN_NUMBER MdlPage;
+    PVOID ZeroBuffer = NULL;
+    PCC_BCB Bcb = NULL;
+    PMDL Mdl = NULL;
+    PVOID PinBuffer;
+    LARGE_INTEGER FileOffset;
+    LARGE_INTEGER DataSize;
+    LARGE_INTEGER RemainSize;
+    LARGE_INTEGER NextOffset;
+    KEVENT Event;
+    ULONG CurrentSize;
+    ULONG ZeroBufferSize;
+    ULONG ByteCount = 0;
+    ULONG OldByteCount;
+    ULONG SectorMask;
+    ULONG PinLength;
+    ULONG ZeroSize;
+    ULONG ix;
+    UCHAR OldClustering = 0;
+    BOOLEAN IsWriteThrough;
+    BOOLEAN IsAggressiveZero = FALSE;
+    BOOLEAN Result;
+    NTSTATUS Status;
+
+    DPRINT("CcZeroData: %p, %I64X, %I64X, %X\n",
+           FileObject, (StartOffset ? StartOffset->QuadPart : 0LL), (EndOffset ? EndOffset->QuadPart : 0LL), Wait);
+
+    IsWriteThrough = ((FileObject->Flags & FO_WRITE_THROUGH) != 0 || !FileObject->PrivateCacheMap);
+
+    if (IsWriteThrough && !Wait)
+        return FALSE;
+
+    DeviceObject = IoGetRelatedDeviceObject(FileObject);
+    SectorMask = (DeviceObject->SectorSize - 1);
+
+    FileOffset.QuadPart = StartOffset->QuadPart;
+    DataSize.QuadPart = (EndOffset->QuadPart - StartOffset->QuadPart);
+
+    ASSERT(DataSize.QuadPart <= 0x2000 ||
+           ((DataSize.LowPart & SectorMask) == 0  && (FileOffset.LowPart & SectorMask) == 0));
+
+    if (DataSize.QuadPart <= 0x2000 || MmAvailablePages >= 0x40)
+    {
+        if (!IsWriteThrough)
+        {
+            //_SEH2_TRY
+
+            CurrentSize = 0x10000;
+            Result = TRUE;
+
+            while (CurrentSize)
+            {
+                if (CurrentSize >= DataSize.QuadPart)
+                {
+                    CurrentSize = DataSize.LowPart;
+                }
+                else if (!Wait)
+                {
+                    Result = FALSE;
+                    break;
+                }
+
+                if (!CcPinFileData(FileObject,
+                                   &FileOffset,
+                                   CurrentSize,
+                                   FALSE,
+                                   TRUE,
+                                   Wait,
+                                   &Bcb,
+                                   &PinBuffer,
+                                   &NextOffset))
+                {
+                    Result = FALSE;
+                    break;
+                }
+
+                PinLength = (NextOffset.QuadPart - FileOffset.QuadPart);
+
+                Mdl = IoAllocateMdl(PinBuffer, PinLength, FALSE, FALSE, NULL);
+                if (!Mdl)
+                {
+                    DPRINT1("CcZeroData: STATUS_INSUFFICIENT_RESOURCES\n");
+                    ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+                }
+
+                OldClustering = (PsGetCurrentThread()->DisablePageFaultClustering + 2);
+                PsGetCurrentThread()->DisablePageFaultClustering = 1;
+
+                MmProbeAndLockPages(Mdl, KernelMode, IoReadAccess);
+
+                PsGetCurrentThread()->DisablePageFaultClustering = (OldClustering - 2);
+                OldClustering = 0;
+
+                FileOffset = NextOffset;
+
+                if (CurrentSize > PinLength)
+                    CurrentSize -= PinLength;
+                else
+                    CurrentSize = 0;
+
+                MmSetAddressRangeModified(PinBuffer, PinLength);
+
+                CcSetDirtyPinnedData(Bcb, NULL);
+                CcUnpinFileDataEx(Bcb, FALSE, 0);
+                Bcb = NULL;
+
+                MmUnlockPages(Mdl);
+                IoFreeMdl(Mdl);
+                Mdl = NULL;
+            }
+
+            //_SEH2_FINALLY
+
+            if (OldClustering)
+                PsGetCurrentThread()->DisablePageFaultClustering = (OldClustering - 2);
+
+            if (Bcb)
+                CcUnpinFileDataEx(Bcb, FALSE, 0);
+
+            if (Mdl)
+                IoFreeMdl(Mdl);
+
+            //_SEH2_END;
+
+            if (!Result)
+                return FALSE;
+
+            if (FileOffset.QuadPart >= EndOffset->QuadPart)
+                return TRUE;
+        }
+    }
+
+    ASSERT((FileOffset.LowPart & SectorMask) == 0);
+
+    FileOffset.QuadPart = ((FileOffset.QuadPart + SectorMask) & ~SectorMask);
+
+    RemainSize.QuadPart = ((EndOffset->QuadPart + SectorMask) & ~SectorMask);
+    RemainSize.QuadPart -= FileOffset.QuadPart;
+
+    ASSERT((FileOffset.LowPart & SectorMask) == 0);
+    ASSERT((RemainSize.LowPart & SectorMask) == 0);
+
+    if (!RemainSize.QuadPart)
+        return TRUE;
+
+    //_SEH2_TRY
+
+    if (!RemainSize.HighPart && RemainSize.LowPart < PAGE_SIZE)
+        ZeroBufferSize = RemainSize.LowPart;
+    else
+        ZeroBufferSize = PAGE_SIZE;
+
+    ZeroBuffer = ExAllocatePoolWithTag(NonPagedPoolCacheAligned, ZeroBufferSize, 'eZcC');
+    if (!ZeroBuffer)
+    {
+        DPRINT1("CcZeroData: FIXME STATUS_INSUFFICIENT_RESOURCES\n");
+        ASSERT(FALSE);
+        ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+    }
+
+    if (!RemainSize.HighPart && RemainSize.LowPart < 0x80000)
+    {
+        ZeroSize = RemainSize.LowPart;
+    }
+    else if (InterlockedIncrement(&CcAggressiveZeroCount) > CcAggressiveZeroThreshold)
+    {
+        InterlockedDecrement(&CcAggressiveZeroCount);
+        ZeroSize = 0x10000;
+    }
+    else
+    {
+        IsAggressiveZero = TRUE;
+        ZeroSize = 0x80000;
+    }
+
+    while (TRUE)
+    {
+        Mdl = IoAllocateMdl(ZeroBuffer, ZeroSize, FALSE, FALSE, NULL);
+
+        if (!Mdl && ZeroSize != ZeroBufferSize)
+            goto Continue;
+
+        if (!Mdl)
+        {
+            DPRINT1("CcZeroData: STATUS_INSUFFICIENT_RESOURCES\n");
+            ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+        }
+
+        if (ZeroSize == ZeroBufferSize)
+        {
+            MmBuildMdlForNonPagedPool(Mdl);
+            break;
+        }
+
+        OldByteCount = Mdl->ByteCount;
+        Mdl->ByteCount = ZeroBufferSize;
+
+        MmBuildMdlForNonPagedPool(Mdl);
+
+        Mdl->MappedSystemVa = NULL;
+        Mdl->ByteCount = OldByteCount;
+
+        Mdl->MdlFlags = (Mdl->MdlFlags & ~MDL_SOURCE_IS_NONPAGED_POOL) | MDL_PAGES_LOCKED;
+
+        MdlPage = MmGetMdlPfnArray(Mdl);
+
+        for (ix = 1; ix < ((OldByteCount + (PAGE_SIZE - 1)) / PAGE_SIZE); ix++)
+        {
+            MdlPage[ix] = MdlPage[ix - 1];
+        }
+
+        if (MmGetSystemAddressForMdlSafe(Mdl, LowPagePriority))
+            break;
+
+        IoFreeMdl(Mdl);
+
+Continue:
+
+        ZeroSize = ((ZeroSize / 2) & ~SectorMask);
+
+        if (ZeroSize < ZeroBufferSize)
+            ZeroSize = ZeroBufferSize;
+
+        ASSERT((ZeroSize & SectorMask) == 0 && ZeroSize != 0);
+    }
+
+    RtlZeroMemory(ZeroBuffer, ZeroBufferSize);
+
+    ASSERT(MmGetSystemAddressForMdl(Mdl));
+    ByteCount = Mdl->ByteCount;
+
+    ASSERT(ZeroSize != 0);
+    ASSERT((ZeroSize & SectorMask) == 0);
+    ASSERT((RemainSize.LowPart & SectorMask) == 0);
+
+    while (RemainSize.QuadPart)
+    {
+        if (ZeroSize > RemainSize.QuadPart)
+            ZeroSize = RemainSize.LowPart;
+
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+        Mdl->ByteCount = ZeroSize;
+
+        Status = IoSynchronousPageWrite(FileObject, Mdl, &FileOffset, &Event, &IoStatus);
+
+        if (Status == STATUS_PENDING)
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("CcZeroData: Status %X\n", Status);
+            ExRaiseStatus(Status);
+        }
+
+        if (!NT_SUCCESS(IoStatus.Status))
+        {
+            DPRINT1("CcZeroData: Status %X\n", Status);
+            ExRaiseStatus(IoStatus.Status);
+        }
+
+        FileOffset.QuadPart += ZeroSize;
+        RemainSize.QuadPart -= ZeroSize;
+    }
+
+    //_SEH2_FINALLY
+
+    if (Mdl)
+    {
+        if (ByteCount && !(Mdl->MdlFlags & MDL_SOURCE_IS_NONPAGED_POOL))
+        {
+            Mdl->ByteCount = ByteCount;
+            MmUnmapLockedPages(Mdl->MappedSystemVa, Mdl);
+        }
+
+        IoFreeMdl(Mdl);
+    }
+
+    if (IsAggressiveZero)
+        InterlockedDecrement(&CcAggressiveZeroCount);
+
+    if (ZeroBuffer)
+        ExFreePoolWithTag(ZeroBuffer, 'eZcC');
+
+    //_SEH2_END;
+
+    return TRUE;
 }
 
 INIT_FUNCTION

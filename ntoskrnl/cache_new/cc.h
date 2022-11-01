@@ -332,4 +332,18 @@ CcAdjustVacbLevelLockCount(
     _In_ LONG AdjustLevel
 );
 
+BOOLEAN
+NTAPI
+CcPinFileData(
+    _In_ PFILE_OBJECT FileObject,
+    _In_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _In_ BOOLEAN IsNoWrite,
+    _In_ BOOLEAN Flag5,
+    _In_ ULONG PinFlags,
+    _Out_ PCC_BCB* OutBcb,
+    _Out_ PVOID* OutBuffer,
+    _Out_ LARGE_INTEGER* OutBeyondLastByte
+);
+
 /* EOF */
