@@ -1039,6 +1039,7 @@ CcSetFileSizes(
     LARGE_INTEGER ValidDataLength;
     LARGE_INTEGER AllocationSize;
     LARGE_INTEGER FileSize;
+    IO_STATUS_BLOCK IoStatus;
     PVACB ActiveVacb;
     KIRQL OldIrql;
     NTSTATUS Status;
@@ -1059,8 +1060,8 @@ CcSetFileSizes(
 
         if (BYTE_OFFSET(FileSize.LowPart))
         {
-            DPRINT1("CcSetFileSizes: FIXME MmFlushSection()\n");
-            ASSERT(FALSE);
+            MmFlushSection(FileObject->SectionObjectPointer, &FileSize, 1, &IoStatus, 0);
+            ASSERT(IoStatus.Status != STATUS_ENCOUNTERED_WRITE_IN_PROGRESS);
         }
 
         CcPurgeCacheSection(FileObject->SectionObjectPointer, &FileSize, 0, FALSE);
