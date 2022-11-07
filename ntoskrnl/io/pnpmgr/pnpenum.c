@@ -3353,7 +3353,6 @@ PipCallDriverAddDeviceQueryRoutine(
 
     if (!IsNotMadeupService)
     {
-        ASSERT(FALSE);
         DPRINT("PipCallDriverAddDeviceQueryRoutine: No DriverObject for madeup service\n");
         Status = STATUS_UNSUCCESSFUL;
         goto Exit;
