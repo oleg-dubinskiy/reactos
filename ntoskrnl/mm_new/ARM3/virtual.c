@@ -21,6 +21,8 @@ extern MMPTE MmDecommittedPte;
 extern MMPTE PrototypePte;
 extern PMM_SESSION_SPACE MmSessionSpace;
 extern volatile LONG KiTbFlushTimeStamp;
+extern PVOID MmSystemCacheStart;
+extern PVOID MmSystemCacheEnd;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -3075,14 +3077,106 @@ MmFlushVirtualMemory(
     _In_ PEPROCESS Process,
     _Inout_ PVOID* BaseAddress,
     _Inout_ SIZE_T* RegionSize,
-    _Out_ IO_STATUS_BLOCK* IoStatusBlock)
+    _Out_ IO_STATUS_BLOCK* OutIoStatusBlock)
 {
+    PETHREAD Thread = PsGetCurrentThread();
+    PVOID StartAddress;
+    PVOID EndAddress;
+    PMMVAD Vad;
+    KAPC_STATE ApcState;
+    //BOOLEAN IsAttached = FALSE;
+    BOOLEAN IsNullSize;
+    NTSTATUS Status;
+
+    DPRINT1("MmFlushVirtualMemory: %p, %p, %IX\n", Process, (BaseAddress ? *BaseAddress : NULL), (RegionSize ? *RegionSize : 0));
     PAGED_CODE();
 
-    UNIMPLEMENTED;
+    ASSERT(!MI_IS_SESSION_ADDRESS(*BaseAddress));
+    //ASSERT(!MI_IS_SYSTEM_CACHE_ADDRESS(*BaseAddress));
+    ASSERT(!(*BaseAddress >= MmSystemCacheStart && *BaseAddress <= MmSystemCacheEnd));
+    //ASSERT(!(*BaseAddress >= MiSystemCacheStartExtra && *BaseAddress <= MiSystemCacheEndExtra));
 
-    /* Fake success */
-    return STATUS_SUCCESS;
+    StartAddress = (PVOID)(((ULONG_PTR)*BaseAddress) & ~(PAGE_SIZE - 1));
+    EndAddress = Add2Ptr(*BaseAddress, (*RegionSize - 1));
+    EndAddress = (PVOID)((ULONG_PTR)EndAddress | (PAGE_SIZE - 1));
+
+    *BaseAddress = StartAddress;
+
+    if (Process != CONTAINING_RECORD((Thread->Tcb.ApcState.Process), EPROCESS, Pcb))
+    {
+        KeStackAttachProcess(&Process->Pcb, &ApcState);
+        //IsAttached = 1;
+    }
+
+    /* Lock the process address space */
+    MmLockAddressSpace(&Process->Vm);
+
+    if (Process->VmDeleted)
+    {
+        DPRINT1("MmFlushVirtualMemory: STATUS_PROCESS_IS_TERMINATING\n");
+        Status = STATUS_PROCESS_IS_TERMINATING;
+        goto Exit;
+    }
+
+    Vad = MiLocateAddress(StartAddress);
+    if (!Vad)
+    {
+        DPRINT1("MmFlushVirtualMemory: STATUS_NOT_MAPPED_VIEW\n");
+        Status = STATUS_NOT_MAPPED_VIEW;
+        goto Exit;
+    }
+
+    if (*RegionSize)
+    {
+        IsNullSize = FALSE;
+    }
+    else
+    {
+        DPRINT1("MmFlushVirtualMemory: FIXME\n");
+        ASSERT(FALSE);
+        IsNullSize = TRUE;
+    }
+    DPRINT1("MmFlushVirtualMemory: IsNullSize %X\n", IsNullSize);
+
+    if (Vad->u.VadFlags.PrivateMemory)
+    {
+        DPRINT1("MmFlushVirtualMemory: STATUS_NOT_MAPPED_VIEW\n");
+        Status = STATUS_NOT_MAPPED_VIEW;
+        goto Exit;
+    }
+
+    if (Vad->EndingVpn < ((ULONG_PTR)EndAddress / PAGE_SIZE))
+    {
+        DPRINT1("MmFlushVirtualMemory: STATUS_NOT_MAPPED_VIEW\n");
+        Status = STATUS_NOT_MAPPED_VIEW;
+        goto Exit;
+    }
+
+    if (!Vad->ControlArea->FilePointer)
+    {
+        DPRINT1("MmFlushVirtualMemory: STATUS_NOT_MAPPED_DATA\n");
+        Status = STATUS_NOT_MAPPED_DATA;
+        goto Exit;
+    }
+
+    if (Vad->u.VadFlags.VadType == VadImageMap)
+    {
+        DPRINT1("MmFlushVirtualMemory: STATUS_NOT_MAPPED_DATA\n");
+        Status = STATUS_NOT_MAPPED_DATA;
+        goto Exit;
+    }
+
+
+    DPRINT1("MmFlushVirtualMemory: FIXME\n");
+    ASSERT(FALSE);
+    Status = STATUS_NOT_IMPLEMENTED;
+
+Exit:
+
+    /* Unlock the address space */
+    MmUnlockAddressSpace(&Process->Vm);
+
+    return Status;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
