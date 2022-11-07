@@ -1173,8 +1173,13 @@ CcSetFileSizes(
         !(SharedMap->Flags & SHARE_FL_WRITE_QUEUED) &&
         !SharedMap->DirtyPages)
     {
-        DPRINT1("CcSetFileSizes: FIXME\n");
-        ASSERT(FALSE);
+        RemoveEntryList(&SharedMap->SharedCacheMapLinks);
+        InsertTailList(&CcDirtySharedCacheMapList.SharedCacheMapLinks, &SharedMap->SharedCacheMapLinks);
+
+        LazyWriter.OtherWork = 1;
+
+        if (!LazyWriter.ScanActive)
+            CcScheduleLazyWriteScan(FALSE);
     }
 
     KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
