@@ -310,6 +310,7 @@ MmCheckCachedPageState(
     _In_ PVOID CacheAddress,
     _In_ BOOLEAN Param2)
 {
+    PSUBSECTION Subsection;
     PETHREAD Thread;
     PMMPFN CachePfn;
     PMMPFN ProtoPfn;
@@ -321,6 +322,7 @@ MmCheckCachedPageState(
     MMPTE TempPte;
     PFN_NUMBER ProtoPageNumber;
     ULONG Protection;
+    ULONG Color;
     KIRQL OldIrql;
 
     DPRINT("MmCheckCachedPageState: CacheAddress %p, Param2 %X\n", CacheAddress, Param2);
@@ -419,9 +421,34 @@ MmCheckCachedPageState(
             return FALSE;
         }
 
-        DPRINT1("MmCheckCachedPageState: FIXME\n");
-        ASSERT(FALSE);
+        Subsection = MiSubsectionPteToSubsection(SectionProto);
+        Subsection->ControlArea->NumberOfPfnReferences++;
 
+      #if defined(ONE_CPU)
+        MmSystemPageColor++;
+        Color = MmSystemPageColor;
+        Color &= MmSecondaryColorMask;
+      #else
+        KeGetCurrentPrcb()->PageColor++;
+        Color = KeGetCurrentPrcb()->PageColor;
+        Color &= KeGetCurrentPrcb()->SecondaryColorMask;
+        Color |= KeGetCurrentPrcb()->NodeShiftedColor;
+      #endif
+
+        ProtoPageNumber = MiRemoveZeroPage(Color);
+        ProtoPfn = MI_PFN_ELEMENT(ProtoPageNumber);
+
+        MiInitializePfn(ProtoPageNumber, SectionProto, 1);
+
+        ProtoPfn->u2.ShareCount = 0;
+        ProtoPfn->u3.e1.PrototypePte = 1;
+
+        MI_MAKE_HARDWARE_PTE_KERNEL(&TempPte,
+                                    (MiHighestUserPte + 1),
+                                    ProtoPfn->OriginalPte.u.Soft.Protection,
+                                    ProtoPageNumber);
+
+        MI_WRITE_VALID_PTE(SectionProto, TempPte);
     }
 
     ProtoPfn->u2.ShareCount++;
