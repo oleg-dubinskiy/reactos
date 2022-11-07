@@ -21,6 +21,7 @@ PMMPTE MmLastFreeSystemCache;
 PMMPTE MmSystemCachePteBase;
 PMMWSLE MmSystemCacheWsle;
 
+extern MI_PFN_CACHE_ATTRIBUTE MiPlatformCacheAttributes[2][MmMaximumCacheType];
 extern PVOID MmSystemCacheStart;
 extern PVOID MmSystemCacheEnd;
 extern ULONG MmSecondaryColorMask;
@@ -731,19 +732,28 @@ MmCopyToCachedPage(
 {
     PETHREAD CurrentThread = PsGetCurrentThread();
     PMI_PAGE_SUPPORT_BLOCK PageBlock = NULL;
+    MI_PFN_CACHE_ATTRIBUTE CacheAttribute;
     PCONTROL_AREA ControlArea;
     PSUBSECTION Subsection;
+    PMMPFN LockedProtoPfn;
     PMMPFN Pfn = NULL;
     PMMPFN pfn;
     PMMPTE Pte;
     PMMPTE Proto = NULL;
     PMMPTE ProtoPte;
+    PMMPTE CopyPte;
     MMPTE TempPte;
     MMPTE TempProto;
+    PVOID CopyBuffer;
+    PVOID StartVa;
+    PVOID Buffer;
     PFN_NUMBER PageNumber;
     ULONG Color;
+    ULONG OldReadClusterSize;
+    UCHAR OldForwardClusterOnly;
     BOOLEAN IsForceIrpComplete = FALSE;
     BOOLEAN NewPage = FALSE;
+    BOOLEAN IsFlush;
     KIRQL OldIrql;
     NTSTATUS Status = STATUS_SUCCESS;
 
@@ -822,31 +832,22 @@ MmCopyToCachedPage(
         {
             ASSERT((SPFN_NUMBER)MmAvailablePages >= 0);
 
-            if (MmAvailablePages >= 2)
+            if (MmAvailablePages >= 2 || !MiEnsureAvailablePageOrWait(NULL, OldIrql))
                 break;
-
-            DPRINT1("MmCopyToCachedPage: FIXME MiEnsureAvailablePageOrWait()\n");
-            ASSERT(FALSE);
         }
         else
         {
-            if (MmAvailablePages < 0x80)
-            {
-                DPRINT1("MmCopyToCachedPage: FIXME MiEnsureAvailablePageOrWait()\n");
-                ASSERT(FALSE);
-            }
+            if (MmAvailablePages < 0x80 && MiEnsureAvailablePageOrWait(NULL, OldIrql))
+                continue;
 
-            if (MmAvailablePages >= 0x80 /*|| !MiEnsureAvailablePageOrWait(..)*/)
-            {
-                if (IsNeedZeroPage)
-                    break;
+            if (IsNeedZeroPage)
+                break;
 
-                PageBlock = MiGetInPageSupportBlock(OldIrql, &Status);
-                if (PageBlock)
-                    break;
+            PageBlock = MiGetInPageSupportBlock(OldIrql, &Status);
+            if (PageBlock)
+                break;
 
-                Status = STATUS_SUCCESS;
-            }
+            Status = STATUS_SUCCESS;
         }
     }
 
@@ -898,8 +899,237 @@ MmCopyToCachedPage(
         }
         else
         {
-            DPRINT1("MmCopyToCachedPage: FIXME\n");
-            ASSERT(FALSE);
+            PKTHREAD kThread = &CurrentThread->Tcb;
+
+            LockedProtoPfn = MI_PFN_ELEMENT(ProtoPte->u.Hard.PageFrameNumber);
+            MiReferenceUsedPageAndBumpLockCount(LockedProtoPfn);
+            ASSERT(LockedProtoPfn->u3.e2.ReferenceCount > 1);
+
+            Subsection = MiSubsectionPteToSubsection(Proto);
+            ControlArea = Subsection->ControlArea;
+            Subsection->ControlArea->NumberOfPfnReferences++;
+
+            DPRINT("MmCopyToCachedPage: %p, %p, %p, %p\n", PageBlock, LockedProtoPfn, Proto, ControlArea);
+
+          #if defined(ONE_CPU)
+            Color = MI_GET_NEXT_COLOR();
+          #else
+            KeGetCurrentPrcb()->PageColor++;
+            Color = KeGetCurrentPrcb()->PageColor;
+            Color &= KeGetCurrentPrcb()->SecondaryColorMask;
+            Color |= KeGetCurrentPrcb()->NodeShiftedColor;
+          #endif
+
+            PageNumber = MiRemoveAnyPage(Color);
+            Pfn = MI_PFN_ELEMENT(PageNumber);
+
+            ASSERT(Pfn->u2.ShareCount == 0);
+            ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+
+            MiInitializeTransitionPfn(PageNumber, Proto);
+
+            ASSERT(Pfn->u2.ShareCount == 0);
+            ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+            ASSERT(Pfn->u3.e1.PrototypePte == 1);
+
+            MiReferenceUnusedPageAndBumpLockCount(Pfn);
+
+            Pfn->u4.InPageError = 0;
+            Pfn->u3.e1.ReadInProgress = 1;
+            Pfn->u1.Event = &PageBlock->Event;
+            PageBlock->Pfn = Pfn;
+
+            if ((TempProto.u.Soft.Protection & MM_WRITECOMBINE) == MM_WRITECOMBINE &&
+                TempProto.u.Soft.Protection & MM_PROTECT_ACCESS)
+            {
+                CacheAttribute = MiPlatformCacheAttributes[0][MmWriteCombined];
+            }
+            else if ((TempProto.u.Soft.Protection & MM_NOCACHE) == MM_NOCACHE)
+            {
+                CacheAttribute = MiPlatformCacheAttributes[0][MmNonCached];
+            }
+            else
+            {
+                CacheAttribute = MiCached;
+            }
+
+            if (Pfn->u3.e1.CacheAttribute != CacheAttribute)
+            {
+                Pfn->u3.e1.CacheAttribute = CacheAttribute;
+                IsFlush = TRUE;
+            }
+            else
+            {
+                IsFlush = FALSE;
+            }
+
+            ASSERT(CurrentThread->ActiveFaultCount <= 1);
+            CurrentThread->ActiveFaultCount++;
+
+            MI_MAKE_HARDWARE_PTE(&TempPte, NULL, Pfn->OriginalPte.u.Soft.Protection, PageNumber);
+            MI_MAKE_DIRTY_PAGE(&TempPte);
+
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            KeEnterCriticalRegionThread(kThread);
+            MiUnlockWorkingSet(CurrentThread, &MmSystemCacheWs);
+
+            if (IsFlush)
+            {
+                //MiFlushTbForAttributeChange++;
+                KeFlushEntireTb(TRUE, TRUE);
+
+                if (CacheAttribute != MiCached)
+                {
+                    //MiFlushCacheForAttributeChange++;
+                    KeInvalidateAllCaches();
+                }
+            }
+
+            CopyPte = MiReserveSystemPtes(1, SystemPteSpace);
+
+            if (CopyPte)
+            {
+                ASSERT(CopyPte > MiHighestUserPte);
+                ASSERT(!MI_IS_SESSION_PTE (CopyPte));
+                ASSERT((CopyPte < (PMMPTE)PDE_BASE) || (CopyPte > (PMMPTE)PDE_TOP));
+
+                TempPte.u.Long = 0;
+                TempPte.u.Hard.Valid = 1;
+                TempPte.u.Hard.Accessed = 1;
+                TempPte.u.Hard.PageFrameNumber = PageNumber;
+                //TempPte.u.Long |= MmPteGlobal.u.Long;
+                TempPte.u.Long |= MmProtectToPteMask[MM_READWRITE];
+                MI_MAKE_DIRTY_PAGE(&TempPte);
+
+                ASSERT(CopyPte->u.Hard.Valid == 0);
+                ASSERT(TempPte.u.Hard.Valid == 1);
+                *CopyPte = TempPte;
+
+                StartVa = MiPteToAddress(CopyPte);
+
+                if (Offset)
+                    RtlZeroMemory(StartVa, Offset);
+
+                Buffer = Add2Ptr(StartVa, Offset);
+
+                if ((Offset + CountInBytes) != PAGE_SIZE)
+                    RtlZeroMemory(Add2Ptr(Buffer, CountInBytes), (PAGE_SIZE - (Offset + CountInBytes)));
+
+                /* Save previous values */
+                OldForwardClusterOnly = CurrentThread->ForwardClusterOnly;
+                OldReadClusterSize = CurrentThread->ReadClusterSize;
+
+                CurrentThread->ForwardClusterOnly = 1;
+                CurrentThread->ReadClusterSize = 0;
+
+                //_SEH2_TRY
+                {
+                    RtlCopyBytes(Buffer, InBuffer, CountInBytes);
+                }
+                //_SEH2_EXCEPT()
+                {
+                    //FIXME
+                }
+                //_SEH2_END;
+
+                /* Restore claster variables */
+                CurrentThread->ForwardClusterOnly = OldForwardClusterOnly;
+                CurrentThread->ReadClusterSize = OldReadClusterSize;
+
+                MiReleaseSystemPtes(CopyPte, 1, SystemPteSpace);
+
+                NewPage = 1;
+            }
+            else
+            {
+                DPRINT1("MmCopyToCachedPage: STATUS_INSUFFICIENT_RESOURCES\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            MiLockWorkingSet(CurrentThread, &MmSystemCacheWs);
+            KeLeaveCriticalRegionThread(kThread);
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+
+            ASSERT(Pfn->u3.e1.PrototypePte == 1);
+            ASSERT(Pfn->u3.e2.ReferenceCount >= 1);
+            ASSERT(Pfn->u3.e1.Modified == 0);
+
+            ASSERT(Pfn->u3.e1.ReadInProgress == 1);
+            Pfn->u3.e1.ReadInProgress = 0;
+
+            ASSERT(Pfn->u2.ShareCount == 0);
+            ASSERT(Pfn->u4.PteFrame != MI_MAGIC_AWE_PTEFRAME);
+
+            ASSERT(PageBlock->u1.e1.InPageComplete == 0);
+            ASSERT(Pfn->u1.Event == &PageBlock->Event);
+            Pfn->u1.Event = NULL;
+
+            if (!NT_SUCCESS(Status))
+            {
+                Pfn->u4.InPageError = 1;
+                Pfn->u1.ReadStatus = Status;
+
+                DPRINT1("MmCopyToCachedPage: Status %X\n", Status);
+
+                MiDereferencePfnAndDropLockCount(Pfn);
+
+                if (!Pfn->u3.e2.ReferenceCount)
+                {
+                    ASSERT(Pfn->u3.e1.PageLocation == StandbyPageList);
+                    Pfn->u4.InPageError = 0;
+
+                    MiUnlinkPageFromList(Pfn);
+                    MiRestoreTransitionPte(Pfn);
+                    MiInsertPageInFreeList(PageNumber);
+                }
+            }
+            else
+            {
+                MiDropLockCount(Pfn);
+                Pfn->u3.e1.PageLocation = ActiveAndValid;
+
+                ASSERT(Pfn->u3.e1.Rom == 0);
+                Pfn->u3.e1.Modified = 1;
+                Pfn->u2.ShareCount++;
+
+                MI_MAKE_HARDWARE_PTE(&TempPte, NULL, Pfn->OriginalPte.u.Soft.Protection, PageNumber);
+                MI_MAKE_DIRTY_PAGE(&TempPte);
+                //TempPte.u.Long &= ~MmPteGlobal.u.Long;
+                MI_WRITE_VALID_PTE(Proto, TempPte);
+                DPRINT("MmCopyToCachedPage: Proto %p, TempPte %X\n", Proto, TempPte);
+            }
+
+            if (PageBlock->WaitCount != 1)
+            {
+                PageBlock->u1.e1.InPageComplete = 1;
+                PageBlock->IoStatus.Status = Status;
+                PageBlock->IoStatus.Information = 0;
+
+                KeSetEvent(&PageBlock->Event, 0, FALSE);
+            }
+
+            ASSERT(CurrentThread->ActiveFaultCount <= 3);
+            ASSERT(CurrentThread->ActiveFaultCount != 0);
+
+            CurrentThread->ActiveFaultCount--;
+
+            if (CurrentThread->ApcNeeded == 1 && !CurrentThread->ActiveFaultCount)
+            {
+                IsForceIrpComplete = TRUE;
+                CurrentThread->ApcNeeded = 0;
+            }
+
+            ASSERT(LockedProtoPfn->u3.e2.ReferenceCount >= 1);
+            MiDereferencePfnAndDropLockCount(LockedProtoPfn);
+
+            if (!NT_SUCCESS(Status))
+            {
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                MiUnlockWorkingSet(CurrentThread, &MmSystemCacheWs);
+
+                DPRINT1("MmCopyToCachedPage: FIXME\n");
+                ASSERT(FALSE);
+            }
         }
     }
 
@@ -907,10 +1137,10 @@ MmCopyToCachedPage(
     pfn->u2.ShareCount++;
 
     TempPte.u.Hard.Owner = 0;
-
-    //DPRINT("MmCopyToCachedPage: Proto %p, TempPte %X\n", Proto, TempPte);
-
+    //TempPte.u.Long |= MmPteGlobal.u.Long;
     MI_WRITE_VALID_PTE(Pte, TempPte);
+
+    DPRINT("MmCopyToCachedPage: Proto %p, TempPte %X\n", Proto, TempPte);
 
     ASSERT(Pfn->u3.e2.ReferenceCount != 0);
     ASSERT(Pfn->PteAddress == Proto);
@@ -942,10 +1172,6 @@ Finish:
 
     if (!NewPage)
     {
-        PVOID CopyBuffer;
-        ULONG OldReadClusterSize;
-        UCHAR OldForwardClusterOnly;
-
         /* Save previous values */
         OldForwardClusterOnly = CurrentThread->ForwardClusterOnly;
         OldReadClusterSize = CurrentThread->ReadClusterSize;

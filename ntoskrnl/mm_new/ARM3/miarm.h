@@ -2117,6 +2117,13 @@ MiCheckForControlAreaDeletion(
     _In_ PCONTROL_AREA ControlArea
 );
 
+VOID
+NTAPI
+MiInitializeTransitionPfn(
+    _In_ PFN_NUMBER PageNumber,
+    _In_ OUT PMMPTE SectionProto
+);
+
 /* ARM3\session.c */
 VOID
 NTAPI
