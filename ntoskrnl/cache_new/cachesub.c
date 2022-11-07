@@ -729,9 +729,14 @@ CcFlushCache(
     ULONG TotalFlushed = 0;
     ULONG Flags;
     ULONG Size;
+    ULONG ActivePage;
+    ULONG Start = 0;
+    ULONG End = 0xFFFFFFFF;
     BOOLEAN IsSaveStatus = FALSE;
     BOOLEAN IsLazyWrite = FALSE;
     BOOLEAN PendingTeardown = FALSE;
+    BOOLEAN IsFreeVacb = FALSE;
+    BOOLEAN IsVacbLocked;
     KIRQL OldIrql;
     NTSTATUS Status;
 
@@ -797,14 +802,40 @@ CcFlushCache(
 
         if (SharedMap->NeedToZero || SharedMap->ActiveVacb)
         {
-            DPRINT1("CcFlushCache: FIXME\n");
-            ASSERT(FALSE);
+            if (FileOffset)
+            {
+                Start = (FileOffset->QuadPart / PAGE_SIZE);
+                End = ((FileOffset->QuadPart + Length - 1) / PAGE_SIZE);
+            }
+
+            if (SharedMap->ValidDataGoal.QuadPart < ((End + 1LL) * PAGE_SIZE) ||
+                (SharedMap->NeedToZero && SharedMap->NeedToZeroPage >= Start && SharedMap->NeedToZeroPage <= End) ||
+                (SharedMap->ActiveVacb && SharedMap->ActivePage >= Start && SharedMap->ActivePage <= End))
+            {
+                KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
+
+                Vacb = SharedMap->ActiveVacb;
+                if (Vacb)
+                {
+                    ActivePage = SharedMap->ActivePage;
+                    SharedMap->ActiveVacb = NULL;
+                    IsVacbLocked = ((SharedMap->Flags & SHARE_FL_VACB_LOCKED) != 0);
+                }
+
+                KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
+
+                IsFreeVacb = TRUE;
+            }
         }
     }
 
     KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
 
-    FcbHeader = SharedMap->FileObject->FsContext;
+    if (IsFreeVacb)
+        CcFreeActiveVacb(SharedMap, Vacb, ActivePage, IsVacbLocked);
+
+    if (SharedMap)
+        FcbHeader = SharedMap->FileObject->FsContext;
 
     if (!SharedMap ||
         (FcbHeader->Flags & FSRTL_FLAG_USER_MAPPED_FILE) ||
