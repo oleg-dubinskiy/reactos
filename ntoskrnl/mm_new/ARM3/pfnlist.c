@@ -1599,4 +1599,38 @@ MiUnlinkPageFromList(
     ASSERT_LIST_INVARIANT(ListHead);
 }
 
+BOOLEAN
+NTAPI
+MiEnsureAvailablePageOrWait(
+    _In_ PEPROCESS Process,
+    _In_ KIRQL OldIrql)
+{
+    PETHREAD CurrentThread;
+
+    DPRINT("MiEnsureAvailablePageOrWait: Process %p, OldIrql %X\n", Process, OldIrql);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+    if (MmAvailablePages >= 0x80)
+    {
+        DPRINT("MiEnsureAvailablePageOrWait: return FALSE\n");
+        return FALSE;
+    }
+
+    CurrentThread = PsGetCurrentThread();
+
+    if (CurrentThread->MemoryMaker == 1)
+    {
+        if (MmAvailablePages >= 2)
+        {
+            DPRINT("MiEnsureAvailablePageOrWait: return FALSE\n");
+            return FALSE;
+        }
+    }
+
+    UNIMPLEMENTED_DBGBREAK();
+    return TRUE;
+}
+
 /* EOF */

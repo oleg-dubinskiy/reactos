@@ -1989,6 +1989,13 @@ MiInsertPageInList(
     _In_ PFN_NUMBER PageFrameIndex
 );
 
+BOOLEAN
+NTAPI
+MiEnsureAvailablePageOrWait(
+    _In_ PEPROCESS Process,
+    _In_ KIRQL OldIrql
+);
+
 /* ARM3\pool.c */
 INIT_FUNCTION
 VOID
