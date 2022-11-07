@@ -2480,6 +2480,7 @@ MiDispatchFault(
 {
     PETHREAD CurrentThread = PsGetCurrentThread();
     PMI_PAGE_SUPPORT_BLOCK PageBlock;
+    PMI_PAGE_SUPPORT_BLOCK pageBlock;
     PMMPFN LockedProtoPfn = NULL;
     PMMPFN PfnClusterPage;
     PMMPFN PfnForPde;
@@ -2992,6 +2993,10 @@ Finish:
             OriginalPte.u.Long = ReadPte->u.Long;
         }
 
+        pageBlock = (PMI_PAGE_SUPPORT_BLOCK)PageBlock->Pfn->u1.Event;
+
+        CurrentThread->ActiveFaultCount++;
+
         if (Process == HYDRA_PROCESS)
         {
             MiUnlockWorkingSet(CurrentThread, &MmSessionSpace->GlobalVirtualAddress->Vm);
@@ -3031,7 +3036,7 @@ Finish:
             KeSetEvent(&PageBlock->Event, 0, FALSE);
         }
 
-        Status = MiWaitForInPageComplete(PageBlock->Pfn, ReadPte, Address, &OriginalPte, PageBlock, Process);
+        Status = MiWaitForInPageComplete(PageBlock->Pfn, ReadPte, Address, &OriginalPte, pageBlock, Process);
         DPRINT("MiDispatchFault: Status %X\n", Status);
 
         CurrentThread->ActiveFaultCount--;
@@ -3132,7 +3137,7 @@ Finish:
                 ASSERT(FALSE);
             }
 
-            MiFreeInPageSupportBlock(PageBlock);
+            MiFreeInPageSupportBlock(pageBlock);
 
             if (Status == 0x87303000)
                 Status = STATUS_SUCCESS;
@@ -3209,7 +3214,7 @@ Finish:
             ASSERT(FALSE);
         }
 
-        MiFreeInPageSupportBlock(PageBlock);
+        MiFreeInPageSupportBlock(pageBlock);
 
         if (Status == STATUS_SUCCESS)
             Status = STATUS_PAGE_FAULT_PAGING_FILE;
