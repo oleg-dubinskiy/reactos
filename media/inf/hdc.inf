@@ -1,0 +1,210 @@
+; HDC.INF
+
+; Installation file for hard disk controllers
+
+[Version]
+Signature  = "$Windows NT$"
+;Signature  = "$ReactOS$"
+LayoutFile = layout.inf
+Class      = hdc
+ClassGUID  = {4D36E96A-E325-11CE-BFC1-08002BE10318}
+Provider   = %ReactOS%
+DriverVer  = 09/10/2008,0.39.10.0
+
+[DestinationDirs]
+DefaultDestDir = 12
+Storprop_CopyFiles.NT = 11
+
+[Storprop_CopyFiles.NT]
+storprop.dll
+
+[ClassInstall32.NT]
+AddReg = HDC.NT.AddReg
+
+[ControlFlags]
+ExcludeFromSelect = *
+
+[HDC.NT.AddReg]
+HKR, , ,                      0,       %HDCClassName%
+HKR, , Icon,                  0,       "-9"
+HKR, , Installer32,           0,       "syssetup.dll,HdcClassInstaller"
+HKR, , DeviceType,            0x10001, 4
+HKR, , DeviceCharacteristics, 0x10001, 0x100
+
+[Manufacturer]
+%GenericMfg% = GenericMfg
+
+[GenericMfg]
+
+;Compatible adapters
+%*PNP0600.PriDeviceDesc% = Atapi_Inst, Primary_IDE_Channel
+%*PNP0600.SecDeviceDesc% = Atapi_Inst, Secondary_IDE_Channel
+%*PNP0600.DeviceDesc%    = Atapi_Inst, *PNP0600
+%PCI\CC_0101.DeviceDesc% = PciIde_Inst.NT,,PCI\CC_0101
+
+;Intel controllers
+%PCI\VEN_8086&DEV_7111.DeviceDesc%=IntelIde_Inst, PCI\VEN_8086&DEV_7111
+
+[Atapi_Inst]
+CopyFiles = @atapi.sys,Storprop_CopyFiles.NT
+AddReg = Atapi_AddReg
+DelReg = Atapi_DelReg
+
+[Atapi_AddReg]
+HKR,,EnumPropPages32,,"storprop.dll,IdePropPageProvider"
+
+[Atapi_DelReg]
+HKR,,MasterDeviceTimingModeAllowed
+HKR,,SlaveDeviceTimingModeAllowed
+HKR,,MasterDeviceTimingModeAllowed2
+HKR,,SlaveDeviceTimingModeAllowed2
+
+[Atapi_Inst.Services]
+AddService = atapi, 0x00000002, Atapi_Service_Inst
+
+[Atapi_Service_Inst]
+DisplayName    = %*PNP0600.DeviceDesc%
+ServiceType    = 1
+StartType      = 0
+ErrorControl   = 1
+ServiceBinary  = %12%\atapi.sys
+LoadOrderGroup = SCSI Miniport
+AddReg         = atapi_parameters_AddReg
+
+;---------------------------- Intel IDE DRIVER ----------------------------
+[IntelIde_Inst.NT]
+CopyFiles = IntelIde_CopyFiles.NT
+
+[IntelIde_CopyFiles.NT]
+intelide.sys
+pciidex.sys
+atapi.sys
+
+[IntelIde_Inst.NT.Services]
+AddService = intelide, 0x00000002, IntelIde_Service_Inst
+
+[IntelIde_Service_Inst]
+ServiceType    = 1
+StartType      = 0
+ErrorControl   = 1
+ServiceBinary  = %12%\intelide.sys
+LoadOrderGroup = System Bus Extender
+
+;---------------------------- PCI IDE DRIVER ----------------------------
+[PciIde_Inst.NT]
+CopyFiles = PciIde_CopyFiles.NT
+
+[PciIde_CopyFiles.NT]
+pciide.sys
+pciidex.sys
+
+[PciIde_Inst.NT.Services]
+AddService = pciide, 0x00000002, PciIde_Service_Inst
+
+[PciIde_Service_Inst]
+ServiceType    = 1
+StartType      = 0
+ErrorControl   = 1
+ServiceBinary  = %12%\pciide.sys
+LoadOrderGroup = System Bus Extender
+
+[Strings]
+ReactOS = "ReactOS Team"
+HDCClassName = "IDE ATA/ATAPI controllers"
+GenericMfg = "(Generic hard disk controllers)"
+
+;Compatible adapters
+*PNP0600.PriDeviceDesc  = "Primary IDE Channel"
+*PNP0600.SecDeviceDesc  = "Secondary IDE Channel"
+PCI\CC_0101.DeviceDesc  = "Dual Channel PCI BusMaster IDE Controller"
+
+;Intel controllers
+PCI\VEN_8086&DEV_7111.DeviceDesc = "Intel(R) 82371AB/EB PCI Bus Master IDE Controller"
+
+[Strings.0405]
+HDCClassName = "IDE řadiče ATA/ATAPI"
+GenericMfg = "(Obecné řadiče pevných disků)"
+
+;Compatible adapters
+*PNP0600.PriDeviceDesc  = "Primární IDE kanál"
+*PNP0600.SecDeviceDesc  = "Sekundární IDE kanál"
+PCI\CC_0101.DeviceDesc  = "Dvoukanálový řadič PCI BusMaster IDE"
+
+[Strings.0407]
+ReactOS = "ReactOS Team"
+HDCClassName = "IDE ATA/ATAPI Controller"
+GenericMfg = "(Generische Festplatten-Controller)"
+
+;Compatible adapters
+*PNP0600.PriDeviceDesc  = "Primärer IDE Kanal"
+*PNP0600.SecDeviceDesc  = "Sekundärer IDE Kanal"
+PCI\CC_0101.DeviceDesc  = "PCI BusMaster IDE Controller (2-kanalig)"
+
+[Strings.0a]
+ReactOS                 = "Equipo de ReactOS"
+HDCClassName            = "Controladores IDE ATA/ATAPI genéricos"
+GenericMfg              = "(Controladores de disco duro genéricos)"
+
+*PNP0600.PriDeviceDesc  = "Canal IDE primario"
+*PNP0600.SecDeviceDesc  = "Canal IDE secundario"
+PCI\CC_0101.DeviceDesc  = "Controlador PCI Dual Channel IDE BusMaster"
+
+[Strings.0415]
+ReactOS = "Zespół ReactOS"
+HDCClassName = "Kontrolery IDE ATA/ATAPI"
+GenericMfg = "(Standardowe kontrolery IDE ATA/ATAPI)"
+
+;Compatible adapters
+*PNP0600.PriDeviceDesc  = "Podstawowy kanał IDE"
+*PNP0600.SecDeviceDesc  = "Pomocniczy kanał IDE"
+PCI\CC_0101.DeviceDesc  = "Dwukanałowy kontroler PCI BusMaster IDE"
+
+[Strings.0418]
+ReactOS = "Echipa ReactOS"
+HDCClassName = "Dispozitive de control IDE ATA/ATAPI"
+GenericMfg = "(dispozitive generice de control HDD)"
+
+;Compatible adapters
+*PNP0600.PriDeviceDesc  = "Dispozitiv de control IDE primar"
+*PNP0600.SecDeviceDesc  = "Dispozitiv de control IDE secundar"
+PCI\CC_0101.DeviceDesc  = "Dispozitiv de control Dual Channel PCI BusMaster IDE"
+
+[Strings.0419]
+ReactOS = "Команда ReactOS"
+HDCClassName = "IDE ATA/ATAPI контроллеры"
+GenericMfg = "(Универсальный контроллер жесткого диска)"
+
+;Compatible adapters
+*PNP0600.PriDeviceDesc  = "Первичный канал IDE"
+*PNP0600.SecDeviceDesc  = "Вторичный канал IDE"
+PCI\CC_0101.DeviceDesc  = "Двухканальный PCI BusMaster IDE контроллер"
+
+[Strings.041f]
+ReactOS = "ReactOS Takımı"
+HDCClassName = "IDE ATA/ATAPI Denetleyicileri"
+GenericMfg = "(Umûmî Sâbit Disk Denetleyicileri)"
+
+;Compatible adapters
+*PNP0600.PriDeviceDesc  = "Birinci IDE Kanalı"
+*PNP0600.SecDeviceDesc  = "İkinci IDE Kanalı"
+PCI\CC_0101.DeviceDesc  = "İkili Kanal PCI BusMaster IDE Denetleyicisi"
+
+[Strings.0422]
+ReactOS = "Команда ReactOS"
+HDCClassName = "Контроллери IDE ATA/ATAPI"
+GenericMfg = "(Стандартні контроллери жорстких дисків)"
+
+;Compatible adapters
+*PNP0600.PriDeviceDesc  = "Основний канал IDE"
+*PNP0600.SecDeviceDesc  = "Вторинний канал IDE"
+PCI\CC_0101.DeviceDesc  = "Контроллер двоканальної PCI BusMaster IDE"
+
+[Strings.0804]
+GenericMfg = "(通用硬盘控制器)"
+
+;Compatible adapters
+*PNP0600.PriDeviceDesc  = "主 IDE 通道"
+*PNP0600.SecDeviceDesc  = "次 IDE 通道"
+PCI\CC_0101.DeviceDesc  = "双通道 PCI BusMaster IDE 控制器"
+
+;EOF
