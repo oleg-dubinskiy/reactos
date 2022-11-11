@@ -885,8 +885,40 @@ MmCopyToCachedPage(
     }
     else if (TempProto.u.Soft.Transition && !TempProto.u.Soft.Prototype)
     {
-        DPRINT1("MmCopyToCachedPage: FIXME\n");
-        ASSERT(FALSE);
+        ULONG Protection;
+
+        PageNumber = TempProto.u.Trans.PageFrameNumber;
+        Pfn = MI_PFN_ELEMENT(PageNumber);
+
+        if (Pfn->u3.e1.ReadInProgress || Pfn->u4.InPageError)
+        {
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            MiUnlockWorkingSet(CurrentThread, &MmSystemCacheWs);
+            goto Finish;
+        }
+
+        ASSERT(MmAvailablePages >= 2);
+
+        MiUnlinkPageFromList(Pfn);
+        InterlockedIncrement16((PSHORT)&Pfn->u3.e2.ReferenceCount);
+        Pfn->u3.e1.PageLocation = ActiveAndValid;
+
+        ASSERT(Pfn->u3.e1.Rom == 0);
+        Pfn->u3.e1.Modified = 1;
+
+        ASSERT(Pfn->u2.ShareCount == 0);
+        Pfn->u2.ShareCount++;
+
+        Protection = (Pfn->OriginalPte.u.Soft.Protection & ~(MM_NOCACHE | MM_WRITECOMBINE));
+
+        if (Pfn->u3.e1.CacheAttribute == MiNonCached)
+            Protection |= MM_NOCACHE;
+        else if (Pfn->u3.e1.CacheAttribute == MiWriteCombined)
+            Protection |= MM_WRITECOMBINE;
+
+        MI_MAKE_HARDWARE_PTE(&TempPte, NULL, Protection, PageNumber);
+        MI_MAKE_DIRTY_PAGE(&TempPte);
+        MI_WRITE_VALID_PTE(Proto, TempPte);
     }
     else
     {
