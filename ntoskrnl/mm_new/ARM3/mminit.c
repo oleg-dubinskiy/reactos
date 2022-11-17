@@ -292,6 +292,7 @@ SIZE_T MmAllocationFragment;
 // FIXME: They should be moved elsewhere since it's not an "init" setting?
 SIZE_T MmTotalCommitLimit;
 SIZE_T MmTotalCommitLimitMaximum;
+SIZE_T MmSystemCommitReserve = 0x500;
 
 /* These values tune certain user parameters. They have default values set here,
    as well as in the code, and can be overwritten by registry settings.
@@ -1677,6 +1678,9 @@ MmArmInitSystem(
 
         /* Initialize the platform-specific parts */
         MiInitMachineDependent(LoaderBlock);
+
+        if (MmNumberOfPhysicalPages < 0x2100)
+            MmSystemCommitReserve = 0x100;
 
         /* Build the physical memory block */
         MmPhysicalMemoryBlock = MmInitializeMemoryLimits(LoaderBlock, IncludeType);
