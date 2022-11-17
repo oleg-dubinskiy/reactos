@@ -21,6 +21,7 @@ ULONG CcMaxVacbLevelsSeen = 1;
 extern SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
 extern ULONG CcTotalDirtyPages;
 extern LAZY_WRITER LazyWriter;
+extern LARGE_INTEGER CcFirstDelay;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1427,8 +1428,9 @@ CcSetActiveVacb(
     {
         LazyWriter.ScanActive = 1;
 
-        DPRINT1("CcSetActiveVacb: FIXME LazyWriter\n");
-        ASSERT(FALSE);
+        KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+        KeSetTimer(&LazyWriter.ScanTimer, CcFirstDelay, &LazyWriter.ScanDpc);
 
         return;
     }
@@ -1509,9 +1511,9 @@ CcFreeActiveVacb(
     OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
     KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
 
-    if (!SharedMap->ActiveVacb && !(SharedMap->Flags & SHARE_FL_VACB_LOCKED))
+    if (!SharedMap->ActiveVacb && (SharedMap->Flags & SHARE_FL_VACB_LOCKED))
     {
-        SharedMap->Flags = (SharedMap->Flags & ~SHARE_FL_VACB_LOCKED);
+        SharedMap->Flags &= ~SHARE_FL_VACB_LOCKED;
 
         CcTotalDirtyPages--;
         SharedMap->DirtyPages--;
