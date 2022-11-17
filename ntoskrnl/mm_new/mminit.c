@@ -33,7 +33,7 @@ extern ULONG_PTR MxPfnAllocation;
 
 extern MM_AVL_TABLE MmSectionBasedRoot;
 extern KGUARDED_MUTEX MmSectionBasedMutex;
-extern PMMPTE MmSharedUserDataPte;
+//extern PMMPTE MmSharedUserDataPte;
 extern MMPTE ValidKernelPte;
 
 /* FUNCTIONS ******************************************************************/
@@ -312,7 +312,9 @@ MmInitSystem(
     PLIST_ENTRY ListEntry;
     MMPTE TempPte = ValidKernelPte;
     PMMPTE Pte;
+    PMMPFN Pfn;
     PFN_NUMBER PageFrameNumber;
+    KIRQL OldIrql;
     NTSTATUS Status;
 
     DPRINT1("MmInitSystem: Phase %X, LoaderBlock %X\n", Phase, LoaderBlock);
@@ -345,17 +347,50 @@ MmInitSystem(
     */
     MmSharedUserDataPte = ExAllocatePoolWithTag(PagedPool, sizeof(MMPTE), TAG_MM);
     if (!MmSharedUserDataPte)
+    {
+        DPRINT1("MmInitSystem: Allocate failed\n");
         return FALSE;
+    }
 
     /* Now get the PTE for shared data, and read the PFN that holds it */
     Pte = MiAddressToPte((PVOID)KI_USER_SHARED_DATA);
     ASSERT(Pte->u.Hard.Valid == 1);
     PageFrameNumber = PFN_FROM_PTE(Pte);
 
-    /* Build the PTE and write it */
-    MI_MAKE_HARDWARE_PTE_KERNEL(&TempPte, Pte, MM_READONLY, PageFrameNumber);
+    /* Build the PTE */
 
+    /* Only valid for kernel, non-session PTEs */
+    ASSERT(Pte > MiHighestUserPte);
+    ASSERT(!MI_IS_SESSION_PTE(Pte));
+    ASSERT((Pte < (PMMPTE)PDE_BASE) || (Pte > (PMMPTE)PDE_TOP));
+
+    /* Start fresh */
+    TempPte.u.Long = 0;
+    TempPte.u.Hard.Valid = 1;
+    TempPte.u.Hard.Accessed = 1;
+
+    /* Set the protection and page */
+    TempPte.u.Hard.PageFrameNumber = PageFrameNumber;
+    TempPte.u.Long |= MmProtectToPteMask[MM_READONLY];
+    //FIXME MmPteGlobal
+
+    /* Write the PTE */
     *MmSharedUserDataPte = TempPte;
+    DPRINT1("MmInitSystem: %p, %p, %X, %X\n", KI_USER_SHARED_DATA, Pte, PageFrameNumber, TempPte.u.Long);
+
+    Pfn = MI_PFN_ELEMENT(PageFrameNumber);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+    MI_MAKE_SOFTWARE_PTE(&Pfn->OriginalPte, MM_READWRITE);
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    DPRINT1("MmInitSystem: %p, %X\n", Pfn, Pfn->OriginalPte.u.Long);
+
+    if (MmHighestUserAddress < (PVOID)MM_SHARED_USER_DATA_VA)
+    {
+        DPRINT1("MmInitSystem: FIXME\n");
+        ASSERT(FALSE);
+    }
 
     /* Initialize wide addresses of session  */
     MiInitializeSessionWideAddresses();
