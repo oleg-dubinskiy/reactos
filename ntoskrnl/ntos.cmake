@@ -292,6 +292,7 @@ else()
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/syspte.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/vadnode.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/virtual.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/workset.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/ARM3/zeropage.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/balance.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_new/freelist.c
