@@ -1236,7 +1236,7 @@ CcFastCopyRead(
         Length -= ReceivedLength;
         if (!Length)
         {
-            CcSetActiveVacb(SharedMap, &Vacb, (Offset.LowPart / PAGE_SIZE), 0);
+            CcSetActiveVacb(SharedMap, &Vacb, (Offset.LowPart / PAGE_SIZE), FALSE);
             break;
         }
 
@@ -1338,7 +1338,7 @@ CcFastCopyWrite(
 
             if (!Length)
             {
-                CcSetActiveVacb(SharedMap, &Vacb, ActivePage, 0x80);
+                CcSetActiveVacb(SharedMap, &Vacb, ActivePage, TRUE);
                 return;
             }
 
