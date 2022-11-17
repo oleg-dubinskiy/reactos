@@ -2135,8 +2135,7 @@ MiProtectVirtualMemory(
                 /* Check if the page should not be accessible at all */
                 if ((NewProtection & PAGE_NOACCESS) || (NewProtection & PAGE_GUARD))
                 {
-                    DPRINT1("MiProtectVirtualMemory: FIXME MiRemovePageFromWorkingSet()\n");
-                    ASSERT(FALSE);
+                    MiRemovePageFromWorkingSet(Pte, Pfn, &Process->Vm);
                     continue;
                 }
 

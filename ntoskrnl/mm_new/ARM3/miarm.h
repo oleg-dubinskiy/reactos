@@ -2430,6 +2430,15 @@ MiDeletePte(
     _In_ KIRQL OldIrql
 );
 
+/* ARM3\workset.c */
+BOOLEAN
+NTAPI
+MiRemovePageFromWorkingSet(
+    _In_ PMMPTE Pte,
+    _In_ PMMPFN Pfn,
+    _In_ PMMSUPPORT WorkingSet
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION
