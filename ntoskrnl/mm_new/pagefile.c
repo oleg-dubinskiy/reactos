@@ -22,6 +22,9 @@ static PFN_COUNT MiReservedSwapPages;
 static BOOLEAN MmSwapSpaceMessage = FALSE;
 static BOOLEAN MmSystemPageFileLocated = FALSE;
 
+extern SIZE_T MmTotalCommitLimit;
+extern SIZE_T MmTotalCommitLimitMaximum;
+
 /* FUNCTIONS ******************************************************************/
 
 BOOLEAN
@@ -58,6 +61,33 @@ MiReleasePageFileSpace(
 {
     UNIMPLEMENTED;
     return FALSE;
+}
+
+VOID
+NTAPI
+MiInsertPageFileInList(VOID)
+{
+    PFN_NUMBER FreeSpace;
+    PFN_NUMBER MaximumSize;
+    KIRQL OldIrql;
+
+    //FIXME
+
+    DPRINT1("MiInsertPageFileInList: MmTotalCommittedPages     %X\n", MmTotalCommittedPages);
+    DPRINT1("MiInsertPageFileInList: MmTotalCommitLimit        %X\n", MmTotalCommitLimit);
+    DPRINT1("MiInsertPageFileInList: MmTotalCommitLimitMaximum %X\n", MmTotalCommitLimitMaximum);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+    FreeSpace = MmPagingFile[MmNumberOfPagingFiles - 1]->FreeSpace;
+    MaximumSize = MmPagingFile[MmNumberOfPagingFiles - 1]->MaximumSize;
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    InterlockedExchangeAddSizeT(&MmTotalCommitLimitMaximum, MaximumSize);
+    InterlockedExchangeAddSizeT(&MmTotalCommitLimit, FreeSpace);
+
+    DPRINT1("MiInsertPageFileInList: MmTotalCommittedPages     %X\n", MmTotalCommittedPages);
+    DPRINT1("MiInsertPageFileInList: MmTotalCommitLimit        %X\n", MmTotalCommitLimit);
+    DPRINT1("MiInsertPageFileInList: MmTotalCommitLimitMaximum %X\n", MmTotalCommitLimitMaximum);
 }
 
 /* SYSTEM CALLS ***************************************************************/
@@ -544,6 +574,8 @@ NtCreatePagingFile(
     MmPagingFile[MmNumberOfPagingFiles] = PagingFile;
 
     MmNumberOfPagingFiles++;
+    MiInsertPageFileInList();
+
     MiFreeSwapPages += PagingFile->FreeSpace;
 
     KeReleaseGuardedMutex(&MmPageFileCreationLock);
