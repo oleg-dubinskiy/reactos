@@ -1963,6 +1963,7 @@ MiResolveTransitionFault(
 {
     PMMPFN Pfn;
     MMPTE TempPte;
+    MMPTE tempPte;
     PFN_NUMBER PageFrameIndex;
     BOOLEAN IsNeedUnlock;
     BOOLEAN IsNeedUnlockThread = FALSE;
@@ -1996,14 +1997,35 @@ MiResolveTransitionFault(
     }
     else
     {
-        //MMPTE tempPte;
-
-        OldIrql = MiLockPfnDb(APC_LEVEL);
         IsNeedUnlock = TRUE;
 
-        /* Capture the temp PTE */
-        DPRINT1("MiResolveTransitionFault: FIXME\n");
-        ASSERT(FALSE);
+        /* Capture the PTE */
+        tempPte = *Pte;
+
+        /* Get the PFN and the PFN entry */
+        PageFrameIndex = tempPte.u.Hard.PageFrameNumber;
+        Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        /* Capture the PTE */
+        TempPte = *Pte;
+
+        if (TempPte.u.Soft.Valid ||
+            TempPte.u.Soft.Prototype ||
+            !TempPte.u.Soft.Transition)
+        {
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            DPRINT1("MiResolveTransitionFault: PTE is not transition\n");
+            return 0xC7303001;
+        }
+
+        if (tempPte.u.Long != TempPte.u.Long)
+        {
+            /* Get the PFN and the PFN entry */
+            PageFrameIndex = TempPte.u.Trans.PageFrameNumber;
+            Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+        }
     }
 
     /* One more transition fault! */
@@ -2235,11 +2257,9 @@ MiResolveTransitionFault(
     if (IsNeedUnlock)
     {
         ASSERT(Pfn->u3.e1.PrototypePte == 0);
-
         MiUnlockPfnDb(OldIrql, APC_LEVEL);
-
-        DPRINT1("MiResolveTransitionFault: FIXME MiAddValidPageToWorkingSet()\n");
-        ASSERT(FALSE);
+        DPRINT("MiResolveTransitionFault: FIXME MiAddValidPageToWorkingSet()\n");
+        //ASSERT(FALSE);
     }
 
     /* Return success */
