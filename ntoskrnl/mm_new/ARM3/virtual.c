@@ -865,6 +865,7 @@ MiDeletePte(
     _In_ KIRQL OldIrql)
 {
     PMMPFN Pfn;
+    PMMPFN PteFramePfn;
     PMMPDE Pde = NULL;
     MMPTE TempPte;
     PFN_NUMBER PageFrameIndex;
@@ -955,7 +956,7 @@ MiDeletePte(
             MiDecrementShareCount(Pfn, PageFrameIndex);
 
             /* We should eventually do this */
-            //Process->NumberOfPrivatePages--;
+            CurrentProcess->NumberOfPrivatePages--;
         }
 
         /* Erase it */
@@ -980,15 +981,60 @@ MiDeletePte(
     }
     else if (TempPte.u.Soft.Transition)
     {
-        DPRINT1("MiDeletePte: FIXME\n");
-        ASSERT(FALSE);
+        Pfn = MiGetPfnEntry(TempPte.u.Trans.PageFrameNumber);
+
+        if ((PMMPTE)((ULONG_PTR)Pfn->PteAddress & ~1) != Pte)
+        {
+            DPRINT1("MiDeletePte: FIXME KeBugCheckEx()\n");
+            ASSERT(FALSE);
+        }
+
+        Pfn->PteAddress = (PMMPTE)((ULONG_PTR)Pfn->PteAddress | 1);
+
+        PageNumber = Pfn->u4.PteFrame;
+        PteFramePfn = MiGetPfnEntry(PageNumber);
+
+        if (PteFramePfn->u2.ShareCount != 1)
+        {
+            ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+            ASSERT(MmPfnOwner == KeGetCurrentThread());
+            ASSERT(PageNumber > 0);
+
+            ASSERT(MI_PFN_ELEMENT(PageNumber) == PteFramePfn);
+            ASSERT(PteFramePfn->u2.ShareCount != 0);
+
+            if (PteFramePfn->u3.e1.PageLocation != ActiveAndValid &&
+                PteFramePfn->u3.e1.PageLocation != StandbyPageList)
+            {
+                DPRINT1("MiDeletePte: FIXME KeBugCheckEx()\n");
+                ASSERT(FALSE);
+            }
+
+            PteFramePfn->u2.ShareCount--;
+            ASSERT(PteFramePfn->u2.ShareCount < 0xF000000);
+        }
+        else
+        {
+            MiDecrementShareCount(PteFramePfn, PageNumber);
+        }
+
+        if (!Pfn->u3.e2.ReferenceCount)
+        {
+            MiUnlinkPageFromList(Pfn);
+            MiReleasePageFileSpace(Pfn->OriginalPte);
+            MiInsertPageInFreeList(TempPte.u.Trans.PageFrameNumber);
+        }
+
+        CurrentProcess->NumberOfPrivatePages--;
+
+        Pte->u.Long = 0;
     }
     else
     {
         if (TempPte.u.Soft.PageFileHigh != 0xFFFFF)
         {
-            DPRINT1("MiDeletePte: FIXME\n");
-            ASSERT(FALSE);
+            if (MiReleasePageFileSpace(TempPte))
+                CurrentProcess->NumberOfPrivatePages--;
         }
 
         MI_ERASE_PTE(Pte);
