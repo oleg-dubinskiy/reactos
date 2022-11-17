@@ -23,6 +23,90 @@ extern SIZE_T MmMinimumStackCommitInBytes;
 
 /* FUNCTIONS ******************************************************************/
 
+/* HACK!!! This must be cleared during the cleanup of the working set of the process. */
+VOID
+NTAPI
+MiCleanUserSharedData(
+    _In_ PEPROCESS Process)
+{
+    KIRQL OldIrql;
+    PMMPTE PointerPde;
+    PMMPTE PointerPte;
+    PMMPFN Pfn1;
+    PMMPFN Pfn2;
+    PFN_NUMBER PageFrameIndex;
+    PFN_NUMBER PageTableFrameIndex;
+    MMPTE DemandZeroWritePte;
+    extern RTL_BITMAP MiPfnBitMap;
+
+    MI_MAKE_SOFTWARE_PTE(&DemandZeroWritePte, MM_READWRITE);
+    DPRINT("MiCleanUserSharedData: %X\n", DemandZeroWritePte.u.Long);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    PointerPte = MiAddressToPte(USER_SHARED_DATA);
+    ASSERT(PointerPte->u.Hard.Valid == 1);
+    PageFrameIndex = PFN_FROM_PTE(PointerPte);
+    Pfn1 = MI_PFN_ELEMENT(PageFrameIndex);
+
+    DPRINT("MiCleanUserSharedData: %p, %X\n", PointerPte, PointerPte->u.Long);
+
+    PointerPde = MiAddressToPte(PointerPte);
+    PageTableFrameIndex = PFN_FROM_PTE(PointerPde);
+    Pfn2 = MI_PFN_ELEMENT(PageTableFrameIndex);
+
+    if (!Pfn1->u3.e1.Modified && PointerPte->u.Hard.Dirty)
+    {
+        ASSERT(Pfn1->u3.e1.Rom == 0);
+        Pfn1->u3.e1.Modified = 1;
+
+        if (!Pfn1->OriginalPte.u.Soft.Prototype && !Pfn1->u3.e1.WriteInProgress)
+        {
+            MiReleasePageFileSpace(Pfn1->OriginalPte);
+            Pfn1->OriginalPte.u.Soft.PageFileHigh = 0;
+        }
+    }
+
+    if (Pfn2->u2.ShareCount == 1)
+    {
+        MiDecrementShareCount(Pfn2, PageTableFrameIndex);
+    }
+    else
+    {
+        ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+        ASSERT(MmPfnOwner == KeGetCurrentThread());
+
+        ASSERT(PageTableFrameIndex > 0);
+
+        /* Make sure the PFN number is valid */
+        ASSERT(PageTableFrameIndex <= MmHighestPhysicalPage);
+
+        /* Make sure this page actually has a PFN entry */
+        ASSERT(MiPfnBitMap.Buffer && RtlTestBit(&MiPfnBitMap, (ULONG)PageTableFrameIndex));
+
+        ASSERT(MI_PFN_ELEMENT(PageTableFrameIndex) == Pfn2);
+        ASSERT(Pfn2->u2.ShareCount != 0);
+
+        if (Pfn2->u3.e1.PageLocation != ActiveAndValid && Pfn2->u3.e1.PageLocation != StandbyPageList)
+        {
+            DPRINT1("MmCleanProcessAddressSpace: FIXME KeBugCheckEx()\n");
+            ASSERT(FALSE);
+        }
+
+        Pfn2->u2.ShareCount--;
+        ASSERT(Pfn2->u2.ShareCount < 0xF000000);
+    }
+
+    MiDecrementShareCount(Pfn1, PageFrameIndex);
+
+    MI_WRITE_INVALID_PTE(PointerPte, DemandZeroWritePte);
+    ASSERT(MiPteToAddress(PointerPte) <= MM_HIGHEST_USER_ADDRESS);
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    DPRINT("MiCleanUserSharedData: %p, %p\n", PointerPte, *PointerPte);
+}
+
 VOID
 NTAPI
 MmCleanProcessAddressSpace(
@@ -32,7 +116,14 @@ MmCleanProcessAddressSpace(
     PMM_AVL_TABLE VadTree;
     PMMVAD Vad;
 
-    DPRINT("MmCleanProcessAddressSpace: Process %p\n", Process);
+    DPRINT("MmCleanProcessAddressSpace: %p '%16s'\n", Process, Process->ImageFileName);
+
+    if (Process->VmDeleted)
+    {
+        DPRINT("MmCleanProcessAddressSpace: VmDeleted\n");
+        MiSessionRemoveProcess();
+        return;
+    }
 
     /* Only support this */
     ASSERT(Process->AddressSpaceInitialized == 2);
@@ -46,6 +137,10 @@ MmCleanProcessAddressSpace(
 
     /* VM is deleted now */
     Process->VmDeleted = TRUE;
+
+    /* HACK!!! This must be cleared during the cleanup of the working set of the process. */
+    MiCleanUserSharedData(Process);
+
     MiUnlockProcessWorkingSetUnsafe(Process, Thread);
 
     /* Enumerate the VADs */
@@ -63,6 +158,9 @@ MmCleanProcessAddressSpace(
             ASSERT(0);//MiRosCleanupMemoryArea(Process, Vad);
             continue;
         }
+
+        /* Remove VAD charges */
+        MiRemoveVadCharges(Vad, Process);
 
         /* Lock the working set */
         MiLockProcessWorkingSetUnsafe(Process, Thread);
