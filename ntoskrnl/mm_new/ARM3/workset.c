@@ -133,4 +133,21 @@ MiEliminateWorkingSetEntry(
     return TRUE;
 }
 
+BOOLEAN
+NTAPI
+MiRemovePageFromWorkingSet(
+    _In_ PMMPTE Pte,
+    _In_ PMMPFN Pfn,
+    _In_ PMMSUPPORT WorkingSet)
+{
+    ULONG WorkingSetIndex;
+
+    DPRINT("MiRemovePageFromWorkingSet: %p, %p, %p\n", Pte, Pfn, WorkingSet);
+
+    WorkingSetIndex = 0;//MiLocateWsle(..);
+    MiEliminateWorkingSetEntry(WorkingSetIndex, Pte, Pfn, WorkingSet, 1);
+
+    return FALSE;
+}
+
 /* EOF */
