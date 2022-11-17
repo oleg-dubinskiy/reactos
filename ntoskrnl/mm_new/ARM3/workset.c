@@ -11,5 +11,126 @@
 
 /* FUNCTIONS ******************************************************************/
 
+BOOLEAN
+NTAPI
+MiEliminateWorkingSetEntry(
+    _In_ ULONG WorkingSetIndex,
+    _In_ PMMPTE Pte,
+    _In_ PMMPFN Pfn,
+    _In_ PMMSUPPORT WorkingSet,
+    _In_ BOOLEAN Parameter5)
+{
+    MMPTE TempPte;
+    MMPTE PreviousPte;
+    ULONG PageFrameIndex;
+    KIRQL OldIrql;
+
+    DPRINT("MiEliminateWorkingSetEntry: %X, %p [%X], %p, %p, %X\n", WorkingSetIndex, Pte, *Pte, Pfn, WorkingSet, Parameter5);
+
+    TempPte.u.Long = Pte->u.Long;
+    ASSERT(TempPte.u.Hard.Valid == 1);
+
+    PageFrameIndex = TempPte.u.Hard.PageFrameNumber;
+    ASSERT(Pfn == MI_PFN_ELEMENT(PageFrameIndex));
+    ASSERT(MI_IS_PFN_DELETED(Pfn) == 0);
+
+    if (TempPte.u.Hard.Writable)
+    {
+        ASSERT(TempPte.u.Hard.Dirty == 1);
+    }
+
+    if (Pfn->u3.e1.PrototypePte)
+    {
+        DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        ASSERT(Pfn->u2.ShareCount == 1); // FIXME
+
+        TempPte.u.Soft.Valid = 0;
+        TempPte.u.Soft.Transition = 1;
+        TempPte.u.Soft.Prototype = 0;
+        TempPte.u.Soft.Protection = Pfn->OriginalPte.u.Soft.Protection;
+    }
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (!Parameter5)
+    {
+        DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (!Pfn->u3.e1.PrototypePte)
+    {
+        //ASSERT(Pfn->u1.WsIndex != 0);
+        Pfn->u1.WsIndex = 0;
+    }
+    else
+    {
+        DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    PreviousPte = *Pte;
+
+    ASSERT(PreviousPte.u.Hard.Valid == 1);
+    ASSERT((TempPte).u.Hard.Valid == 0);
+    Pte->u.Long = TempPte.u.Long;
+
+    DPRINT("MiEliminateWorkingSetEntry: %p [%X], [%X]\n", Pte, *Pte, PreviousPte.u.Long);
+
+    //FIXME: KeFlushSingleTb()
+
+    ASSERT(PreviousPte.u.Hard.Valid == 1);
+    ASSERT(KeGetCurrentIrql() > APC_LEVEL);
+
+    if (!Pfn->u3.e1.Modified && PreviousPte.u.Hard.Dirty)
+    {
+        ASSERT(Pfn->u3.e1.Rom == 0);
+        Pfn->u3.e1.Modified = 1;
+
+        if (!Pfn->OriginalPte.u.Soft.Prototype && !Pfn->u3.e1.WriteInProgress)
+        {
+            MiReleasePageFileSpace(Pfn->OriginalPte);
+            Pfn->OriginalPte.u.Soft.PageFileHigh = 0;
+        }
+    }
+
+    if (!Pfn->u3.e1.PrototypePte && PreviousPte.u.Hard.Dirty)
+    {
+        DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (Pfn->u2.ShareCount == 1)
+    {
+        MiDecrementShareCount(Pfn, PageFrameIndex);
+    }
+    else
+    {
+        ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+        ASSERT(MmPfnOwner == KeGetCurrentThread());
+        ASSERT(PageFrameIndex > 0);
+
+        ASSERT(MI_PFN_ELEMENT(PageFrameIndex) == Pfn);
+        ASSERT(Pfn->u2.ShareCount != 0);
+
+        if (Pfn->u3.e1.PageLocation != ActiveAndValid &&
+            Pfn->u3.e1.PageLocation != StandbyPageList)
+        {
+            DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        Pfn->u2.ShareCount--;
+        ASSERT(Pfn->u2.ShareCount < 0xF000000);
+    }
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    return TRUE;
+}
 
 /* EOF */
