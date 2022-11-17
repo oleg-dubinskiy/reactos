@@ -24,6 +24,10 @@ SIZE_T MmPagedPoolCommit;
 SIZE_T MmPeakCommitment;
 SIZE_T MmtotalCommitLimitMaximum;
 
+extern SIZE_T MmSystemCommitReserve;
+extern SIZE_T MmTotalCommitLimit;
+extern SIZE_T MmTotalCommitLimitMaximum;
+
 static RTL_BITMAP MiUserPfnBitMap;
 
 /* FUNCTIONS ******************************************************************/
@@ -116,5 +120,80 @@ MiIsPfnInUse(
     return !MiIsPfnFree(Pfn);
 }
 
+BOOLEAN
+NTAPI
+MiChargeCommitment(
+    _In_ SIZE_T QuotaCharge,
+    _In_ PEPROCESS Process)
+{
+    SIZE_T OldMmTotalCommittedPages;
+    ULONG ix;
+
+    DPRINT("MiChargeCommitment: Process %p, QuotaCharge %IX\n", Process, QuotaCharge);
+
+    ASSERT((SSIZE_T)QuotaCharge > 0);
+
+    if (ExpInitializationPhase > 1)
+    {
+        for (ix = 0; ix < KeNumberProcessors; ix++)
+        {
+            ASSERT(KiProcessorBlock[ix]->IdleThread != &(PsGetCurrentThread()->Tcb));
+        }
+    }
+
+    while (TRUE)
+    {
+        OldMmTotalCommittedPages = MmTotalCommittedPages;
+
+        if ((MmTotalCommittedPages + QuotaCharge) <= (MmTotalCommitLimit - MmSystemCommitReserve))
+            goto Compare;
+
+        if ((MmTotalCommitLimitMaximum - MmTotalCommitLimit) <= 100)
+        {
+            DPRINT1("MiChargeCommitment: FIXME MiTrimSegmentCache()\n");
+            ASSERT(FALSE);
+
+            if (MmTotalCommitLimit >= MmTotalCommitLimitMaximum)
+            {
+                DPRINT1("MiChargeCommitment: FIXME MiCauseOverCommitPopup()\n");
+                ASSERT(FALSE);
+                return FALSE;
+            }
+        }
+
+        DPRINT1("MiChargeCommitment: %IX, %IX, %IX\n", MmTotalCommittedPages, MmTotalCommitLimit, MmSystemCommitReserve);
+        DPRINT1("MiChargeCommitment: FIXME MiIssuePageExtendRequest()\n");
+        ASSERT(FALSE);
+
+Compare:
+        if (OldMmTotalCommittedPages == InterlockedCompareExchange((PLONG)&MmTotalCommittedPages,
+                                                                   (MmTotalCommittedPages + QuotaCharge),
+                                                                   MmTotalCommittedPages))
+        {
+            break;
+        }
+    }
+
+    if (MmPeakCommitment < MmTotalCommittedPages)
+        MmPeakCommitment = MmTotalCommittedPages;
+
+    if (MmTotalCommittedPages <= ((MmTotalCommitLimit / 10) * 9))
+        return TRUE;
+
+    DPRINT1("MiChargeCommitment: %IX, %IX\n", MmTotalCommittedPages, MmTotalCommitLimit);
+
+    if (MmTotalCommitLimit < MmTotalCommitLimitMaximum)
+    {
+        DPRINT1("MiChargeCommitment: FIXME MiIssuePageExtendRequestNoWait()\n");
+        ASSERT(FALSE);
+    }
+    else if (MmTotalCommitLimit >= (MmTotalCommitLimitMaximum - 100))
+    {
+        DPRINT1("MiChargeCommitment: FIXME MiTrimSegmentCache()\n");
+        ASSERT(FALSE);
+    }
+
+    return TRUE;
+}
 
 /* EOF */
