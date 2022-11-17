@@ -2608,7 +2608,7 @@ MiDispatchFault(
                                 continue;
 
                             ix = (&Subsection->SubsectionBase[Subsection->PtesInSubsection] - SectionProto);
-                            DPRINT1("MiDispatchFault: ix %X\n", ix);
+                            //DPRINT1("MiDispatchFault: ix %X\n", ix);
 
                             break;
                         }
@@ -2930,8 +2930,12 @@ OtherPteTypes:
 
     if (TempPte.u.Soft.Transition)
     {
-        DPRINT1("MiDispatchFault: FIXME! TempPte.u.Soft.Transition %X\n", TempPte.u.Soft.Transition);
-        ASSERT(FALSE);Status = STATUS_NOT_IMPLEMENTED;
+        pageBlock = NULL;
+
+        Status = MiResolveTransitionFault(Address, Pte, Process, MM_NOIRQL, &pageBlock);
+
+        if (pageBlock)
+            MiFreeInPageSupportBlock(pageBlock);
     }
     else if (TempPte.u.Soft.PageFileHigh)
     {
