@@ -5318,6 +5318,12 @@ MiCreateImageFileMap(
         return Status;
     }
 
+    if (IsDataSectionUsed)
+    {
+        DPRINT1("MiCreateImageFileMap: FileObject %p, ControlArea %p\n", FileObject, FileObject->SectionObjectPointer->DataSectionObject);
+        ASSERT(FALSE);
+    }
+
     /* Calculate PTE and PFN for the PE header */
     BasePte = MiAddressToPte(PeHeader);
     PeHeaderPfn = MI_PFN_ELEMENT(BasePte->u.Hard.PageFrameNumber);
@@ -5522,6 +5528,8 @@ MiCreateImageFileMap(
         ((NtHeader->FileHeader.Characteristics & 0x400) && (FileObject->DeviceObject->Characteristics & 1)) ||
         ((NtHeader->FileHeader.Characteristics & 0x800) && (FileObject->DeviceObject->Characteristics & 0x10)))
     {
+        DPRINT1("MiCreateImageFileMap: IsDataSectionUsed %X\n", IsDataSectionUsed);
+        ASSERT(FALSE);
         ControlArea->u.Flags.FloppyMedia = 1;
     }
 
