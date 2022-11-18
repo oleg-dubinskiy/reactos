@@ -30,6 +30,7 @@ CHAR MmReadWrite[32] =
 };
 
 extern ULONG MiLastVadBit;
+extern SIZE_T MmSystemCommitReserve;
 extern MM_AVL_TABLE MmSectionBasedRoot;
 
 /* FUNCTIONS ******************************************************************/
@@ -705,7 +706,11 @@ MiInsertVadCharges(
                 IsChangeJobMemoryUsage = TRUE;
             }
 
-            DPRINT("MiInsertVadCharges: FIXME MiChargeCommitment \n");
+            if (!MiChargeCommitment(RealCharge, NULL))
+            {
+                DPRINT1("MiInsertVadCharges: FIXME\n");
+                ASSERT(FALSE);
+            }
 
             Process->CommitCharge += RealCharge;
 
@@ -1012,13 +1017,7 @@ MiRemoveVadCharges(
             PsReturnProcessPageFileQuota(Process, RealCharge);
 
             ASSERT((SSIZE_T)(RealCharge) >= 0);
-            //ASSERT(MmTotalCommittedPages >= RealCharge);
-            if (MmTotalCommittedPages < RealCharge)
-            {
-                DPRINT("MiRemoveVadCharges: MmTotalCommittedPages %X, RealCharge %X\n", MmTotalCommittedPages, RealCharge);
-                DPRINT1("MiRemoveVadCharges: FIXME MiChargeCommitment()\n");
-            }
-
+            ASSERT(MmTotalCommittedPages >= RealCharge);
             InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -RealCharge);
 
             if (Process->JobStatus & 0x10) // ?
