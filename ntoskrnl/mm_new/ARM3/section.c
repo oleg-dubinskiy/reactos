@@ -135,6 +135,7 @@ extern PVOID MiSessionViewStart;   // 0xBE000000
 extern SIZE_T MmSessionViewSize;
 extern PVOID MiSystemViewStart;
 extern SIZE_T MmSystemViewSize;
+extern LARGE_INTEGER MmOneSecond;
 extern LARGE_INTEGER MmHalfSecond;
 extern LARGE_INTEGER MmShortTime;
 extern LARGE_INTEGER Mm30Milliseconds;
@@ -4051,15 +4052,14 @@ MiFlushSectionInternal(
             return STATUS_SUCCESS;
         }
 
-        if (IsSingleFlush)
+        while (IsSingleFlush && ControlArea->FlushInProgressCount)
         {
-            if (ControlArea->FlushInProgressCount)
-            //while (ControlArea->FlushInProgressCount)
-            {
-                DPRINT1("MiFlushSectionInternal: FIXME\n");
-                ASSERT(FALSE);
-                //KeWaitForSingleObject();
-            }
+            ControlArea->u.Flags.CollidedFlush = 1;
+
+            MiUnlockPfnWithWait(APC_LEVEL);
+            KeWaitForSingleObject(&MmCollidedFlushEvent, WrPageOut, KernelMode, FALSE, &MmOneSecond);
+            KeLowerIrql(OldIrql);
+            OldIrql = MiLockPfnDb(APC_LEVEL);
         }
 
         ControlArea->FlushInProgressCount++;
@@ -4388,8 +4388,8 @@ StartFlush:
 
         if (ControlArea->u.Flags.CollidedFlush && !ControlArea->FlushInProgressCount)
         {
-            DPRINT1("MiFlushSectionInternal: FIXME\n");
-            ASSERT(FALSE);
+            ControlArea->u.Flags.CollidedFlush = 0;
+            KePulseEvent(&MmCollidedFlushEvent, 0, FALSE);
         }
 
         MiUnlockPfnDb(OldIrql, APC_LEVEL);
