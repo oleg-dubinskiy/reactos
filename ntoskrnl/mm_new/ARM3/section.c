@@ -5214,7 +5214,7 @@ MiCreateImageFileMap(
     PMMPFN PeHeaderPfn;
     PMMPFN NextPfn;
     //PFN_NUMBER PageFrameNumber;
-    //SIZE_T CommitCharged = 0;
+    SIZE_T CommitCharged = 0;
     ULONG SizeOfImage;
     ULONG SizeOfHeaders;
     ULONG SizeOfSectionHeaders;
@@ -5881,13 +5881,10 @@ MiCreateImageFileMap(
             IsZeroHeaderEnd = TRUE;
         }
 
-#if 0
         CommitCharged = Segment->NumberOfCommittedPages;
         if (CommitCharged)
         {
-            DPRINT("MiCreateImageFileMap: FIXME MiChargeCommitment\n");
-            ASSERT(FALSE);
-            if (0)//!MiChargeCommitment(CommitCharged, 0))
+            if (!MiChargeCommitment(CommitCharged, NULL))
             {
                 DPRINT1("MiCreateImageFileMap: STATUS_COMMITMENT_LIMIT. '%wZ'\n", &FileObject->FileName);
                 CommitCharged = 0;
@@ -5895,10 +5892,8 @@ MiCreateImageFileMap(
                 goto ErrorExit2;
             }
 
-            InterlockedExchangeAdd((volatile PLONG)&MmSharedCommit, CommitCharged);
+            InterlockedExchangeAddSizeT(&MmSharedCommit, CommitCharged);
         }
-#endif
-
     }
 
     if (ControlArea->u.Flags.GlobalMemory && !(LoaderFlags & 0x01000000))
@@ -6017,16 +6012,14 @@ ErrorExit2:
 
     if (Segment)
     {
-      #if 0
         if (CommitCharged)
         {
             ASSERT(CommitCharged == Segment->NumberOfCommittedPages);
 
             ASSERT((SSIZE_T)CommitCharged >= 0);
             ASSERT(MmTotalCommittedPages >= CommitCharged);
-            InterlockedExchangeAdd((volatile PLONG)&MmSharedCommit, -CommitCharged);
+            InterlockedExchangeAddSizeT(&MmSharedCommit, -CommitCharged);
         }
-      #endif
 
         if (Segment->SegmentFlags.ExtraSharedWowSubsections == 0)
         {
