@@ -891,7 +891,11 @@ MiCreatePagingFileMap(
         /* For commited memory, we must have a valid protection mask */
         ASSERT(ProtectionMask != 0);
 
-        DPRINT("MiCreatePagingFileMap: FIXME MiChargeCommitment \n");
+        if (!MiChargeCommitment(ProtoCount, NULL))
+        {
+            DPRINT1("MiCreatePagingFileMap: STATUS_COMMITMENT_LIMIT\n");
+            return STATUS_COMMITMENT_LIMIT;
+        }
 
         /* No large pages in ARM3 yet */
         if (AllocationAttributes & SEC_LARGE_PAGES)
