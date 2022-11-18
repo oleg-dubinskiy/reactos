@@ -405,6 +405,9 @@ MiSegmentDelete(
     PMMPTE LastProto;
     PMMPTE ProtoPte;
     MMPTE TempProto;
+    PMMPFN Pfn;
+    PMMPFN Pfn2;
+    PFN_NUMBER PageNumber;
     SIZE_T NumberOfCommittedPages;
     KIRQL OldIrql;
 
@@ -516,7 +519,7 @@ MiSegmentDelete(
 
     ProtoPte = MiAddressToPte(Proto);
 
-    ProbeForReadPointer(Proto);
+    *(volatile PMMPTE)Proto;
 
     OldIrql = MiLockPfnDb(APC_LEVEL);
 
@@ -540,8 +543,51 @@ MiSegmentDelete(
         }
         else if (!TempProto.u.Soft.Prototype)
         {
-            DPRINT1("MiSegmentDelete: FIXME\n");
-            ASSERT(FALSE);
+            ASSERT(SegmentFlags.LargePages == 0);
+
+            if (TempProto.u.Soft.Transition)
+            {
+                Pfn = MI_PFN_ELEMENT(TempProto.u.Trans.PageFrameNumber);
+                Pfn->PteAddress = (PMMPTE)(((ULONG_PTR)(Pfn->PteAddress)) | 0x1);
+
+                PageNumber = Pfn->u4.PteFrame;
+                Pfn2 = MI_PFN_ELEMENT(PageNumber);
+
+                if (Pfn2->u2.ShareCount != 1)
+                {
+                    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+                    ASSERT(MmPfnOwner == KeGetCurrentThread());
+                    ASSERT(PageNumber > 0);
+
+                    ASSERT(MI_PFN_ELEMENT(PageNumber) == Pfn2);
+                    ASSERT(Pfn2->u2.ShareCount != 0);
+
+                    if (Pfn2->u3.e1.PageLocation != ActiveAndValid &&
+                        Pfn2->u3.e1.PageLocation != StandbyPageList)
+                    {
+                        DPRINT1("MiSegmentDelete: FIXME KeBugCheckEx()\n");
+                        ASSERT(FALSE);
+                    }
+
+                    Pfn2->u2.ShareCount--;
+                    ASSERT(Pfn2->u2.ShareCount < 0xF000000);
+                }
+                else
+                {
+                    MiDecrementShareCount(Pfn2, PageNumber);
+                }
+
+                if (!Pfn->u3.e2.ReferenceCount)
+                {
+                    MiUnlinkPageFromList(Pfn);
+                    MiReleasePageFileSpace(Pfn->OriginalPte);
+                    MiInsertPageInFreeList(TempProto.u.Trans.PageFrameNumber);
+                }
+            }
+            else if (MI_IS_MAPPED_PTE(&TempProto))
+            {
+                MiReleasePageFileSpace(TempProto);
+            }
         }
         else
         {
@@ -554,8 +600,11 @@ MiSegmentDelete(
     NumberOfCommittedPages = Segment->NumberOfCommittedPages;
     if (NumberOfCommittedPages)
     {
-        DPRINT1("MiSegmentDelete: FIXME\n");
-        ASSERT(FALSE);
+        ASSERT((SSIZE_T)(NumberOfCommittedPages) >= 0);
+        ASSERT(MmTotalCommittedPages >= (NumberOfCommittedPages));
+        InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -NumberOfCommittedPages);
+
+        InterlockedExchangeAddSizeT(&MmSharedCommit, -NumberOfCommittedPages);
     }
 
     ExFreePool(ControlArea);
