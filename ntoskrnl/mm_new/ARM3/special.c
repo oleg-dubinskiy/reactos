@@ -49,7 +49,6 @@ BOOLEAN MmSpecialPoolCatchOverruns = TRUE;
 extern PMMPTE MmSystemPteBase;
 extern ULONG MmSecondaryColorMask;
 extern ULONG MmNumberOfSystemPtes;
-extern PFN_NUMBER MmResidentAvailablePages;
 extern ULONG ExpPoolFlags;
 
 /* FUNCTIONS ******************************************************************/

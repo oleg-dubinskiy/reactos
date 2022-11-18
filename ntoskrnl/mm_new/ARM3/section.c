@@ -984,7 +984,7 @@ MiCreatePagingFileMap(
         /* For accounting, also mark these pages as being committed */
         NewSegment->NumberOfCommittedPages = ProtoCount;
 
-        InterlockedExchangeAdd((volatile PLONG)&MmSharedCommit, ProtoCount);
+        InterlockedExchangeAddSizeT(&MmSharedCommit, ProtoCount);
 
         if (AllocationAttributes & SEC_LARGE_PAGES)
         {
@@ -3213,7 +3213,7 @@ MiRemoveMappedView(
                 /* Lock the PFN database */
                 OldIrql = MiLockPfnDb(APC_LEVEL);
     
-                /* Increase the reference counts */
+                /* Decrease the reference counts */
                 ControlArea->NumberOfMappedViews--;
                 ControlArea->NumberOfUserReferences--;
 

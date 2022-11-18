@@ -25,7 +25,6 @@ SIZE_T MmPeakCommitment;
 SIZE_T MmtotalCommitLimitMaximum;
 
 extern SIZE_T MmSystemCommitReserve;
-extern SIZE_T MmTotalCommitLimit;
 extern SIZE_T MmTotalCommitLimitMaximum;
 
 static RTL_BITMAP MiUserPfnBitMap;

@@ -22,7 +22,6 @@ static PFN_COUNT MiReservedSwapPages;
 static BOOLEAN MmSwapSpaceMessage = FALSE;
 static BOOLEAN MmSystemPageFileLocated = FALSE;
 
-extern SIZE_T MmTotalCommitLimit;
 extern SIZE_T MmTotalCommitLimitMaximum;
 
 /* FUNCTIONS ******************************************************************/

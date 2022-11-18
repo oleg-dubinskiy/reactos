@@ -361,7 +361,6 @@ extern SLIST_HEADER MmInPageSupportSListHead;
 extern PVOID MmHighSectionBase;
 extern ULONG MmSpecialPoolTag;
 extern LIST_ENTRY MmUnusedSubsectionList;
-extern PFN_NUMBER MmResidentAvailablePages;
 extern ULONG MmMaximumDeadKernelStacks;
 extern ULONG MmDataClusterSize;
 extern ULONG MmCodeClusterSize;
