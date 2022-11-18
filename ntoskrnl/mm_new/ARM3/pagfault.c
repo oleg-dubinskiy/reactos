@@ -1256,35 +1256,8 @@ MiInitializeReadInProgressPfn(
         DPRINT("MiInitializeReadInProgressPfn: %X, %p, %p, %p\n", *MdlPages, Pfn, BasePte, BasePte->u.Long);
 
         ASSERT(Pfn->u3.e2.ReferenceCount == 0);
-        ASSERT(Pfn->u2.ShareCount == 0);
-        ASSERT(Pfn->u3.e1.PageLocation != ActiveAndValid);
 
-        if (Pfn->u3.e1.PrototypePte &&
-            Pfn->OriginalPte.u.Soft.Prototype)
-        {
-            InterlockedIncrement((PLONG)&MmTotalCommittedPages);
-            IsCommit = TRUE;
-        }
-        else
-        {
-            IsCommit = FALSE;
-        }
-
-        InterlockedIncrementSizeT(&MmSystemLockPagesCount);
-        NewRefCount = InterlockedIncrement16((PSHORT)&Pfn->u3.e2.ReferenceCount);
-
-        if (NewRefCount != 1)
-        {
-            ASSERT(NewRefCount < 2500);
-
-            InterlockedDecrementSizeT(&MmSystemLockPagesCount);
-
-            if (IsCommit)
-            {
-                ASSERT(MmTotalCommittedPages >= 1);
-                InterlockedDecrement((PLONG)&MmTotalCommittedPages);
-            }
-        }
+        MiReferenceUnusedPageAndBumpLockCount(Pfn);
 
         Pfn->u3.e1.ReadInProgress = 1;
         Pfn->u2.ShareCount = 0;
@@ -2168,44 +2141,7 @@ MiResolveTransitionFault(
 
             /* Otherwise, the page is removed from its list */
             MiUnlinkPageFromList(Pfn);
-
-            // ? MiReferenceUnusedPageAndBumpLockCount(Pfn);
-
-            /* Make sure the page isn't used yet */
-            ASSERT(Pfn->u2.ShareCount == 0);
-            ASSERT(Pfn->u3.e1.PageLocation != ActiveAndValid);
-
-            /* Is it a prototype PTE? */
-            if (Pfn->u3.e1.PrototypePte && Pfn->OriginalPte.u.Soft.Prototype)
-            {
-                /* FIXME: We should charge commit */
-                //MiLockedCommit++;
-                IsCommit = TRUE;
-                InterlockedIncrementSizeT(&MmTotalCommittedPages);
-            }
-            else
-            {
-                IsCommit = FALSE;
-            }
-
-            /* More locked pages! */
-            InterlockedIncrementSizeT(&MmSystemLockPagesCount);
-
-            /* Update the reference count */
-            NewRefCount = InterlockedIncrement16((PSHORT)&Pfn->u3.e2.ReferenceCount);
-            if (NewRefCount != 1)
-            {
-                /* Someone had already locked the page, so undo our bump */
-                ASSERT(NewRefCount < 2500);
-
-                InterlockedDecrementSizeT(&MmSystemLockPagesCount);
-
-                if (IsCommit)
-                {
-                    ASSERT(MmTotalCommittedPages >= 1);
-                    InterlockedDecrementSizeT(&MmTotalCommittedPages);
-                }
-            }
+            MiReferenceUnusedPageAndBumpLockCount(Pfn);
         }
     }
 
