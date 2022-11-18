@@ -45,7 +45,6 @@ extern PMMPTE MmSharedUserDataPte;
 extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
 extern RTL_BITMAP MiPfnBitMap;
 extern SLIST_HEADER MmInPageSupportSListHead;
-extern SIZE_T MmTotalCommittedPages;
 extern PVOID MmPagedPoolEnd;
 extern PVOID MmSpecialPoolStart;
 extern PVOID MmSpecialPoolEnd;

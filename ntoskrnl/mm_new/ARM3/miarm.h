@@ -545,7 +545,8 @@ extern SIZE_T MmSystemLockPagesCount;
 extern ULONG MmUnusedSubsectionCount;
 extern ULONG MmUnusedSubsectionCountPeak;
 extern SIZE_T MiUnusedSubsectionPagedPool;
-extern SIZE_T MmTotalCommittedPages;
+extern SIZE_T MmTotalCommitLimit;
+extern PFN_NUMBER MmResidentAvailablePages;
 
 #if (_MI_PAGING_LEVELS <= 3)
   extern PFN_NUMBER MmSystemPageDirectory[PD_COUNT];
@@ -1160,8 +1161,7 @@ MiDropLockCount(IN PMMPFN Pfn)
     if (Pfn->u3.e1.PrototypePte &&
         Pfn->OriginalPte.u.Soft.Prototype)
     {
-        /* FIXME: We should return commit */
-        ;//DPRINT1("Not returning commit for prototype PTE\n");
+        InterlockedDecrementSizeT(&MmTotalCommittedPages);
     }
 
     /* Update the counter */
@@ -1212,8 +1212,8 @@ MiDereferencePfnAndDropLockCount(
             /* Is it a prototype PTE? */
             if (Pfn->u3.e1.PrototypePte && Pfn->OriginalPte.u.Soft.Prototype)
             {
-                /* FIXME: We should return commit */
-                ;//DbgPrint("Not returning commit for prototype PTE\n");
+                ASSERT(MmTotalCommittedPages >= 1);
+                InterlockedDecrementSizeT(&MmTotalCommittedPages);
             }
 
             /* Update the counter, and drop a reference the long way */
@@ -1248,6 +1248,7 @@ MiDereferencePfnAndDropLockCount(
     {
         //ASSERT(MiLockedCommit > 0);
         //MiLockedCommit--;
+        ASSERT(MmTotalCommittedPages >= 1);
         InterlockedDecrementSizeT(&MmTotalCommittedPages);
     }
 
@@ -1265,32 +1266,39 @@ MiReferenceProbedPageAndBumpLockCount(
 {
     USHORT RefCount;
     USHORT OldRefCount;
+    BOOLEAN IsCommitted = FALSE;
 
-    /* Sanity check */
-    ASSERT(Pfn->u3.e2.ReferenceCount != 0);
-
-    /* Does ARM3 own the page? */
-    if (MI_IS_ROS_PFN(Pfn))
+    if (Pfn->u3.e1.PrototypePte && Pfn->OriginalPte.u.Soft.Prototype)
     {
-        /* ReactOS Mm doesn't track share count */
-        ASSERT(Pfn->u3.e1.PageLocation == ActiveAndValid);
-    }
-    else
-    {
-        /* On ARM3 pages, we should see a valid share count */
-        ASSERT((Pfn->u2.ShareCount != 0) && (Pfn->u3.e1.PageLocation == ActiveAndValid));
-
-        /* Is it a prototype PTE? */
-        if (Pfn->u3.e1.PrototypePte &&
-            Pfn->OriginalPte.u.Soft.Prototype)
+        if (MmTotalCommittedPages > (MmTotalCommitLimit - 0x40))
         {
-            /* FIXME: We should charge commit */
-            DbgPrint("MiReferenceProbedPageAndBumpLockCount: Not charging commit for prototype PTE\n");
+            if (!PsGetCurrentThread()->MemoryMaker || KeIsExecutingDpc())
+            {
+               DbgPrint("MiReferenceProbedPageAndBumpLockCount: Not charging commit for prototype PTE\n");
+               return;
+            }
         }
+
+        InterlockedIncrementSizeT(&MmTotalCommittedPages);
+        IsCommitted = TRUE;
     }
 
     /* More locked pages! */
     InterlockedIncrementSizeT(&MmSystemLockPagesCount);
+
+    if (MmResidentAvailablePages <= MmSystemLockPagesCount)
+    {
+        InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+
+        if (IsCommitted)
+        {
+            ASSERT(MmTotalCommittedPages >= 1);
+            InterlockedDecrementSizeT(&MmTotalCommittedPages);
+        }
+
+        DbgPrint("MiReferenceProbedPageAndBumpLockCount: Not bumping\n");
+        return;
+    }
 
     /* Loop trying to update the reference count */
     do
@@ -1311,7 +1319,15 @@ MiReferenceProbedPageAndBumpLockCount(
 
     /* Was this the first lock attempt? If not, undo our bump */
     if (OldRefCount != 1)
-         InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+    {
+        InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+
+        if (IsCommitted)
+        {
+            ASSERT(MmTotalCommittedPages >= 1);
+            InterlockedDecrementSizeT(&MmTotalCommittedPages);
+        }
+    }
 }
 
 /* References a locked page and updates the counter.
@@ -1323,13 +1339,12 @@ MiReferenceUsedPageAndBumpLockCount(
     _In_ PMMPFN Pfn)
 {
     USHORT NewRefCount;
+    BOOLEAN IsCommitted = FALSE;
 
-    /* Is it a prototype PTE? */
-    if (Pfn->u3.e1.PrototypePte &&
-        Pfn->OriginalPte.u.Soft.Prototype)
+    if (Pfn->u3.e1.PrototypePte && Pfn->OriginalPte.u.Soft.Prototype)
     {
-        /* FIXME: We should charge commit */
-        ;//DbgPrint("MiReferenceUsedPageAndBumpLockCount: Not charging commit for prototype PTE\n");
+        InterlockedIncrementSizeT(&MmTotalCommittedPages);
+        IsCommitted = TRUE;
     }
 
     /* More locked pages! */
@@ -1342,17 +1357,34 @@ MiReferenceUsedPageAndBumpLockCount(
     {
         /* Is it locked or shared? */
         if (Pfn->u2.ShareCount)
+        {
             /* It's shared, so make sure it's active */
             ASSERT(Pfn->u3.e1.PageLocation == ActiveAndValid);
+        }
         else
+        {
             /* It's locked, so we shouldn't lock again */
             InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+
+            if (IsCommitted)
+            {
+                ASSERT(MmTotalCommittedPages >= 1);
+                InterlockedDecrementSizeT(&MmTotalCommittedPages);
+            }
+        }
     }
     else
     {
         /* Someone had already locked the page, so undo our bump */
-        ASSERT(NewRefCount < 2500);
+        ASSERT(NewRefCount < 2500); // ASSERT(NewRefCount < (MmReferenceCountCheck + 0x400));
+
         InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+
+        if (IsCommitted)
+        {
+            ASSERT(MmTotalCommittedPages >= 1);
+            InterlockedDecrementSizeT(&MmTotalCommittedPages);
+        }
     }
 }
 
@@ -1365,19 +1397,17 @@ MiReferenceUnusedPageAndBumpLockCount(
     _In_ PMMPFN Pfn)
 {
     USHORT NewRefCount;
+    BOOLEAN IsCommitted = FALSE;
 
     /* Make sure the page isn't used yet */
     ASSERT(Pfn->u2.ShareCount == 0);
     ASSERT(Pfn->u3.e1.PageLocation != ActiveAndValid);
 
-#if 0 // log spam ..
-    /* Is it a prototype PTE? */
     if (Pfn->u3.e1.PrototypePte && Pfn->OriginalPte.u.Soft.Prototype)
     {
-        /* FIXME: We should charge commit */
-        DbgPrint("MiReferenceUnusedPageAndBumpLockCount: Not charging commit for prototype PTE\n");
+        InterlockedIncrementSizeT(&MmTotalCommittedPages);
+        IsCommitted = TRUE;
     }
-#endif
 
     /* More locked pages! */
     InterlockedIncrementSizeT(&MmSystemLockPagesCount);
@@ -1387,8 +1417,15 @@ MiReferenceUnusedPageAndBumpLockCount(
     if (NewRefCount != 1)
     {
         /* Someone had already locked the page, so undo our bump */
-        ASSERT(NewRefCount < 2500);
+        ASSERT(NewRefCount < 2500); // ASSERT(NewRefCount < (MmReferenceCountCheck + 0x400));
+
         InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+
+        if (IsCommitted)
+        {
+            ASSERT(MmTotalCommittedPages >= 1);
+            InterlockedDecrementSizeT(&MmTotalCommittedPages);
+        }
     }
 }
 

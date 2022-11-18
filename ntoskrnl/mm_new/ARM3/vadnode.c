@@ -30,7 +30,6 @@ CHAR MmReadWrite[32] =
 };
 
 extern ULONG MiLastVadBit;
-extern SIZE_T MmTotalCommittedPages;
 extern MM_AVL_TABLE MmSectionBasedRoot;
 
 /* FUNCTIONS ******************************************************************/

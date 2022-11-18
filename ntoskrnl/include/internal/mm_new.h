@@ -13,6 +13,8 @@ extern PKTHREAD MmPfnOwner;
 extern PFN_NUMBER MmSizeOfSystemCacheInPages;
 extern MMSUPPORT MmSystemCacheWs;
 extern PFN_NUMBER MmAvailablePages;
+extern SIZE_T MmTotalCommittedPages;
+extern SIZE_T MmPeakCommitment;
 
 /* Although Microsoft says this isn't hardcoded anymore, they won't be able to change it.
    Stuff depends on it

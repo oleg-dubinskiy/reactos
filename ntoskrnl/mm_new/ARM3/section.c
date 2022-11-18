@@ -139,7 +139,6 @@ extern LARGE_INTEGER MmHalfSecond;
 extern LARGE_INTEGER MmShortTime;
 extern LARGE_INTEGER Mm30Milliseconds;
 extern SIZE_T MmSharedCommit;
-extern SIZE_T MmTotalCommittedPages;
 extern MMPDE ValidKernelPde;
 extern ULONG MmSecondaryColorMask;
 extern SIZE_T MmAllocationFragment;
