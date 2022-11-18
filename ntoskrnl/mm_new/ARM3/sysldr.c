@@ -39,6 +39,7 @@ extern LIST_ENTRY MiLargePageDriverList;
 extern UCHAR MmDisablePagingExecutive;
 extern PVOID MiSessionImageStart;
 extern PVOID MiSessionImageEnd;
+extern SIZE_T MmTotalCommitLimitMaximum;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -2967,6 +2968,7 @@ MiInitializeLoadedModuleList(
     PLDR_DATA_TABLE_ENTRY NewEntry;
     PLIST_ENTRY ListHead;
     PLIST_ENTRY NextEntry;
+    SIZE_T PagesCount = 0;
     ULONG EntrySize;
     ULONG Size;
 
@@ -3030,9 +3032,19 @@ MiInitializeLoadedModuleList(
         /* Null-terminate the base name */
         NewEntry->BaseDllName.Buffer[NewEntry->BaseDllName.Length / sizeof(WCHAR)] = UNICODE_NULL;
 
+        PagesCount += (LdrEntry->SizeOfImage / PAGE_SIZE);
+
         /* Insert the entry into the list */
         InsertTailList(&PsLoadedModuleList, &NewEntry->InLoadOrderLinks);
     }
+
+    MmTotalCommittedPages += PagesCount;
+    MmTotalCommitLimit += PagesCount;
+    MmTotalCommitLimitMaximum += PagesCount;
+
+    DPRINT1("MiInitializeLoadedModuleList: MmTotalCommittedPages     %X\n", MmTotalCommittedPages);
+    DPRINT1("MiInitializeLoadedModuleList: MmTotalCommitLimit        %X\n", MmTotalCommitLimit);
+    DPRINT1("MiInitializeLoadedModuleList: MmTotalCommitLimitMaximum %X\n", MmTotalCommitLimitMaximum);
 
     /* Build the import lists for the boot drivers */
     MiBuildImportsForBootDrivers();
