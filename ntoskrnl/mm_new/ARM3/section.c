@@ -1722,7 +1722,11 @@ MiSetPageModified(
         IsMemoryUsage = TRUE;
     }
 
-    DPRINT("MiSetPageModified: FIXME MiChargeCommitment\n");
+    if (!MiChargeCommitment(1, NULL))
+    {
+        DPRINT1("MiSetPageModified: FIXME\n");
+        ASSERT(FALSE);
+    }
 
     CurrentProcess->CommitCharge++;
 
