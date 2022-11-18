@@ -2566,6 +2566,13 @@ MmGetLRUNextUserPage(
     PFN_NUMBER PreviousPfn
 );
 
+BOOLEAN
+NTAPI
+MiChargeCommitment(
+    _In_ SIZE_T QuotaCharge,
+    _In_ PEPROCESS Process
+);
+
 /* pagefile.c */
 INIT_FUNCTION
 VOID

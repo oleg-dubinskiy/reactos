@@ -1587,12 +1587,25 @@ MiSetProtectionOnSection(
         }
         else
         {
-            DPRINT1("MiSetProtectionOnSection: FIXME\n");
+            VirtualAddress = (ULONG_PTR)MiPteToAddress(Pte);
+            Proto = MI_GET_PROTOTYPE_PTE_FOR_VPN(FoundVad, (VirtualAddress / PAGE_SIZE));
 
-            /* Only pagefile-backed section VADs are supported for now */
-            ASSERT(FoundVad->u.VadFlags.VadType != VadImageMap);
+            MiUnlockProcessWorkingSetUnsafe(Process, Thread);
 
-            ASSERT(FALSE);
+            TempPte = *Proto;
+
+            if (!TempPte.u.Hard.Valid)
+            {
+                *OutProtection = MmProtectToValue[TempPte.u.Soft.Protection];
+            }
+            else
+            {
+                DPRINT1("MiSetProtectionOnSection: FIXME. %p, %p, %p\n", VirtualAddress, Proto, TempPte);
+                ASSERT(FALSE);
+            }
+
+            MiLockProcessWorkingSetUnsafe(Process, Thread);
+            MiMakePdeExistAndMakeValid(Pde, Process, MM_NOIRQL);
         }
     }
 
