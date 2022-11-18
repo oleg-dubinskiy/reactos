@@ -1232,9 +1232,7 @@ MiInitializeReadInProgressPfn(
     PFN_NUMBER PageNumber = 0;
     LONG ByteCount;
     ULONG CacheAttribute;
-    SHORT NewRefCount;
     BOOLEAN IsFlush = FALSE;
-    BOOLEAN IsCommit;
 
     DPRINT("MiInitializeReadInProgressPfn: %p %p, %X\n", Mdl, BasePte, IsProto);
 
@@ -2136,9 +2134,6 @@ MiResolveTransitionFault(
         }
         else
         {
-            USHORT NewRefCount;
-            BOOLEAN IsCommit = FALSE;
-
             /* Otherwise, the page is removed from its list */
             MiUnlinkPageFromList(Pfn);
             MiReferenceUnusedPageAndBumpLockCount(Pfn);
