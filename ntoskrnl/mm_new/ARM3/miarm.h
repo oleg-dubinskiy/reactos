@@ -706,6 +706,17 @@ MI_IS_MAPPED_PTE(
 #endif
 
 FORCEINLINE
+VOID
+MiReleasePfnLockFromDpcLevel(VOID)
+{
+    PKSPIN_LOCK_QUEUE LockQueue;
+
+    LockQueue = &KeGetCurrentPrcb()->LockQueue[LockQueuePfnLock];
+    KeReleaseQueuedSpinLockFromDpcLevel(LockQueue);
+    ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
+}
+
+FORCEINLINE
 KIRQL 
 MiLockPfnDb(
     _In_ KIRQL MaximumLevel)
@@ -748,6 +759,27 @@ MiUnlockPfnDb(
 }
 
 FORCEINLINE
+VOID 
+MiUnlockPfnWithWait(KIRQL OldIrql)
+{
+    PKTHREAD CurrentThread;
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(OldIrql <= APC_LEVEL);
+
+    KiAcquireDispatcherLock();
+
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+    MmPfnOwner = NULL;
+
+    MiReleasePfnLockFromDpcLevel();
+
+    CurrentThread = KeGetCurrentThread();
+    CurrentThread->WaitIrql = OldIrql;
+    CurrentThread->WaitNext = TRUE;
+}
+
+FORCEINLINE
 KIRQL
 MiAcquirePfnLock(VOID)
 {
@@ -771,17 +803,6 @@ MiAcquirePfnLockAtDpcLevel(VOID)
     ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
     LockQueue = &KeGetCurrentPrcb()->LockQueue[LockQueuePfnLock];
     KeAcquireQueuedSpinLockAtDpcLevel(LockQueue);
-}
-
-FORCEINLINE
-VOID
-MiReleasePfnLockFromDpcLevel(VOID)
-{
-    PKSPIN_LOCK_QUEUE LockQueue;
-
-    LockQueue = &KeGetCurrentPrcb()->LockQueue[LockQueuePfnLock];
-    KeReleaseQueuedSpinLockFromDpcLevel(LockQueue);
-    ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
 }
 
 FORCEINLINE
