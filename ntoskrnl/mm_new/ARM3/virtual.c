@@ -4226,9 +4226,15 @@ NtAllocateVirtualMemory(
         Vad->u.LongFlags = 0;
 
         if (AllocationType & MEM_COMMIT)
+        {
             Vad->u.VadFlags.MemCommit = 1;
+            Vad->u.VadFlags.CommitCharge = CommitCharge;
+        }
+        else
+        {
+            Vad->u.VadFlags.CommitCharge = 0;
+        }
 
-        Vad->u.VadFlags.CommitCharge = CommitCharge;
         Vad->u.VadFlags.Protection = ProtectionMask;
         Vad->u.VadFlags.PrivateMemory = 1;
 
@@ -4556,7 +4562,11 @@ ErrorVadExit:
 
         KeAcquireGuardedMutexUnsafe(&MmSectionCommitMutex);
 
-        DPRINT("NtAllocateVirtualMemory: FIXME MiChargeCommitment \n");
+        if (!MiChargeCommitment((QuotaCharge + QuotaCopyOnWrite), NULL))
+        {
+            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
 
         /* Get the segment template PTE and start looping each page */
         TempPte = FoundVad->ControlArea->Segment->SegmentPteTemplate;
@@ -4698,7 +4708,11 @@ ErrorVadExit:
         goto ErrorExit1;
     }
 
-    DPRINT("NtAllocateVirtualMemory: FIXME MiChargeCommitment()\n");
+    if (!MiChargeCommitment(QuotaCharge, NULL))
+    {
+        DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+        ASSERT(FALSE);
+    }
 
     /* Update the commit charge in the VAD as well as in the process,
        and check if this commit charge was now higher than the last recorded peak,
