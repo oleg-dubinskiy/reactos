@@ -552,30 +552,7 @@ MiSegmentDelete(
 
                 PageNumber = Pfn->u4.PteFrame;
                 Pfn2 = MI_PFN_ELEMENT(PageNumber);
-
-                if (Pfn2->u2.ShareCount != 1)
-                {
-                    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-                    ASSERT(MmPfnOwner == KeGetCurrentThread());
-                    ASSERT(PageNumber > 0);
-
-                    ASSERT(MI_PFN_ELEMENT(PageNumber) == Pfn2);
-                    ASSERT(Pfn2->u2.ShareCount != 0);
-
-                    if (Pfn2->u3.e1.PageLocation != ActiveAndValid &&
-                        Pfn2->u3.e1.PageLocation != StandbyPageList)
-                    {
-                        DPRINT1("MiSegmentDelete: FIXME KeBugCheckEx()\n");
-                        ASSERT(FALSE);
-                    }
-
-                    Pfn2->u2.ShareCount--;
-                    ASSERT(Pfn2->u2.ShareCount < 0xF000000);
-                }
-                else
-                {
-                    MiDecrementShareCount(Pfn2, PageNumber);
-                }
+                MiDecrementPfnShare(Pfn2, PageNumber);
 
                 if (!Pfn->u3.e2.ReferenceCount)
                 {
@@ -3153,32 +3130,7 @@ MiRemoveMappedView(
 
                 Pte->u.Long = 0;
                 Pfn = &MmPfnDatabase[PdePage];
-
-                if (Pfn->u2.ShareCount != 1)
-                {
-                    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-                    ASSERT(MmPfnOwner == KeGetCurrentThread());
-                    ASSERT(PdePage > 0);
-                    ASSERT(MiGetPfnEntry(PdePage) != NULL);
-                    ASSERT(&MmPfnDatabase[PdePage] == Pfn);
-                    ASSERT(Pfn->u2.ShareCount != 0);
-
-                    if (Pfn->u3.e1.PageLocation != ActiveAndValid &&
-                        Pfn->u3.e1.PageLocation != StandbyPageList)
-                    {
-                        DPRINT1("MiRemoveMappedView: FIXME\n");
-                        ASSERT(FALSE);
-                    }
-
-                    /* Just decrease share count */
-                    Pfn->u2.ShareCount--;
-                    ASSERT(Pfn->u2.ShareCount < 0xF000000);
-                }
-                else
-                {
-                    /* Decrement the share count on the page */
-                    MiDecrementShareCount(Pfn, PdePage);
-                }
+                MiDecrementPfnShare(Pfn, PdePage);
 
                 /* See if we should delete it */
                 if (!MiQueryPageTableReferences(UsedAddress))
@@ -6748,30 +6700,7 @@ MmPurgeSection(
 
                 PageNumber = ProtoPfn->u4.PteFrame;
                 Pfn = MI_PFN_ELEMENT(PageNumber);
-
-                if (Pfn->u2.ShareCount != 1)
-                {
-                    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-                    ASSERT(MmPfnOwner == KeGetCurrentThread());
-                    ASSERT(PageNumber > 0);
-
-                    ASSERT(MI_PFN_ELEMENT(PageNumber) == Pfn);
-                    ASSERT(Pfn->u2.ShareCount != 0);
-
-                    if (Pfn->u3.e1.PageLocation != ActiveAndValid &&
-                        Pfn->u3.e1.PageLocation != StandbyPageList)
-                    {
-                        DPRINT1("MmPurgeSection: FIXME\n");
-                        ASSERT(FALSE);
-                    }
-
-                    Pfn->u2.ShareCount--;
-                    ASSERT(Pfn->u2.ShareCount < 0xF000000);
-                }
-                else
-                {
-                    MiDecrementShareCount(Pfn, PageNumber);
-                }
+                MiDecrementPfnShare(Pfn, PageNumber);
 
                 if (!ProtoPfn->u3.e2.ReferenceCount)
                 {

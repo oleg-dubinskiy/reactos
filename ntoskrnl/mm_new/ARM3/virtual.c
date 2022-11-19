@@ -609,31 +609,7 @@ MiDeleteSystemPageableVm(
                 MI_SET_PFN_DELETED(Pfn);
             }
 
-            if (PteFramePfn->u2.ShareCount != 1)
-            {
-                ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-                ASSERT(MmPfnOwner == KeGetCurrentThread());
-                ASSERT(PageTableIndex > 0);
-
-                ASSERT(MI_PFN_ELEMENT(PageTableIndex) == PteFramePfn);
-                ASSERT(PteFramePfn->u2.ShareCount != 0);
-
-                if (PteFramePfn->u3.e1.PageLocation != ActiveAndValid &&
-                    PteFramePfn->u3.e1.PageLocation != StandbyPageList)
-                {
-                    DPRINT1("MmUnmapViewInSystemCache: FIXME KeBugCheckEx()\n");
-                    ASSERT(FALSE);
-                }
-
-                PteFramePfn->u2.ShareCount--;
-                ASSERT(PteFramePfn->u2.ShareCount < 0xF000000);
-            }
-            else
-            {
-                /* Decrement the page table too */
-                MiDecrementShareCount(PteFramePfn, PageTableIndex);
-            }
-
+            MiDecrementPfnShare(PteFramePfn, PageTableIndex);
             MiDecrementShareCount(Pfn, PageFrameIndex);
 
             /* Release the PFN database */
@@ -993,30 +969,7 @@ MiDeletePte(
 
         PageNumber = Pfn->u4.PteFrame;
         PteFramePfn = MiGetPfnEntry(PageNumber);
-
-        if (PteFramePfn->u2.ShareCount != 1)
-        {
-            ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-            ASSERT(MmPfnOwner == KeGetCurrentThread());
-            ASSERT(PageNumber > 0);
-
-            ASSERT(MI_PFN_ELEMENT(PageNumber) == PteFramePfn);
-            ASSERT(PteFramePfn->u2.ShareCount != 0);
-
-            if (PteFramePfn->u3.e1.PageLocation != ActiveAndValid &&
-                PteFramePfn->u3.e1.PageLocation != StandbyPageList)
-            {
-                DPRINT1("MiDeletePte: FIXME KeBugCheckEx()\n");
-                ASSERT(FALSE);
-            }
-
-            PteFramePfn->u2.ShareCount--;
-            ASSERT(PteFramePfn->u2.ShareCount < 0xF000000);
-        }
-        else
-        {
-            MiDecrementShareCount(PteFramePfn, PageNumber);
-        }
+        MiDecrementPfnShare(PteFramePfn, PageNumber);
 
         if (!Pfn->u3.e2.ReferenceCount)
         {

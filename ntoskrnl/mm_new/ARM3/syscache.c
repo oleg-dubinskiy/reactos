@@ -661,58 +661,14 @@ Next:
             }
         }
 
-        if (StartPfn->u2.ShareCount == 1)
-        {
-            MiDecrementShareCount(StartPfn, StartPageNumber);
-        }
-        else
-        {
-            ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-            ASSERT(MmPfnOwner == KeGetCurrentThread());
-            ASSERT(StartPageNumber > 0);
-
-            ASSERT(MI_PFN_ELEMENT(StartPageNumber) == StartPfn);
-            ASSERT(StartPfn->u2.ShareCount != 0);
-
-            if (StartPfn->u3.e1.PageLocation != ActiveAndValid &&
-                StartPfn->u3.e1.PageLocation != StandbyPageList)
-            {
-                DPRINT1("MmUnmapViewInSystemCache: FIXME\n");
-                ASSERT(FALSE);
-            }
-
-            StartPfn->u2.ShareCount--;
-            ASSERT(StartPfn->u2.ShareCount < 0xF000000);
-        }
+        MiDecrementPfnShare(StartPfn, StartPageNumber);
 
         if (ControlArea->NumberOfMappedViews == 1)
         {
             ASSERT(Pfn->u2.ShareCount == 1);
         }
 
-        if (Pfn->u2.ShareCount == 1)
-        {
-            MiDecrementShareCount(Pfn, PageNumber);
-        }
-        else
-        {
-            ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-            ASSERT(MmPfnOwner == KeGetCurrentThread());
-            ASSERT(PageNumber > 0);
-
-            ASSERT(MI_PFN_ELEMENT(PageNumber) == Pfn);
-            ASSERT(Pfn->u2.ShareCount != 0);
-
-            if (Pfn->u3.e1.PageLocation != ActiveAndValid &&
-                Pfn->u3.e1.PageLocation != StandbyPageList)
-            {
-                DPRINT1("MmUnmapViewInSystemCache: FIXME\n");
-                ASSERT(FALSE);
-            }
-
-            Pfn->u2.ShareCount--;
-            ASSERT(Pfn->u2.ShareCount < 0xF000000);
-        }
+        MiDecrementPfnShare(Pfn, PageNumber);
     }
 
     MmFrontOfList = 0;

@@ -145,29 +145,7 @@ MiRestoreTransitionPte(
 
     PageTableFrameIndex = Pfn->u4.PteFrame;
     RestorePfn = MI_PFN_ELEMENT(PageTableFrameIndex);
-
-    if (RestorePfn->u2.ShareCount == 1)
-    {
-        MiDecrementShareCount(RestorePfn, PageTableFrameIndex);
-        return;
-    }
-
-    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-    //ASSERT(MmPfnOwner == KeGetCurrentThread());
-    ASSERT(PageTableFrameIndex > 0);
-
-    ASSERT(MI_PFN_ELEMENT(PageTableFrameIndex) == RestorePfn);
-    ASSERT(RestorePfn->u2.ShareCount != 0);
-
-    if (RestorePfn->u3.e1.PageLocation != ActiveAndValid &&
-        RestorePfn->u3.e1.PageLocation != StandbyPageList)
-    {
-        DPRINT1("MiRestoreTransitionPte: FIXME\n");
-        ASSERT(FALSE);
-    }
-
-    RestorePfn->u2.ShareCount--;
-    ASSERT(RestorePfn->u2.ShareCount < 0xF000000);
+    MiDecrementPfnShare(RestorePfn, PageTableFrameIndex);
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/

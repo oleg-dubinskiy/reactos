@@ -1832,6 +1832,43 @@ MiReleaseExpansionLock(
     ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
 }
 
+VOID
+NTAPI
+MiDecrementShareCount(
+    _In_ PMMPFN Pfn,
+    _In_ PFN_NUMBER PageFrameIndex
+);
+
+FORCEINLINE
+VOID
+MiDecrementPfnShare(
+    _In_ PMMPFN Pfn,
+    _In_ PFN_NUMBER PageNumber)
+{
+    if (Pfn->u2.ShareCount == 1)
+    {
+        MiDecrementShareCount(Pfn, PageNumber);
+        return;
+    }
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+    ASSERT(PageNumber > 0);
+
+    ASSERT(MI_PFN_ELEMENT(PageNumber) == Pfn);
+    ASSERT(Pfn->u2.ShareCount != 0);
+
+    if (Pfn->u3.e1.PageLocation != ActiveAndValid &&
+        Pfn->u3.e1.PageLocation != StandbyPageList)
+    {
+        DbgPrint("MiDecrementPfnShare: KeBugCheckEx(0x4E)\n");
+        KeBugCheckEx(0x4E, 0x99, PageNumber, Pfn->u3.e1.PageLocation, 0); // FIXME
+    }
+
+    Pfn->u2.ShareCount--;
+    ASSERT(Pfn->u2.ShareCount < 0xF000000);
+}
+
 /* ARM3\i386\init.c */
 INIT_FUNCTION
 VOID
@@ -2013,13 +2050,6 @@ MiInitializePfnAndMakePteValid(
     _In_ PFN_NUMBER PageFrameIndex,
     _In_ PMMPTE Pte,
     _In_ MMPTE TempPte
-);
-
-VOID
-NTAPI
-MiDecrementShareCount(
-    _In_ PMMPFN Pfn,
-    _In_ PFN_NUMBER PageFrameIndex
 );
 
 PFN_NUMBER

@@ -67,36 +67,7 @@ MiCleanUserSharedData(
         }
     }
 
-    if (Pfn2->u2.ShareCount == 1)
-    {
-        MiDecrementShareCount(Pfn2, PageTableFrameIndex);
-    }
-    else
-    {
-        ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-        ASSERT(MmPfnOwner == KeGetCurrentThread());
-
-        ASSERT(PageTableFrameIndex > 0);
-
-        /* Make sure the PFN number is valid */
-        ASSERT(PageTableFrameIndex <= MmHighestPhysicalPage);
-
-        /* Make sure this page actually has a PFN entry */
-        ASSERT(MiPfnBitMap.Buffer && RtlTestBit(&MiPfnBitMap, (ULONG)PageTableFrameIndex));
-
-        ASSERT(MI_PFN_ELEMENT(PageTableFrameIndex) == Pfn2);
-        ASSERT(Pfn2->u2.ShareCount != 0);
-
-        if (Pfn2->u3.e1.PageLocation != ActiveAndValid && Pfn2->u3.e1.PageLocation != StandbyPageList)
-        {
-            DPRINT1("MmCleanProcessAddressSpace: FIXME KeBugCheckEx()\n");
-            ASSERT(FALSE);
-        }
-
-        Pfn2->u2.ShareCount--;
-        ASSERT(Pfn2->u2.ShareCount < 0xF000000);
-    }
-
+    MiDecrementPfnShare(Pfn2, PageTableFrameIndex);
     MiDecrementShareCount(Pfn1, PageFrameIndex);
 
     MI_WRITE_INVALID_PTE(PointerPte, DemandZeroWritePte);

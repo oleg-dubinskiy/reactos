@@ -104,30 +104,7 @@ MiEliminateWorkingSetEntry(
         ASSERT(FALSE);
     }
 
-    if (Pfn->u2.ShareCount == 1)
-    {
-        MiDecrementShareCount(Pfn, PageFrameIndex);
-    }
-    else
-    {
-        ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-        ASSERT(MmPfnOwner == KeGetCurrentThread());
-        ASSERT(PageFrameIndex > 0);
-
-        ASSERT(MI_PFN_ELEMENT(PageFrameIndex) == Pfn);
-        ASSERT(Pfn->u2.ShareCount != 0);
-
-        if (Pfn->u3.e1.PageLocation != ActiveAndValid &&
-            Pfn->u3.e1.PageLocation != StandbyPageList)
-        {
-            DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
-            ASSERT(FALSE);
-        }
-
-        Pfn->u2.ShareCount--;
-        ASSERT(Pfn->u2.ShareCount < 0xF000000);
-    }
-
+    MiDecrementPfnShare(Pfn, PageFrameIndex);
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
     return TRUE;
