@@ -1118,7 +1118,6 @@ MiCheckPurgeAndUpMapCount(
     _In_ PCONTROL_AREA ControlArea,
     _In_ BOOLEAN FailIfSystemViews)
 {
-    NTSTATUS Status;
     KIRQL OldIrql;
 
     DPRINT("MiCheckPurgeAndUpMapCount: ControlArea %p, FailIfSystemViews %X\n", ControlArea, FailIfSystemViews);
@@ -1138,35 +1137,27 @@ MiCheckPurgeAndUpMapCount(
         ASSERT(FALSE);
     }
 
-    /* Increase the reference counts */
-    ControlArea->NumberOfMappedViews++;
-    ControlArea->NumberOfUserReferences++;
-
-    ASSERT(ControlArea->NumberOfSectionReferences != 0);
-
     if (FailIfSystemViews &&
         ControlArea->u.Flags.ImageMappedInSystemSpace &&
         KeGetPreviousMode() != KernelMode)
     {
         /* Release the PFN lock */
         MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
         DPRINT1("MiCheckPurgeAndUpMapCount: STATUS_CONFLICTING_ADDRESSES\n");
-        Status = STATUS_CONFLICTING_ADDRESSES;
-    }
-    else
-    {
-        /* Increase the reference counts */
-        ControlArea->NumberOfMappedViews++;
-        ControlArea->NumberOfUserReferences++;
-
-        ASSERT(ControlArea->NumberOfSectionReferences != 0);
-
-        /* Release the PFN lock */
-        MiUnlockPfnDb(OldIrql, APC_LEVEL);
-        Status = STATUS_SUCCESS;
+        return STATUS_CONFLICTING_ADDRESSES;
     }
 
-    return Status;
+    /* Increase the reference counts */
+    ControlArea->NumberOfMappedViews++;
+    ControlArea->NumberOfUserReferences++;
+
+    ASSERT(ControlArea->NumberOfSectionReferences != 0);
+
+    /* Release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    return STATUS_SUCCESS;
 }
 
 VOID
