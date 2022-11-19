@@ -345,6 +345,7 @@ ULONG MmReadClusterSize = 7;
 
 /* The page support stack S-LIST */
 SLIST_HEADER MmInPageSupportSListHead;
+SLIST_HEADER MmEventCountSListHead;
 
 BOOLEAN MiWriteCombiningPtes = FALSE;
 
@@ -357,7 +358,6 @@ extern KMUTANT MmSystemLoadLock;
 extern KEVENT MmZeroingPageEvent;
 extern KEVENT MmCollidedFlushEvent;
 extern SLIST_HEADER MmDeadStackSListHead;
-extern SLIST_HEADER MmInPageSupportSListHead;
 extern PVOID MmHighSectionBase;
 extern ULONG MmSpecialPoolTag;
 extern LIST_ENTRY MmUnusedSubsectionList;
@@ -1548,11 +1548,9 @@ MmArmInitSystem(
         KeInitializeEvent(&MmAvailablePagesEvent, NotificationEvent, TRUE);
         KeInitializeEvent(&MmAvailablePagesEventHigh, NotificationEvent, TRUE);
 
-        /* Initialize the dead stack S-LIST */
-        InitializeSListHead(&MmDeadStackSListHead);
-
-        /* Initialize the page support stack S-LIST */
-        InitializeSListHead(&MmInPageSupportSListHead);
+        InitializeSListHead(&MmDeadStackSListHead);     /* Initialize the dead stack S-LIST */
+        InitializeSListHead(&MmInPageSupportSListHead); /* Initialize the page support stack S-LIST */
+        InitializeSListHead(&MmEventCountSListHead);
 
         /* Check if this is a machine with less than 19MB of RAM */
         PageCount = MmNumberOfPhysicalPages;

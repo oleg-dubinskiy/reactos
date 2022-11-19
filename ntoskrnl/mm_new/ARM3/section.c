@@ -147,8 +147,85 @@ extern ULONG MmVirtualBias;
 extern PMM_SESSION_SPACE MmSessionSpace;
 extern MMPTE ValidKernelPdeLocal;
 extern BOOLEAN MiWriteCombiningPtes;
+extern SLIST_HEADER MmEventCountSListHead;
 
 /* FUNCTIONS ******************************************************************/
+
+PEVENT_COUNTER
+NTAPI
+MiGetEventCounter(VOID)
+{
+    PEVENT_COUNTER EventCounter;
+    PSINGLE_LIST_ENTRY Entry;
+
+    ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+
+    if (ExQueryDepthSList(&MmEventCountSListHead))
+    {
+        Entry = InterlockedPopEntrySList(&MmEventCountSListHead);
+        if (Entry)
+        {
+            EventCounter = CONTAINING_RECORD(Entry, EVENT_COUNTER, ListEntry);
+
+            ASSERT(EventCounter->RefCount == 0);
+            EventCounter->RefCount = 1;
+
+            KeClearEvent(&EventCounter->Event);
+            EventCounter->ListEntry.Next = NULL;
+
+            return EventCounter;
+        }
+    }
+
+    EventCounter = ExAllocatePoolWithTag(NonPagedPool, sizeof(EVENT_COUNTER), 'xEmM');
+    if (!EventCounter)
+    {
+        DPRINT1("MiGetEventCounter: Allocate failed\n");
+        return NULL;
+    }
+
+    KeInitializeEvent(&EventCounter->Event, NotificationEvent, FALSE);
+
+    EventCounter->RefCount = 1;
+    EventCounter->ListEntry.Next = NULL;
+
+    return EventCounter;
+}
+
+VOID
+NTAPI
+MiFreeEventCounter(
+    _In_ PEVENT_COUNTER EventCounter)
+{
+    PSINGLE_LIST_ENTRY Entry;
+
+    ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+    ASSERT(EventCounter->RefCount != 0);
+    ASSERT(EventCounter->ListEntry.Next == NULL);
+
+    if (!InterlockedDecrement((PLONG)&EventCounter->RefCount))
+    {
+        if (MmEventCountSListHead.Depth < 4)
+        {
+            InterlockedPushEntrySList(&MmEventCountSListHead, &EventCounter->ListEntry);
+            return;
+        }
+
+        ExFreePoolWithTag(EventCounter, 'xEmM');
+    }
+
+    do
+    {
+        if (MmEventCountSListHead.Depth <= 4)
+            return;
+
+        Entry = InterlockedPopEntrySList(&MmEventCountSListHead);
+        EventCounter = CONTAINING_RECORD(Entry, EVENT_COUNTER, ListEntry);
+
+        ExFreePoolWithTag(EventCounter, 'xEmM');
+    }
+    while (!Entry);
+}
 
 ULONG
 NTAPI
