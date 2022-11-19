@@ -80,7 +80,7 @@ MiRestoreTransitionPte(
                 (((ULONG_PTR)Pfn->PteAddress >= (ULONG_PTR)MmSpecialPoolStart) && ((ULONG_PTR)Pfn->PteAddress <= (ULONG_PTR)MmSpecialPoolEnd)));
 
         ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-        //ASSERT(MmPfnOwner == KeGetCurrentThread());
+        ASSERT(MmPfnOwner == KeGetCurrentThread());
 
         pte = MiAddressToPte(Pfn->PteAddress);
 

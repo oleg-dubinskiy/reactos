@@ -151,8 +151,9 @@ MiRemovePageByColor(
     USHORT cacheAttribute;
 
     /* Make sure PFN lock is held */
-    MI_ASSERT_PFN_LOCK_HELD();
-    //ASSERT(MmPfnOwner == KeGetCurrentThread());
+    //MI_ASSERT_PFN_LOCK_HELD();
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
 
     /* Get the PFN entry */
     Pfn = MI_PFN_ELEMENT (PageIndex);
@@ -242,7 +243,7 @@ MiRemovePageFromList(
     DPRINT("MiRemovePageFromList: ListHead %p\n", ListHead);
 
     ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-    //ASSERT(MmPfnOwner == KeGetCurrentThread());
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
 
     ASSERT(ListHead != &MmStandbyPageListHead);
 
@@ -340,8 +341,9 @@ MiRemoveAnyPage(
     //DPRINT("MiRemoveAnyPage: Color %X\n", Color);
 
     /* Make sure PFN lock is held and we have pages */
-    MI_ASSERT_PFN_LOCK_HELD();
-    //ASSERT(MmPfnOwner == KeGetCurrentThread());
+    //MI_ASSERT_PFN_LOCK_HELD();
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
 
     ASSERT(MmAvailablePages != 0);
     ASSERT(Color < MmSecondaryColors);

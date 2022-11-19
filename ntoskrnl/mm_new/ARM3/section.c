@@ -797,8 +797,6 @@ MiDereferenceControlAreaBySection(
 
     DPRINT("MiDereferenceControlAreaBySection: %p, %X\n", ControlArea, UserReference);
 
-    //ASSERT(MmPfnOwner == KeGetCurrentThread());
-
     /* Lock the PFN database */
     OldIrql = MiLockPfnDb(APC_LEVEL);
 
@@ -7349,7 +7347,7 @@ MiCheckForControlAreaDeletion(
     DPRINT("MiCheckForControlAreaDeletion: ControlArea %p\n", ControlArea);
 
     ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
-    //ASSERT(MmPfnOwner == KeGetCurrentThread());
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
 
     if (ControlArea->NumberOfPfnReferences ||
         ControlArea->NumberOfMappedViews ||

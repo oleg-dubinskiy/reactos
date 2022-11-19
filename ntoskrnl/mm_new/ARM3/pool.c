@@ -289,7 +289,7 @@ MiAllocatePoolPages(
             BaseVaStart = BaseVa;
 
             /* Lock the PFN database and loop pages */
-            OldIrql = KeAcquireQueuedSpinLock(LockQueueMmNonPagedPoolLock);
+            OldIrql = MiLockPfnDb(APC_LEVEL);
 
             do
             {
@@ -328,7 +328,7 @@ MiAllocatePoolPages(
             } while (ix > 0);
 
             /* Release the PFN database lock */
-            KeReleaseQueuedSpinLock(LockQueueMmNonPagedPoolLock, OldIrql);
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
             /* These pages are now available, clear their availablity bits */
             EndAllocation = (ULONG)(MmPagedPoolInfo.NextPdeForPagedPoolExpansion - (PMMPDE)MiAddressToPte(MmPagedPoolInfo.FirstPteForPagedPool)) * PTE_PER_PAGE;
