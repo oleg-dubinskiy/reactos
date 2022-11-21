@@ -21,6 +21,7 @@ static PFN_COUNT MiReservedSwapPages;
 
 static BOOLEAN MmSwapSpaceMessage = FALSE;
 static BOOLEAN MmSystemPageFileLocated = FALSE;
+static BOOLEAN IsFirstPrint = TRUE;
 
 extern SIZE_T MmTotalCommitLimitMaximum;
 
@@ -58,7 +59,12 @@ NTAPI
 MiReleasePageFileSpace(
     _In_ MMPTE PteContents)
 {
-    UNIMPLEMENTED;
+    if (IsFirstPrint)
+    {
+        UNIMPLEMENTED;
+        IsFirstPrint = FALSE;
+    }
+
     return FALSE;
 }
 
