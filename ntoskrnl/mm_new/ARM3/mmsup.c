@@ -47,7 +47,7 @@ MiIsAddressValid(
         return FALSE;
     }
 
-    if (!Pte->u.Hard.LargePage)
+    if (Pte->u.Hard.LargePage)
     {
         DPRINT("MiIsAddressValid: Address %p not valid\n", Address);
         return FALSE;
