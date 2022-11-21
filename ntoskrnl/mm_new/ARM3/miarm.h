@@ -2212,6 +2212,13 @@ MiInitializeTransitionPfn(
     _In_ OUT PMMPTE SectionProto
 );
 
+INIT_FUNCTION
+NTSTATUS
+NTAPI
+MmInitSectionImplementation(
+VOID
+);
+
 /* ARM3\session.c */
 VOID
 NTAPI
