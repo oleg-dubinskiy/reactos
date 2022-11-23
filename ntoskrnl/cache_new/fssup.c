@@ -1041,6 +1041,8 @@ CcSetFileSizes(
     LARGE_INTEGER FileSize;
     IO_STATUS_BLOCK IoStatus;
     PVACB ActiveVacb;
+    ULONG ActivePage;
+    BOOLEAN IsVacbLocked;
     KIRQL OldIrql;
     NTSTATUS Status;
 
@@ -1125,7 +1127,9 @@ CcSetFileSizes(
 
         if (SharedMap->ActiveVacb)
         {
+            ActivePage = SharedMap->ActivePage;
             SharedMap->ActiveVacb = NULL;
+            IsVacbLocked = ((SharedMap->Flags & SHARE_FL_VACB_LOCKED) != 0);
         }
 
         KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
@@ -1133,8 +1137,8 @@ CcSetFileSizes(
         if (ActiveVacb || SharedMap->NeedToZero)
         {
             KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
-            DPRINT1("CcSetFileSizes: FIXME\n");
-            ASSERT(FALSE);
+            CcFreeActiveVacb(SharedMap, ActiveVacb, ActivePage, IsVacbLocked);
+            OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
         }
     }
 
