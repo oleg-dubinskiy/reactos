@@ -53,7 +53,7 @@ MiIsAddressValid(
         return FALSE;
     }
 
-    DPRINT1("MiIsAddressValid: Address %p valid\n", Address);
+    DPRINT("MiIsAddressValid: Address %p valid\n", Address);
     return TRUE;
 }
 

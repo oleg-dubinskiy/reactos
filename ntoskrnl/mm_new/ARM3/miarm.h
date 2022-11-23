@@ -842,11 +842,13 @@ BOOLEAN
 MI_WS_OWNER(
     _In_ PEPROCESS Process)
 {
+#if 0
     /* Check if this process is the owner, and that the thread owns the WS */
     if (!PsGetCurrentThread()->OwnsProcessWorkingSetExclusive)
     {
         DbgPrint("Thread: %p is not an owner\n", PsGetCurrentThread());
     }
+#endif
 
     if (KeGetCurrentThread()->ApcState.Process != &Process->Pcb)
     {
