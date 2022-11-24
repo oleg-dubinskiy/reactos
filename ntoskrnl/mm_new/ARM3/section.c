@@ -8496,12 +8496,23 @@ MmDoesFileHaveUserWritableReferences(
     return 0;
 }
 
+VOID
+NTAPI
+MiCleanSection(
+    _In_ PCONTROL_AREA ControlArea,
+    _In_ BOOLEAN Parameter2)
+{
+    DPRINT1("MiCleanSection: %p, %X\n", ControlArea, Parameter2);
+    ASSERT(FALSE);
+}
+
 BOOLEAN
 NTAPI
 MmFlushImageSection(
     _In_ PSECTION_OBJECT_POINTERS SectionPointer,
     _In_ MMFLUSH_TYPE FlushType)
 {
+    PLARGE_CONTROL_AREA LargeControlArea;
     PCONTROL_AREA ControlArea;
     KIRQL OldIrql;
     BOOLEAN Result;
@@ -8526,13 +8537,35 @@ MmFlushImageSection(
 
     Result = MiCheckControlAreaStatus(1, SectionPointer, FALSE, &ControlArea, &OldIrql);
 
-    if (!ControlArea)
-        return Result;
+    while (ControlArea)
+    {
+        ControlArea->u.Flags.BeingDeleted = 1;
+        ControlArea->NumberOfMappedViews = 1;
 
-    DPRINT("MmFlushImageSection: FIXME. ControlArea %p\n", ControlArea);
-    ASSERT(FALSE);
+        LargeControlArea = NULL;
+        DPRINT1("NumberOfMappedViews: %p, %X\n", ControlArea, ControlArea->NumberOfMappedViews);
 
-    return TRUE;
+        if (ControlArea->u.Flags.GlobalOnlyPerSession)
+        {
+            DPRINT1("MmFlushImageSection: FIXME. ControlArea %p\n", ControlArea);
+            ASSERT(FALSE);
+        }
+
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        MiCleanSection(ControlArea, TRUE);
+
+        if (!LargeControlArea)
+        {
+            Result = TRUE;
+            break;
+        }
+
+        DPRINT1("MmFlushImageSection: FIXME. ControlArea %p\n", ControlArea);
+        ASSERT(FALSE);
+    }
+
+    return Result;
 }
 
 BOOLEAN
