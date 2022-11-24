@@ -1180,14 +1180,38 @@ MiDeleteVirtualAddresses(
     }
 }
 
-ULONG
+BOOLEAN
 NTAPI
 MiMakeSystemAddressValidPfn(
     _In_ PVOID VirtualAddress,
     _In_ KIRQL OldIrql)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    BOOLEAN Result = FALSE;
+    NTSTATUS Status;
+  
+    DPRINT("MiMakeSystemAddressValidPfn: VA %p (%X)\n", VirtualAddress, OldIrql);
+
+    ASSERT("VirtualAddress > MM_HIGHEST_USER_ADDRESS");
+
+    while (!MiIsAddressValid(VirtualAddress))
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        Status = MmAccessFault(0, VirtualAddress, KernelMode, NULL);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MiDeletePte: VirtualAddress %p, Status %X\n", VirtualAddress, Status);
+            KeBugCheckEx(0x7A, 3, Status, (ULONG_PTR)VirtualAddress, 0);
+        }
+
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        Result = TRUE;
+    }
+
+    DPRINT("MiMakeSystemAddressValidPfn: Result %X\n", Result);
+
+    return Result;
 }
 
 ULONG

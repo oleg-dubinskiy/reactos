@@ -2509,7 +2509,7 @@ MiDeleteVirtualAddresses(
     _In_ PMMVAD Vad
 );
 
-ULONG
+BOOLEAN
 NTAPI
 MiMakeSystemAddressValidPfn(
     _In_ PVOID VirtualAddress,
