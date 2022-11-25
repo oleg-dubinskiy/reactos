@@ -1637,6 +1637,108 @@ Continue:
     return TRUE;
 }
 
+VOID
+NTAPI
+CcZeroEndOfLastPage(
+    _In_ PFILE_OBJECT FileObject)
+{
+    PFSRTL_ADVANCED_FCB_HEADER Fcb;
+    PSHARED_CACHE_MAP SharedMap;
+    IO_STATUS_BLOCK IoStatus;
+    PVOID NeedToZero = NULL;
+    PVACB ActiveVacb = NULL;
+    ULONG ActivePage;
+    BOOLEAN IsActiveVacbOrNeedZero = FALSE;
+    BOOLEAN IsVacbLocked;
+    KIRQL OldIrql;
+
+    DPRINT("CcZeroEndOfLastPage: %p\n", FileObject);
+
+    FsRtlAcquireFileExclusive(FileObject);
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+
+    if (SharedMap)
+    {
+        NeedToZero = SharedMap->NeedToZero;
+
+        if (SharedMap->ActiveVacb || NeedToZero)
+        {
+            SharedMap->OpenCount++;
+            IsActiveVacbOrNeedZero = TRUE;
+
+            KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
+
+            ActiveVacb = SharedMap->ActiveVacb;
+            if (ActiveVacb)
+            {
+                ActivePage = SharedMap->ActivePage;
+                SharedMap->ActiveVacb = NULL;
+                IsVacbLocked = ((SharedMap->Flags & 0x80) != 0);
+            }
+
+            KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
+        }
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+    Fcb = (PFSRTL_ADVANCED_FCB_HEADER)FileObject->FsContext;
+
+    if (Fcb->Flags & FSRTL_FLAG_ADVANCED_HEADER)
+    {
+        ExAcquireFastMutex(Fcb->FastMutex);
+        Fcb->Flags |= FSRTL_FLAG_USER_MAPPED_FILE;
+        ExReleaseFastMutex(Fcb->FastMutex);
+    }
+    else
+    {
+        Fcb->Flags |= FSRTL_FLAG_USER_MAPPED_FILE;
+    }
+
+    if (ActiveVacb || NeedToZero)
+        CcFreeActiveVacb(SharedMap, ActiveVacb, ActivePage, IsVacbLocked);
+
+    if (Fcb->Flags2 & FSRTL_FLAG2_PURGE_WHEN_MAPPED)
+    {
+        SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+        ASSERT(((PSHARED_CACHE_MAP)(FileObject->SectionObjectPointer->SharedCacheMap))->VacbActiveCount == 0);
+
+        CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &IoStatus);
+
+        if (IoStatus.Status == STATUS_SUCCESS)
+            CcPurgeCacheSection(FileObject->SectionObjectPointer, NULL, 0, FALSE);
+
+        SharedMap = FileObject->SectionObjectPointer->SharedCacheMap;
+        ASSERT(((PSHARED_CACHE_MAP)(FileObject->SectionObjectPointer->SharedCacheMap))->VacbActiveCount == 0);
+    }
+
+    FsRtlReleaseFile(FileObject);
+
+    if (!IsActiveVacbOrNeedZero)
+        return;
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+    SharedMap->OpenCount--;
+
+    if (!SharedMap->OpenCount &&
+        !(SharedMap->Flags & SHARE_FL_WRITE_QUEUED) &&
+        !SharedMap->DirtyPages)
+    {
+        RemoveEntryList(&SharedMap->SharedCacheMapLinks);
+        InsertTailList(&CcDirtySharedCacheMapList.SharedCacheMapLinks, &SharedMap->SharedCacheMapLinks);
+
+        LazyWriter.OtherWork = 1;
+
+        if (!LazyWriter.ScanActive)
+            CcScheduleLazyWriteScan(FALSE);
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+}
+
 INIT_FUNCTION
 BOOLEAN
 NTAPI
