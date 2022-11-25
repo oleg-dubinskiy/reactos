@@ -56,6 +56,12 @@ CcWaitForUninitializeCacheMap(
     _In_ PFILE_OBJECT FileObject
 );
 
+VOID
+NTAPI
+CcZeroEndOfLastPage(
+    _In_ PFILE_OBJECT FileObject
+);
+
 /* lazyrite.c */
 
 /* logsup.c */

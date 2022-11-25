@@ -4751,6 +4751,18 @@ MiFlushDataSection(
     else
         MmFlushSection(FileObject->SectionObjectPointer, NULL, 0, &IoStatusBlock, 1);
 
+    if (IsDataSectionUsed)
+    {
+        if (FileObject->FileName.Length > 4 && KeGetCurrentIrql() <= APC_LEVEL)
+        {
+            DPRINT1("MiFlushDataSection: %p '%wZ', %p (%X, %X)\n", FileObject, &FileObject->FileName, ControlArea, ControlArea->NumberOfSectionReferences, ControlArea->NumberOfMappedViews);
+        }
+        else
+        {
+            DPRINT1("MiFlushDataSection: %p, %p (%X, %X)\n", FileObject, ControlArea, ControlArea->NumberOfSectionReferences, ControlArea->NumberOfMappedViews);
+        }
+    }
+
     return IsDataSectionUsed;
 }
 
@@ -4984,7 +4996,7 @@ MiReadPeHeader(
     MdlPages = MmGetMdlPfnArray(&HeaderMdl->Mdl);
     MdlPages[0] = PageFrameNumber;
 
-    DPRINT("MiReadPeHeader: FIXME CcZeroEndOfLastPage\n");
+    CcZeroEndOfLastPage(FileObject);
 
     *OutIsDataSectionUsed = MiFlushDataSection(FileObject);
 
@@ -9160,7 +9172,6 @@ NtCreateSection(
     LARGE_INTEGER SafeMaximumSize;
     PCONTROL_AREA ControlArea;
     PSECTION SectionObject;
-    PFILE_OBJECT FileObject;
     HANDLE Handle;
     ULONG MaximumRetry = 3;
     ULONG ix;
@@ -9271,15 +9282,9 @@ NtCreateSection(
     }
 
     ControlArea = SectionObject->Segment->ControlArea;
-    if (ControlArea)
-    {
-        FileObject = ControlArea->FilePointer;
-        if (FileObject)
-        {
-            DPRINT("NtCreateSection: FIXME CcZeroEndOfLastPage!\n");
-            //CcZeroEndOfLastPage(FileObject);
-        }
-    }
+
+    if (ControlArea && ControlArea->FilePointer)
+        CcZeroEndOfLastPage(ControlArea->FilePointer);
 
     /* Now insert the object */
     Status = ObInsertObject(SectionObject, NULL, DesiredAccess, 0, NULL, &Handle);
