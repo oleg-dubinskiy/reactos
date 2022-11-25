@@ -6914,8 +6914,8 @@ MiCheckControlAreaStatus(
         return TRUE;
     }
 
-    DPRINT1("MiCheckControlAreaStatus: FIXME\n");
-    ASSERT(FALSE);
+    DPRINT1("MiCheckControlAreaStatus: FIXME EventCounter\n");
+    //ASSERT(FALSE);
 
     *OutControlArea = ControlArea;
     *OutOldIrql = OldIrql;
@@ -8502,8 +8502,213 @@ MiCleanSection(
     _In_ PCONTROL_AREA ControlArea,
     _In_ BOOLEAN Parameter2)
 {
-    DPRINT1("MiCleanSection: %p, %X\n", ControlArea, Parameter2);
-    ASSERT(FALSE);
+    KEVENT Event;
+    PSUBSECTION Subsection;
+    PMMPTE LastWritten = NULL;
+    PMMPTE Proto;
+    PMMPTE LastProto;
+    PMMPFN Pfn;
+    MMPTE TempProto;
+    BOOLEAN IsImageSection;
+    BOOLEAN WriteIsAlow = FALSE;
+    BOOLEAN IsLock;
+    BOOLEAN IsFirst;
+    KIRQL OldIrql;
+
+    DPRINT("MiCleanSection: %p, %X\n", ControlArea, Parameter2);
+
+    ASSERT(ControlArea->FilePointer);
+
+    if (ControlArea->u.Flags.GlobalOnlyPerSession || ControlArea->u.Flags.Rom)
+        Subsection = (PSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+    else
+        Subsection = (PSUBSECTION)(ControlArea + 1);
+
+    if (ControlArea->u.Flags.Image)
+    {
+        Proto = Subsection->SubsectionBase;
+        LastProto = &Proto[ControlArea->Segment->NonExtendedPtes];
+        IsImageSection = TRUE;
+    }
+    else
+    {
+        Proto = NULL;
+        LastProto = NULL;
+        IsImageSection = FALSE;
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    //ASSERT(MmModifiedWriteClusterSize == MM_MAXIMUM_WRITE_CLUSTER);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    ControlArea->u.Flags.NoModifiedWriting = 1;
+
+    while (ControlArea->ModifiedWriteCount)
+    {
+        DPRINT1("MiCleanSection: FIXME. ControlArea %p\n", ControlArea);
+        ASSERT(FALSE);
+    }
+
+    if (!IsImageSection)
+    {
+        while (!Subsection->SubsectionBase)
+        {
+            Subsection = Subsection->NextSubsection;
+            if (!Subsection)
+                goto Finish;
+        }
+
+        Proto = Subsection->SubsectionBase;
+        LastProto = &Proto[Subsection->PtesInSubsection];
+    }
+
+    while (TRUE)
+    {
+        IsFirst = TRUE;
+
+        while (Proto < LastProto)
+        {
+            if (!MiIsPteOnPdeBoundary(Proto) || IsFirst)
+            {
+                IsFirst = FALSE;
+
+                if (!IsImageSection && !MiCheckProtoPtePageState(Proto, 0x21, &IsLock))
+                {
+                    Proto = (PMMPTE)(((ULONG_PTR)Proto | 0xFFF) + 1);
+
+                    if (LastWritten)
+                        WriteIsAlow = TRUE;
+
+                    goto WriteClaster;
+                }
+
+                MiMakeSystemAddressValidPfn(Proto, OldIrql);
+            }
+
+            TempProto.u.Long = Proto->u.Long;
+
+            if (TempProto.u.Hard.Valid)
+            {
+                DPRINT1("MiCleanSection: FIXME KeBugCheckEx(). TempProto %p\n", TempProto.u.Long);
+                ASSERT(FALSE);
+            }
+
+            if (TempProto.u.Soft.Prototype)
+            {
+                if (LastWritten)
+                    WriteIsAlow = TRUE;
+            }
+            else if (TempProto.u.Soft.Transition)
+            {
+                Pfn = MI_PFN_ELEMENT(TempProto.u.Trans.PageFrameNumber);
+
+                if (Pfn->u3.e2.ReferenceCount)
+                {
+                    DPRINT1("MiCleanSection: FIXME. Pfn %p\n", Pfn);
+                    ASSERT(FALSE);
+                }
+
+                if (Pfn->OriginalPte.u.Soft.Prototype)
+                {
+                    if (Pfn->u3.e1.Modified && !IsImageSection)
+                    {
+                        DPRINT1("MiCleanSection: FIXME. Modified %X\n", Pfn->u3.e1.Modified);
+                        ASSERT(FALSE);
+                    }
+                    else
+                    {
+                        Pfn->PteAddress = (PMMPTE)((ULONG_PTR)Pfn->PteAddress | 1);
+
+                        ControlArea->NumberOfPfnReferences--;
+                        ASSERT((LONG)ControlArea->NumberOfPfnReferences >= 0);
+
+                        MiDecrementPfnShare(MI_PFN_ELEMENT(Pfn->u4.PteFrame), Pfn->u4.PteFrame);
+
+                        if (!Pfn->u3.e2.ReferenceCount && Pfn->u3.e1.PageLocation != FreePageList)
+                        {
+                            MiUnlinkPageFromList(Pfn);
+                            MiReleasePageFileSpace(Pfn->OriginalPte);
+                            MiInsertPageInFreeList(TempProto.u.Trans.PageFrameNumber);
+                        }
+
+                        Proto->u.Long = 0;
+
+                        if (LastWritten)
+                            WriteIsAlow = TRUE;
+                    }
+                }
+                else
+                {
+                    DPRINT1("MiCleanSection: FIXME. OriginalPte %p\n", Pfn->OriginalPte.u.Long);
+                    ASSERT(FALSE);
+                }
+            }
+            else
+            {
+                if (MI_IS_MAPPED_PTE(&TempProto))
+                    MiReleasePageFileSpace(TempProto);
+
+                Proto->u.Long = 0;
+
+                if (LastWritten)
+                    WriteIsAlow = TRUE;
+            }
+
+            Proto++;
+
+WriteClaster:
+
+            if (!WriteIsAlow && (Proto != LastProto || !LastWritten))
+                continue;
+
+
+            DPRINT1("MiCleanSection: FIXME. Subsection %p\n", Subsection);
+            ASSERT(FALSE);
+        }
+
+        if (!Subsection->NextSubsection)
+            break;
+
+        Subsection = Subsection->NextSubsection;
+        if (!IsImageSection)
+        {
+            while (!Subsection->SubsectionBase)
+            {
+                Subsection = Subsection->NextSubsection;
+                if (!Subsection)
+                    goto Finish;
+            }
+        }
+
+        Proto = Subsection->SubsectionBase;
+        LastProto = &Proto[Subsection->PtesInSubsection];
+    }
+
+Finish:
+
+    ControlArea->NumberOfMappedViews = 0;
+    ASSERT(ControlArea->NumberOfPfnReferences == 0);
+
+    if (ControlArea->u.Flags.FilePointerNull)
+        goto Exit;
+
+    ControlArea->u.Flags.FilePointerNull = 1;
+
+    if (ControlArea->u.Flags.Image)
+    {
+        MiRemoveImageSectionObject(ControlArea->FilePointer, (PLARGE_CONTROL_AREA)ControlArea);
+        goto Exit;
+    }
+
+    ASSERT(((PCONTROL_AREA)(ControlArea->FilePointer->SectionObjectPointer->DataSectionObject)) != NULL);
+    ControlArea->FilePointer->SectionObjectPointer->DataSectionObject = 0;
+
+Exit:
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    MiSegmentDelete(ControlArea->Segment);
 }
 
 BOOLEAN
