@@ -14,7 +14,7 @@
 #include <ntoskrnl.h>
 #include "../pnpio.h"
 
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 /* FIXME: This should be somewhere global instead of having 20 different versions */
@@ -127,7 +127,7 @@ IopParseSymbolicLinkName(
         OutPrefixName->MaximumLength = OutPrefixName->Length;
         OutPrefixName->Buffer = SymbolicLinkName->Buffer;
 
-        DPRINT1("IopParseSymbolicLinkName: OutPrefix '%wZ'\n", OutPrefixName);
+        //DPRINT1("IopParseSymbolicLinkName: OutPrefix '%wZ'\n", OutPrefixName);
     }
 
     if (OutEnumName)
@@ -136,7 +136,7 @@ IopParseSymbolicLinkName(
         OutEnumName->MaximumLength = OutEnumName->Length;
         OutEnumName->Buffer = &SymbolicLinkName->Buffer[4];
 
-        DPRINT1("IopParseSymbolicLinkName: OutEnum '%wZ'\n", OutEnumName);
+        //DPRINT1("IopParseSymbolicLinkName: OutEnum '%wZ'\n", OutEnumName);
     }
 
     if (OutGuidName)
@@ -145,7 +145,7 @@ IopParseSymbolicLinkName(
         OutGuidName->MaximumLength = OutGuidName->Length;
         OutGuidName->Buffer = &SymbolicLinkName->Buffer[ReferenceStart - 0x27];
 
-        DPRINT1("IopParseSymbolicLinkName: OutGuid '%wZ'\n", OutGuidName);
+        //DPRINT1("IopParseSymbolicLinkName: OutGuid '%wZ'\n", OutGuidName);
     }
 
     if (OutRefName)
@@ -156,7 +156,7 @@ IopParseSymbolicLinkName(
             OutRefName->MaximumLength = OutRefName->Length;
             OutRefName->Buffer = &SymbolicLinkName->Buffer[ReferenceStart];
 
-            DPRINT1("IopParseSymbolicLinkName: OutRef '%wZ'\n", OutRefName);
+            //DPRINT1("IopParseSymbolicLinkName: OutRef '%wZ'\n", OutRefName);
         }
         else
         {
@@ -164,7 +164,7 @@ IopParseSymbolicLinkName(
             OutRefName->MaximumLength = OutRefName->Length;
             OutRefName->Buffer = NULL;
 
-            DPRINT1("IopParseSymbolicLinkName: OutRef is ''\n");
+            //DPRINT1("IopParseSymbolicLinkName: OutRef is ''\n");
         }
     }
 
@@ -208,8 +208,8 @@ IopDropReferenceString(
     OutString->MaximumLength = OutString->Length;
     OutString->Buffer = InString->Buffer;
 
-    DPRINT1("IopDropReferenceString: In  '%wZ'\n", InString);
-    DPRINT1("IopDropReferenceString: Out '%wZ'\n", OutString);
+    //DPRINT1("IopDropReferenceString: In  '%wZ'\n", InString);
+    //DPRINT1("IopDropReferenceString: Out '%wZ'\n", OutString);
 
     return Status;
 }
@@ -2584,7 +2584,7 @@ IoRegisterDeviceInterface(
         return Status;
     }
 
-    DPRINT1("IoRegisterDeviceInterface: [%p], Guid '%wZ'\n", PhysicalDeviceObject,  &GuidString);
+    //DPRINT1("IoRegisterDeviceInterface: [%p], Guid '%wZ'\n", PhysicalDeviceObject,  &GuidString);
 
     if (ReferenceString && ReferenceString->Buffer)
     {
@@ -2905,7 +2905,7 @@ IoSetDeviceInterfaceState(
     NTSTATUS Status;
 
     PAGED_CODE();
-    DPRINT1("IoSetDeviceInterfaceState: SymbolicLink '%wZ', IsEnable %X\n", SymbolicLinkName, Enable);
+    DPRINT("IoSetDeviceInterfaceState: SymbolicLink '%wZ', IsEnable %X\n", SymbolicLinkName, Enable);
 
     KeEnterCriticalRegion();
     ExAcquireResourceExclusiveLite(&PpRegistryDeviceResource, TRUE);
