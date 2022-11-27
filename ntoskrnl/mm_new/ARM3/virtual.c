@@ -906,7 +906,7 @@ MiDeletePte(
                 if (PAGE_ALIGN(Va) != (PVOID)USER_SHARED_DATA ||
                     MmHighestUserAddress <= (PVOID)USER_SHARED_DATA)
                 {
-                    DPRINT1("MiDeletePte: Pte %p [%p], Va %p, Proto %p, Pfn->PteAddress %p, OldIrql %X\n", Pte, TempPte.u.Long, Va, Proto, Pfn->PteAddress, OldIrql);
+                    DPRINT1("MiDeletePte: Pte %p [%p], Va %p, Proto %p, Pfn %p, Pfn->PteAddress %p, OldIrql %X\n", Pte, TempPte.u.Long, Va, Proto, Pfn, Pfn->PteAddress, OldIrql);
                     ASSERT(FALSE);
                     /* Must be some sort of memory corruption */
                     KeBugCheckEx(MEMORY_MANAGEMENT, 0x400, (ULONG_PTR)Pte, (ULONG_PTR)Proto, (ULONG_PTR)Pfn->PteAddress);
@@ -1006,52 +1006,68 @@ MiDeleteVirtualAddresses(
     _In_ ULONG_PTR EndingAddress,
     _In_ PMMVAD Vad)
 {
+    PEPROCESS CurrentProcess = PsGetCurrentProcess();
+    PVOID AddressForReferences;
     PMMPDE Pde;
     PMMPTE Pte;
     PMMPTE Proto;
     PMMPTE LastProto;
     MMPTE TempPte;
-    PEPROCESS CurrentProcess;
-    KIRQL OldIrql;
+    KIRQL OldIrql = MM_NOIRQL;
     BOOLEAN AddressGap = FALSE;
+    BOOLEAN IsNotCloneRoot;
+    BOOLEAN IsLocked = FALSE;
     PSUBSECTION Subsection;
 
-    DPRINT("MiDeleteVirtualAddresses: Va %p, EndingAddress %p, Vad %p\n", Va, EndingAddress, Vad);
+    //DPRINT1("MiDeleteVirtualAddresses: Va %p, EndingAddress %p, Vad %p\n", Va, EndingAddress, Vad);
 
-    /* Get out if this is a fake VAD, RosMm will free the marea pages */
-    if (Vad && Vad->u.VadFlags.Spare)
-        return;
-
-    /* Grab the process and PTE/PDE for the address being deleted */
-    CurrentProcess = PsGetCurrentProcess();
-
+    /* Grab the PTE/PDE for the address being deleted */
     Pde = MiAddressToPde(Va);
     Pte = MiAddressToPte(Va);
 
-    DPRINT("MiDeleteVirtualAddresses: Pde %p, Pte %p\n", Pde, Pte);
+    DPRINT("MiDeleteVirtualAddresses: (%p, %p) Vad %p, Pde %p, Pte %p\n", Va, EndingAddress, Vad, Pde, Pte);
 
     /* Check if this is a section VAD or a VM VAD */
-    if (!Vad || Vad->u.VadFlags.PrivateMemory || !Vad->FirstPrototypePte)
+    if (Vad && !Vad->u.VadFlags.PrivateMemory && Vad->FirstPrototypePte)
+    {
+        /* Get the prototype PTE */
+        Proto = Vad->FirstPrototypePte;
+        LastProto = ULongToPtr(4);
+    }
+    else
     {
         /* Don't worry about prototypes */
         Proto = LastProto = NULL;
     }
-    else
-    {
-        /* Get the prototype PTE */
-        Proto = Vad->FirstPrototypePte;
-        LastProto = (Vad->FirstPrototypePte + 1);
-    }
 
-    /* In all cases, we don't support fork() yet */
-    ASSERT(CurrentProcess->CloneRoot == NULL);
+    if (!CurrentProcess->CloneRoot)
+        IsNotCloneRoot = TRUE;
+    else
+        IsNotCloneRoot = FALSE;
 
     /* Loop the PTE for each VA */
     while (TRUE)
     {
         /* First keep going until we find a valid PDE */
-        while (!Pde->u.Long)
+        while (TRUE)
         {
+            ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+            if (Pde->u.Long)
+            {
+                /* Now check if the PDE is mapped in */
+                if (!Pde->u.Hard.Valid)
+                {
+                    /* It isn't, so map it in */
+                    MiMakeSystemAddressValid(MiPteToAddress(Pde), CurrentProcess);
+
+                    /* Now we should have a valid PDE */
+                    ASSERT(Pde->u.Hard.Valid == 1);
+                }
+
+                break;
+            }
+
             /* There are gaps in the address space */
             AddressGap = TRUE;
 
@@ -1064,23 +1080,12 @@ MiDeleteVirtualAddresses(
             /* Check if all the PDEs are invalid, so there's nothing to free */
             Va = (ULONG_PTR)MiPteToAddress(Pte);
             if (Va > EndingAddress)
-            {
-                DPRINT("MiDeleteVirtualAddresses: Va %p, EndingAddress %p, Vad %p\n", Va, EndingAddress, Vad);
                 return;
-            }
         }
 
-        /* Now check if the PDE is mapped in */
-        if (!Pde->u.Hard.Valid)
-        {
-            /* It isn't, so map it in */
-            Pte = MiPteToAddress(Pde);
-            MiMakeSystemAddressValid(Pte, CurrentProcess);
-        }
-
-        /* Now we should have a valid PDE, mapped in, and still have some VA */
-        ASSERT(Pde->u.Hard.Valid == 1);
+        /* We should have a valid VA */
         ASSERT(Va <= EndingAddress);
+        AddressForReferences = (PVOID)Va;
 
         /* Check if this is a section VAD with gaps in it */
         if (AddressGap && LastProto)
@@ -1096,25 +1101,29 @@ MiDeleteVirtualAddresses(
                 LastProto = &Subsection->SubsectionBase[Subsection->PtesInSubsection];
             else
                 /* No more subsections, we are done with prototype PTEs */
-                Proto = NULL;
+                LastProto = NULL;
         }
 
-        /* Lock the PFN Database while we delete the PTEs */
-        OldIrql = MiLockPfnDb(APC_LEVEL);
+        if (IsNotCloneRoot)
+        {
+            ASSERT(CurrentProcess->CloneRoot == NULL);
+            DPRINT("MiDeleteVirtualAddresses: FIXME MiTerminateWsle()\n");
+        }
+
         do
         {
-            /* Capture the PDE and make sure it exists */
+            /* Capture the PTE */
             TempPte = *Pte;
 
             if (TempPte.u.Long)
             {
-                MiDecrementPageTableReferences((PVOID)Va);
+                MiDecrementPageTableReferences(AddressForReferences);
 
                 /* Check if the PTE is actually mapped in */
                 if (MI_IS_MAPPED_PTE(&TempPte))
                 {
                     /* Are we dealing with section VAD? */
-                    if (LastProto && Proto > LastProto)
+                    if (LastProto && Proto >= LastProto)
                     {
                         /* We need to skip to the next correct prototype PTE */
                         Proto = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, (Va / PAGE_SIZE));
@@ -1123,30 +1132,48 @@ MiDeleteVirtualAddresses(
                         Subsection = MiLocateSubsection(Vad, (Va / PAGE_SIZE));
 
                         if (Subsection)
-                        {
                             /* Found it! */
                             LastProto = &Subsection->SubsectionBase[Subsection->PtesInSubsection];
-                        }
                         else
-                        {
                             /* No more subsections, we are done with prototype PTEs */
-                            Proto = NULL;
-                        }
+                            LastProto = NULL;
                     }
 
                     /* Check for prototype PTE */
-                    if (!TempPte.u.Hard.Valid && TempPte.u.Soft.Prototype)
+                    if (!TempPte.u.Hard.Valid && TempPte.u.Soft.Prototype &&
+                        IsNotCloneRoot)
+                    {
+                        ASSERT(CurrentProcess->CloneRoot == NULL);
+
                         /* Just nuke it */
+                        //DPRINT("MiDeleteVirtualAddresses: prototype Pte %p [%p] not Valid\n", Pte, TempPte.u.Long);
                         MI_ERASE_PTE(Pte);
+                    }
                     else
+                    {
+                        if (!IsLocked)
+                        {
+                            /* Lock the PFN Database while we delete the PTEs */
+                            OldIrql = MiLockPfnDb(APC_LEVEL);
+                            IsLocked = TRUE;
+                        }
+
+                        //DPRINT1("MiDeleteVirtualAddresses: Pte %p [%p], Va %p, Proto %p, OldIrql %X\n", Pte, TempPte.u.Long, Va, Proto, OldIrql);
+
                         /* Delete the PTE proper */
                         MiDeletePte(Pte, (PVOID)Va, CurrentProcess, Proto, NULL, OldIrql);
+                    }
                 }
                 else
                 {
                     /* The PTE was never mapped, just nuke it here */
+                    //DPRINT("MiDeleteVirtualAddresses: Pte %p [%p] was never mapped\n", Pte, TempPte.u.Long);
                     MI_ERASE_PTE(Pte);
                 }
+            }
+            else
+            {
+                ;//DPRINT("MiDeleteVirtualAddresses: content Pte %p is null\n", Pte);
             }
 
             /* Update the address and PTE for it */
@@ -1163,15 +1190,33 @@ MiDeleteVirtualAddresses(
         ASSERT(Pde->u.Hard.Valid == 1);
 
         /* Check remaining PTE count (go back 1 page due to above loop) */
-        if (!MiQueryPageTableReferences((PVOID)(Va - PAGE_SIZE)))
+        if (!MiQueryPageTableReferences(AddressForReferences))
         {
             if (Pde->u.Long)
+            {
+                if (!IsLocked)
+                {
+                    /* Lock the PFN Database while we delete the PTEs */
+                    OldIrql = MiLockPfnDb(APC_LEVEL);
+                    IsLocked = TRUE;
+                }
+
                  /* Delete the PTE proper */
                 MiDeletePte(Pde, MiPteToAddress(Pde), CurrentProcess, NULL, NULL, OldIrql);
+
+                ASSERT(OldIrql != MM_NOIRQL);
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                IsLocked = FALSE;
+            }
         }
 
         /* Release the lock and get out if we're done */
-        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        if (IsLocked)
+        {
+            ASSERT(OldIrql != MM_NOIRQL);
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            IsLocked = FALSE;
+        }
 
         if (Va > EndingAddress)
             return;
