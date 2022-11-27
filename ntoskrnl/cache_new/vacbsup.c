@@ -1599,7 +1599,7 @@ CcExtendVacbArray(
     BOOLEAN IsExtendSection = FALSE;
     BOOLEAN IsBcbList = FALSE;
 
-    DPRINT1("CcExtendVacbArray: SharedMap %p, AllocationSize %I64X\n", SharedMap, AllocationSize.QuadPart);
+    DPRINT("CcExtendVacbArray: SharedMap %p, AllocationSize %I64X\n", SharedMap, AllocationSize.QuadPart);
 
     if ((ULONGLONG)AllocationSize.QuadPart >= (16ull * _1TB)) // 0x00001000 00000000
     {
@@ -1610,7 +1610,7 @@ CcExtendVacbArray(
     if ((SharedMap->Flags & SHARE_FL_MODIFIED_NO_WRITE) && AllocationSize.QuadPart > 0x200000)
         IsBcbList = TRUE;
 
-    DPRINT1("CcExtendVacbArray: SectionSize %I64X, IsBcbList %X\n", SharedMap->SectionSize.QuadPart, IsBcbList);
+    DPRINT("CcExtendVacbArray: SectionSize %I64X, IsBcbList %X\n", SharedMap->SectionSize.QuadPart, IsBcbList);
 
     if (AllocationSize.QuadPart <= SharedMap->SectionSize.QuadPart)
         return STATUS_SUCCESS;
@@ -1651,7 +1651,7 @@ CcExtendVacbArray(
             {
                 /* Add size for BcbLists */
                 AllocSize += ((AllocSize + (sizeof(LIST_ENTRY) - 1)) & ~(sizeof(LIST_ENTRY) - 1));
-                DPRINT1("CcExtendVacbArray: NewVacbsSize %X, AllocSize %X\n", NewVacbsSize, AllocSize);
+                DPRINT("CcExtendVacbArray: NewVacbsSize %X, AllocSize %X\n", NewVacbsSize, AllocSize);
             }
 
             if (IsExtendSection)
