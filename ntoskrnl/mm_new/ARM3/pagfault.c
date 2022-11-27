@@ -1828,7 +1828,7 @@ MiWaitForInPageComplete(
     Pte = MiFindActualFaultingPte(Address);
     if (!Pte)
     {
-        DPRINT1("MiWaitForInPageComplete: Pte %X\n", Pte);
+        DPRINT("MiWaitForInPageComplete: Address %X\n", Address);
         return 0x87303000;
     }
 
@@ -3970,7 +3970,10 @@ UserFault:
         {
             if (Status == STATUS_ACCESS_VIOLATION)
             {
+                DPRINT1("MmAccessFault: %X, %p, %X, %p\n", FaultCode, Address, Mode, TrapInformation);
+                DPRINT1("MmAccessFault: %p [%p], %p [%p]\n", Pde, Pde->u.Long, Pte, TempPte.u.Long);
                 DPRINT1("MmAccessFault: STATUS_ACCESS_VIOLATION\n");
+                ASSERT(FALSE);
             }
 
             /* Not supported */

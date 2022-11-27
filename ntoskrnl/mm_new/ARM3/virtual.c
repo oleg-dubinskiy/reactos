@@ -906,6 +906,8 @@ MiDeletePte(
                 if (PAGE_ALIGN(Va) != (PVOID)USER_SHARED_DATA ||
                     MmHighestUserAddress <= (PVOID)USER_SHARED_DATA)
                 {
+                    DPRINT1("MiDeletePte: Pte %p [%p], Va %p, Proto %p, Pfn->PteAddress %p, OldIrql %X\n", Pte, TempPte.u.Long, Va, Proto, Pfn->PteAddress, OldIrql);
+                    ASSERT(FALSE);
                     /* Must be some sort of memory corruption */
                     KeBugCheckEx(MEMORY_MANAGEMENT, 0x400, (ULONG_PTR)Pte, (ULONG_PTR)Proto, (ULONG_PTR)Pfn->PteAddress);
                 }

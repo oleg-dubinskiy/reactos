@@ -7038,8 +7038,8 @@ MmExtendSection(
     NTSTATUS Status;
 
     PAGED_CODE();
-    DPRINT1("MmExtendSection: Section %X, OutSectionSize %I64X, IgnoreFileSizeChecking %X\n",
-            Section, OutSectionSize->QuadPart, IgnoreFileSizeChecking);
+    DPRINT("MmExtendSection: Section %X, OutSectionSize %I64X, IgnoreFileSizeChecking %X\n",
+           Section, OutSectionSize->QuadPart, IgnoreFileSizeChecking);
 
     if (ControlArea->u.Flags.PhysicalMemory)
     {
