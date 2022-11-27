@@ -12,7 +12,7 @@
 
 #include <ntoskrnl.h>
 #include <internal/hal.h>
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 #define EFI_PMBR_OSTYPE_EFI 0xEE
