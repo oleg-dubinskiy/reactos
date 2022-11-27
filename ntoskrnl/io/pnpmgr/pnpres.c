@@ -1268,7 +1268,7 @@ IopTranslateAndAdjustReqDesc(
         {
             NumbersOfIoDescs += NewIoDescCount[ix];
             IsTranslate = TRUE;
-            DPRINT1("TranslateResourceRequirements ret ok\n", DeviceNode->InstancePath.Buffer);
+            //DPRINT1("TranslateResourceRequirements ret ok\n", DeviceNode->InstancePath.Buffer);
             PipDumpIoResourceDescriptor(ioDescriptor, 0);
         }
         else

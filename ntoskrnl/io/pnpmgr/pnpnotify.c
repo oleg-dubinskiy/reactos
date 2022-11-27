@@ -13,7 +13,7 @@
 #include <ntoskrnl.h>
 #include "../pnpio.h"
 
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 #define HashGuid(Guid) ((((PULONG)Guid)[0] + ((PULONG)Guid)[1]  + ((PULONG)Guid)[2]  + ((PULONG)Guid)[3]) % 13)

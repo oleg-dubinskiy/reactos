@@ -80,7 +80,7 @@ PipAllocateDeviceNode(IN PDEVICE_OBJECT PhysicalDeviceObject)
         PhysicalDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
     }
 
-    DPRINT1("Alloc DeviceNode %p for PDO %p\n", DeviceNode, PhysicalDeviceObject);
+    DPRINT("Alloc DeviceNode %p for PDO %p\n", DeviceNode, PhysicalDeviceObject);
 
     /* Return the node */
     return DeviceNode;
@@ -790,7 +790,7 @@ IopDestroyDeviceNode(
 
     if (!DeviceNode)
     {
-        DPRINT1("IopDestroyDeviceNode: DeviceNode is NULL\n");
+        DPRINT("IopDestroyDeviceNode: DeviceNode is NULL\n");
         return;
     }
 

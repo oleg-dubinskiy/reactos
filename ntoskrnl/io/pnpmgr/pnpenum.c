@@ -4153,11 +4153,11 @@ PipProcessStartPhase1(
     if (DeviceNode->DockInfo.DockStatus == DOCK_NOTDOCKDEVICE)
     {
         Status = IopStartDevice(DeviceNode);
-        DPRINT1("PipProcessStartPhase1: Status %X\n", Status);
+        //DPRINT1("PipProcessStartPhase1: Status %X\n", Status);
     }
     else
     {
-        DPRINT("PipProcessStartPhase1: FIXME PpProfile...()`s\n");
+        DPRINT1("PipProcessStartPhase1: FIXME PpProfile...()`s\n");
         ASSERT(FALSE); // IoDbgBreakPointEx();
     }
 

@@ -1244,7 +1244,7 @@ NtPlugPlayControl(
 
     if (PlugPlayEntry->Size != BufferLength)
     {
-        DPRINT1("NtPlugPlayControl: FIXME! Invalid size. Class %X, Length %X\n", PnPControlClass, BufferLength);
+        DPRINT("NtPlugPlayControl: FIXME! Invalid size. Class %X, Length %X\n", PnPControlClass, BufferLength);
 #if 0 // FIXME umpnpmgr
         ASSERT(FALSE); // IoDbgBreakPointEx();
         return STATUS_INVALID_PARAMETER_MIX;
