@@ -113,7 +113,7 @@ RtlpInitEnvironment(HANDLE ProcessHandle,
                                          &BaseAddress,
                                          0,
                                          &Size,
-                                         MEM_RESERVE | MEM_COMMIT,
+                                         MEM_COMMIT,
                                          PAGE_READWRITE);
         if (!NT_SUCCESS(Status))
         {

@@ -67,7 +67,7 @@ RtlCreateEnvironment(
                                              &NewEnvironment,
                                              0,
                                              &RegionSize,
-                                             MEM_RESERVE | MEM_COMMIT,
+                                             MEM_COMMIT,
                                              PAGE_READWRITE);
             if (!NT_SUCCESS(Status))
             {
@@ -94,7 +94,7 @@ RtlCreateEnvironment(
                                          &NewEnvironment,
                                          0,
                                          &RegionSize,
-                                         MEM_RESERVE | MEM_COMMIT,
+                                         MEM_COMMIT,
                                          PAGE_READWRITE);
         if (NT_SUCCESS(Status))
         {
@@ -416,7 +416,7 @@ found:
                                              (PVOID)&new_env,
                                              0,
                                              &new_size,
-                                             MEM_RESERVE | MEM_COMMIT,
+                                             MEM_COMMIT,
                                              PAGE_READWRITE);
             if (!NT_SUCCESS(Status))
             {

@@ -30,7 +30,7 @@ RtlCreateQueryDebugBuffer(IN ULONG Size,
                                      (PVOID*)&Buf,
                                      0,
                                      &ViewSize,
-                                     MEM_RESERVE | MEM_COMMIT,
+                                     MEM_COMMIT,
                                      PAGE_READWRITE);
     if (!NT_SUCCESS(Status)) return NULL;
 
