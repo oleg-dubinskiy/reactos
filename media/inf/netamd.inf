@@ -41,16 +41,16 @@ HKR,,MPMODE,,"0"
 HKR,,TP,,"1"
 
 [PCNet_CopyFiles.NT]
-pcnet.sys
+pcntpci5.sys
 
 [PCNet_Inst.ndi.NT.Services]
-AddService = PCNet, 0x00000002, PCNet_Service_Inst
+AddService = PcNtPci5, 0x00000002, PCNet_Service_Inst
 
 [PCNet_Service_Inst]
 ServiceType   = 1
 StartType     = 3
 ErrorControl  = 0
-ServiceBinary = %12%\pcnet.sys
+ServiceBinary = %12%\pcntpci5.sys
 LoadOrderGroup = NDIS
 
 ;-------------------------------- STRINGS -------------------------------
