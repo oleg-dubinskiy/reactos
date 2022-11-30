@@ -1521,6 +1521,7 @@ MiSetProtectionOnSection(
     PMMPTE Pte;
     PMMPTE LastPte;
     PMMPTE Proto;
+    PMMPTE ProtoPte;
     MMPTE TempPte;
     MMPTE PteContents;
     PMMPFN Pfn;
@@ -1531,6 +1532,7 @@ MiSetProtectionOnSection(
     ULONG QuotaCharge = 0;
     BOOLEAN IsWriteCopy = FALSE;
     BOOLEAN UpdateDirty;
+    KIRQL OldIrql;
 
     PAGED_CODE();
     DPRINT("MiSetProtectionOnSection: %p, %p, %p, %X, %X\n", Process, StartingAddress, EndingAddress, NewProtect, DontCharge);
@@ -1624,8 +1626,30 @@ MiSetProtectionOnSection(
             }
             else
             {
-                DPRINT1("MiSetProtectionOnSection: FIXME. %p, %p, %p\n", VirtualAddress, Proto, TempPte);
-                ASSERT(FALSE);
+                OldIrql = MiLockPfnDb(APC_LEVEL);
+                DPRINT1("MiSetProtectionOnSection: VA %p, Proto %p, TempPte %p\n", VirtualAddress, Proto, TempPte);
+
+                ProtoPte = MiAddressToPte(Proto);
+
+                if (!ProtoPte->u.Hard.Valid)
+                    MiMakeSystemAddressValidPfn(Proto, OldIrql);
+
+                TempPte = *Proto;
+
+                ASSERT(TempPte.u.Long != 0);
+
+                if (TempPte.u.Hard.Valid)
+                {
+                    PMMPFN pfn = MI_PFN_ELEMENT(TempPte.u.Hard.PageFrameNumber);
+
+                    *OutProtection = MmProtectToValue[pfn->OriginalPte.u.Soft.Protection];
+                }
+                else
+                {
+                    *OutProtection = MmProtectToValue[TempPte.u.Soft.Protection];
+                }
+
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
             }
 
             MiLockProcessWorkingSetUnsafe(Process, Thread);
