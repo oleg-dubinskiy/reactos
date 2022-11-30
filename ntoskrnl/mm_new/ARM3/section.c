@@ -615,8 +615,12 @@ MiSegmentDelete(
     {
         if (MiIsPteOnPdeBoundary(Proto) && Proto != Subsection->SubsectionBase)
         {
-            DPRINT1("MiSegmentDelete: FIXME\n");
-            ASSERT(FALSE);
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            ProtoPte = MiAddressToPte(Proto);
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+
+            if (!ProtoPte->u.Hard.Valid)
+                MiMakeSystemAddressValidPfn(Proto, OldIrql);
         }
 
         TempProto.u.Long = Proto->u.Long;
