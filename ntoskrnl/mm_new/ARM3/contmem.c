@@ -208,7 +208,16 @@ MiFindContiguousPages(
                     MI_SET_USAGE(MI_USAGE_CONTINOUS_ALLOCATION);
                     MI_SET_PROCESS2("Kernel Driver");
 
-                    MiUnlinkFreeOrZeroedPage(Pfn);
+                    if (Pfn->u3.e1.PageLocation == StandbyPageList)
+                    {
+                        MiUnlinkPageFromList(Pfn);
+                        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+                        MiRestoreTransitionPte(Pfn);
+                    }
+                    else
+                    {
+                        MiUnlinkFreeOrZeroedPage(Pfn);
+                    }
 
                     Pfn->u3.e2.ReferenceCount = 1;
                     Pfn->u2.ShareCount = 1;
