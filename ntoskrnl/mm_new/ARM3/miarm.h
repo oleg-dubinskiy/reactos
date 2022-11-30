@@ -2633,6 +2633,13 @@ MiChargeCommitment(
     _In_ PEPROCESS Process
 );
 
+BOOLEAN
+NTAPI
+MiChargeCommitmentCantExpand(
+    _In_ SIZE_T QuotaCharge,
+    _In_ BOOLEAN IsParam2
+);
+
 /* pagefile.c */
 INIT_FUNCTION
 VOID

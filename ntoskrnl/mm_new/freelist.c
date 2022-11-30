@@ -195,4 +195,71 @@ Compare:
     return TRUE;
 }
 
+BOOLEAN
+NTAPI
+MiChargeCommitmentCantExpand(
+    _In_ SIZE_T QuotaCharge,
+    _In_ BOOLEAN IsParam2)
+{
+    SIZE_T OldMmTotalCommittedPages;
+    SIZE_T ExtendQuota;
+
+    DPRINT1("MiChargeCommitmentCantExpand: QuotaCharge %IX (%X)\n", QuotaCharge, IsParam2);
+
+    ASSERT((SSIZE_T)QuotaCharge > 0);
+    ASSERT((QuotaCharge < 0x100000) || (QuotaCharge < MmTotalCommitLimit));
+
+    while (TRUE)
+    {
+        OldMmTotalCommittedPages = MmTotalCommittedPages;
+
+        if (MmTotalCommittedPages > (MmTotalCommitLimit - QuotaCharge) && !IsParam2)
+        {
+            if (MmTotalCommittedPages < (MmTotalCommittedPages - QuotaCharge))
+            {
+                DPRINT1("MiChargeCommitmentCantExpand: charge failure\n");
+                ASSERT(FALSE);
+                return FALSE;
+            }
+
+            if (MmTotalCommitLimit >= (MmTotalCommitLimitMaximum - 100))
+            {
+                DPRINT1("MiChargeCommitmentCantExpand: charge failure\n");
+                ASSERT(FALSE);
+                return FALSE;
+            }
+
+            DPRINT1("MiChargeCommitmentCantExpand: charge failure\n");
+            //MiChargeCommitmentFailures++;
+
+            DPRINT1("MiChargeCommitmentCantExpand: FIXME MiIssuePageExtendRequestNoWait()\n");
+            ASSERT(FALSE);
+            //MiIssuePageExtendRequestNoWait(0x200);
+            return FALSE;
+        }
+
+        if (OldMmTotalCommittedPages == InterlockedCompareExchange((PLONG)&MmTotalCommittedPages,
+                                                                   (MmTotalCommittedPages + QuotaCharge),
+                                                                   MmTotalCommittedPages))
+        {
+            break;
+        }
+    }
+
+    if (MmTotalCommittedPages > (9 * (MmTotalCommitLimit / 10)) &&
+        MmTotalCommitLimit < MmTotalCommitLimitMaximum)
+    {
+        ExtendQuota = (MmTotalCommittedPages - (85 * (MmTotalCommitLimit / 100)));
+
+        if (QuotaCharge > ExtendQuota)
+            ExtendQuota = QuotaCharge;
+
+        DPRINT1("MiChargeCommitmentCantExpand: FIXME MiIssuePageExtendRequestNoWait()\n");
+        ASSERT(FALSE);
+        //MiIssuePageExtendRequestNoWait(ExtendQuota);
+    }
+
+    return TRUE;
+}
+
 /* EOF */
