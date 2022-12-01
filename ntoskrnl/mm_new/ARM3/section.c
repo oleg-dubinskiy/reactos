@@ -504,8 +504,12 @@ NTAPI
 MmGetFileObjectForSection(
     _In_ PVOID SectionObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PSECTION Section = SectionObject;
+
+    ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
+    ASSERT(Section != NULL);
+
+    return Section->Segment->ControlArea->FilePointer;
 }
 
 VOID
