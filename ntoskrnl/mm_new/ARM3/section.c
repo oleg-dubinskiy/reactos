@@ -429,11 +429,74 @@ MmGetFileNameForAddress(
 NTSTATUS
 NTAPI
 MmGetFileNameForSection(
-    _In_ PVOID Section,
-    _Out_ POBJECT_NAME_INFORMATION* ModuleName)
+    _In_ PVOID SectionObject,
+    _Out_ POBJECT_NAME_INFORMATION* OutFileNameInfo)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PSECTION Section = SectionObject;
+    POBJECT_NAME_INFORMATION FileNameInfo;
+    PFILE_OBJECT File;
+    ULONG Length;
+    ULONG ReturnLength;
+    NTSTATUS Status;
+
+    DPRINT("MmGetFileNameForSection: Section %p\n", Section);
+
+    *OutFileNameInfo = 0;
+
+    if (!Section->u.Flags.Image)
+    {
+        DPRINT1("MmGetFileNameForSection: STATUS_SECTION_NOT_IMAGE (%p)\n", Section);
+        return STATUS_SECTION_NOT_IMAGE;
+    }
+
+    /* Allocate memory for our structure */
+    *OutFileNameInfo = FileNameInfo = ExAllocatePoolWithTag(PagedPool, 0x400, TAG_MM);
+    if (!FileNameInfo)
+    {
+        DPRINT1("MmGetFileNameForSection: STATUS_NO_MEMORY (%p)\n", Section);
+        return STATUS_NO_MEMORY;
+    }
+
+    File = Section->Segment->ControlArea->FilePointer;
+
+    /* Query the name */
+    Status = ObQueryNameString(File, FileNameInfo, 0x400, &ReturnLength);
+    if (NT_SUCCESS(Status))
+        /* If success then return */
+        return STATUS_SUCCESS;
+
+    /* Free previos structure */
+    ExFreePoolWithTag(*OutFileNameInfo, TAG_MM);
+
+    if (Status != STATUS_INFO_LENGTH_MISMATCH)
+    {
+        DPRINT1("MmGetFileNameForSection: Status %X\n", Status);
+        *OutFileNameInfo = NULL;
+        return Status;
+    }
+
+    /* Increase size */
+    Length = (ULONG)(ReturnLength + 0x100);
+
+    /* Allocate memory with new Length for our structure */
+    *OutFileNameInfo = FileNameInfo = ExAllocatePoolWithTag(PagedPool, Length, TAG_MM);
+    if (!FileNameInfo)
+    {
+        DPRINT1("MmGetFileNameForSection: STATUS_NO_MEMORY (%p)\n", Section);
+        return STATUS_NO_MEMORY;
+    }
+
+    /* Query the name with new Length */
+    Status = ObQueryNameString(File, FileNameInfo, Length, &ReturnLength);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmGetFileNameForSection: Status %X\n", Status);
+        ExFreePoolWithTag(*OutFileNameInfo, TAG_MM);
+        *OutFileNameInfo = NULL;
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 PFILE_OBJECT
