@@ -326,10 +326,104 @@ NTSTATUS
 NTAPI
 MmGetFileNameForAddress(
     _In_ PVOID Address,
-    _Out_ PUNICODE_STRING ModuleName)
+    _Out_ UNICODE_STRING* OutFileName)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    POBJECT_NAME_INFORMATION ObjectNameInfo;
+    PCONTROL_AREA ControlArea;
+    PFILE_OBJECT FileObject;
+    PVOID AddressSpace;
+    PMMVAD Vad;
+    ULONG Length;
+    ULONG ReturnLength;
+    NTSTATUS Status;
+
+    PAGED_CODE ();
+    DPRINT("MmGetFileNameForAddress: Address %p\n", Address);
+
+    /* Lock address space */
+    AddressSpace = MmGetCurrentAddressSpace();
+    MmLockAddressSpace(AddressSpace);
+
+    /* Get the VAD */
+    Vad = MiLocateAddress(Address);
+    if (!Vad)
+    {
+        DPRINT1("MmGetFileNameForAddress: STATUS_INVALID_ADDRESS (%p)\n", Address);
+        MmUnlockAddressSpace(AddressSpace);
+        return STATUS_INVALID_ADDRESS;
+    }
+
+    if (Vad->u.VadFlags.PrivateMemory)
+    {
+        DPRINT1("MmGetFileNameForAddress: STATUS_SECTION_NOT_IMAGE (%p)\n", Address);
+        MmUnlockAddressSpace(AddressSpace);
+        return STATUS_SECTION_NOT_IMAGE;
+    }
+
+    ControlArea = Vad->ControlArea;
+    if (!ControlArea)
+    {
+        DPRINT1("MmGetFileNameForAddress: STATUS_SECTION_NOT_IMAGE (%p)\n", Address);
+        MmUnlockAddressSpace(AddressSpace);
+        return STATUS_SECTION_NOT_IMAGE;
+    }
+
+    if (!ControlArea->u.Flags.Image)
+    {
+        DPRINT1("MmGetFileNameForAddress: STATUS_SECTION_NOT_IMAGE (%p)\n", Address);
+        MmUnlockAddressSpace(AddressSpace);
+        return STATUS_SECTION_NOT_IMAGE;
+    }
+
+    /* Get the file object pointer for the VAD */
+    FileObject = ControlArea->FilePointer;
+    ASSERT(FileObject != NULL);
+
+    /* Reference the file object */
+    ObReferenceObject(FileObject);
+
+    /* Unlock address space */
+    MmUnlockAddressSpace(AddressSpace);
+
+    /* Get the filename of the file object */
+    for (Length = 0x408; ; Length = ReturnLength)
+    {
+        ObjectNameInfo = ExAllocatePoolWithTag(PagedPool, Length, TAG_MM);
+        if (!ObjectNameInfo)
+        {
+            DPRINT1("MmGetFileNameForAddress: STATUS_NO_MEMORY (%p)\n", Address);
+            ObDereferenceObject(FileObject);
+            return STATUS_NO_MEMORY;
+        }
+
+        ReturnLength = 0;
+
+        /* Query the name */
+        Status = ObQueryNameString(FileObject, ObjectNameInfo, Length, &ReturnLength);
+        if (NT_SUCCESS(Status))
+            /* If success then exit from the loop */
+            break;
+
+        ExFreePoolWithTag(ObjectNameInfo, TAG_MM);
+
+        if (ReturnLength <= Length)
+        {
+            DPRINT1("MmGetFileNameForAddress: ReturnLength %X, Length %X\n", ReturnLength, Length);
+            ObDereferenceObject(FileObject);
+            return Status;
+        }
+    }
+
+    /* Init modulename */
+    OutFileName->Length = ObjectNameInfo->Name.Length;
+    OutFileName->MaximumLength = ObjectNameInfo->Name.Length;
+    OutFileName->Buffer = (PWSTR)ObjectNameInfo;
+
+    RtlMoveMemory(OutFileName->Buffer, ObjectNameInfo->Name.Buffer, OutFileName->Length);
+
+    /* Dereference the file object */
+    ObDereferenceObject(FileObject);
+    return Status;
 }
 
 NTSTATUS
