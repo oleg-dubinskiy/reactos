@@ -8,11 +8,14 @@
 
 /* GLOBALS ********************************************************************/
 
+LONG MiDelayPageFaults;
+
 extern MI_PFN_CACHE_ATTRIBUTE MiPlatformCacheAttributes[2][MmMaximumCacheType];
 extern PPHYSICAL_MEMORY_DESCRIPTOR MmPhysicalMemoryBlock;
 extern PVOID MmNonPagedPoolStart;
 extern SIZE_T MmSizeOfNonPagedPoolInBytes;
 extern PVOID MmNonPagedPoolExpansionStart;
+extern ULONG ExpInitializationPhase;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -114,6 +117,7 @@ MiFindContiguousPages(
     _In_ PFN_NUMBER SizeInPages,
     _In_ MEMORY_CACHING_TYPE CacheType)
 {
+    PMMPTE PteAddress;
     PMMPFN Pfn;
     PMMPFN EndPfn;
     PFN_NUMBER Page;
@@ -121,154 +125,283 @@ MiFindContiguousPages(
     PFN_NUMBER LastPage;
     PFN_NUMBER Length;
     PFN_NUMBER BoundaryMask;
-    ULONG ix = 0;
+    ULONG CacheAttribute;
+    ULONG ix;
+    ULONG nx;
     KIRQL OldIrql;
+    BOOLEAN IsFlush;
 
+    DPRINT1("MiFindContiguousPages: %X, %X, %X, %X, %X\n", LowestPfn, HighestPfn, BoundaryPfn, SizeInPages, CacheType);
     PAGED_CODE();
+
     ASSERT(SizeInPages != 0);
+    ASSERT(CacheType <= MmWriteCombined);
+
+    CacheAttribute = MiPlatformCacheAttributes[0][CacheType];
+    PteAddress = MiAddressToPte(MmNonPagedPoolExpansionStart);
 
     /* Convert the boundary PFN into an alignment mask */
     BoundaryMask = ~(BoundaryPfn - 1);
 
     /* Disable APCs */
     KeEnterGuardedRegion();
+    //FIXME MmDynamicMemoryLock
 
-    /* Loop all the physical memory blocks */
-    do
+    if (!MiChargeCommitmentCantExpand(SizeInPages, 0))
     {
-        /* Capture the base page and length of this memory block */
-        Page = MmPhysicalMemoryBlock->Run[ix].BasePage;
-        PageCount = MmPhysicalMemoryBlock->Run[ix].PageCount;
+        DPRINT1("MiFindContiguousPages: MiChargeCommitmentCantExpand(%IX) failed\n", SizeInPages);
+        //FIXME MmDynamicMemoryLock
+        KeLeaveGuardedRegion();
+        return 0;
+    }
 
-        /* Check how far this memory block will go */
-        LastPage = (Page + PageCount);
+    /* Acquire the PFN lock */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+    // ? MiDeferredUnlockPages(1);
 
-        /* Trim it down to only the PFNs we're actually interested in */
-        if ((LastPage - 1) > HighestPfn)
-            LastPage = (HighestPfn + 1);
+    if ((SPFN_NUMBER)SizeInPages > (MmResidentAvailablePages - MmSystemLockPagesCount))
+    {
+        DPRINT1("MiFindContiguousPages: %IX, %IX, %IX\n", SizeInPages, MmResidentAvailablePages, MmSystemLockPagesCount);
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        goto ErrorExit;
+    }
 
-        if (Page < LowestPfn)
-            Page = LowestPfn;
+    if ((SPFN_NUMBER)SizeInPages > (SPFN_NUMBER)(MmAvailablePages - 0x80))
+    {
+        DPRINT1("MiFindContiguousPages: %IX, %IX\n", SizeInPages, MmAvailablePages);
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        goto ErrorExit;
+    }
 
-        /* Skip this run if it's empty or fails to contain all the pages we need */
-        if (!PageCount || (Page + SizeInPages) > LastPage)
-            continue;
+    InterlockedExchangeAddSizeT(&MmResidentAvailablePages, -SizeInPages);
 
-        /* Now scan all the relevant PFNs in this run */
-        Length = 0;
+    /* Release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
-        for (Pfn = MI_PFN_ELEMENT(Page); Page < LastPage; Page++, Pfn++)
+    for (nx = 4; ; --nx)
+    {
+        ix = 0;
+
+        /* Loop all the physical memory blocks */
+        do
         {
-            /* If this PFN is in use, ignore it */
-            if (MiIsPfnInUse(Pfn))
+            /* Capture the base page and length of this memory block */
+            Page = MmPhysicalMemoryBlock->Run[ix].BasePage;
+            PageCount = MmPhysicalMemoryBlock->Run[ix].PageCount;
+
+            /* Check how far this memory block will go */
+            LastPage = (Page + PageCount);
+
+            /* Trim it down to only the PFNs we're actually interested in */
+            if (LastPage > (HighestPfn + 1))
+                LastPage = (HighestPfn + 1);
+
+            if (Page < LowestPfn)
+                Page = LowestPfn;
+
+            /* Skip this run if it's empty or fails to contain all the pages we need */
+            if (!PageCount || (Page + SizeInPages) > LastPage)
             {
-                Length = 0;
+                ix++;
                 continue;
             }
 
-            /* If we haven't chosen a start PFN yet and the caller specified an alignment,
-               make sure the page matches the alignment restriction
-            */
-            if (!Length && BoundaryPfn && ((Page ^ (Page + SizeInPages - 1)) & BoundaryMask))
-                /* It does not, so bail out */
-                continue;
+            Length = 0;
 
-            /* Increase the number of valid pages, and check if we have enough */
-            if (++Length != SizeInPages)
-                continue;
-
-            /* It appears we've amassed enough legitimate pages, rollback */
-            Pfn -= (Length - 1);
-            Page -= (Length - 1);
-
-            /* Acquire the PFN lock */
-            OldIrql = MiLockPfnDb(APC_LEVEL);
-
-            /* Things might've changed for us. Is the page still free? */
-            for (; !MiIsPfnInUse(Pfn); Pfn++, Page++)
+            /* Now scan all the relevant PFNs in this run */
+            for (Pfn = MI_PFN_ELEMENT(Page); Page < LastPage; Page++, Pfn++)
             {
-                /* So far so good. Is this the last confirmed valid page? */
-                if (--Length)
+                /* If this PFN is in use, ignore it */
+                if (MiIsPfnInUse(Pfn))
                 {
-                    /* Keep going.
-                       The purpose of this loop is to reconfirm
-                       that after acquiring the PFN lock these pages are still usable.
-                    */
+                    Length = 0;
                     continue;
                 }
 
-                /* Sanity check that we didn't go out of bounds */
-                ASSERT(ix != MmPhysicalMemoryBlock->NumberOfRuns);
+                /* If we haven't chosen a start PFN yet and the caller specified an alignment,
+                   make sure the page matches the alignment restriction
+                */
+                if (!Length && BoundaryPfn && ((Page ^ (Page + SizeInPages - 1)) & BoundaryMask))
+                    /* It does not, so bail out */
+                    continue;
 
-                /* Loop until all PFN entries have been processed */
-                EndPfn = (Pfn - SizeInPages + 1);
-                do
+                /* Increase the number of valid pages, and check if we have enough */
+                if (++Length != SizeInPages)
+                    continue;
+
+                /* It appears we've amassed enough legitimate pages, rollback */
+                Pfn -= (Length - 1);
+                Page -= (Length - 1);
+
+                /* Acquire the PFN lock */
+                OldIrql = MiLockPfnDb(APC_LEVEL);
+
+                /* Things might've changed for us. Is the page still free? */
+                while (!MiIsPfnInUse(Pfn) && (CacheAttribute == MiCached || !Pfn->u4.MustBeCached))
                 {
-                    /* This PFN is now a used page, set it up */
-                    MI_SET_USAGE(MI_USAGE_CONTINOUS_ALLOCATION);
-                    MI_SET_PROCESS2("Kernel Driver");
-
-                    if (Pfn->u3.e1.PageLocation == StandbyPageList)
+                    /* So far so good. Is this the last confirmed valid page? */
+                    if (--Length)
                     {
-                        MiUnlinkPageFromList(Pfn);
-                        ASSERT(Pfn->u3.e2.ReferenceCount == 0);
-                        MiRestoreTransitionPte(Pfn);
-                    }
-                    else
-                    {
-                        MiUnlinkFreeOrZeroedPage(Pfn);
+                        /* Keep going.
+                           The purpose of this loop is to reconfirm that after acquiring the PFN lock these pages are still usable.
+                        */
+                        Page++;
+                        Pfn++;
+                        continue;
                     }
 
-                    Pfn->u3.e2.ReferenceCount = 1;
-                    Pfn->u2.ShareCount = 1;
-                    Pfn->u3.e1.PageLocation = ActiveAndValid;
-                    Pfn->u3.e1.StartOfAllocation = 0;
-                    Pfn->u3.e1.EndOfAllocation = 0;
-                    Pfn->u3.e1.PrototypePte = 0;
-                    Pfn->u4.VerifierAllocation = 0;
-                    Pfn->PteAddress = (PVOID)(ULONG_PTR)0xBAADF00DBAADF00DULL;
+                    /* Sanity check that we didn't go out of bounds */
+                    ASSERT(ix != MmPhysicalMemoryBlock->NumberOfRuns);
 
-                    /* Check if this is the last PFN, otherwise go on */
-                    if (Pfn == EndPfn)
-                        break;
+                    if ((SPFN_NUMBER)SizeInPages > (SPFN_NUMBER)(MmAvailablePages - 0x80))
+                    {
+                        DPRINT1("MiFindContiguousPages: %IX, %IX\n", SizeInPages, MmAvailablePages);
+                        MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
-                    Pfn--;
+                        InterlockedExchangeAddSizeT(&MmResidentAvailablePages, SizeInPages);
+
+                        ASSERT((SSIZE_T)(SizeInPages) >= 0);
+                        ASSERT(MmTotalCommittedPages >= (SizeInPages));
+                        InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -SizeInPages);
+
+                        goto ErrorExit;
+                    }
+
+                    IsFlush = FALSE;
+                    EndPfn = (Pfn - (SizeInPages - 1));
+
+                    /* Loop until all PFN entries have been processed */
+                    while (TRUE)
+                    {
+                        /* This PFN is now a used page, set it up */
+                        MI_SET_USAGE(MI_USAGE_CONTINOUS_ALLOCATION);
+                        MI_SET_PROCESS2("Kernel Driver");
+
+                        if (Pfn->u3.e1.PageLocation == StandbyPageList)
+                        {
+                            MiUnlinkPageFromList(Pfn);
+                            ASSERT(Pfn->u3.e2.ReferenceCount == 0);
+                            MiRestoreTransitionPte(Pfn);
+                        }
+                        else
+                        {
+                            MiUnlinkFreeOrZeroedPage(Pfn);
+                        }
+
+                        Pfn->u3.e2.ReferenceCount = 1;
+                        Pfn->u2.ShareCount = 1;
+
+                        if ((Pfn->u3.e1.CacheAttribute != CacheAttribute) && !IsFlush)
+                        {
+                            //MiFlushTbForAttributeChange++;
+                            KeFlushEntireTb(TRUE, TRUE);
+
+                            if (CacheAttribute != MiCached)
+                            {
+                                //MiFlushCacheForAttributeChange++;
+                                KeInvalidateAllCaches();
+                            }
+
+                            IsFlush = TRUE;
+                        }
+
+                        Pfn->u3.e1.CacheAttribute = CacheAttribute;
+                        Pfn->u3.e1.PageLocation = ActiveAndValid;
+                        Pfn->u3.e1.StartOfAllocation = 0;
+                        Pfn->u3.e1.EndOfAllocation = 0;
+                        Pfn->u3.e1.PrototypePte = 0;
+                        Pfn->u4.VerifierAllocation = 0;
+
+                        Pfn->PteAddress = PteAddress;
+                        MI_MAKE_SOFTWARE_PTE(&Pfn->OriginalPte, MM_READWRITE);
+
+                        /* Check if this is the last PFN, otherwise go on */
+                        if (Pfn == EndPfn)
+                            break;
+
+                        Pfn--;
+                    }
+
+                    /* Mark the first and last PFN so we can find them later */
+                    Pfn->u3.e1.StartOfAllocation = 1;
+                    (Pfn + SizeInPages - 1)->u3.e1.EndOfAllocation = 1;
+
+                    /* Now it's safe to let go of the PFN lock */
+                    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                    /* Quick sanity check that the last PFN is consistent */
+                    EndPfn = (Pfn + SizeInPages);
+                    ASSERT(EndPfn == MI_PFN_ELEMENT(Page + 1));
+
+                    /* Compute the first page, and make sure it's consistent */
+                    Page = (Page - (SizeInPages - 1));
+                    ASSERT(Pfn == MI_PFN_ELEMENT(Page));
+                    ASSERT(Page != 0);
+
+                    /* Enable APCs and return the page */
+                    //FIXME MmDynamicMemoryLock
+                    KeLeaveGuardedRegion();
+                    return Page;
                 }
-                while (TRUE);
 
-                /* Mark the first and last PFN so we can find them later */
-                Pfn->u3.e1.StartOfAllocation = 1;
-                (Pfn + SizeInPages - 1)->u3.e1.EndOfAllocation = 1;
-
-                /* Now it's safe to let go of the PFN lock */
+                /* If we got here, something changed while we hadn't acquired the PFN lock yet,
+                   so we'll have to restart.
+                */
                 MiUnlockPfnDb(OldIrql, APC_LEVEL);
-
-                /* Quick sanity check that the last PFN is consistent */
-                EndPfn = (Pfn + SizeInPages);
-                ASSERT(EndPfn == MI_PFN_ELEMENT(Page + 1));
-
-                /* Compute the first page, and make sure it's consistent */
-                Page = (Page - SizeInPages + 1);
-
-                ASSERT(Pfn == MI_PFN_ELEMENT(Page));
-                ASSERT(Page != 0);
-
-                /* Enable APCs and return the page */
-                KeLeaveGuardedRegion();
-                return Page;
+                Length = 0;
             }
-
-            /* If we got here, something changed while we hadn't acquired the PFN lock yet,
-               so we'll have to restart.
-            */
-            MiUnlockPfnDb(OldIrql, APC_LEVEL);
-            Length = 0;
         }
+        while (++ix != MmPhysicalMemoryBlock->NumberOfRuns);
+
+        if (!ExpInitializationPhase)
+            break;
+
+        InterlockedExchangeAddSizeT(&MiDelayPageFaults, 1);
+
+        DPRINT1("MiFindContiguousPages: (%X) %IX\n", nx, SizeInPages);
+
+        /* Start from 4 to 1*/
+        switch (nx)
+        {
+            case 1:
+                DPRINT1("MiFindContiguousPages: FIXME\n");
+                ASSERT(FALSE);
+                break;
+
+            case 2:
+                DPRINT1("MiFindContiguousPages: FIXME\n");
+                ASSERT(FALSE);
+                break;
+
+            case 3:
+                DPRINT1("MiFindContiguousPages: FIXME\n");
+                ASSERT(FALSE);
+                break;
+
+            case 4:
+                DPRINT1("MiFindContiguousPages: FIXME\n");
+                ASSERT(FALSE);
+                break;
+        }
+
+        InterlockedExchangeAddSizeT(&MiDelayPageFaults, -1);
+
+        if (!nx)
+            goto ErrorExit;
     }
-    while (++ix != MmPhysicalMemoryBlock->NumberOfRuns);
+
+    InterlockedExchangeAddSizeT(&MmResidentAvailablePages, SizeInPages);
+
+ErrorExit:
 
     /* And if we get here, it means no suitable physical memory runs were found */
+    //FIXME MmDynamicMemoryLock
     KeLeaveGuardedRegion();
+
+    ASSERT((SSIZE_T)(SizeInPages) >= 0);
+    ASSERT(MmTotalCommittedPages >= (SizeInPages));
+    InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -SizeInPages);
+
     return 0;
 }
 
