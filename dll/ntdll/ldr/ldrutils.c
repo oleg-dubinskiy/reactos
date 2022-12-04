@@ -1970,277 +1970,371 @@ Quickie:
 }
 
 
-/* NOTE: This function is b0rked and in the process of being slowly unf*cked */
 BOOLEAN
 NTAPI
 LdrpCheckForLoadedDll(IN PWSTR DllPath,
                       IN PUNICODE_STRING DllName,
-                      IN BOOLEAN Flag,
+                      IN BOOLEAN IsLookInHashTable,
                       IN BOOLEAN RedirectedDll,
-                      OUT PLDR_DATA_TABLE_ENTRY *LdrEntry)
+                      OUT PLDR_DATA_TABLE_ENTRY* OutLdrEntry)
 {
-    ULONG HashIndex;
-    PLIST_ENTRY ListHead, ListEntry;
-    PLDR_DATA_TABLE_ENTRY CurEntry;
-    BOOLEAN FullPath = FALSE;
-    PWCHAR wc;
-    WCHAR NameBuf[266];
-    UNICODE_STRING FullDllName, NtPathName;
-    ULONG Length;
     OBJECT_ATTRIBUTES ObjectAttributes;
-    NTSTATUS Status;
-    HANDLE FileHandle, SectionHandle;
-    IO_STATUS_BLOCK Iosb;
+    PLDR_DATA_TABLE_ENTRY CurEntry;
+    PIMAGE_NT_HEADERS NtHeader;
+    PIMAGE_NT_HEADERS NtHeader2;
+    UNICODE_STRING FullDllName;
+    UNICODE_STRING NtPathName;
     PVOID ViewBase = NULL;
+    PLIST_ENTRY ListEntry;
+    PLIST_ENTRY ListHead;
+    IO_STATUS_BLOCK Iosb;
+    HANDLE SectionHandle;
+    HANDLE FileHandle;
+    PWCHAR pLastChar;
+    PWCHAR pChar;
     SIZE_T ViewSize = 0;
-    PIMAGE_NT_HEADERS NtHeader, NtHeader2;
-    DPRINT("LdrpCheckForLoadedDll('%S' '%wZ' %u %u %p)\n", DllPath ? ((ULONG_PTR)DllPath == 1 ? L"" : DllPath) : L"", DllName, Flag, RedirectedDll, LdrEntry);
+    ULONG Length;
+    ULONG HashIndex;
+    WCHAR NameBuf[266];
+    WCHAR Character;
+    BOOLEAN IsFullPath = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("LdrpCheckForLoadedDll('%S' '%wZ' %u %u %p)\n",
+           (DllPath ? ((ULONG_PTR)DllPath == 1 ? L"" : DllPath) : L""), DllName, IsLookInHashTable, RedirectedDll, OutLdrEntry);
 
     /* Check if a dll name was provided */
-    if (!(DllName->Buffer) || !(DllName->Buffer[0])) return FALSE;
-
-    /* FIXME: Warning, "Flag" is used as magic instead of "Static" */
-    /* FIXME: Warning, code does not support redirection at all */
-
-    /* Look in the hash table if flag was set */
-lookinhash:
-    if (Flag  /* the second check is a hack */ && !RedirectedDll)
+    if (!DllName->Buffer)
     {
-        /* FIXME: if we get redirected dll it means that we also get a full path so we need to find its filename for the hash lookup */
-
-        /* Get hash index */
-        HashIndex = LDR_GET_HASH_ENTRY(DllName->Buffer[0]);
-
-        /* Traverse that list */
-        ListHead = &LdrpHashTable[HashIndex];
-        ListEntry = ListHead->Flink;
-        while (ListEntry != ListHead)
-        {
-            /* Get the current entry */
-            CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, HashLinks);
-
-            /* Check base name of that module */
-            if (RtlEqualUnicodeString(DllName, &CurEntry->BaseDllName, TRUE))
-            {
-                /* It matches, return it */
-                *LdrEntry = CurEntry;
-                return TRUE;
-            }
-
-            /* Advance to the next entry */
-            ListEntry = ListEntry->Flink;
-        }
-
-        /* Module was not found, return failure */
+        DPRINT1("LdrpCheckForLoadedDll: return FALSE for '%wZ'\n", DllName);
         return FALSE;
     }
 
-    /* Check if this is a redirected DLL */
-    if (RedirectedDll)
+    if (!DllName->Buffer[0])
     {
-        /* Redirected dlls already have a full path */
-        FullPath = TRUE;
-        FullDllName = *DllName;
+        DPRINT1("LdrpCheckForLoadedDll: return FALSE for '%wZ'\n", DllName);
+        return FALSE;
     }
-    else
+
+    if (!IsLookInHashTable)
     {
-        /* Check if there is a full path in this DLL */
-        wc = DllName->Buffer;
-        while (*wc)
+        /* Check if this is a redirected DLL */
+        if (RedirectedDll)
         {
-            /* Check for a slash in the current position*/
-            if ((*wc == L'\\') || (*wc == L'/'))
+            /* Redirected dlls already have a full path */
+            IsFullPath = TRUE;
+            FullDllName = *DllName;
+            DPRINT1("LdrpCheckForLoadedDll: (%X:%X) '%wZ'\n", getProcess(), getThread(), DllName);
+        }
+        else
+        {
+            /* Check if there is a full path in this DLL */
+            for (pChar = DllName->Buffer; *pChar; pChar++)
             {
+                /* Check for a slash in the current position*/
+                if (*pChar == L'\\' || *pChar == L'/')
+                    continue;
+
                 /* Found the slash, so dll name contains path */
-                FullPath = TRUE;
+                IsFullPath = TRUE;
 
                 /* Setup full dll name string */
                 FullDllName.Buffer = NameBuf;
 
                 /* FIXME: This is from the Windows 2000 loader, not XP/2003, we should call LdrpSearchPath */
-                Length = RtlDosSearchPath_U(DllPath ? DllPath : LdrpDefaultPath.Buffer,
+                Length = RtlDosSearchPath_U((DllPath ? DllPath : LdrpDefaultPath.Buffer),
                                             DllName->Buffer,
                                             NULL,
-                                            sizeof(NameBuf) - sizeof(UNICODE_NULL),
+                                            (sizeof(NameBuf) - sizeof(UNICODE_NULL)),
                                             FullDllName.Buffer,
                                             NULL);
 
                 /* Check if that was successful */
-                if (!(Length) || (Length > (sizeof(NameBuf) - sizeof(UNICODE_NULL))))
+                if (!Length || (Length > (sizeof(NameBuf) - sizeof(UNICODE_NULL))))
                 {
                     if (ShowSnaps)
                     {
-                        DPRINT1("LDR: LdrpCheckForLoadedDll - Unable To Locate %wZ: 0x%08x\n",
-                            &DllName, Length);
+                        DPRINT1("LDR: LdrpCheckForLoadedDll - Unable To Locate %wZ: 0x%08x\n", &DllName, Length);
                     }
                 }
 
                 /* Full dll name is found */
                 FullDllName.Length = Length;
-                FullDllName.MaximumLength = FullDllName.Length + sizeof(UNICODE_NULL);
+                FullDllName.MaximumLength = (FullDllName.Length + sizeof(UNICODE_NULL));
+
                 break;
             }
-
-            wc++;
         }
-    }
 
-    /* Go check the hash table */
-    if (!FullPath)
-    {
-        Flag = TRUE;
-        goto lookinhash;
-    }
-
-    /* FIXME: Warning, activation context missing */
-    DPRINT("Warning, activation context missing\n");
-
-    /* NOTE: From here on down, everything looks good */
-
-    /* Loop the module list */
-    ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
-    ListEntry = ListHead->Flink;
-    while (ListEntry != ListHead)
-    {
-        /* Get the current entry and advance to the next one */
-        CurEntry = CONTAINING_RECORD(ListEntry,
-                                     LDR_DATA_TABLE_ENTRY,
-                                     InLoadOrderLinks);
-        ListEntry = ListEntry->Flink;
-
-        /* Check if it's being unloaded */
-        if (!CurEntry->InMemoryOrderLinks.Flink) continue;
-
-        /* Check if name matches */
-        if (RtlEqualUnicodeString(&FullDllName,
-                                  &CurEntry->FullDllName,
-                                  TRUE))
+        /* Check if there is a full path */
+        if (IsFullPath)
         {
-            /* Found it */
-            *LdrEntry = CurEntry;
-            return TRUE;
-        }
-    }
+            /* Loop the module list */
+            ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
 
-    /* Convert given path to NT path */
-    if (!RtlDosPathNameToNtPathName_U(FullDllName.Buffer,
-                                      &NtPathName,
-                                      NULL,
-                                      NULL))
-    {
-        /* Fail if conversion failed */
-        return FALSE;
-    }
-
-    /* Initialize object attributes and open it */
-    InitializeObjectAttributes(&ObjectAttributes,
-                               &NtPathName,
-                               OBJ_CASE_INSENSITIVE,
-                               NULL,
-                               NULL);
-    Status = NtOpenFile(&FileHandle,
-                        SYNCHRONIZE | FILE_EXECUTE,
-                        &ObjectAttributes,
-                        &Iosb,
-                        FILE_SHARE_READ | FILE_SHARE_DELETE,
-                        FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
-
-    /* Free NT path name */
-    RtlFreeHeap(RtlGetProcessHeap(), 0, NtPathName.Buffer);
-
-    /* If opening the file failed - return failure */
-    if (!NT_SUCCESS(Status)) return FALSE;
-
-    /* Create a section for this file */
-    Status = NtCreateSection(&SectionHandle,
-                             SECTION_MAP_READ |
-                             SECTION_MAP_EXECUTE |
-                             SECTION_MAP_WRITE,
-                             NULL,
-                             NULL,
-                             PAGE_EXECUTE,
-                             SEC_COMMIT,
-                             FileHandle);
-
-    /* Close file handle */
-    NtClose(FileHandle);
-
-    /* If creating section failed - return failure */
-    if (!NT_SUCCESS(Status)) return FALSE;
-
-    /* Map view of this section */
-    Status = ZwMapViewOfSection(SectionHandle,
-                                NtCurrentProcess(),
-                                &ViewBase,
-                                0,
-                                0,
-                                NULL,
-                                &ViewSize,
-                                ViewShare,
-                                0,
-                                PAGE_EXECUTE);
-
-    /* Close section handle */
-    NtClose(SectionHandle);
-
-    /* If section mapping failed - return failure */
-    if (!NT_SUCCESS(Status)) return FALSE;
-
-    /* Get pointer to the NT header of this section */
-    Status = RtlImageNtHeaderEx(0, ViewBase, ViewSize, &NtHeader);
-    if (!(NT_SUCCESS(Status)) || !(NtHeader))
-    {
-        /* Unmap the section and fail */
-        NtUnmapViewOfSection(NtCurrentProcess(), ViewBase);
-        return FALSE;
-    }
-
-    /* Go through the list of modules again */
-    ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
-    ListEntry = ListHead->Flink;
-    while (ListEntry != ListHead)
-    {
-        /* Get the current entry and advance to the next one */
-        CurEntry = CONTAINING_RECORD(ListEntry,
-                                     LDR_DATA_TABLE_ENTRY,
-                                     InLoadOrderLinks);
-        ListEntry = ListEntry->Flink;
-
-        /* Check if it's in the process of being unloaded */
-        if (!CurEntry->InMemoryOrderLinks.Flink) continue;
-
-        /* The header is untrusted, use SEH */
-        _SEH2_TRY
-        {
-            /* Check if timedate stamp and sizes match */
-            if ((CurEntry->TimeDateStamp == NtHeader->FileHeader.TimeDateStamp) &&
-                (CurEntry->SizeOfImage == NtHeader->OptionalHeader.SizeOfImage))
+            for (ListEntry = ListHead->Flink; ListEntry != ListHead; ListEntry = ListEntry->Flink)
             {
-                /* Time, date and size match. Let's compare their headers */
-                NtHeader2 = RtlImageNtHeader(CurEntry->DllBase);
-                if (RtlCompareMemory(NtHeader2, NtHeader, sizeof(IMAGE_NT_HEADERS)))
+                /* Get the current entry and advance to the next one */
+                CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+                /* Check if it's being unloaded */
+                if (!CurEntry->InMemoryOrderLinks.Flink)
+                    continue;
+
+                /* Check if name matches */
+                if (RtlEqualUnicodeString(&FullDllName, &CurEntry->FullDllName, TRUE))
                 {
-                    /* Headers match too! Finally ask the kernel to compare mapped files */
-                    Status = ZwAreMappedFilesTheSame(CurEntry->DllBase, ViewBase);
-                    if (NT_SUCCESS(Status))
+                    /* Found it */
+                    *OutLdrEntry = CurEntry;
+                    return TRUE;
+                }
+            }
+
+            /* Convert given path to NT path */
+            if (!RtlDosPathNameToNtPathName_U(FullDllName.Buffer, &NtPathName, NULL, NULL))
+            {
+                /* Fail if conversion failed */
+                DPRINT1("LdrpCheckForLoadedDll: return FALSE for '%wZ'\n", DllName);
+                return FALSE;
+            }
+
+            /* Initialize object attributes and open it */
+            InitializeObjectAttributes(&ObjectAttributes,
+                                       &NtPathName,
+                                       OBJ_CASE_INSENSITIVE,
+                                       NULL,
+                                       NULL);
+
+            Status = NtOpenFile(&FileHandle,
+                                (SYNCHRONIZE | FILE_EXECUTE),
+                                &ObjectAttributes,
+                                &Iosb,
+                                (FILE_SHARE_READ | FILE_SHARE_DELETE),
+                                (FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT));
+
+            /* Free NT path name */
+            RtlFreeHeap(RtlGetProcessHeap(), 0, NtPathName.Buffer);
+
+            /* If opening the file failed - return failure */
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("LdrpCheckForLoadedDll: return FALSE for '%wZ' (%X)\n", DllName, Status);
+                return FALSE;
+            }
+
+            /* Create a section for this file */
+            Status = NtCreateSection(&SectionHandle,
+                                     (SECTION_MAP_READ | SECTION_MAP_EXECUTE | SECTION_MAP_WRITE),
+                                     NULL,
+                                     NULL,
+                                     PAGE_EXECUTE,
+                                     SEC_COMMIT,
+                                     FileHandle);
+
+            /* Close file handle */
+            NtClose(FileHandle);
+
+            /* If creating section failed - return failure */
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("LdrpCheckForLoadedDll: return FALSE for '%wZ'\n", DllName);
+                return FALSE;
+            }
+
+            /* Map view of this section */
+            Status = ZwMapViewOfSection(SectionHandle,
+                                        NtCurrentProcess(),
+                                        &ViewBase,
+                                        0,
+                                        0,
+                                        NULL,
+                                        &ViewSize,
+                                        ViewShare,
+                                        0,
+                                        PAGE_EXECUTE);
+
+            /* Close section handle */
+            NtClose(SectionHandle);
+
+            /* If section mapping failed - return failure */
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("LdrpCheckForLoadedDll: return FALSE for '%wZ'\n", DllName);
+                return FALSE;
+            }
+
+            if (IsShowSnapsW(FullDllName.Buffer)) {
+                DPRINT1("LdrpCheckForLoadedDll: (%X:%X) %p, %p, %p, %X, %X\n",
+                        getProcess(), getThread(), FileHandle, SectionHandle, ViewBase, ViewSize, Status);
+            }
+
+            /* Get pointer to the NT header of this section */
+            Status = RtlImageNtHeaderEx(0, ViewBase, ViewSize, &NtHeader);
+
+            if (!NT_SUCCESS(Status) || !NtHeader)
+            {
+                /* Unmap the section and fail */
+                DPRINT1("LdrpCheckForLoadedDll: return FALSE for '%wZ'\n", DllName);
+                NtUnmapViewOfSection(NtCurrentProcess(), ViewBase);
+                return FALSE;
+            }
+
+            /* Go through the list of modules again */
+            ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
+            ListEntry = ListHead->Flink;
+            while (ListEntry != ListHead)
+            {
+                /* Get the current entry and advance to the next one */
+                CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+                ListEntry = ListEntry->Flink;
+
+                /* Check if it's in the process of being unloaded */
+                if (!CurEntry->InMemoryOrderLinks.Flink)
+                    continue;
+
+                /* The header is untrusted, use SEH */
+                _SEH2_TRY
+                {
+                    /* Check if timedate stamp and sizes match */
+                    if ((CurEntry->TimeDateStamp == NtHeader->FileHeader.TimeDateStamp) &&
+                        (CurEntry->SizeOfImage == NtHeader->OptionalHeader.SizeOfImage))
                     {
-                        /* This is our entry!, unmap and return success */
-                        *LdrEntry = CurEntry;
-                        NtUnmapViewOfSection(NtCurrentProcess(), ViewBase);
-                        _SEH2_YIELD(return TRUE;)
+                        /* Time, date and size match. Let's compare their headers */
+                        NtHeader2 = RtlImageNtHeader(CurEntry->DllBase);
+                        if (RtlCompareMemory(NtHeader2, NtHeader, sizeof(IMAGE_NT_HEADERS)))
+                        {
+                            /* Headers match too! Finally ask the kernel to compare mapped files */
+                            Status = ZwAreMappedFilesTheSame(CurEntry->DllBase, ViewBase);
+                            if (NT_SUCCESS(Status))
+                            {
+                                if (IsShowSnapsW(FullDllName.Buffer)) {
+                                    DPRINT1("LdrpCheckForLoadedDll: (%X:%X) return TRUE for '%S'\n",
+                                            getProcess(), getThread(), FullDllName.Buffer);
+                                }
+
+                                /* This is our entry!, unmap and return success */
+                                *OutLdrEntry = CurEntry;
+                                NtUnmapViewOfSection(NtCurrentProcess(), ViewBase);
+                                _SEH2_YIELD(return TRUE;)
+                            }
+                        }
                     }
+                }
+                _SEH2_EXCEPT (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    _SEH2_YIELD(break;)
+                }
+                _SEH2_END;
+            }
+
+            /* Unmap the section and fail */
+            NtUnmapViewOfSection(NtCurrentProcess(), ViewBase);
+
+            if (IsShowSnapsW(FullDllName.Buffer)) {
+                DPRINT1("LdrpCheckForLoadedDll: (%X:%X) return FALSE for '%S'\n",
+                        getProcess(), getThread(), FullDllName.Buffer);
+            }
+
+            return FALSE;
+        }
+        else
+        {
+            /* Go check the hash table */
+
+            DPRINT("LdrpCheckForLoadedDll: FIXME RtlFindActivationContextSectionString()\n");
+          #if 0
+            /* FIXME: Warning, activation context missing */
+            Status = RtlFindActivationContextSectionString(0, 0, 2, DllName, 0);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("LdrpCheckForLoadedDll: return FALSE for '%wZ'\n", DllName);
+                return FALSE;
+            }
+          #endif
+        }
+    }
+
+    /* Look in the hash table if IsLookInHashTable was set */
+
+    /* Find first character of filename */
+    if (RedirectedDll)
+    {
+        /* if we get redirected dll it means that we also get a full path
+           so we need to find its filename for the hash lookup
+        */
+        pLastChar = &DllName->Buffer[(DllName->Length / 2) - (DllName->Length != 0)];
+
+        while (pLastChar != DllName->Buffer && *pLastChar != '\\' && *pLastChar != '/')
+            pLastChar--;
+
+        if (pLastChar == DllName->Buffer)
+        {
+            DPRINT1("LDR: Redirected name does not have full path; either caller lied or redirection info is in error\n");
+            ASSERT(pLastChar != DllName->Buffer);
+        }
+
+        if (pLastChar == DllName->Buffer)
+        {
+            if (ShowSnaps)
+            {
+                DPRINT1("LDR: Failing because redirected name '%wZ' does not include a slash\n", DllName);
+            }
+
+            /* Return failure */
+            DPRINT1("LdrpCheckForLoadedDll: return FALSE for '%wZ'\n", DllName);
+            return FALSE;
+        }
+
+        Character = pLastChar[1];
+    }
+    else
+    {
+        Character = DllName->Buffer[0];
+    }
+
+    /* Get hash index */
+    HashIndex = LDR_GET_HASH_ENTRY(Character);
+
+    /* Traverse that list */
+    ListHead = &LdrpHashTable[HashIndex];
+    
+    for (ListEntry = ListHead->Flink; ListEntry != ListHead; ListEntry = ListEntry->Flink)
+    {
+        /* Get the current entry */
+        CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, HashLinks);
+
+        //LdrpCompareCount++;
+
+        if (RedirectedDll)
+        {
+            if (CurEntry->Flags & LDRP_REDIRECTED)
+            {
+                /* Check full name for that module */
+                if (RtlEqualUnicodeString(DllName, &CurEntry->FullDllName, TRUE))
+                {
+                    /* It matches, return it */
+                    *OutLdrEntry = CurEntry;
+                    return TRUE;
                 }
             }
         }
-        _SEH2_EXCEPT (EXCEPTION_EXECUTE_HANDLER)
+        else
         {
-            _SEH2_YIELD(break;)
+            if (!(CurEntry->Flags & LDRP_REDIRECTED))
+            {
+                /* Check base name of that module */
+                if (RtlEqualUnicodeString(DllName, &CurEntry->BaseDllName, TRUE))
+                {
+                    /* It matches, return it */
+                    *OutLdrEntry = CurEntry;
+                    return TRUE;
+                }
+            }
         }
-        _SEH2_END;
     }
 
-    /* Unmap the section and fail */
-    NtUnmapViewOfSection(NtCurrentProcess(), ViewBase);
+    /* Module was not found, return failure */
+    DPRINT("LdrpCheckForLoadedDll: return FALSE for '%wZ'\n", DllName);
     return FALSE;
 }
 

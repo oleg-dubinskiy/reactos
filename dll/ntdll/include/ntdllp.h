@@ -39,6 +39,11 @@ NTSTATUS
     _In_ PVOID CallbackData,
     _Outptr_ PWSTR* EffectiveDllPath);
 
+#define getProcess()  NtCurrentTeb()->RealClientId.UniqueProcess
+#define getThread()   NtCurrentTeb()->RealClientId.UniqueThread
+
+#define IsShowSnapsW(NameStr) (wcsstr(NameStr, L"comctl32.dll") ? TRUE : FALSE)
+
 /* Global data */
 extern RTL_CRITICAL_SECTION LdrpLoaderLock;
 extern BOOLEAN LdrpInLdrInit;
