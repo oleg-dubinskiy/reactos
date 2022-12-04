@@ -7895,7 +7895,8 @@ MmCreateSection(
     PSEGMENT NewSegment = NULL;
     PSEGMENT Segment = NULL;
     PSUBSECTION Subsection;
-    PEVENT_COUNTER Event;
+    PEVENT_COUNTER EventCounter;
+    PEVENT_COUNTER NewEventCounter = NULL;
     SECTION Section;
     PSECTION NewSection;
     PFILE_OBJECT File;
@@ -8132,8 +8133,79 @@ MmCreateSection(
             {
                 if (ControlArea->u.Flags.BeingDeleted || ControlArea->u.Flags.BeingCreated)
                 {
-                    DPRINT1("MmCreateSection: FIXME\n");
-                    ASSERT(FALSE);
+                    if (ControlArea->WaitingForDeletion)
+                    {
+                        EventCounter = ControlArea->WaitingForDeletion;
+                        EventCounter->RefCount++;
+                    }
+                    else
+                    {
+                        if (!NewEventCounter)
+                        {
+                            /* Unlock the PFN database */
+                            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                            NewEventCounter = MiGetEventCounter();
+                            if (!NewEventCounter)
+                            {
+                                DPRINT1("MmCreateSection: Allocate failed\n");
+
+                                if (FileLock)
+                                {
+                                    IoSetTopLevelIrp(NULL);
+                                    //FsRtlReleaseFile(File);
+                                }
+
+                                ExFreePoolWithTag(NewControlArea, 'aCmM');
+                                ObDereferenceObject(File);
+                                return STATUS_INSUFFICIENT_RESOURCES;
+                            }
+
+                            continue;
+                        }
+
+                        EventCounter = NewEventCounter;
+                        NewEventCounter = NULL;
+
+                        ControlArea->WaitingForDeletion = EventCounter;
+                    }
+
+                    /* Unlock the PFN database */
+                    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                    /* Check if we locked and set the IRP */
+                    if (FileLock)
+                    {
+                        /* Reset the top-level IRP and release the lock */
+                        IoSetTopLevelIrp(NULL);
+                        //FsRtlReleaseFile(File);
+                    }
+
+                    KeWaitForSingleObject(&EventCounter->Event, WrVirtualMemory, KernelMode, FALSE, NULL);
+                    MiFreeEventCounter(EventCounter);
+
+                    /* Check if we locked */
+                    if (FileLock)
+                    {
+                      #if 0
+                        Status = FsRtlAcquireToCreateMappedSection(File, SectionPageProtection);
+                        if (!NT_SUCCESS(Status))
+                        {
+                            DPRINT1("MmCreateSection: Status %X\n", Status);
+                            ExFreePoolWithTag(NewControlArea, 'aCmM');
+                            ObDereferenceObject(File);
+                            return Status;
+                        }
+                      #else
+                        /* ReactOS doesn't support this API yet, so do nothing */
+                        Status = STATUS_SUCCESS;
+                        DPRINT("MmCreateSection: FIXME FsRtlAcquireToCreateMappedSection\n");
+                      #endif
+
+                        /* Update the top-level IRP so that drivers know what's happening */
+                        IoSetTopLevelIrp((PIRP)FSRTL_FSP_TOP_LEVEL_IRP);
+                    }
+
                     continue;
                 }
 
@@ -8142,6 +8214,9 @@ MmCreateSection(
                     KeGetCurrentThread()->PreviousMode != KernelMode)
                 {
                     MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                    if (NewEventCounter)
+                        MiFreeEventCounter(NewEventCounter);
 
                     /* Check if we locked and set the IRP */
                     if (FileLock)
@@ -8187,6 +8262,9 @@ MmCreateSection(
         /* We can release the PFN lock now */
         MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
+        if (NewEventCounter)
+            MiFreeEventCounter(NewEventCounter);
+
         if ((AllocationAttributes & SEC_IMAGE) && File && (File->FileName.Length > 4))
         {
             DPRINT("MmCreateSection: File %p '%wZ' \n", File, &File->FileName);
@@ -8218,7 +8296,7 @@ MmCreateSection(
                 OldIrql = MiLockPfnDb(APC_LEVEL);
 
                 /* Reset the waiting-for-deletion event */
-                Event = ControlArea->WaitingForDeletion;
+                EventCounter = ControlArea->WaitingForDeletion;
                 ControlArea->WaitingForDeletion = NULL;
 
                 /* Set the file pointer NULL flag */
@@ -8253,8 +8331,8 @@ MmCreateSection(
                 ExFreePoolWithTag(NewControlArea, 'aCmM');
                 ObDereferenceObject(File);
 
-                if (Event)
-                    KeSetEvent(&Event->Event, 0, FALSE);
+                if (EventCounter)
+                    KeSetEvent(&EventCounter->Event, 0, FALSE);
 
                 /* All done */
                 DPRINT1("MmCreateSection: Status %X\n", Status);
@@ -8429,7 +8507,7 @@ MmCreateSection(
         OldIrql = MiLockPfnDb(APC_LEVEL);
 
         /* Reset the waiting-for-deletion event */
-        Event = ControlArea->WaitingForDeletion;
+        EventCounter = ControlArea->WaitingForDeletion;
         ControlArea->WaitingForDeletion = NULL;
 
         if (AllocationAttributes & SEC_IMAGE)
@@ -8455,8 +8533,8 @@ MmCreateSection(
             /* Free the new control area */
             ExFreePoolWithTag(NewControlArea, 'aCmM');
 
-        if (Event)
-            KeSetEvent(&Event->Event, 0, FALSE);
+        if (EventCounter)
+            KeSetEvent(&EventCounter->Event, 0, FALSE);
     }
 
     /* Check if we locked the file earlier */
