@@ -49,6 +49,9 @@ extern PVOID MmPagedPoolEnd;
 extern PVOID MmSpecialPoolStart;
 extern PVOID MmSpecialPoolEnd;
 extern LARGE_INTEGER MmShortTime;
+extern LARGE_INTEGER Mm30Milliseconds;
+extern LARGE_INTEGER MmHalfSecond;
+extern LONG MiDelayPageFaults;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -3591,10 +3594,18 @@ UserFault:
     CurrentThread = PsGetCurrentThread();
     CurrentProcess = (PEPROCESS)CurrentThread->Tcb.ApcState.Process;
 
-    if (MmAvailablePages < 0x100)
+    if (MiDelayPageFaults ||
+        (MmAvailablePages < 0x100 && CurrentProcess->ModifiedPageCount > 0x10))
     {
-        DPRINT1("MmAccessFault: FIXME. MmAvailablePages %X\n", MmAvailablePages);
-        ASSERT(FALSE);
+        PLARGE_INTEGER Interval;
+
+        if (CurrentProcess->Pcb.BasePriority < 9)
+            Interval = &MmHalfSecond;
+        else
+            Interval = &Mm30Milliseconds;
+
+        KeDelayExecutionThread(KernelMode, FALSE, Interval);
+        CurrentProcess->ModifiedPageCount = 0;
     }
 
     /* Lock the working set */
