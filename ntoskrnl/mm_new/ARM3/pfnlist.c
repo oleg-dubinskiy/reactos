@@ -1135,14 +1135,26 @@ MiInsertPageInList(
         /* Increment the number of per-process modified pages */
         PsGetCurrentProcess()->ModifiedPageCount++;
 
-        if (MmAvailablePages < 0x400)
-        {
-            /* FIXME: Wake up modified page writer if there are not enough free pages */
-            DPRINT1("MiInsertPageInList: FIXME\n");
-            ASSERT(FALSE);
+        if (MmAvailablePages >= 0x400)
+            return;
 
-            //KeSetEvent(&MmModifiedPageWriterEvent, 0, FALSE);
+        DPRINT1("MiInsertPageInList: FIXME. MmAvailablePages %X)\n", MmAvailablePages);
+        //ASSERT(FALSE);
+
+#if 0
+        /* FIXME: Wake up modified page writer if there are not enough free pages */
+        if (MmModifiedPageListHead.Total >= MmModifiedPageMaximum)
+        {
+            KeSetEvent(&MmModifiedPageWriterEvent, 0, FALSE);
+            return;
         }
+
+        if (MmAvailablePages < 0x100 &&
+            MmModifiedPageListHead.Total >= MmModifiedWriteClusterSize)
+        {
+            KeSetEvent(&MmModifiedPageWriterEvent, 0, FALSE);
+        }
+#endif
 
         return;
     }
