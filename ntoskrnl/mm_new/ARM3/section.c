@@ -5708,6 +5708,19 @@ MiCreateImageFileMap(
     ImageInfo->SubSystemMajorVersion = OptionalHeader->MajorSubsystemVersion;
     ImageInfo->SubSystemMinorVersion = OptionalHeader->MinorSubsystemVersion;
     ImageInfo->DllCharacteristics = OptionalHeader->DllCharacteristics;
+    //HACK!   
+    {
+        /* Since we don't really implement SxS yet and LD doesn't supoprt /ALLOWISOLATION:NO, hard-code this flag here,
+           which will prevent the loader and other code from doing any .manifest or SxS magic to any binary.
+
+           This will break applications that depend on SxS when running with real Windows Kernel32/SxS/etc but honestly that's not tested.
+           It will also break them when running no ReactOS once we implement the SxS support -- at which point, duh, this should be removed.
+
+           But right now, any app depending on SxS is already broken anyway, so this flag only helps.
+        */
+        ImageInfo->DllCharacteristics |= IMAGE_DLLCHARACTERISTICS_NO_ISOLATION;
+    }
+    //end HACK!
     ImageInfo->ImageCharacteristics = NtHeader->FileHeader.Characteristics;
     ImageInfo->Machine = NtHeader->FileHeader.Machine;
     ImageInfo->LoaderFlags = LoaderFlags;
@@ -5731,8 +5744,13 @@ MiCreateImageFileMap(
         ((NtHeader->FileHeader.Characteristics & 0x400) && (FileObject->DeviceObject->Characteristics & 1)) ||
         ((NtHeader->FileHeader.Characteristics & 0x800) && (FileObject->DeviceObject->Characteristics & 0x10)))
     {
-        DPRINT1("MiCreateImageFileMap: IsDataSectionUsed %X\n", IsDataSectionUsed);
-        ASSERT(FALSE);
+        DPRINT1("MiCreateImageFileMap: (%X), %X,%X\n", IsDataSectionUsed, NtHeader->FileHeader.Characteristics, FileObject->DeviceObject->Characteristics);
+
+        if (IsDataSectionUsed)
+        {
+            ASSERT(FALSE);
+        }
+
         ControlArea->u.Flags.FloppyMedia = 1;
     }
 
