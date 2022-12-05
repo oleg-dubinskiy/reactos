@@ -129,4 +129,18 @@ MiRemovePageFromWorkingSet(
     return FALSE;
 }
 
+/* PUBLIC FUNCTIONS ***********************************************************/
+
+NTSTATUS
+NTAPI
+MmAdjustWorkingSetSize(
+    _In_ SIZE_T WorkingSetMinimumInBytes,
+    _In_ SIZE_T WorkingSetMaximumInBytes,
+    _In_ ULONG SystemCache,
+    _In_ BOOLEAN IncreaseOkay)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* EOF */
