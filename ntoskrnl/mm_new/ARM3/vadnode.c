@@ -1017,8 +1017,15 @@ MiRemoveVadCharges(
             PsReturnProcessPageFileQuota(Process, RealCharge);
 
             ASSERT((SSIZE_T)(RealCharge) >= 0);
-            ASSERT(MmTotalCommittedPages >= RealCharge);
-            InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -RealCharge);
+            if (MmTotalCommittedPages < RealCharge)
+            {
+                DPRINT1("MiRemoveVadCharges: FIXME! (%p:%p) MmTotalCommittedPages %IX, RealCharge %IX\n", Vad, Process, MmTotalCommittedPages, RealCharge);
+                ASSERT(MmTotalCommittedPages >= RealCharge);
+            }
+            else
+            {
+                InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -RealCharge);
+            }
 
             if (Process->JobStatus & 0x10) // ?
             {
