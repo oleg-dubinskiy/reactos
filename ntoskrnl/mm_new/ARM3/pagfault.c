@@ -3832,73 +3832,68 @@ UserFault:
             /* Lock the PFN database since we're going to grab a page */
             PfnLockIrql = MiLockPfnDb(APC_LEVEL);
 
-            if (MmAvailablePages < 0x80)
-            {
-                DPRINT1("MmAccessFault: FIXME MiEnsureAvailablePageOrWait()\n");
-                ASSERT(FALSE);
-            }
-
             /* Make sure we have enough pages */
-            if (MmAvailablePages >= 0x80)
+            if (MmAvailablePages < 0x80 && MiEnsureAvailablePageOrWait(CurrentProcess, PfnLockIrql))
             {
-                /* Try to get a zero page */
-                MI_SET_USAGE(MI_USAGE_PEB_TEB);
-                MI_SET_PROCESS2(CurrentProcess->ImageFileName);
+                MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
+                DPRINT("MmAccessFault: return STATUS_PAGE_FAULT_DEMAND_ZERO\n");
+                Status = STATUS_PAGE_FAULT_DEMAND_ZERO;
+                goto Exit3;
+            }
 
-                Color = MI_GET_NEXT_PROCESS_COLOR(CurrentProcess);
+            /* Try to get a zero page */
+            MI_SET_USAGE(MI_USAGE_PEB_TEB);
+            MI_SET_PROCESS2(CurrentProcess->ImageFileName);
 
-                PageFrameIndex = MiRemoveZeroPageSafe(Color);
-                if (!PageFrameIndex)
-                {
-                    /* Grab a page out of there. Later we should grab a colored zero page */
-                    PageFrameIndex = MiRemoveAnyPage(Color);
-                    ASSERT(PageFrameIndex);
+            Color = MI_GET_NEXT_PROCESS_COLOR(CurrentProcess);
 
-                    /* Release the lock since we need to do some zeroing */
-                    MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
+            PageFrameIndex = MiRemoveZeroPageSafe(Color);
+            if (!PageFrameIndex)
+            {
+                /* Grab a page out of there. Later we should grab a colored zero page */
+                PageFrameIndex = MiRemoveAnyPage(Color);
+                ASSERT(PageFrameIndex);
 
-                    /* Zero out the page, since it's for user-mode */
-                    MiZeroPfn(PageFrameIndex);
-
-                    /* Grab the lock again so we can initialize the PFN entry */
-                    PfnLockIrql = MiLockPfnDb(APC_LEVEL);
-                }
-
-                /* Initialize the PFN entry now */
-                MiInitializePfn(PageFrameIndex, Pte, 1);
-
-                /* Increment the count of pages in the process */
-                CurrentProcess->NumberOfPrivatePages++;
-
-                /* One more demand-zero fault */
-                InterlockedIncrement(&KeGetCurrentPrcb()->MmDemandZeroCount);
-
-                /* And we're done with the lock */
+                /* Release the lock since we need to do some zeroing */
                 MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
 
-                /* Fault on user PDE, or fault on user PTE? */
-                if (Pte <= MiHighestUserPte)
-                    /* User fault, build a user PTE */
-                    MI_MAKE_HARDWARE_PTE_USER(&TempPte, Pte, Pte->u.Soft.Protection, PageFrameIndex);
-                else
-                    /* This is a user-mode PDE, create a kernel PTE for it */
-                    MI_MAKE_HARDWARE_PTE(&TempPte, Pte, Pte->u.Soft.Protection, PageFrameIndex);
+                /* Zero out the page, since it's for user-mode */
+                MiZeroPfn(PageFrameIndex);
 
-                /* Write the dirty bit for writeable pages */
-                if (TempPte.u.Long & PTE_READWRITE)
-                    MI_MAKE_DIRTY_PAGE(&TempPte);
-
-                /* And now write down the PTE, making the address valid */
-                MI_WRITE_VALID_PTE(Pte, TempPte);
-                Pfn = MI_PFN_ELEMENT(PageFrameIndex);
-                ASSERT(Pfn->u1.Event == NULL);
-
-                DPRINT("MmAccessFault: FIXME MiAllocateWsle()\n");
+                /* Grab the lock again so we can initialize the PFN entry */
+                PfnLockIrql = MiLockPfnDb(APC_LEVEL);
             }
+
+            /* Initialize the PFN entry now */
+            MiInitializePfn(PageFrameIndex, Pte, 1);
+
+            /* Increment the count of pages in the process */
+            CurrentProcess->NumberOfPrivatePages++;
+
+            /* One more demand-zero fault */
+            InterlockedIncrement(&KeGetCurrentPrcb()->MmDemandZeroCount);
+
+            /* And we're done with the lock */
+            MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
+
+            /* Fault on user PDE, or fault on user PTE? */
+            if (Pte <= MiHighestUserPte)
+                /* User fault, build a user PTE */
+                MI_MAKE_HARDWARE_PTE_USER(&TempPte, Pte, Pte->u.Soft.Protection, PageFrameIndex);
             else
-            {
-                MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
-            }
+                /* This is a user-mode PDE, create a kernel PTE for it */
+                MI_MAKE_HARDWARE_PTE(&TempPte, Pte, Pte->u.Soft.Protection, PageFrameIndex);
+
+            /* Write the dirty bit for writeable pages */
+            if (TempPte.u.Long & PTE_READWRITE)
+                MI_MAKE_DIRTY_PAGE(&TempPte);
+
+            /* And now write down the PTE, making the address valid */
+            MI_WRITE_VALID_PTE(Pte, TempPte);
+            Pfn = MI_PFN_ELEMENT(PageFrameIndex);
+            ASSERT(Pfn->u1.Event == NULL);
+
+            DPRINT("MmAccessFault: FIXME MiAllocateWsle()\n");
 
             DPRINT("MmAccessFault: return STATUS_PAGE_FAULT_DEMAND_ZERO\n");
             Status = STATUS_PAGE_FAULT_DEMAND_ZERO;
