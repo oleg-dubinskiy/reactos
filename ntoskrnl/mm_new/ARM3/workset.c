@@ -98,7 +98,9 @@ MiEliminateWorkingSetEntry(
         }
     }
 
-    if (!Pfn->u3.e1.PrototypePte && PreviousPte.u.Hard.Dirty)
+    if (!Pfn->u3.e1.PrototypePte &&
+        PreviousPte.u.Hard.Dirty &&
+        (PsGetCurrentProcess()->Flags & 0x8000))
     {
         DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
         ASSERT(FALSE);
