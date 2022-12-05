@@ -129,6 +129,23 @@ MiRemovePageFromWorkingSet(
     return FALSE;
 }
 
+NTSTATUS
+NTAPI
+MiEmptyWorkingSet(
+    _In_ PMMSUPPORT WorkingSet,
+    _In_ BOOLEAN IsParam2)
+{
+    if (WorkingSet->VmWorkingSetList == MmWorkingSetList &&
+        PsGetCurrentProcess()->VmDeleted)
+    {
+        DPRINT("MiEmptyWorkingSet: STATUS_PROCESS_IS_TERMINATING. %p, %X\n", WorkingSet, IsParam2);
+        return STATUS_PROCESS_IS_TERMINATING;
+    }
+
+    UNIMPLEMENTED;
+    return STATUS_SUCCESS;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 NTSTATUS
