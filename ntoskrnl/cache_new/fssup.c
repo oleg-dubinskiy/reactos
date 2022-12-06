@@ -262,6 +262,10 @@ CcDeleteSharedCacheMap(
     _In_ KIRQL OldIrql,
     _In_ BOOLEAN IsReleaseFile)
 {
+    PVACB ActiveVacb;
+    LIST_ENTRY list;
+    ULONG ActivePage;
+
     DPRINT("CcDeleteSharedCacheMap: SharedMap %p\n", SharedMap);
 
     RemoveEntryList(&SharedMap->SharedCacheMapLinks);
@@ -271,8 +275,30 @@ CcDeleteSharedCacheMap(
 
     if (SharedMap->VacbActiveCount || SharedMap->NeedToZero)
     {
-        DPRINT1("CcDeleteSharedCacheMap: FIXME\n");
-        ASSERT(FALSE);
+        InitializeListHead(&list);
+        InsertTailList(&list, &SharedMap->SharedCacheMapLinks);
+
+        KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
+
+        ActiveVacb = SharedMap->ActiveVacb;
+        ASSERT(ActiveVacb);
+
+        ActivePage = SharedMap->ActivePage;
+        SharedMap->ActiveVacb = NULL;
+
+        KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
+        KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        CcFreeActiveVacb(SharedMap, ActiveVacb, ActivePage, FALSE);
+
+        while (SharedMap->VacbActiveCount)
+        {
+            CcWaitOnActiveCount(SharedMap);
+        }
+
+        OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+        RemoveEntryList(&SharedMap->SharedCacheMapLinks);
     }
 
     KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
