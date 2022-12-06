@@ -846,8 +846,10 @@ CcPurgeCacheSection(
     PSHARED_CACHE_MAP SharedMap;
     PPRIVATE_CACHE_MAP PrivateMap;
     PVACB Vacb = NULL;
+    ULONG ActivePage;
     BOOLEAN IsFullPurge;
     BOOLEAN Result;
+    BOOLEAN IsVacbLocked;
     KIRQL OldIrql;
 
     DPRINT("CcPurgeCacheSection: %p, %p, %X, %X\n", SectionObjectPointer, FileOffset, Length, UninitializeCacheMaps);
@@ -863,8 +865,8 @@ CcPurgeCacheSection(
         {
             if (!((ULONG_PTR)FileOffset & 1))
             {
-               KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
-               return TRUE;
+                KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+                return TRUE;
             }
 
             FileOffset = (PLARGE_INTEGER)((ULONG_PTR)FileOffset ^ 1);
@@ -874,10 +876,11 @@ CcPurgeCacheSection(
         KeAcquireSpinLockAtDpcLevel(&SharedMap->ActiveVacbSpinLock);
 
         Vacb = SharedMap->ActiveVacb;
-
-        if (SharedMap->ActiveVacb)
+        if (Vacb)
         {
+            ActivePage = SharedMap->ActivePage;
             SharedMap->ActiveVacb = NULL;
+            IsVacbLocked = ((SharedMap->Flags & SHARE_FL_VACB_LOCKED) != 0);
         }
 
         KeReleaseSpinLockFromDpcLevel(&SharedMap->ActiveVacbSpinLock);
@@ -886,10 +889,7 @@ CcPurgeCacheSection(
     KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
 
     if (Vacb)
-    {
-        DPRINT1("CcPurgeCacheSection: FIXME\n");
-        ASSERT(FALSE);
-    }
+        CcFreeActiveVacb(SharedMap, Vacb, ActivePage, IsVacbLocked);
 
     if (SharedMap)
     {
