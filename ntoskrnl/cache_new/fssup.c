@@ -223,6 +223,40 @@ CcDeleteBcbs(
 
 VOID
 NTAPI
+CcWaitOnActiveCount(
+    _In_ PSHARED_CACHE_MAP SharedMap)
+{
+    PKEVENT Event;
+    KIRQL OldIrql;
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueVacbLock);
+
+    if (!SharedMap->VacbActiveCount)
+    {
+        KeReleaseQueuedSpinLock(LockQueueVacbLock, OldIrql);
+        return;
+    }
+
+    Event = SharedMap->WaitOnActiveCount;
+
+    if (Event)
+    {
+        KeClearEvent(Event);
+    }
+    else
+    {
+        Event = &SharedMap->Event;
+        KeInitializeEvent(Event, NotificationEvent, FALSE);
+        SharedMap->WaitOnActiveCount = Event;
+    }
+
+    KeReleaseQueuedSpinLock(LockQueueVacbLock, OldIrql);
+
+    KeWaitForSingleObject(Event, Executive, KernelMode, FALSE, NULL);
+}
+
+VOID
+NTAPI
 CcDeleteSharedCacheMap(
     _In_ PSHARED_CACHE_MAP SharedMap,
     _In_ KIRQL OldIrql,
