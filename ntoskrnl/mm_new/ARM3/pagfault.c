@@ -2104,16 +2104,16 @@ MiResolveTransitionFault(
 
         if (MmAvailablePages < 0x80)
         {
-            if (!MmAvailablePages)
+            if (!MmAvailablePages || !PsGetCurrentThread()->MemoryMaker)
             {
-                DPRINT1("MiResolveTransitionFault: FIXME\n");
-                ASSERT(FALSE);
-            }
+                if (MiEnsureAvailablePageOrWait(CurrentProcess, OldIrql))
+                {
+                    if (IsNeedUnlock)
+                        MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
-            if (!(PsGetCurrentThread()->MemoryMaker))
-            {
-                DPRINT1("MiResolveTransitionFault: FIXME\n");
-                ASSERT(FALSE);
+                    DPRINT1("MiResolveTransitionFault: STATUS_NO_MEMORY\n");
+                    return STATUS_NO_MEMORY;
+                }
             }
         }
 
