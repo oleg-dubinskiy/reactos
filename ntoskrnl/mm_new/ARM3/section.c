@@ -4995,9 +4995,7 @@ MiGetPageForHeader(
     OldIrql = MiLockPfnDb(APC_LEVEL);
 
     if (MmAvailablePages < 0x80)
-    {
-        DPRINT1("MiGetPageForHeader: FIXME MiEnsureAvailablePageOrWait()\n");
-    }
+        MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
     if (IsZeroPage)
         PageNumber = MiRemoveZeroPage(Color);
