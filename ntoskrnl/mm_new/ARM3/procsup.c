@@ -1207,6 +1207,7 @@ MmGrowKernelStackEx(
     MMPTE TempPte;
     MMPTE InvalidPte;
     PFN_NUMBER PageFrameIndex;
+    PFN_NUMBER PagesCount;
     KIRQL OldIrql;
 
     /* Make sure the stack did not overflow */
@@ -1236,12 +1237,27 @@ MmGrowKernelStackEx(
     /* Setup the temporary invalid PTE */
     MI_MAKE_SOFTWARE_PTE(&InvalidPte, MM_NOACCESS);
 
+    PagesCount = (PFN_NUMBER)(LimitPte - NewLimitPte + 1);
+    DPRINT1("MmGrowKernelStackEx: PagesCount %X\n", PagesCount);
+
     /* Acquire the PFN DB lock */
     OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (PagesCount >= (MmResidentAvailablePages - MmSystemLockPagesCount))
+    {
+        DPRINT1("MmGrowKernelStackEx: %IX, %IX\n", MmResidentAvailablePages, MmSystemLockPagesCount);
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        return STATUS_NO_MEMORY;
+    }
+
+    InterlockedExchangeAddSizeT(&MmResidentAvailablePages, -PagesCount);
 
     /* Loop each stack page */
     while (LimitPte >= NewLimitPte)
     {
+        if (MmAvailablePages < 0x80)
+            MiEnsureAvailablePageOrWait(NULL, OldIrql);
+
         /* Get a page and write the current invalid PTE */
         MI_SET_USAGE(MI_USAGE_KERNEL_STACK_EXPANSION);
         MI_SET_PROCESS2(PsGetCurrentProcess()->ImageFileName);
