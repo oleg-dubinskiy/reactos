@@ -73,10 +73,7 @@ MiAllocatePfn(
     OldIrql = MiLockPfnDb(APC_LEVEL);
 
     if (MmAvailablePages < 0x80)
-    {
-        DPRINT1("MiAllocatePfn: FIXME MiEnsureAvailablePageOrWait()\n");
-        ASSERT(FALSE);
-    }
+        MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
     Color = MI_GET_NEXT_COLOR();
     PageFrameNumber = MiRemoveAnyPage(Color);
