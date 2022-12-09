@@ -381,6 +381,9 @@ MiSessionCreateInternal(
 
     for (ix = 0; ix < MiSessionDataPages; ix++)
     {
+        if (MmAvailablePages < 0x80)
+            MiEnsureAvailablePageOrWait(NULL, OldIrql);
+
         /* Get a zeroed colored zero page */
         MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
         Color = MI_GET_NEXT_COLOR();
@@ -404,6 +407,9 @@ MiSessionCreateInternal(
 
     /* Set the pointer to global space */
     SessionGlobal = MiPteToAddress(SessionPte);
+
+    if (MmAvailablePages < 0x80)
+        MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
     /* Get a zeroed colored zero page */
     MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
@@ -448,6 +454,9 @@ MiSessionCreateInternal(
      /* Finally loop all of the session pool tag pages */
     for (ix = 0; ix < MiSessionTagPages; ix++)
     {
+        if (MmAvailablePages < 0x80)
+            MiEnsureAvailablePageOrWait(NULL, OldIrql);
+
         /* Grab a zeroed colored page */
         MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
         Color = MI_GET_NEXT_COLOR();
