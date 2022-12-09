@@ -32,6 +32,7 @@ extern SHARED_CACHE_MAP_LIST_CURSOR CcDirtySharedCacheMapList;
 extern MM_SYSTEMSIZE CcCapturedSystemSize;
 extern LIST_ENTRY CcDeferredWrites;
 extern ULONG CcDirtyPageTarget;
+extern KSPIN_LOCK CcDeferredWriteSpinLock;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -376,7 +377,64 @@ VOID
 NTAPI
 CcPostDeferredWrites(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PDEFERRED_WRITE DeferredWrites;
+    PLIST_ENTRY Entry;
+    ULONG BytesToWrite = 0;
+    KIRQL OldIrql;
+
+    while (TRUE)
+    {
+        DeferredWrites = NULL;
+
+        KeAcquireSpinLock(&CcDeferredWriteSpinLock, &OldIrql);
+
+        Entry = CcDeferredWrites.Flink;
+        while (Entry != &CcDeferredWrites)
+        {
+            DeferredWrites = CONTAINING_RECORD(Entry, DEFERRED_WRITE, DeferredWriteLinks);
+
+            BytesToWrite += DeferredWrites->BytesToWrite;
+
+            if (BytesToWrite < DeferredWrites->BytesToWrite)
+            {
+                DeferredWrites = NULL;
+                break;
+            }
+
+            if (CcCanIWrite(DeferredWrites->FileObject, BytesToWrite, FALSE, 0xFE))
+            {
+                RemoveEntryList(&DeferredWrites->DeferredWriteLinks);
+                break;
+            }
+
+            if (!DeferredWrites->LimitModifiedPages)
+            {
+                DeferredWrites = NULL;
+                break;
+            }
+
+            BytesToWrite -= DeferredWrites->BytesToWrite;
+            DeferredWrites = NULL;
+
+            Entry = Entry->Flink;
+        }
+
+        KeReleaseSpinLock(&CcDeferredWriteSpinLock, OldIrql);
+
+        if (!DeferredWrites)
+            break;
+
+        if (DeferredWrites->Event)
+        {
+            KeSetEvent(DeferredWrites->Event, IO_NO_INCREMENT, FALSE);
+            continue;
+        }
+
+        DPRINT1("CcPostDeferredWrites: DeferredWrites %p\n", DeferredWrites);
+        ASSERT(FALSE);
+        DeferredWrites->PostRoutine(DeferredWrites->Context1, DeferredWrites->Context2);
+        ExFreePoolWithTag(DeferredWrites, 0);
+    }
 }
 
 NTSTATUS
