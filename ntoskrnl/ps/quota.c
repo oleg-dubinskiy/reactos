@@ -83,7 +83,7 @@ PspReturnProcessQuotaSpecifiedPool(IN PEPROCESS Process,
     ASSERT(!(Amount & 0x80000000)); /* we need to be able to negate it */
     if (Process->QuotaUsage[PoolIndex] < Amount)
     {
-        DPRINT1("WARNING: Process->QuotaUsage sanity check failed.\n");
+        DPRINT1("PspReturnProcessQuotaSpecifiedPool: check failed (%IX:%IX)\n", Process->QuotaUsage[PoolIndex], Amount);
     }
     else
     {
