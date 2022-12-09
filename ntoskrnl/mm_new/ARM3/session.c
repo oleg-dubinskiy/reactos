@@ -190,6 +190,9 @@ MiSessionInitializeWorkingSetList(VOID)
     /* Check if we need a page table */
     if (AllocatedPageTable)
     {
+        if (MmAvailablePages < 0x80)
+            MiEnsureAvailablePageOrWait(NULL, OldIrql);
+
         /* Get a zeroed colored zero page */
         MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
         Color = MI_GET_NEXT_COLOR();
@@ -221,6 +224,9 @@ MiSessionInitializeWorkingSetList(VOID)
         MiInitializePfnForOtherProcess(PageFrameIndex, Pde, MmSessionSpace->SessionPageDirectoryIndex);
         KeZeroPages(Pte, PAGE_SIZE);
     }
+
+    if (MmAvailablePages < 0x80)
+        MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
     /* Get a zeroed colored zero page */
     MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
