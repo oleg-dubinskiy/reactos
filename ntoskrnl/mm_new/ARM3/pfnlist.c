@@ -1138,6 +1138,7 @@ MiInsertPageInList(
         if (MmAvailablePages >= 0x400)
             return;
 
+        if (MmAvailablePages < 0x100)
         DPRINT1("MiInsertPageInList: FIXME. MmAvailablePages %X)\n", MmAvailablePages);
         //ASSERT(FALSE);
 
