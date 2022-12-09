@@ -1365,6 +1365,9 @@ MmCreateKernelStack(
     {
         Pte++;
 
+        if (MmAvailablePages < 0x80)
+            MiEnsureAvailablePageOrWait(NULL, OldIrql);
+
         /* Get a page and write the current invalid PTE */
         MI_SET_USAGE(MI_USAGE_KERNEL_STACK);
         MI_SET_PROCESS2(PsGetCurrentProcess()->ImageFileName);
