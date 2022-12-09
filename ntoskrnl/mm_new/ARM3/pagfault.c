@@ -1368,12 +1368,8 @@ MiResolveMappedFileFault(
 
     ASSERT(Pte->u.Soft.Prototype == 1);
 
-    if (MmAvailablePages < 0x80)
-    {
-        DPRINT1("MiResolveMappedFileFault: FIXME MiEnsureAvailablePageOrWait()\n");
-        ASSERT(FALSE);
+    if (MmAvailablePages < 0x80 && MiEnsureAvailablePageOrWait(Process, OldIrql))
         return 0xC7303001;
-    }
 
     Subsection = MiSubsectionPteToSubsection(Pte);
     ControlArea = Subsection->ControlArea;
