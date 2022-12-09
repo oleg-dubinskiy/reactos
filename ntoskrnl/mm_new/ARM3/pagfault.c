@@ -906,7 +906,7 @@ MiResolveDemandZeroFault(
     ASSERT(Pte->u.Hard.Valid == 0);
 
     /* Assert we have enough pages */
-    if (MmAvailablePages < 0x80) // FIXME MiEnsureAvailablePageOrWait()
+    if (MmAvailablePages < 0x80 && MiEnsureAvailablePageOrWait(Process, OldIrql))
     {
         if (HaveLock)
             MiUnlockPfnDb(OldIrql, APC_LEVEL);
