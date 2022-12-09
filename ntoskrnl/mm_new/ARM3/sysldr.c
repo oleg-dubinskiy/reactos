@@ -2598,6 +2598,8 @@ MiReloadBootLoadedDrivers(
 
         for (; Pte < LastPte; Pte++, StartPte++)
         {
+            ASSERT(MmMakeLowMemory == FALSE);
+
             /* Copy the old data */
             OldPte = *StartPte;
             ASSERT(OldPte.u.Hard.Valid == 1);
