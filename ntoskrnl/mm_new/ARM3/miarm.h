@@ -167,7 +167,7 @@ extern PVOID MiSessionSpaceEnd;
 
 /* Returns the color of a page */
 #define MI_GET_PAGE_COLOR(x)          ((x) & MmSecondaryColorMask)
-#if !defined(ONE_CPU)
+#if defined(ONE_CPU)
   #define MI_GET_NEXT_COLOR()         (MI_GET_PAGE_COLOR(++MmSystemPageColor))
 #else
   #define MI_GET_NEXT_COLOR()         (MI_GET_PAGE_COLOR(++KeGetCurrentPrcb()->PageColor))
