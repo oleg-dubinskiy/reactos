@@ -149,6 +149,12 @@ MmCreateProcessAddressSpace(
 
     DPRINT("MmCreateProcessAddressSpace: MinWs %X, Process %p\n", MinWs, Process);
 
+    if (!MiChargeCommitment(4, NULL))
+    {
+        DPRINT1("MmCreateProcessAddressSpace: MiChargeCommitment() failed\n");
+        return FALSE;
+    }
+
     /* Choose a process color */
     Process->NextPageColor = (USHORT)RtlRandom(&MmProcessColorSeed);
 
@@ -157,6 +163,22 @@ MmCreateProcessAddressSpace(
 
     /* Lock PFN database */
     OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if ((PFN_NUMBER)MinWs >= (MmResidentAvailablePages - MmSystemLockPagesCount))
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        ASSERT(MmTotalCommittedPages >= 4);
+        InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -4);
+
+        DPRINT1("MmCreateProcessAddressSpace: %X, %IX, %IX\n", MinWs, MmResidentAvailablePages, MmSystemLockPagesCount);
+        return FALSE;
+    }
+
+    InterlockedExchangeAddSizeT(&MmResidentAvailablePages, -MinWs);
+
+    if (MmAvailablePages < 0x80)
+        MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
     /* Get a zero page for the PDE, if possible */
     Color = MI_GET_NEXT_PROCESS_COLOR(Process);
@@ -174,6 +196,9 @@ MmCreateProcessAddressSpace(
         OldIrql = MiLockPfnDb(APC_LEVEL);
     }
 
+    if (MmAvailablePages < 0x80)
+        MiEnsureAvailablePageOrWait(NULL, OldIrql);
+
     /* Get a zero page for hyperspace, if possible */
     MI_SET_USAGE(MI_USAGE_PAGE_DIRECTORY);
     Color = MI_GET_NEXT_PROCESS_COLOR(Process);
@@ -190,6 +215,9 @@ MmCreateProcessAddressSpace(
         OldIrql = MiLockPfnDb(APC_LEVEL);
     }
 
+    if (MmAvailablePages < 0x80)
+        MiEnsureAvailablePageOrWait(NULL, OldIrql);
+
     /* Get a zero page for VadBitmap, if possible */
     MI_SET_USAGE(MI_USAGE_PAGE_DIRECTORY);
     Color = MI_GET_NEXT_PROCESS_COLOR(Process);
@@ -205,6 +233,9 @@ MmCreateProcessAddressSpace(
         MiZeroPhysicalPage(VadBitmapIndex);
         OldIrql = MiLockPfnDb(APC_LEVEL);
     }
+
+    if (MmAvailablePages < 0x80)
+        MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
     /* Get a zero page for the woring set list, if possible */
     MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
