@@ -1626,6 +1626,22 @@ MiSessionCommitPageTables(
     if (!PageCount)
         return STATUS_SUCCESS;
 
+    /* Acquire the PFN lock */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    DPRINT1("MiSessionCommitPageTables: FIXME MiChargeCommitment()\n");
+
+    if (PageCount > (MmResidentAvailablePages - MmSystemLockPagesCount - 20))
+    {
+        DPRINT1("MiSessionCommitPageTables: FIXME. STATUS_NO_MEMORY\n");
+        ASSERT(FALSE);
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        return STATUS_NO_MEMORY;
+    }
+
+    InterlockedExchangeAddSizeT(&MmResidentAvailablePages, -PageCount);
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
     /* Reset the start PDE and index */
     StartPde = MiAddressToPde(StartVa);
     Index = (((ULONG_PTR)StartVa - (ULONG_PTR)MmSessionBase) >> 22);
@@ -1641,11 +1657,14 @@ MiSessionCommitPageTables(
             /* We don't, so the PDE shouldn't be ready yet */
             ASSERT(StartPde->u.Hard.Valid == 0);
 
-            /* ReactOS check to avoid MiEnsureAvailablePageOrWait */
-            ASSERT(MmAvailablePages >= 32);
-
             /* Acquire the PFN lock and grab a zero page */
             OldIrql = MiLockPfnDb(APC_LEVEL);
+
+            if (MiEnsureAvailablePageOrWait((PEPROCESS)1, OldIrql))
+            {
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                continue;
+            }
 
             MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
             MI_SET_PROCESS2(PsGetCurrentProcess()->ImageFileName);
@@ -1690,6 +1709,15 @@ MiSessionCommitPageTables(
         /* Update the performance counters! */
         InterlockedExchangeAddSizeT(&MmSessionSpace->NonPageablePages, ActualPages);
         InterlockedExchangeAddSizeT(&MmSessionSpace->CommittedPages, ActualPages);
+    }
+
+    if (ActualPages < PageCount)
+    {
+        ASSERT((SSIZE_T)(PageCount - ActualPages) >= 0);
+        ASSERT(MmTotalCommittedPages >= (PageCount - ActualPages));
+
+        InterlockedExchangeAddSizeT(&MmTotalCommittedPages, ActualPages - PageCount);
+        InterlockedExchangeAddSizeT(&MmResidentAvailablePages, (PageCount - ActualPages));
     }
 
     /* Return status */
