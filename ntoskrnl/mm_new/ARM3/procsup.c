@@ -493,41 +493,6 @@ MmInitializeHandBuiltProcess2(
     return STATUS_SUCCESS;
 }
 
-VOID
-NTAPI
-MiInitializeWorkingSetList(
-    _In_ PEPROCESS CurrentProcess)
-{
-    PMMPFN Pfn1;
-    PMMPTE sysPte;
-    MMPTE tempPte;
-
-    /* Setup some bogus list data */
-    MmWorkingSetList->LastEntry = CurrentProcess->Vm.MinimumWorkingSetSize;
-    MmWorkingSetList->HashTable = NULL;
-    MmWorkingSetList->HashTableSize = 0;
-    MmWorkingSetList->NumberOfImageWaiters = 0;
-    MmWorkingSetList->Wsle = (PVOID)(ULONG_PTR)0xDEADBABEDEADBABEULL;
-    MmWorkingSetList->VadBitMapHint = 1;
-    MmWorkingSetList->HashTableStart = (PVOID)(ULONG_PTR)0xBADAB00BBADAB00BULL;
-    MmWorkingSetList->HighestPermittedHashAddress = (PVOID)(ULONG_PTR)0xCAFEBABECAFEBABEULL;
-    MmWorkingSetList->FirstFree = 1;
-    MmWorkingSetList->FirstDynamic = 2;
-    MmWorkingSetList->NextSlot = 3;
-    MmWorkingSetList->LastInitializedWsle = 4;
-
-    /* The rule is that the owner process is always in the FLINK of the PDE's PFN entry */
-    Pfn1 = MiGetPfnEntry(CurrentProcess->Pcb.DirectoryTableBase[0] >> PAGE_SHIFT);
-    ASSERT(Pfn1->u4.PteFrame == MiGetPfnEntryIndex(Pfn1));
-    Pfn1->u1.Event = (PKEVENT)CurrentProcess;
-
-    /* Map the process working set in kernel space */
-    sysPte = MiReserveSystemPtes(1, SystemPteSpace);
-    MI_MAKE_HARDWARE_PTE_KERNEL(&tempPte, sysPte, MM_READWRITE, CurrentProcess->WorkingSetPage);
-    MI_WRITE_VALID_PTE(sysPte, tempPte);
-    CurrentProcess->Vm.VmWorkingSetList = MiPteToAddress(sysPte);
-}
-
 NTSTATUS
 NTAPI
 MmInitializeProcessAddressSpace(

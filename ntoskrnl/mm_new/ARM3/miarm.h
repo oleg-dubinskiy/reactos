@@ -2536,6 +2536,12 @@ MiRemovePageFromWorkingSet(
     _In_ PMMSUPPORT WorkingSet
 );
 
+VOID
+NTAPI
+MiInitializeWorkingSetList(
+    _In_ PEPROCESS CurrentProcess
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION
