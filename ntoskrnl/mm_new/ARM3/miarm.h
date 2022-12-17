@@ -538,6 +538,7 @@ extern ULONG_PTR MmSubsectionBase;
 extern ULONG MmSystemPageColor;
 extern PMMPDE MiHighestUserPde;
 extern PMMPTE MiHighestUserPte;
+extern MMPTE MmPteGlobal;
 extern MMPTE ValidKernelPte;
 extern MMSUPPORT MmSystemCacheWs;
 extern PMMWSL MmWorkingSetList;
@@ -1561,10 +1562,13 @@ MI_MAKE_HARDWARE_PTE_KERNEL(
     ASSERT((MappingPte < (PMMPTE)PDE_BASE) || (MappingPte > (PMMPTE)PDE_TOP));
 
     /* Start fresh */
-    *NewPte = ValidKernelPte;
+    NewPte->u.Long = 0;
+    NewPte->u.Hard.Valid = 1;
+    NewPte->u.Hard.Accessed = 1;
 
     /* Set the protection and page */
     NewPte->u.Hard.PageFrameNumber = PageFrameNumber;
+    NewPte->u.Long |= MmPteGlobal.u.Long;
     NewPte->u.Long |= MmProtectToPteMask[ProtectionMask];
 }
 

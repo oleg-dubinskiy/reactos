@@ -1235,6 +1235,9 @@ MmGrowKernelStackEx(
         /* Setup the template stack PTE */
         MI_MAKE_HARDWARE_PTE_KERNEL(&TempPte, LimitPte, MM_READWRITE, PageFrameIndex);
 
+        /* Set it dirty */
+        MI_MAKE_DIRTY_PAGE(&TempPte);
+
         /* Write the valid PTE */
         MI_WRITE_VALID_PTE(LimitPte--, TempPte);
     }
@@ -1321,6 +1324,9 @@ MmCreateKernelStack(
 
     /* Setup the template stack PTE */
     MI_MAKE_HARDWARE_PTE_KERNEL(&TempPte, (Pte + 1), MM_READWRITE, 0);
+
+    /* Set it dirty */
+    MI_MAKE_DIRTY_PAGE(&TempPte);
 
     /* Acquire the PFN DB lock */
     OldIrql = MiLockPfnDb(APC_LEVEL);

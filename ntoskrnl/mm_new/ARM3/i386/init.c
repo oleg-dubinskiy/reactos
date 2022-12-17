@@ -8,6 +8,8 @@
 
 /* GLOBALS ********************************************************************/
 
+MMPTE MmPteGlobal = {{ 0 }};
+
 /* FIXME: These should be PTE_GLOBAL */
 MMPTE ValidKernelPde = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
 MMPTE ValidKernelPte = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
