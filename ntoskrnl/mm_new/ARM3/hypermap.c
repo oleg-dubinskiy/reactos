@@ -176,6 +176,22 @@ MiUnmapPageInHyperSpace(
     KeReleaseSpinLock(&Process->HyperSpaceLock, OldIrql);
 }
 
+VOID
+NTAPI
+MiUnmapPageInHyperSpaceFromDpc(
+    _In_ PEPROCESS Process,
+    _In_ PVOID Address)
+{
+    ASSERT(Process == PsGetCurrentProcess());
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+
+    /* Blow away the mapping */
+    MiAddressToPte(Address)->u.Long = 0;
+
+    /* Release the hyperlock */
+    KeReleaseSpinLockFromDpcLevel(&Process->HyperSpaceLock);
+}
+
 PVOID
 NTAPI
 MiMapPagesInZeroSpace(
