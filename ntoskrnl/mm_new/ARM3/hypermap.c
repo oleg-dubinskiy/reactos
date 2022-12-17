@@ -13,6 +13,7 @@ PMMPTE MmLastReservedMappingPte;
 PMMPTE MiFirstReservedZeroingPte;
 
 extern MMPTE ValidKernelPteLocal;
+extern BOOLEAN MiWriteCombiningPtes;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -25,7 +26,10 @@ MiMapPageInHyperSpace(
 {
     MMPTE TempPte;
     PMMPTE Pte;
+    PMMPFN Pfn;
     PFN_NUMBER Offset;
+
+    DPRINT("MiMapPageInHyperSpace: %p, %X, %X\n", Process, Page, *OldIrql);
 
     /* Never accept page 0 or non-physical pages */
     ASSERT(Page != 0);
@@ -34,6 +38,27 @@ MiMapPageInHyperSpace(
     /* Build the PTE */
     TempPte = ValidKernelPteLocal;
     TempPte.u.Hard.PageFrameNumber = Page;
+
+    Pfn = MI_PFN_ELEMENT(Page);
+
+    if (Pfn->u3.e1.CacheAttribute == MiWriteCombined)
+    {
+        if (MiWriteCombiningPtes)
+        {
+            TempPte.u.Hard.CacheDisable = 0;
+            TempPte.u.Hard.WriteThrough = 1;
+        }
+        else
+        {
+            TempPte.u.Hard.CacheDisable = 1;
+            TempPte.u.Hard.WriteThrough = 0;
+        }
+    }
+    else if (Pfn->u3.e1.CacheAttribute == MiNonCached)
+    {
+        TempPte.u.Hard.CacheDisable = 1;
+        TempPte.u.Hard.WriteThrough = 1;
+    }
 
     /* Pick the first hyperspace PTE */
     Pte = MmFirstReservedMappingPte;
