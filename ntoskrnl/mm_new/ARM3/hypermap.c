@@ -87,6 +87,78 @@ MiMapPageInHyperSpace(
     return MiPteToAddress(Pte);
 }
 
+PVOID
+NTAPI
+MiMapPageInHyperSpaceAtDpc(
+    _In_ PEPROCESS Process,
+    _In_ PFN_NUMBER PageNumber)
+{
+    MMPTE TempPte;
+    PMMPTE Pte;
+    PMMPFN Pfn;
+    PFN_NUMBER Offset;
+
+    DPRINT("MiMapPageInHyperSpaceAtDpc: %p, %X\n", Process, PageNumber);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+
+    /* Never accept page 0 or non-physical pages */
+    ASSERT(PageNumber != 0);
+    ASSERT(MiGetPfnEntry(PageNumber) != NULL);
+
+    /* Build the PTE */
+    TempPte = ValidKernelPteLocal;
+    TempPte.u.Hard.PageFrameNumber = PageNumber;
+
+    Pfn = MI_PFN_ELEMENT(PageNumber);
+
+    if (Pfn->u3.e1.CacheAttribute == MiWriteCombined)
+    {
+        if (MiWriteCombiningPtes)
+        {
+            TempPte.u.Hard.CacheDisable = 0;
+            TempPte.u.Hard.WriteThrough = 1;
+        }
+        else
+        {
+            TempPte.u.Hard.CacheDisable = 1;
+            TempPte.u.Hard.WriteThrough = 0;
+        }
+    }
+    else if (Pfn->u3.e1.CacheAttribute == MiNonCached)
+    {
+        TempPte.u.Hard.CacheDisable = 1;
+        TempPte.u.Hard.WriteThrough = 1;
+    }
+
+    /* Acquire the hyperlock */
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(Process == PsGetCurrentProcess());
+    KeAcquireSpinLockAtDpcLevel(&Process->HyperSpaceLock);
+
+    /* Pick the first hyperspace PTE */
+    Pte = MmFirstReservedMappingPte;
+
+    /* Now get the first free PTE */
+    Offset = PFN_FROM_PTE(Pte);
+    if (!Offset)
+    {
+        /* Reset the PTEs */
+        Offset = MI_HYPERSPACE_PTES;
+        KeFlushProcessTb();
+    }
+
+    /* Prepare the next PTE */
+    Pte->u.Hard.PageFrameNumber = (Offset - 1);
+
+    /* Write the current PTE */
+    Pte += Offset;
+    MI_WRITE_VALID_PTE(Pte, TempPte);
+
+    /* Return the address */
+    return MiPteToAddress(Pte);
+}
+
 VOID
 NTAPI
 MiUnmapPageInHyperSpace(
