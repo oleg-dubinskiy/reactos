@@ -448,6 +448,20 @@ MiInitializeWorkingSetList(
     CurrentProcess->Vm.VmWorkingSetList = MiPteToAddress(sysPte);
 }
 
+ULONG
+NTAPI
+MiLocateWsle(
+    _In_ PVOID Address,
+    _In_ PMMWSL WsList,
+    _In_ ULONG InWsIndex,
+    _In_ BOOLEAN Parametr4)
+{
+    DPRINT1("MiLocateWsle: Address %p, WsList %p, InWsIndex %X, Parametr4 %X\n", Address, WsList, InWsIndex, Parametr4);
+    UNIMPLEMENTED;
+    //ASSERT(FALSE);
+    return 0;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 NTSTATUS

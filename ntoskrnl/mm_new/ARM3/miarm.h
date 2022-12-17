@@ -2560,6 +2560,15 @@ MiInitializeWorkingSetList(
     _In_ PEPROCESS CurrentProcess
 );
 
+ULONG
+NTAPI
+MiLocateWsle(
+    _In_ PVOID Address,
+    _In_ PMMWSL WsList,
+    _In_ ULONG InWsIndex,
+    _In_ BOOLEAN Parametr4
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION
