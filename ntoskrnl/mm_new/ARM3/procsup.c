@@ -1202,7 +1202,7 @@ MmGrowKernelStackEx(
     MI_MAKE_SOFTWARE_PTE(&InvalidPte, MM_NOACCESS);
 
     PagesCount = (PFN_NUMBER)(LimitPte - NewLimitPte + 1);
-    DPRINT1("MmGrowKernelStackEx: PagesCount %X\n", PagesCount);
+    DPRINT("MmGrowKernelStackEx: PagesCount %X\n", PagesCount);
 
     /* Acquire the PFN DB lock */
     OldIrql = MiLockPfnDb(APC_LEVEL);
