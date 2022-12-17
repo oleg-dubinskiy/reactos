@@ -8,9 +8,17 @@
 
 /* GLOBALS ********************************************************************/
 
+#if (_MI_PAGING_LEVELS == 2)
+  ULONG MiMaximumWorkingSet = ((ULONG_PTR)MI_USER_PROBE_ADDRESS / PAGE_SIZE);
+#else
+ #error FIXME
+#endif
+
 SIZE_T MmMinimumWorkingSetSize;
 SIZE_T MmMaximumWorkingSetSize;
 SIZE_T MmPagesAboveWsMinimum;
+
+extern PVOID MmHyperSpaceEnd;
 
 /* FUNCTIONS ******************************************************************/
 

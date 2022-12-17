@@ -10,12 +10,6 @@
 
 ULONG MmFrontOfList;
 
-#if (_MI_PAGING_LEVELS == 2)
-  ULONG MiMaximumWorkingSet = ((ULONG_PTR)MI_USER_PROBE_ADDRESS / PAGE_SIZE);
-#else
- #error FIXME
-#endif
-
 PMMPTE MmFirstFreeSystemCache;
 PMMPTE MmLastFreeSystemCache;
 PMMPTE MmSystemCachePteBase;
@@ -27,6 +21,7 @@ extern PVOID MmSystemCacheEnd;
 extern ULONG MmSecondaryColorMask;
 extern PMMWSL MmSystemCacheWorkingSetList;
 extern volatile LONG KiTbFlushTimeStamp;
+extern ULONG MiMaximumWorkingSet;
 
 /* FUNCTIONS ******************************************************************/
 
