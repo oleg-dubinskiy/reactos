@@ -278,7 +278,6 @@ MmDeleteProcessAddressSpace2(
     PFN_NUMBER HyperFrameIndex;
     PFN_NUMBER VadBitmapIndex;
     KIRQL OldIrql;
-    KIRQL Irql;
 
     DPRINT("MmDeleteProcessAddressSpace2: Process %p\n", Process);
 
@@ -302,9 +301,9 @@ MmDeleteProcessAddressSpace2(
 
         /* hyperspace and vad bitmap */
         HyperFrameIndex = (Process->Pcb.DirectoryTableBase[1] / PAGE_SIZE);
-        Pte = MiMapPageInHyperSpace(CurrentProcess, HyperFrameIndex, &Irql);
+        Pte = MiMapPageInHyperSpaceAtDpc(CurrentProcess, HyperFrameIndex);
         VadBitmapIndex = (Pte + MiAddressToPteOffset(MI_VAD_BITMAP))->u.Hard.PageFrameNumber;
-        MiUnmapPageInHyperSpace(CurrentProcess, Pte, Irql);
+        MiUnmapPageInHyperSpaceFromDpc(CurrentProcess, Pte);
 
         /* Now map vad bitmap and its page table */
         Pfn1 = MiGetPfnEntry(VadBitmapIndex);

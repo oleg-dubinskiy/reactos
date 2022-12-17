@@ -5042,7 +5042,6 @@ MiCopyHeaderIfResident(
     MMPTE PteContents;
     PFN_NUMBER PageFrameIndex;
     KIRQL OldIrql;
-    KIRQL MapIrql;
 
     DPRINT("MiCopyHeaderIfResident: FileObject %p, PageNumber %X\n", FileObject, PageNumber);
 
@@ -5113,12 +5112,12 @@ MiCopyHeaderIfResident(
     }
 
     Process = PsGetCurrentProcess();
-    ImagePte = MiMapPageInHyperSpace(Process, PageFrameIndex, &MapIrql);
+    ImagePte = MiMapPageInHyperSpaceAtDpc(Process, PageFrameIndex);
 
     ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
     RtlCopyMemory(ImageHeader, ImagePte, PAGE_SIZE);
 
-    MiUnmapPageInHyperSpace(Process, ImagePte, MapIrql);
+    MiUnmapPageInHyperSpaceFromDpc(Process, ImagePte);
 
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
     return ImageHeader;

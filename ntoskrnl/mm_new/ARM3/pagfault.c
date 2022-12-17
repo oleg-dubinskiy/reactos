@@ -1638,16 +1638,15 @@ MiCompleteInPage(
         PEPROCESS process = PsGetCurrentProcess();
         PVOID startAddress;
         PVOID endAddress;
-        KIRQL oldIrql;
 
         ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
 
-        startAddress = MiMapPageInHyperSpace(process, *ReadEndPage, &oldIrql);
+        startAddress = MiMapPageInHyperSpaceAtDpc(process, *ReadEndPage);
         endAddress = (PVOID)((ULONG_PTR)startAddress + ReadOffset);
 
         RtlZeroMemory(endAddress, (PAGE_SIZE - ReadOffset));
 
-        MiUnmapPageInHyperSpace(process, startAddress, oldIrql);
+        MiUnmapPageInHyperSpaceFromDpc(process, startAddress);
     }
 
     MdlPageCount = ((Mdl->ByteCount - 1) / PAGE_SIZE);

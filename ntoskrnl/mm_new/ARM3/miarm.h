@@ -1908,12 +1908,26 @@ MiMapPageInHyperSpace(
     _In_ PKIRQL OldIrql
 );
 
+PVOID
+NTAPI
+MiMapPageInHyperSpaceAtDpc(
+    _In_ PEPROCESS Process,
+    _In_ PFN_NUMBER PageNumber
+);
+
 VOID
 NTAPI
 MiUnmapPageInHyperSpace(
     _In_ PEPROCESS Process,
     _In_ PVOID Address,
     _In_ KIRQL OldIrql
+);
+
+VOID
+NTAPI
+MiUnmapPageInHyperSpaceFromDpc(
+    _In_ PEPROCESS Process,
+    _In_ PVOID Address
 );
 
 PVOID
