@@ -612,7 +612,7 @@ MiInitializeCopyOnWritePfn(
     }
     else
     {
-        DPRINT1("MiCopyOnWrite: FIXME\n");
+        DPRINT1("MiInitializeCopyOnWritePfn: FIXME\n");
         ASSERT(FALSE);
     }
 
@@ -644,7 +644,7 @@ MiInitializeCopyOnWritePfn(
     {
         if (!NT_SUCCESS(MiCheckPdeForPagedPool(Pte)))
         {
-            DPRINT1("MiCopyOnWrite: KeBugCheckEx()\n");
+            DPRINT1("MiInitializeCopyOnWritePfn: KeBugCheckEx()\n");
             ASSERT(FALSE);
             KeBugCheckEx(0x1A, 0x61940, (ULONG_PTR)Pte, (ULONG_PTR)Pde->u.Long, (ULONG_PTR)MiPteToAddress(Pte));
         }
