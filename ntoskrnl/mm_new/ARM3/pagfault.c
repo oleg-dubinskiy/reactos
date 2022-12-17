@@ -663,7 +663,7 @@ MiCopyOnWrite(
     _In_ PVOID Address,
     _In_ PMMPTE Pte)
 {
-    PEPROCESS CurrenProcess = PsGetCurrentProcess();
+    PEPROCESS CurrentProcess = PsGetCurrentProcess();
     PMM_SESSION_SPACE Session;
     PVOID MappingAddress;
     PMMWSL WsList;
@@ -695,7 +695,7 @@ MiCopyOnWrite(
         WsList = MmWorkingSetList;
         Session = NULL;
 
-        if (CurrenProcess->ForkInProgress)
+        if (CurrentProcess->ForkInProgress)
         {
             DPRINT1("MiCopyOnWrite: FIXME\n");
             ASSERT(FALSE);
@@ -740,7 +740,7 @@ MiCopyOnWrite(
             }
         }
 
-        Color = MI_GET_NEXT_PROCESS_COLOR(CurrenProcess);
+        Color = MI_GET_NEXT_PROCESS_COLOR(CurrentProcess);
         CopyPageNumber = MiRemoveAnyPage(MI_GET_PAGE_COLOR(Color));
     }
 
@@ -776,7 +776,7 @@ MiCopyOnWrite(
     }
     else
     {
-        MappingAddress = MiMapPageInHyperSpace(CurrenProcess, CopyPageNumber, &OldIrql);
+        MappingAddress = MiMapPageInHyperSpace(CurrentProcess, CopyPageNumber, &OldIrql);
     }
 
     RtlCopyMemory(MappingAddress, (PVOID)((ULONG_PTR)Address & ~(PAGE_SIZE - 1)), PAGE_SIZE);
@@ -813,7 +813,7 @@ MiCopyOnWrite(
         //FIXME: Use KeFlushSingleTb() instead
         KeFlushEntireTb(TRUE, FALSE);
 
-        CurrenProcess->NumberOfPrivatePages++;
+        CurrentProcess->NumberOfPrivatePages++;
     }
     else
     {
@@ -829,7 +829,7 @@ MiCopyOnWrite(
 
     MiDecrementShareCount(Pfn, PageNumber);
 
-    if (!Session && CurrenProcess->CloneRoot)
+    if (!Session && CurrentProcess->CloneRoot)
     {
         DPRINT1("MiCopyOnWrite: FIXME\n");
         ASSERT(FALSE);
