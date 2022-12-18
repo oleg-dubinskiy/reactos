@@ -373,6 +373,8 @@ extern PVOID MiDebugMapping;
 extern PMMPTE MmDebugPte;
 extern KEVENT MmAvailablePagesEvent;
 extern KEVENT MmAvailablePagesEventHigh;
+extern ULONG MiMaximumWorkingSet;
+extern SIZE_T MmMaximumWorkingSetSize;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1802,6 +1804,10 @@ MmArmInitSystem(
             MmTotalCommitLimit = MmAvailablePages;
 
         MmTotalCommitLimitMaximum = MmTotalCommitLimit;
+
+        MmMaximumWorkingSetSize = (MmAvailablePages - 0x200);
+        if (MmMaximumWorkingSetSize > (MiMaximumWorkingSet - 5))
+            MmMaximumWorkingSetSize = MiMaximumWorkingSet - 5;
 
         /* Size up paged pool and build the shadow system page directory */
         MiBuildPagedPool();
