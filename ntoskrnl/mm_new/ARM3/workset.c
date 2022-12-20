@@ -19,8 +19,37 @@ SIZE_T MmMaximumWorkingSetSize;
 SIZE_T MmPagesAboveWsMinimum;
 
 extern PVOID MmHyperSpaceEnd;
+extern LIST_ENTRY MmWorkingSetExpansionHead;
 
 /* FUNCTIONS ******************************************************************/
+
+VOID
+NTAPI
+MiAllowWorkingSetExpansion(
+    _In_ PMMSUPPORT WorkSet)
+{
+    KIRQL OldIrql;
+
+    DPRINT1("MiAllowWorkingSetExpansion: %p\n", WorkSet);
+
+    ASSERT(WorkSet->WorkingSetExpansionLinks.Flink == NULL);
+    ASSERT(WorkSet->WorkingSetExpansionLinks.Blink == NULL);
+
+  #if defined(ONE_CPU)
+    OldIrql = KeRaiseIrqlToDpcLevel();
+  #else
+    OldIrql = MiAcquireExpansionLock();
+  #endif
+
+    InsertTailList(&MmWorkingSetExpansionHead, &WorkSet->WorkingSetExpansionLinks);
+
+  #if defined(ONE_CPU)
+    KeLowerIrql(OldIrql);
+  #else
+    MiReleaseExpansionLock(OldIrql);
+  #endif
+
+}
 
 BOOLEAN
 NTAPI
