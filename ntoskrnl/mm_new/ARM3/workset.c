@@ -14,7 +14,7 @@
  #error FIXME
 #endif
 
-SIZE_T MmMinimumWorkingSetSize;
+SIZE_T MmMinimumWorkingSetSize = 0x14;
 SIZE_T MmMaximumWorkingSetSize;
 SIZE_T MmPagesAboveWsMinimum;
 
@@ -424,7 +424,7 @@ MmAdjustWorkingSetSizeEx(
         InterlockedExchangeAddSizeT(&MmResidentAvailablePages, Delta);
     }
 
-    ASSERT((WorkingSetList->FirstFree <= WorkingSetList->LastInitializedWsle) || (WorkingSetList->FirstFree == 0xFFFFFFF)); // WSLE_NULL_INDEX
+    ASSERT((WorkingSetList->FirstFree <= WorkingSetList->LastInitializedWsle) || (WorkingSetList->FirstFree == WSLE_NULL_INDEX));
 
 Cleanup:
 

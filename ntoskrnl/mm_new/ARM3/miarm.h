@@ -194,6 +194,8 @@ extern PVOID MiSessionSpaceEnd;
 #define MiGetPteContents(Pte) \
     (ULONGLONG)((Pte != NULL) ? (Pte->u.Long) : (0))
 
+#define WSLE_NULL_INDEX 0x0FFFFFFF
+
 /* FIXFIX: These should go in ex.h after the pool merge */
 
 #ifdef _WIN64
