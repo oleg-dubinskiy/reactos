@@ -375,6 +375,7 @@ extern KEVENT MmAvailablePagesEvent;
 extern KEVENT MmAvailablePagesEventHigh;
 extern ULONG MiMaximumWorkingSet;
 extern SIZE_T MmMaximumWorkingSetSize;
+extern LIST_ENTRY MmWorkingSetExpansionHead;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1549,6 +1550,8 @@ MmArmInitSystem(
         KeInitializeEvent(&MmCollidedFlushEvent, NotificationEvent, FALSE);
         KeInitializeEvent(&MmAvailablePagesEvent, NotificationEvent, TRUE);
         KeInitializeEvent(&MmAvailablePagesEventHigh, NotificationEvent, TRUE);
+
+        InitializeListHead(&MmWorkingSetExpansionHead);
 
         InitializeSListHead(&MmDeadStackSListHead);     /* Initialize the dead stack S-LIST */
         InitializeSListHead(&MmInPageSupportSListHead); /* Initialize the page support stack S-LIST */

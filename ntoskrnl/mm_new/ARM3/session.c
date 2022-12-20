@@ -704,7 +704,6 @@ MiInitializeSessionWsSupport(VOID)
 
     /* Initialize the list heads */
     InitializeListHead(&MiSessionWsList);
-    InitializeListHead(&MmWorkingSetExpansionHead);
 }
 
 VOID
