@@ -2569,6 +2569,12 @@ MiLocateWsle(
     _In_ BOOLEAN Parametr4
 );
 
+VOID
+NTAPI
+MiAllowWorkingSetExpansion(
+    _In_ PMMSUPPORT WorkSet
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION

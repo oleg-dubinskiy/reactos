@@ -143,7 +143,7 @@ MiInitializeSystemCache(
 
     MmLastFreeSystemCache = CachePte;
 
-    //FIXME MiAllowWorkingSetExpansion();
+    MiAllowWorkingSetExpansion(&MmSystemCacheWs);
 }
 
 NTSTATUS
