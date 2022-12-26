@@ -11,12 +11,15 @@
 MMPTE MmPteGlobal = {{ 0 }};
 
 /* FIXME: These should be PTE_GLOBAL */
-MMPTE ValidKernelPde = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
+MMPDE ValidKernelPde = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
 MMPTE ValidKernelPte = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
 
 /* The same, but for local pages */
-MMPTE ValidKernelPdeLocal = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
+MMPDE ValidKernelPdeLocal = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
 MMPTE ValidKernelPteLocal = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
+
+MMPDE ValidPdePde = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
+MMPTE ValidPtePte = {{ PTE_VALID | PTE_READWRITE | PTE_DIRTY | PTE_ACCESSED }};
 
 /* Template PDE for a demand-zero page */
 MMPDE DemandZeroPde  = {{ (MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS) }};
@@ -27,6 +30,8 @@ MMPTE PrototypePte = {{(MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS) | PTE_P
 
 /* Template PTE for decommited page */
 MMPTE MmDecommittedPte = {{MM_DECOMMIT << MM_PTE_SOFTWARE_PROTECTION_BITS}};
+
+MMPTE NoAccessPte = {{ MM_PROTECT_SPECIAL << MM_PTE_SOFTWARE_PROTECTION_BITS }};
 
 extern PMMCOLOR_TABLES MmFreePagesByColor[FreePageList + 1];
 extern PMEMORY_ALLOCATION_DESCRIPTOR MxFreeDescriptor;
