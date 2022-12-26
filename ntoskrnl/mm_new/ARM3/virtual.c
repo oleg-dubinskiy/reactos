@@ -3336,6 +3336,269 @@ Exit:
     return Status;
 }
 
+NTSTATUS
+NTAPI
+MiResetVirtualMemory(
+    IN ULONG_PTR StartingAddress,
+    IN ULONG_PTR EndingAddress,
+    IN PMMVAD Vad,
+    IN PEPROCESS Process)
+{
+    PETHREAD Thread = PsGetCurrentThread();
+    MMPTE_FLUSH_LIST PteFlushList;
+    PMMPFN Pfn;
+    PMMPDE Pde;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    PMMPTE Proto;
+    MMPTE TempPte;
+    PFN_NUMBER PageNumber;
+    ULONG ix;
+    BOOLEAN IsFirst = TRUE;
+    KIRQL OldIrql = MM_NOIRQL;
+
+    DPRINT("MiResetVirtualMemory: (%IX:%IX) %p, %p\n", StartingAddress, EndingAddress, Vad, Process);
+
+    if (!Vad->u.VadFlags.PrivateMemory && Vad->ControlArea->FilePointer)
+    {
+        DPRINT1("MiResetVirtualMemory: STATUS_USER_MAPPED_FILE\n");
+        return STATUS_USER_MAPPED_FILE;
+    }
+
+    Pte = MiAddressToPte(StartingAddress);
+    LastPte = MiAddressToPte(EndingAddress);
+
+    PteFlushList.Count = 0;
+
+    //FIXME:
+    //MmLockPagableSectionByHandle(ExPageLockHandle);
+    MiLockProcessWorkingSetUnsafe(Process, Thread);
+
+    while (Pte <= LastPte)
+    {
+        if (MiIsPteOnPdeBoundary(Pte) || IsFirst)
+        {
+            if (PteFlushList.Count)
+            {
+                if (PteFlushList.Count == 1)
+                {
+                    //FIXME:
+                    //KeFlushSingleTb(PteFlushList.FlushVa[0], FALSE);
+
+                    //HACK:
+                    __invlpg(PteFlushList.FlushVa[0]);
+                }
+                else if (PteFlushList.Count >= 0x21)
+                {
+                    KeFlushProcessTb();
+                }
+                else
+                {
+                    //FIXME:
+                    //KeFlushMultipleTb(PteFlushList.Count, PteFlushList.FlushVa, FALSE);
+
+                    //HACK:
+                    for (ix = 0; ix < PteFlushList.Count; ix++)
+                        __invlpg(PteFlushList.FlushVa[ix]);
+                }
+
+                PteFlushList.Count = 0;
+            }
+
+            IsFirst = FALSE;
+
+            Pde = MiAddressToPte(Pte);
+
+            ASSERT(KeAreAllApcsDisabled() == TRUE);
+
+            if (!Pde->u.Long)
+            {
+                Pde++;
+                Pte = MiPteToAddress(Pde);
+                continue;
+            }
+
+            if (!Pde->u.Hard.Valid)
+            {
+                if (OldIrql != MM_NOIRQL)
+                {
+                    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                    ASSERT(KeAreAllApcsDisabled() == TRUE);
+                }
+
+                MiMakeSystemAddressValid(MiPteToAddress(Pde), Process);
+
+                if (OldIrql != MM_NOIRQL)
+                    OldIrql = MiLockPfnDb(APC_LEVEL);
+            }
+
+            if (Pde->u.Hard.LargePage)
+            {
+                Pde++;
+                Pte = MiPteToAddress(Pde);
+                continue;
+            }
+        }
+
+        TempPte = *Pte;
+        Proto = NULL;
+
+        if (!TempPte.u.Hard.Valid && TempPte.u.Soft.Prototype)
+        {
+            DPRINT1("MiResetVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (TempPte.u.Hard.Valid)
+        {
+            PageNumber = TempPte.u.Hard.PageFrameNumber;
+
+            if (Vad->u.VadFlags.VadType == VadRotatePhysical)
+            {
+                DPRINT1("MiResetVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            Pfn = MI_PFN_ELEMENT(PageNumber);
+
+            if (!Proto && TempPte.u.Hard.Accessed)
+            {
+                //PMMWSLE MmWsle = (PMMWSLE)(MmWorkingSetList + 1);
+                ULONG WsIndex;
+
+                Pte->u.Hard.Accessed = 0;
+
+                WsIndex = MiLocateWsle(MiPteToAddress(Pte), MmWorkingSetList, Pfn->u1.Flink, 0);
+                ASSERT(WsIndex != WSLE_NULL_INDEX);
+                //MmWsle[WsIndex].u1.e1.Age = 3;
+            }
+
+            if (OldIrql == MM_NOIRQL)
+            {
+                ASSERT(PteFlushList.Count == 0);
+                OldIrql = MiLockPfnDb(APC_LEVEL);
+                ASSERT(OldIrql != MM_NOIRQL);
+                continue;
+            }
+
+            if (Pfn->u3.e2.ReferenceCount == 1)
+            {
+                ASSERT(Pfn->u3.e1.Rom == 0);
+                Pfn->u3.e1.Modified = 0;
+
+                MiReleasePageFileSpace(Pfn->OriginalPte);
+                Pfn->OriginalPte.u.Soft.PageFileHigh = 0;
+            }
+
+            if (!Proto && TempPte.u.Hard.Dirty)
+            {
+                TempPte.u.Hard.Accessed = 0;
+                MI_MAKE_CLEAN_PAGE(&TempPte);
+                MI_UPDATE_VALID_PTE(Pte, TempPte);
+
+                if (PteFlushList.Count < 0x21)
+                {
+                    PteFlushList.FlushVa[PteFlushList.Count] = MiPteToAddress(Pte);
+                    PteFlushList.Count++;
+                }
+            }
+        }
+        else if (TempPte.u.Soft.Transition)
+        {
+            DPRINT1("MiResetVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else
+        {
+            if (TempPte.u.Soft.PageFileHigh)
+            {
+                DPRINT1("MiResetVirtualMemory: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                if (OldIrql != MM_NOIRQL)
+                {
+                    if (PteFlushList.Count)
+                    {
+                        if (PteFlushList.Count == 1)
+                        {
+                            //FIXME:
+                            //KeFlushSingleTb(PteFlushList.FlushVa[0], FALSE);
+
+                            //HACK:
+                            __invlpg(PteFlushList.FlushVa[0]);
+                        }
+                        else if (PteFlushList.Count >= 0x21)
+                        {
+                            KeFlushProcessTb();
+                        }
+                        else
+                        {
+                            //FIXME:
+                            //KeFlushMultipleTb(PteFlushList.Count, PteFlushList.FlushVa, FALSE);
+
+                            //HACK:
+                            for (ix = 0; ix < PteFlushList.Count; ix++)
+                                __invlpg(PteFlushList.FlushVa[ix]);
+                        }
+
+                        PteFlushList.Count = 0;
+                    }
+
+                    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                    OldIrql = MM_NOIRQL;
+                }
+            }
+        }
+
+        Pte++;
+    }
+
+    if (OldIrql != MM_NOIRQL)
+    {
+        if (PteFlushList.Count)
+        {
+            if (PteFlushList.Count == 1)
+            {
+                //FIXME:
+                //KeFlushSingleTb(PteFlushList.FlushVa[0], FALSE);
+
+                //HACK:
+                __invlpg(PteFlushList.FlushVa[0]);
+            }
+            else if (PteFlushList.Count >= 0x21)
+            {
+                KeFlushProcessTb();
+            }
+            else
+            {
+                //FIXME:
+                //KeFlushMultipleTb(PteFlushList.Count, PteFlushList.FlushVa, FALSE);
+
+                //HACK:
+                for (ix = 0; ix < PteFlushList.Count; ix++)
+                    __invlpg(PteFlushList.FlushVa[ix]);
+            }
+
+            PteFlushList.Count = 0;
+        }
+
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        OldIrql = MM_NOIRQL;
+    }
+    else
+    {
+        ASSERT(PteFlushList.Count == 0);
+    }
+
+    MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+    //FIXME:
+    //MmUnlockPagableImageSection(ExPageLockHandle);
+
+    return STATUS_SUCCESS;
+}
+
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 PHYSICAL_ADDRESS
