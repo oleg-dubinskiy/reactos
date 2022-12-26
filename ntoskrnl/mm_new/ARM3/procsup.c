@@ -20,6 +20,8 @@ extern ULONG MmLargeStackSize;
 extern ULONG MmSecondaryColorMask;
 extern LARGE_INTEGER MmCriticalSectionTimeout;
 extern SIZE_T MmMinimumStackCommitInBytes;
+extern BOOLEAN MmTrackLockedPages;
+extern PEPROCESS PsInitialSystemProcess;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -555,22 +557,37 @@ MmInitializeProcessAddressSpace(
 
     /* We should have a PDE */
     ASSERT(Process->Pcb.DirectoryTableBase[0] != 0);
-    ASSERT(Process->PdeUpdateNeeded == FALSE);
+
+    OldIrql = MiAcquireExpansionLock();
+    if (Process->PdeUpdateNeeded)
+    {
+        DPRINT1("MmInitializeProcessAddressSpace: FIXME MiUpdateSystemPdes\n");
+        ASSERT(FALSE);
+    }
+    MiReleaseExpansionLock(OldIrql);
 
     /* Attach to the process */
     KeAttachProcess(&Process->Pcb);
 
     /* The address space should now been in phase 1 or 0 */
     ASSERT(Process->AddressSpaceInitialized <= 1);
-    Process->AddressSpaceInitialized = 2;
+
+    InterlockedAnd((PLONG)&Process->Flags, ~PSF_ADDRESS_SPACE_INITIALIZED_BIT);
+    ASSERT(Process->AddressSpaceInitialized == 0);
+
+    InterlockedOr((PLONG)&Process->Flags, PSF_ADDRESS_SPACE_INITIALIZED_2_BIT);
+    ASSERT(Process->AddressSpaceInitialized == 2);
 
     /* Initialize the Addresss Space lock */
     KeInitializeGuardedMutex(&Process->AddressCreationLock);
-    Process->Vm.WorkingSetExpansionLinks.Flink = NULL;
+    ExInitializePushLock(&Process->Vm.WorkingSetMutex);
 
     /* Initialize AVL tree */
     ASSERT(Process->VadRoot.NumberGenericTableElements == 0);
     Process->VadRoot.BalancedRoot.u1.Parent = &Process->VadRoot.BalancedRoot;
+
+    KeQuerySystemTime(&Process->Vm.LastTrimTime);
+    Process->Vm.VmWorkingSetList = MmWorkingSetList;
 
     /* Lock PFN database */
     OldIrql = MiLockPfnDb(APC_LEVEL);
@@ -582,12 +599,8 @@ MmInitializeProcessAddressSpace(
     Pde = MiAddressToPte(PDE_BASE);
 #endif
 
-    PageFrameNumber = PFN_FROM_PTE(Pde);
-    MiInitializePfn(PageFrameNumber, Pde, TRUE);
-    DPRINT("MmInitializeProcessAddressSpace: PDE_BASE %p, Pde %p [%I64X]\n",
-           PDE_BASE, Pde, MiGetPteContents(Pde));
-
-    ASSERT(Process->Pcb.DirectoryTableBase[0] == (PageFrameNumber * PAGE_SIZE));
+    MiInitializePfn(PFN_FROM_PTE(Pde), Pde, TRUE);
+    DPRINT("MmInitializeProcessAddressSpace: PDE_BASE %p, Pde %p [%I64X]\n", PDE_BASE, Pde, MiGetPteContents(Pde));
 
     /* Do the same for hyperspace page */
 #ifdef _M_AMD64
@@ -596,32 +609,26 @@ MmInitializeProcessAddressSpace(
     Pde = MiAddressToPde(HYPER_SPACE);
 #endif
 
-    PageFrameNumber = PFN_FROM_PTE(Pde);
-    //ASSERT(Process->Pcb.DirectoryTableBase[0] == PageFrameNumber * PAGE_SIZE); // we're not lucky
-    MiInitializePfn(PageFrameNumber, (PMMPTE)Pde, TRUE);
-    DPRINT("MmInitializeProcessAddressSpace: PDE_BASE %p, Pde %p [%I64X]\n",
-           PDE_BASE, Pde, MiGetPteContents(Pde));
+    MiInitializePfn(PFN_FROM_PTE(Pde), Pde, TRUE);
+    DPRINT("MmInitializeProcessAddressSpace: HYPER_SPACE %p, Pde %p [%I64X]\n", HYPER_SPACE, Pde, MiGetPteContents(Pde));
 
     /* Setup the TempPte */
     Pte = MiAddressToPte(MI_VAD_BITMAP);
-    DPRINT("MmInitializeProcessAddressSpace: MI_VAD_BITMAP %p, Pte %p [%p]\n",
-           MI_VAD_BITMAP, Pte, MiGetPteContents(Pte));
+    DPRINT("MmInitializeProcessAddressSpace: MI_VAD_BITMAP %p, Pte %p [%p]\n", MI_VAD_BITMAP, Pte, MiGetPteContents(Pte));
+    ASSERT(Pte->u.Long != 0);
     MI_MAKE_HARDWARE_PTE(&TempPte, Pte, MM_READWRITE, 0);
     MI_MAKE_DIRTY_PAGE(&TempPte);
-    DPRINT("MmInitializeProcessAddressSpace: TempPte %p\n", TempPte.u.Long);
+    DPRINT("MmInitializeProcessAddressSpace: TempPte %IX\n", TempPte.u.Long);
 
     /* Setup for the vad bitmap page */
-    ASSERT(Pte->u.Long != 0);
     PageFrameNumber = PFN_FROM_PTE(Pte);
     MI_WRITE_INVALID_PTE(Pte, DemandZeroPte);
     MiInitializePfn(PageFrameNumber, Pte, TRUE);
-    DPRINT("MmInitializeProcessAddressSpace: MI_VAD_BITMAP %p, Pte %p [%I64X]\n",
-           MI_VAD_BITMAP, Pte, MiGetPteContents(Pte));
+    DPRINT("MmInitializeProcessAddressSpace: MI_VAD_BITMAP %p, Pte %p [%I64X]\n", MI_VAD_BITMAP, Pte, MiGetPteContents(Pte));
 
     TempPte.u.Hard.PageFrameNumber = PageFrameNumber;
     MI_WRITE_VALID_PTE(Pte, TempPte);
-    DPRINT("MmInitializeProcessAddressSpace: MI_VAD_BITMAP %p, Pte %p [%I64X]\n",
-           MI_VAD_BITMAP, Pte, MiGetPteContents(Pte));
+    DPRINT("MmInitializeProcessAddressSpace: MI_VAD_BITMAP %p, Pte %p [%I64X]\n", MI_VAD_BITMAP, Pte, MiGetPteContents(Pte));
 
     /* Setup for the working set page */
     Pte = MiAddressToPte(MI_WORKING_SET_LIST);
@@ -629,22 +636,26 @@ MmInitializeProcessAddressSpace(
     PageFrameNumber = PFN_FROM_PTE(Pte);
     MI_WRITE_INVALID_PTE(Pte, DemandZeroPte);
     MiInitializePfn(PageFrameNumber, Pte, TRUE);
-    DPRINT("MmInitializeProcessAddressSpace: MI_WORKING_SET_LIST %p, Pte %p [%I64X]\n",
-           MI_WORKING_SET_LIST, Pte, MiGetPteContents(Pte));
+    DPRINT("MmInitializeProcessAddressSpace: MI_WORKING_SET_LIST %p, Pte %p [%I64X]\n", MI_WORKING_SET_LIST, Pte, MiGetPteContents(Pte));
 
     TempPte.u.Hard.PageFrameNumber = PageFrameNumber;
     MI_WRITE_VALID_PTE(Pte, TempPte);
-    DPRINT("MmInitializeProcessAddressSpace: MI_WORKING_SET_LIST %p, Pte %p [%I64X]\n",
-           MI_WORKING_SET_LIST, Pte, MiGetPteContents(Pte));
+    DPRINT("MmInitializeProcessAddressSpace: MI_WORKING_SET_LIST %p, Pte %p [%I64X]\n", MI_WORKING_SET_LIST, Pte, MiGetPteContents(Pte));
+
+    /* Release PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    if (MmTrackLockedPages)
+    {
+        DPRINT1("MmInitializeProcessAddressSpace: FIXME\n");
+        ASSERT(FALSE);
+    }
 
     /* Now initialize the working set list */
     MiInitializeWorkingSetList(Process);
 
     /* Sanity check */
     ASSERT(Process->PhysicalVadRoot == NULL);
-
-    /* Release PFN lock */
-    MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
     /* Check if there's a Section Object */
     if (!Section)
