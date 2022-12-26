@@ -3666,9 +3666,11 @@ MmSecureVirtualMemory(
 VOID
 NTAPI
 MmUnsecureVirtualMemory(
-    _In_ PVOID SecureMem)
+    _In_ HANDLE SecureHandle)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    DPRINT1("MmUnsecureVirtualMemory: SecureHandle %p\n", SecureHandle);
+    //UNIMPLEMENTED_DBGBREAK();
+    UNIMPLEMENTED;
 }
 
 /* SYSTEM CALLS ***************************************************************/
