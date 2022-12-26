@@ -485,34 +485,97 @@ NTAPI
 MiInitializeWorkingSetList(
     _In_ PEPROCESS CurrentProcess)
 {
-    PMMPFN Pfn1;
-    PMMPTE sysPte;
-    MMPTE tempPte;
+    PMMWSLE FirstWsle;
+    PMMWSLE CurrentWsle;
+    PMMPFN Pfn;
+    ULONG WorkSetSize;
+    ULONG WsleCount;
+    ULONG ix;
 
-    /* Setup some bogus list data */
+    DPRINT1("MiInitializeWorkingSetList: %p, %p, %p, %p\n", CurrentProcess, &CurrentProcess->Vm, CurrentProcess->Vm.VmWorkingSetList, MmWorkingSetList);
+
+    CurrentWsle = FirstWsle = Add2Ptr(MmWorkingSetList, sizeof(MMWSL));
+
     MmWorkingSetList->LastEntry = CurrentProcess->Vm.MinimumWorkingSetSize;
+    MmWorkingSetList->Wsle = FirstWsle;
+    MmWorkingSetList->VadBitMapHint = 1;
+    MmWorkingSetList->NumberOfImageWaiters = 0;
     MmWorkingSetList->HashTable = NULL;
     MmWorkingSetList->HashTableSize = 0;
-    MmWorkingSetList->NumberOfImageWaiters = 0;
-    MmWorkingSetList->Wsle = (PVOID)(ULONG_PTR)0xDEADBABEDEADBABEULL;
-    MmWorkingSetList->VadBitMapHint = 1;
-    MmWorkingSetList->HashTableStart = (PVOID)(ULONG_PTR)0xBADAB00BBADAB00BULL;
-    MmWorkingSetList->HighestPermittedHashAddress = (PVOID)(ULONG_PTR)0xCAFEBABECAFEBABEULL;
-    MmWorkingSetList->FirstFree = 1;
-    MmWorkingSetList->FirstDynamic = 2;
-    MmWorkingSetList->NextSlot = 3;
-    MmWorkingSetList->LastInitializedWsle = 4;
+    MmWorkingSetList->HashTableStart = (PVOID)((PCHAR)PAGE_ALIGN(&FirstWsle[MiMaximumWorkingSet]) + PAGE_SIZE);
+    MmWorkingSetList->HighestPermittedHashAddress = Add2Ptr(MmHyperSpaceEnd, 1);
 
-    /* The rule is that the owner process is always in the FLINK of the PDE's PFN entry */
-    Pfn1 = MiGetPfnEntry(CurrentProcess->Pcb.DirectoryTableBase[0] >> PAGE_SHIFT);
-    ASSERT(Pfn1->u4.PteFrame == MiGetPfnEntryIndex(Pfn1));
-    Pfn1->u1.Event = (PKEVENT)CurrentProcess;
+    CurrentWsle->u1.VirtualAddress = (PVOID)(PDE_BASE);
+    CurrentWsle->u1.e1.Valid = 1;
+    CurrentWsle->u1.e1.LockedInWs = 1;
+    CurrentWsle->u1.e1.Direct = 1;
 
-    /* Map the process working set in kernel space */
-    sysPte = MiReserveSystemPtes(1, SystemPteSpace);
-    MI_MAKE_HARDWARE_PTE_KERNEL(&tempPte, sysPte, MM_READWRITE, CurrentProcess->WorkingSetPage);
-    MI_WRITE_VALID_PTE(sysPte, tempPte);
-    CurrentProcess->Vm.VmWorkingSetList = MiPteToAddress(sysPte);
+    Pfn = MiGetPfnEntry(MiAddressToPte((PVOID)PDE_BASE)->u.Hard.PageFrameNumber);
+
+    ASSERT(Pfn->u1.WsIndex == 0);
+    ASSERT(Pfn->u4.PteFrame == (ULONG_PTR)MiGetPfnEntryIndex(Pfn));
+
+    Pfn->u1.Event = (PVOID)CurrentProcess;
+    Pfn->u1.WsIndex = (CurrentWsle - FirstWsle);
+
+    CurrentWsle++;
+
+    CurrentWsle->u1.VirtualAddress = (PVOID)(MiAddressToPte(HYPER_SPACE));
+    CurrentWsle->u1.e1.Valid = 1;
+    CurrentWsle->u1.e1.LockedInWs = 1;
+    CurrentWsle->u1.e1.Direct = 1;
+
+    Pfn = MiGetPfnEntry(MiAddressToPte(CurrentWsle->u1.VirtualAddress)->u.Hard.PageFrameNumber);
+    ASSERT(Pfn->u1.WsIndex == 0);
+    Pfn->u1.WsIndex = (CurrentWsle - FirstWsle);
+
+    CurrentWsle++;
+
+    CurrentWsle->u1.VirtualAddress = (PVOID)(MI_VAD_BITMAP);
+    CurrentWsle->u1.e1.Valid = 1;
+    CurrentWsle->u1.e1.LockedInWs = 1;
+    CurrentWsle->u1.e1.Direct = 1;
+
+    Pfn = MiGetPfnEntry(MiAddressToPte((PVOID)(MI_VAD_BITMAP))->u.Hard.PageFrameNumber);
+    ASSERT(Pfn->u1.WsIndex == 0);
+    Pfn->u1.WsIndex = (CurrentWsle - FirstWsle);
+
+    CurrentWsle++;
+
+    CurrentWsle->u1.VirtualAddress = (PVOID)(MmWorkingSetList);
+    CurrentWsle->u1.e1.Valid = 1;
+    CurrentWsle->u1.e1.LockedInWs = 1;
+    CurrentWsle->u1.e1.Direct = 1;
+
+    Pfn = MiGetPfnEntry(MiAddressToPte((PVOID)(MmWorkingSetList))->u.Hard.PageFrameNumber);
+    ASSERT(Pfn->u1.WsIndex == 0);
+    Pfn->u1.WsIndex = (CurrentWsle - FirstWsle);
+
+    CurrentWsle++;
+
+    WsleCount = ((PAGE_SIZE - BYTE_OFFSET(FirstWsle)) / sizeof(MMWSLE));
+
+    WorkSetSize = (CurrentWsle - FirstWsle);
+    CurrentProcess->Vm.WorkingSetSize = WorkSetSize;
+
+    MmWorkingSetList->FirstFree = WorkSetSize;
+    MmWorkingSetList->FirstDynamic = WorkSetSize;
+    MmWorkingSetList->NextSlot = WorkSetSize;
+
+    ix = (WorkSetSize + 1);
+    do
+    {
+        CurrentWsle->u1.Long = (ix * 0x10);
+        CurrentWsle++;
+        ix++;
+    }
+    while (ix <= WsleCount);
+
+    CurrentWsle--;
+    CurrentWsle->u1.Long = 0xFFFFFFF0;
+
+    MmWorkingSetList->LastInitializedWsle = (WsleCount - 1);
+    DPRINT1("MiInitializeWorkingSetList: FirstFree %X, LastInitializedWsle %X\n", MmWorkingSetList->FirstFree, MmWorkingSetList->LastInitializedWsle);
 }
 
 ULONG

@@ -500,7 +500,7 @@ MmDeleteProcessAddressSpace(
     MmLockAddressSpace(&Process->Vm);
 
     /* There should not be any memory areas left! */
-    ASSERT(Process->Vm.WorkingSetExpansionLinks.Flink == NULL);
+    ASSERT(Process->Vm.WorkingSetExpansionLinks.Flink == MM_WS_NOT_LISTED);
 
     #if (_MI_PAGING_LEVELS == 2)
     {
