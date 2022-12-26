@@ -32,6 +32,8 @@ extern BOOLEAN PiCriticalDeviceDatabaseEnabled;
 extern BOOLEAN PnpSystemInit;
 extern BOOLEAN PpPnpShuttingDown;
 extern BOOLEAN IopBootConfigsReserved;
+extern PLIST_ENTRY IopGroupTable;
+extern USHORT IopGroupIndex;
 
 /* DATA **********************************************************************/
 
@@ -3221,6 +3223,100 @@ IopReferenceDriverObjectByName(
     }
 
     return DriverObject;
+}
+
+NTSTATUS
+NTAPI
+PipLoadBootFilterDriver(
+    _In_ HANDLE Handle,
+    _In_ PUNICODE_STRING DriverName,
+    _In_ ULONG GroupIndex,
+    _Out_ PDRIVER_OBJECT * OutDriverObject)
+{
+    PDRIVER_INFORMATION DriverInfo;
+    PDRIVER_OBJECT DriverObject;
+    UNICODE_STRING NameString;
+    PLIST_ENTRY Entry;
+    NTSTATUS Status;
+    NTSTATUS status;
+
+    *OutDriverObject = NULL;
+    Status = STATUS_UNSUCCESSFUL;
+
+    DPRINT("PipLoadBootFilterDriver: (%X) '%wZ'\n", GroupIndex, DriverName);
+
+    if (!IopGroupTable)
+    {
+        DPRINT1("PipLoadBootFilterDriver: STATUS_UNSUCCESSFUL\n");
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    if (GroupIndex >= IopGroupIndex)
+    {
+        DPRINT1("PipLoadBootFilterDriver: STATUS_UNSUCCESSFUL\n");
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    for (Entry = IopGroupTable[GroupIndex].Flink;
+         Entry != &IopGroupTable[GroupIndex];
+         Entry = Entry->Flink)
+    {
+        DriverInfo = CONTAINING_RECORD(Entry, DRIVER_INFORMATION, Link);
+
+        status = IopGetDriverNameFromKeyNode(DriverInfo->ServiceHandle, &NameString);
+        if (!NT_SUCCESS(status))
+        {
+            DPRINT("PipLoadBootFilterDriver: status %X\n", status);
+            continue;
+        }
+
+        if (!RtlEqualUnicodeString(DriverName, &NameString, TRUE))
+        {
+            ExFreePoolWithTag(NameString.Buffer, 0);
+            continue;
+        }
+
+        if (DriverInfo->Processed)
+        {
+            if (!NT_SUCCESS(DriverInfo->Status))
+                Status = DriverInfo->Status;
+            else
+                Status = STATUS_UNSUCCESSFUL;
+
+            ExFreePoolWithTag(NameString.Buffer, 0);
+            break;
+        }
+
+        Status = IopInitializeBuiltinDriver(&NameString,
+                                            &DriverInfo->DataTableEntry->RegistryPath,
+                                            DriverInfo->DataTableEntry->LdrEntry->EntryPoint,
+                                            DriverInfo->DataTableEntry->LdrEntry,
+                                            TRUE,
+                                            &DriverObject);
+        DriverInfo->Status = Status;
+        DriverInfo->Processed = 1;
+        DriverInfo->DriverObject = DriverObject;
+
+        if (DriverObject)
+        {
+            ObReferenceObject(DriverObject);
+            *OutDriverObject = DriverObject;
+        }
+        else
+        {
+            DriverInfo->Failed = 1;
+        }
+
+        ExFreePoolWithTag(NameString.Buffer, 0);
+        break;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PipLoadBootFilterDriver: Status %X\n", Status);
+    }
+
+    return Status;
 }
 
 NTSTATUS
