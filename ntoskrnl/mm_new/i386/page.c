@@ -100,6 +100,8 @@ extern ULONG MmSecondaryColorMask;
 extern MMPTE ValidKernelPteLocal;
 extern LIST_ENTRY MmProcessList;
 extern PVOID MmHyperSpaceEnd;
+extern MMPDE ValidPdePde;
+extern SIZE_T MmProcessCommit;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -133,21 +135,22 @@ MmCreateProcessAddressSpace(
     _In_ PEPROCESS Process,
     _Out_ PULONG_PTR DirectoryTableBase)
 {
+    PEPROCESS CurrentProcess = PsGetCurrentProcess();
     PFN_NUMBER PdeIndex;
     PFN_NUMBER HyperIndex;
-    PFN_NUMBER WsListIndex;
+    PFN_NUMBER WsIndex;
     PFN_NUMBER VadBitmapIndex;
     PMMPDE SystemTable;
     PMMPDE HyperTable;
-    PMMPTE Pte;
-    MMPTE TempPte;
-    MMPTE PdePte;
+    PMMPTE systemPte;
+    MMPDE TempPde;
     PMMPFN Pfn;
     ULONG PdeOffset;
     ULONG Color;
     KIRQL OldIrql;
+    BOOLEAN IsFlushTb;
 
-    DPRINT("MmCreateProcessAddressSpace: MinWs %X, Process %p\n", MinWs, Process);
+    DPRINT1("MmCreateProcessAddressSpace: MinWs %X, Process %p (%X)\n", MinWs, Process, MmTotalCommittedPages);
 
     if (!MiChargeCommitment(4, NULL))
     {
@@ -181,7 +184,7 @@ MmCreateProcessAddressSpace(
         MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
     /* Get a zero page for the PDE, if possible */
-    Color = MI_GET_NEXT_PROCESS_COLOR(Process);
+    Color = MI_GET_NEXT_PROCESS_COLOR(CurrentProcess);
     MI_SET_USAGE(MI_USAGE_PAGE_DIRECTORY);
 
     PdeIndex = MiRemoveZeroPageSafe(Color);
@@ -196,12 +199,19 @@ MmCreateProcessAddressSpace(
         OldIrql = MiLockPfnDb(APC_LEVEL);
     }
 
+    Pfn = MiGetPfnEntry(PdeIndex);
+    if (Pfn->u3.e1.CacheAttribute != MiCached)
+    {
+        Pfn->u3.e1.CacheAttribute = MiCached;
+        IsFlushTb = TRUE;
+    }
+
     if (MmAvailablePages < 0x80)
         MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
     /* Get a zero page for hyperspace, if possible */
     MI_SET_USAGE(MI_USAGE_PAGE_DIRECTORY);
-    Color = MI_GET_NEXT_PROCESS_COLOR(Process);
+    Color = MI_GET_NEXT_PROCESS_COLOR(CurrentProcess);
 
     HyperIndex = MiRemoveZeroPageSafe(Color);
     if (!HyperIndex)
@@ -215,12 +225,19 @@ MmCreateProcessAddressSpace(
         OldIrql = MiLockPfnDb(APC_LEVEL);
     }
 
+    Pfn = MiGetPfnEntry(HyperIndex);
+    if (Pfn->u3.e1.CacheAttribute != MiCached)
+    {
+        Pfn->u3.e1.CacheAttribute = MiCached;
+        IsFlushTb = TRUE;
+    }
+
     if (MmAvailablePages < 0x80)
         MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
     /* Get a zero page for VadBitmap, if possible */
     MI_SET_USAGE(MI_USAGE_PAGE_DIRECTORY);
-    Color = MI_GET_NEXT_PROCESS_COLOR(Process);
+    Color = MI_GET_NEXT_PROCESS_COLOR(CurrentProcess);
 
     VadBitmapIndex = MiRemoveZeroPageSafe(Color);
     if (!VadBitmapIndex)
@@ -234,74 +251,107 @@ MmCreateProcessAddressSpace(
         OldIrql = MiLockPfnDb(APC_LEVEL);
     }
 
+    Pfn = MiGetPfnEntry(VadBitmapIndex);
+    if (Pfn->u3.e1.CacheAttribute != MiCached)
+    {
+        Pfn->u3.e1.CacheAttribute = MiCached;
+        IsFlushTb = TRUE;
+    }
+
     if (MmAvailablePages < 0x80)
         MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
     /* Get a zero page for the woring set list, if possible */
     MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
-    Color = MI_GET_NEXT_PROCESS_COLOR(Process);
+    Color = MI_GET_NEXT_PROCESS_COLOR(CurrentProcess);
 
-    WsListIndex = MiRemoveZeroPageSafe(Color);
-    if (!WsListIndex)
+    WsIndex = MiRemoveZeroPageSafe(Color);
+    if (!WsIndex)
     {
         /* No zero pages, grab a free one */
-        WsListIndex = MiRemoveAnyPage(Color);
+        WsIndex = MiRemoveAnyPage(Color);
 
         /* Zero it outside the PFN lock */
         MiUnlockPfnDb(OldIrql, APC_LEVEL);
-        MiZeroPhysicalPage(WsListIndex);
+        MiZeroPhysicalPage(WsIndex);
+        OldIrql = MiLockPfnDb(APC_LEVEL);
     }
-    else
+
+    Pfn = MiGetPfnEntry(WsIndex);
+    if (Pfn->u3.e1.CacheAttribute != MiCached)
     {
-        /* Release the PFN lock */
-        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        Pfn->u3.e1.CacheAttribute = MiCached;
+        IsFlushTb = TRUE;
+    }
+
+    /* Release the PFN lock */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    if (IsFlushTb)
+    {
+        //MiFlushTbForAttributeChange++;
+        //MiFlushType[0x23]++;
+        KeFlushEntireTb(TRUE, TRUE);
     }
 
     /* Switch to phase 1 initialization */
     ASSERT(Process->AddressSpaceInitialized == 0);
-    Process->AddressSpaceInitialized = 1;
+    InterlockedOr((PLONG)&Process->Flags, PSF_ADDRESS_SPACE_INITIALIZED_BIT);
+    ASSERT(Process->AddressSpaceInitialized == 1);
+
+    Process->Vm.MinimumWorkingSetSize = MinWs;
+    Process->WorkingSetPage = WsIndex;
 
     /* Set the base directory pointers */
-    Process->WorkingSetPage = WsListIndex;
-
     DirectoryTableBase[0] = (PdeIndex * PAGE_SIZE);
     DirectoryTableBase[1] = (HyperIndex * PAGE_SIZE);
 
-    /* Make sure we don't already have a page directory setup */
-    ASSERT(Process->Pcb.DirectoryTableBase[0] == 0);
-
     /* Get a PTE to map hyperspace */
-    Pte = MiReserveSystemPtes(1, SystemPteSpace);
-    ASSERT(Pte != NULL);
+    systemPte = MiReserveSystemPtes(1, SystemPteSpace);
+    if (systemPte)
+    {
+        /* Build it */
+        MI_MAKE_HARDWARE_PTE_KERNEL(&TempPde, systemPte, MM_READWRITE, HyperIndex);
 
-    /* Build it */
-    MI_MAKE_HARDWARE_PTE_KERNEL(&PdePte, Pte, MM_READWRITE, HyperIndex);
+        /* Set it dirty and map it */
+        MI_MAKE_DIRTY_PAGE(&TempPde);
+        MI_WRITE_VALID_PTE(systemPte, TempPde);
 
-    /* Set it dirty and map it */
-    MI_MAKE_DIRTY_PAGE(&PdePte);
-    MI_WRITE_VALID_PTE(Pte, PdePte);
-
-    /* Now get hyperspace's page table */
-    HyperTable = MiPteToAddress(Pte);
+        /* Now get hyperspace's page table */
+        HyperTable = MiPteToAddress(systemPte);
+    }
+    else
+    {
+        HyperTable = MiMapPageInHyperSpace(CurrentProcess, HyperIndex, &OldIrql);
+    }
 
     /* Write the PTE/PDE entry for the Vad bitmap index */
-    TempPte = ValidKernelPteLocal;
-    TempPte.u.Hard.PageFrameNumber = VadBitmapIndex;
+    TempPde = ValidPdePde;
+    TempPde.u.Long &= ~MmPteGlobal.u.Long;
+    TempPde.u.Hard.PageFrameNumber = VadBitmapIndex;
     PdeOffset = MiAddressToPteOffset(MI_VAD_BITMAP);
-    HyperTable[PdeOffset] = TempPte;
+    HyperTable[PdeOffset] = TempPde;
+
+    DPRINT("MmCreateProcessAddressSpace: [%X] MI_VAD_BITMAP %p\n", PdeOffset, MI_VAD_BITMAP);
 
     /* Now write the PTE/PDE entry for the working set list index itself */
-    TempPte = ValidKernelPteLocal;
-    TempPte.u.Hard.PageFrameNumber = WsListIndex;
+    TempPde.u.Hard.PageFrameNumber = WsIndex;
     PdeOffset = MiAddressToPteOffset(MmWorkingSetList);
-    HyperTable[PdeOffset] = TempPte;
+    HyperTable[PdeOffset] = TempPde;
 
-    /* Let go of the system PTE */
-    MiReleaseSystemPtes(Pte, 1, SystemPteSpace);
+    DPRINT("MmCreateProcessAddressSpace: [%X] MmWorkingSetList %p\n", PdeOffset, MmWorkingSetList);
+
+    if (systemPte)
+        /* Let go of the system PTE */
+        MiReleaseSystemPtes(systemPte, 1, SystemPteSpace);
+    else
+        MiUnmapPageInHyperSpace(CurrentProcess, HyperTable, OldIrql);
 
     /* Save the PTE address of the page directory itself */
     Pfn = MiGetPfnEntry(PdeIndex);
     Pfn->PteAddress = (PMMPTE)PDE_BASE;
+
+    ASSERT(Process->Pcb.DirectoryTableBase[0] == 0);
 
     /* Insert us into the Mm process list */
     OldIrql = MiAcquireExpansionLock();
@@ -309,46 +359,68 @@ MmCreateProcessAddressSpace(
     MiReleaseExpansionLock(OldIrql);
 
     /* Get a PTE to map the page directory */
-    Pte = MiReserveSystemPtes(1, SystemPteSpace);
-    ASSERT(Pte != NULL);
+    systemPte = MiReserveSystemPtes(1, SystemPteSpace);
 
-    /* Build it */
-    MI_MAKE_HARDWARE_PTE_KERNEL(&PdePte, Pte, MM_READWRITE, PdeIndex);
+    if (systemPte)
+    {
+        /* Build it */
+        MI_MAKE_HARDWARE_PTE_KERNEL(&TempPde, systemPte, MM_READWRITE, PdeIndex);
 
-    /* Set it dirty and map it */
-    MI_MAKE_DIRTY_PAGE(&PdePte);
-    MI_WRITE_VALID_PTE(Pte, PdePte);
+        /* Set it dirty and map it */
+        MI_MAKE_DIRTY_PAGE(&TempPde);
+        MI_WRITE_VALID_PTE(systemPte, TempPde);
 
-    /* Now get the page directory (which we'll double map, so call it a page table */
-    SystemTable = MiPteToAddress(Pte);
+        /* Now get the page directory (which we'll double map, so call it a page table */
+        SystemTable = MiPteToAddress(systemPte);
+    }
+    else
+    {
+        SystemTable = MiMapPageInHyperSpace(CurrentProcess, PdeIndex, &OldIrql);
+    }
 
     /* Copy all the kernel mappings */
     PdeOffset = MiAddressToPdeOffset(MmSystemRangeStart);
+    DPRINT("MmCreateProcessAddressSpace: [%X] MmSystemRangeStart %p\n", PdeOffset, MmSystemRangeStart);
 
     RtlCopyMemory(&SystemTable[PdeOffset],
                   MiAddressToPde(MmSystemRangeStart),
                   PAGE_SIZE - PdeOffset * sizeof(MMPTE));
 
     /* Now write the PTE/PDE entry for hyperspace itself */
-    TempPte = ValidKernelPteLocal;
-    TempPte.u.Hard.PageFrameNumber = HyperIndex;
+    TempPde = ValidPdePde;
+    TempPde.u.Long &= ~MmPteGlobal.u.Long;
+    TempPde.u.Hard.PageFrameNumber = HyperIndex;
     PdeOffset = MiAddressToPdeOffset(HYPER_SPACE);
-    SystemTable[PdeOffset] = TempPte;
+    SystemTable[PdeOffset] = TempPde;
+
+    DPRINT("MmCreateProcessAddressSpace: [%X] HYPER_SPACE %p\n", PdeOffset, HYPER_SPACE);
 
     /* Sanity check */
     PdeOffset++;
     ASSERT(MiAddressToPdeOffset(MmHyperSpaceEnd) >= PdeOffset);
 
-    /* Now do the x86 trick of making the PDE a page table itself */
-    PdeOffset = MiAddressToPdeOffset(PTE_BASE);
-    TempPte.u.Hard.PageFrameNumber = PdeIndex;
-    SystemTable[PdeOffset] = TempPte;
+    RtlZeroMemory(&SystemTable[PdeOffset],
+                  ((MiAddressToPdeOffset(MmHyperSpaceEnd) - (PdeOffset - 1)) * sizeof(MMPTE)));
 
-    /* Let go of the system PTE */
-    MiReleaseSystemPtes(Pte, 1, SystemPteSpace);
+    /* Now do the x86 trick of making the PDE a page table itself */
+    TempPde.u.Hard.PageFrameNumber = PdeIndex;
+    PdeOffset = MiAddressToPdeOffset(PTE_BASE);
+    SystemTable[PdeOffset] = TempPde;
+
+    DPRINT("MmCreateProcessAddressSpace: [%X] PTE_BASE %p\n", PdeOffset, PTE_BASE);
+
+    if (systemPte)
+        /* Let go of the system PTE */
+        MiReleaseSystemPtes(systemPte, 1, SystemPteSpace);
+    else
+        MiUnmapPageInHyperSpace(CurrentProcess, SystemTable, OldIrql);
+
+    InterlockedExchangeAddSizeT(&MmProcessCommit, 4);
 
     /* Add the process to the session */
     MiSessionAddProcess(Process);
+
+    DPRINT("MmCreateProcessAddressSpace: return TRUE\n");
     return TRUE;
 }
 
