@@ -452,6 +452,10 @@ MmInitializeHandBuiltProcess(
     _In_ PEPROCESS Process,
     _In_ PULONG_PTR DirectoryTableBase)
 {
+    DPRINT1("MmInitializeHandBuiltProcess: Process %p\n", Process);
+
+#if defined(ONE_CPU)
+
     /* Share the directory base with the idle process */
     DirectoryTableBase[0] = PsGetCurrentProcess()->Pcb.DirectoryTableBase[0];
     DirectoryTableBase[1] = PsGetCurrentProcess()->Pcb.DirectoryTableBase[1];
@@ -460,18 +464,25 @@ MmInitializeHandBuiltProcess(
     KeInitializeGuardedMutex(&Process->AddressCreationLock);
     KeInitializeSpinLock(&Process->HyperSpaceLock);
 
-    Process->Vm.WorkingSetExpansionLinks.Flink = NULL;
-
     ASSERT(Process->VadRoot.NumberGenericTableElements == 0);
     Process->VadRoot.BalancedRoot.u1.Parent = &Process->VadRoot.BalancedRoot;
 
+    ExInitializePushLock(&Process->Vm.WorkingSetMutex);
+
     /* Use idle process Working set */
-    Process->Vm.VmWorkingSetList = PsGetCurrentProcess()->Vm.VmWorkingSetList;
+    Process->Vm.VmWorkingSetList = MmWorkingSetList;
+    Process->Vm.WorkingSetSize = PsGetCurrentProcess()->Vm.WorkingSetSize;
+    KeQuerySystemTime(&Process->Vm.LastTrimTime);
+
+    MiInsertHandBuiltProcessIntoList(Process);
+    MiAllowWorkingSetExpansion(&Process->Vm);
 
     /* Done */
-    Process->HasAddressSpace = TRUE;//??
-
     return STATUS_SUCCESS;
+
+#else
+    return MmCreateProcessAddressSpace(0, Process, DirectoryTableBase);
+#endif
 }
 
 INIT_FUNCTION
