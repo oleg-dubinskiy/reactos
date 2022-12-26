@@ -2241,6 +2241,13 @@ MmInitSectionImplementation(
 VOID
 );
 
+VOID
+NTAPI
+MiCleanSection(
+    _In_ PCONTROL_AREA ControlArea,
+    _In_ BOOLEAN Parameter2
+);
+
 /* ARM3\session.c */
 VOID
 NTAPI

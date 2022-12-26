@@ -156,6 +156,11 @@ extern PMM_SESSION_SPACE MmSessionSpace;
 extern MMPTE ValidKernelPdeLocal;
 extern BOOLEAN MiWriteCombiningPtes;
 extern SLIST_HEADER MmEventCountSListHead;
+extern MM_PAGED_POOL_INFO MmPagedPoolInfo;
+extern SIZE_T MmAllocatedNonPagedPool;
+extern SIZE_T MmSizeOfPagedPoolInBytes;
+extern PFN_NUMBER MmMaximumNonPagedPoolInPages;
+extern ULONG MmConsumedPoolPercentage;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1016,7 +1021,9 @@ MiCheckControlArea(
     _In_ PCONTROL_AREA ControlArea,
     _In_ KIRQL OldIrql)
 {
-    PEVENT_COUNTER PurgeEvent = NULL;
+    PEVENT_COUNTER EventCounter = NULL;
+    ULONG NonPagedPoolPercentage;
+    ULONG PagedPoolPercentage;
     ULONG CheckFlag = 0;
 
     DPRINT("MiCheckControlArea: ControlArea %p, OldIrql %X\n", ControlArea, OldIrql);
@@ -1047,8 +1054,7 @@ MiCheckControlArea(
                         MiConvertStaticSubsections(ControlArea);
                     }
 
-                    DPRINT("MiCheckControlArea: FIXME MmUnusedSegmentList\n");
-
+                    InsertTailList(&MmUnusedSegmentList, &ControlArea->DereferenceList);
                     MmUnusedSegmentCount++;
                 }
 
@@ -1062,11 +1068,9 @@ MiCheckControlArea(
                     ControlArea->u.Flags.BeingPurged = 1;
                     ControlArea->NumberOfMappedViews = 1;
 
-                    DPRINT("MiCheckControlArea: FIXME MiPurgeImageSection\n");
-                    ASSERT(FALSE);
+                    MiPurgeImageSection(ControlArea, OldIrql);
 
                     ControlArea->u.Flags.BeingPurged = 0;
-
                     ControlArea->NumberOfMappedViews--;
 
                     if (!ControlArea->NumberOfMappedViews &&
@@ -1078,12 +1082,11 @@ MiCheckControlArea(
                         ControlArea->u.Flags.BeingDeleted = 1;
                         ControlArea->u.Flags.FilePointerNull = 1;
 
-                        DPRINT("MiCheckControlArea: FIXME MiRemoveImageSectionObject\n");
-                        ASSERT(FALSE);
+                        MiRemoveImageSectionObject(ControlArea->FilePointer, (PLARGE_CONTROL_AREA)ControlArea);
                     }
                     else
                     {
-                        PurgeEvent = ControlArea->WaitingForDeletion;
+                        EventCounter = ControlArea->WaitingForDeletion;
                         ControlArea->WaitingForDeletion = 0;
                     }
                 }
@@ -1097,7 +1100,6 @@ MiCheckControlArea(
             else
             {
                 ControlArea->u.Flags.BeingDeleted = 1;
-
                 CheckFlag = 2;
 
                 ASSERT(ControlArea->u.Flags.FilePointerNull == 0);
@@ -1105,13 +1107,12 @@ MiCheckControlArea(
 
                 if (ControlArea->u.Flags.Image)
                 {
-                    DPRINT("MiCheckControlArea: FIXME MiRemoveImageSectionObject\n");
-                    ASSERT(FALSE);
+                    MiRemoveImageSectionObject(ControlArea->FilePointer, (PLARGE_CONTROL_AREA)ControlArea);
                 }
                 else
                 {
                     ASSERT(((PCONTROL_AREA)(ControlArea->FilePointer->SectionObjectPointer->DataSectionObject)) != NULL);
-                    ControlArea->FilePointer->SectionObjectPointer->DataSectionObject = NULL;
+                    ControlArea->FilePointer->SectionObjectPointer->DataSectionObject = 0;
                 }
             }
         }
@@ -1121,46 +1122,45 @@ MiCheckControlArea(
             CheckFlag = 2;
         }
     }
-    else
+    else if (ControlArea->WaitingForDeletion)
     {
-        /* Check if waiting for deletion */
-        if (ControlArea->WaitingForDeletion)
-        {
-            /* Get event */
-            PurgeEvent = ControlArea->WaitingForDeletion;
-            ControlArea->WaitingForDeletion = NULL;
-        }
+        /* Get event */
+        EventCounter = ControlArea->WaitingForDeletion;
+        ControlArea->WaitingForDeletion = NULL;
     }
 
     /* Release the PFN lock */
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
-    if (!CheckFlag)
+    if (CheckFlag)
     {
-        if (PurgeEvent)
-            KeSetEvent(&PurgeEvent->Event, 0, FALSE);
+        /* No more user write references at all */
+        ASSERT(ControlArea->WritableUserReferences == 0);
+        ASSERT(EventCounter == NULL);
 
-        /* Not yet supported */
-        DPRINT("MiCheckControlArea: FIXME MmUnusedSegmentCleanup\n");
-        //ASSERT(FALSE);
+        if (CheckFlag & 2)
+        {
+            /* Delete the segment if needed */
+            MiSegmentDelete(ControlArea->Segment);
+            return;
+        }
 
+        /* Clean the section */
+        MiCleanSection(ControlArea, 1);
         return;
     }
 
-    /* No more user write references at all */
-    ASSERT(ControlArea->WritableUserReferences == 0);
-    ASSERT(PurgeEvent == NULL);
+    if (EventCounter)
+        KeSetEvent(&EventCounter->Event, 0, FALSE);
 
-    if (CheckFlag & 2)
+    NonPagedPoolPercentage = (100 * MmAllocatedNonPagedPool / MmMaximumNonPagedPoolInPages);
+    PagedPoolPercentage = (100 * MmPagedPoolInfo.AllocatedPagedPool / (MmSizeOfPagedPoolInBytes / PAGE_SIZE));
+
+    if (PagedPoolPercentage > MmConsumedPoolPercentage ||
+        NonPagedPoolPercentage > MmConsumedPoolPercentage)
     {
-        /* Delete the segment if needed */
-        MiSegmentDelete(ControlArea->Segment);
-        return;
+        KeSetEvent(&MmUnusedSegmentCleanup, 0, FALSE);
     }
-
-    /* Clean the section */
-    DPRINT("MiCheckControlArea: FIXME MiCleanSection\n");
-    ASSERT(FALSE);
 }
 
 VOID
