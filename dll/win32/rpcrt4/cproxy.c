@@ -267,8 +267,7 @@ static const struct thunk *allocate_block( unsigned int num )
     struct thunk *prev, *block;
     DWORD oldprot;
 
-    block = VirtualAlloc( NULL, BLOCK_SIZE * sizeof(*block),
-                          MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE );
+    block = VirtualAlloc( NULL, BLOCK_SIZE * sizeof(*block), MEM_COMMIT, PAGE_EXECUTE_READWRITE );
     if (!block) return NULL;
 
     for (i = 0; i < BLOCK_SIZE; i++) init_thunk( &block[i], BLOCK_SIZE * num + i + 3 );

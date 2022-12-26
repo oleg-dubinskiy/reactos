@@ -222,8 +222,7 @@ static const vtbl_method_t *allocate_block( unsigned int num )
     vtbl_method_t *prev, *block;
     DWORD oldprot;
 
-    block = VirtualAlloc( NULL, BLOCK_SIZE * sizeof(*block),
-                          MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE );
+    block = VirtualAlloc( NULL, BLOCK_SIZE * sizeof(*block), MEM_COMMIT, PAGE_EXECUTE_READWRITE );
     if (!block) return NULL;
 
     for (i = 0; i < BLOCK_SIZE; i++)
