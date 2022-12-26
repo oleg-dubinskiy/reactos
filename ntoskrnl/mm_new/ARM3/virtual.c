@@ -2994,7 +2994,7 @@ MiDecommitPages(
             else
             {
                 /* Remove it from the counters, and check if it was valid or not */
-                //Process->NumberOfPrivatePages--;
+                Process->NumberOfPrivatePages--;
 
                 if (PteContents.u.Hard.Valid)
                 {
@@ -3025,7 +3025,7 @@ MiDecommitPages(
                     /* So the only other possibility is that it is still a demand zero PTE,
                        in which case we undo the accounting we did earlier and simply make the page decommitted.
                     */
-                    //Process->NumberOfPrivatePages++;
+                    Process->NumberOfPrivatePages++;
                     MI_WRITE_INVALID_PTE(Pte, MmDecommittedPte);
                 }
             }
