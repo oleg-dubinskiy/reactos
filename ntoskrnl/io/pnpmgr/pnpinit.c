@@ -28,7 +28,7 @@ LIST_ENTRY IopLegacyBusInformationTable[MaximumInterfaceType];
 PUNICODE_STRING PiInitGroupOrderTable;
 USHORT PiInitGroupOrderTableCount;
 USHORT IopGroupIndex;
-PLIST_ENTRY IopGroupTable; // rointer to array[IopGroupIndex]
+PLIST_ENTRY IopGroupTable; // pointer to array[IopGroupIndex]
 PDRIVER_GROUP_LIST_ENTRY IopGroupListHead;
 INTERFACE_TYPE PnpDefaultInterfaceType;
 PDEVICE_NODE IopInitHalDeviceNode;
