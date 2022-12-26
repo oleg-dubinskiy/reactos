@@ -1533,6 +1533,7 @@ MiSetProtectionOnSection(
     BOOLEAN IsWriteCopy = FALSE;
     BOOLEAN UpdateDirty;
     KIRQL OldIrql;
+    NTSTATUS Status;
 
     PAGED_CODE();
     DPRINT("MiSetProtectionOnSection: %p, %p, %p, %X, %X\n", Process, StartingAddress, EndingAddress, NewProtect, DontCharge);
@@ -1739,8 +1740,41 @@ EndWriteCopy:
 
         if (!DontCharge && QuotaCharge > 0)
         {
+            MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+
+            Status = PsChargeProcessPageFileQuota(Process, QuotaCharge);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("MiSetProtectionOnSection: STATUS_PAGEFILE_QUOTA_EXCEEDED\n");
+                return STATUS_PAGEFILE_QUOTA_EXCEEDED;
+            }
+
+            if (Process->CommitChargeLimit &&
+                Process->CommitChargeLimit < (Process->CommitCharge + QuotaCharge))
+            {
+                DPRINT1("MiSetProtectionOnSection: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            if (Process->JobStatus & 0x10)
+            {
+                DPRINT1("MiSetProtectionOnSection: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            if (!MiChargeCommitment(QuotaCharge, 0))
+            {
+                DPRINT1("MiSetProtectionOnSection: FIXME\n");
+                ASSERT(FALSE);
+            }
+
             FoundVad->u.VadFlags.CommitCharge += QuotaCharge;
             Process->CommitCharge += QuotaCharge;
+
+            if (Process->CommitChargePeak < Process->CommitCharge)
+                Process->CommitChargePeak = Process->CommitCharge;
+
+            MiLockProcessWorkingSetUnsafe(Process, Thread);
         }
     }
 
@@ -1875,7 +1909,24 @@ EndWriteCopy:
 
     if (QuotaCharge > 0 && !DontCharge)
     {
-        FoundVad->u.VadFlags.CommitCharge -= QuotaCharge;
+        ASSERT((SSIZE_T)(QuotaCharge) >= 0);
+        ASSERT(MmTotalCommittedPages >= (QuotaCharge));
+        InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -QuotaCharge);
+
+        PsReturnProcessPageFileQuota(Process, QuotaCharge);
+
+        if (QuotaCharge > FoundVad->u.VadFlags.CommitCharge)
+        {
+            DPRINT1("MiSetProtectionOnSection: %p, %p, %X, %X\n", Process, FoundVad, FoundVad->u.VadFlags.CommitCharge, QuotaCharge);
+            DbgBreakPoint();
+        }
+
+        if (Process->JobStatus & 0x10)
+        {
+            DPRINT1("MiSetProtectionOnSection: FIXME\n");
+            ASSERT(FALSE);
+        }
+
         Process->CommitCharge -= QuotaCharge;
     }
 
