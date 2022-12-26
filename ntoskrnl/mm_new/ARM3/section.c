@@ -7810,8 +7810,8 @@ MiCheckForControlAreaDeletion(
 
     if (ControlArea->DereferenceList.Flink)
     {
-        DPRINT1("MiCheckForControlAreaDeletion: FIXME \n");
-        ASSERT(FALSE);
+        RemoveEntryList(&ControlArea->DereferenceList);
+        MmUnusedSegmentCount--;
     }
 
     DPRINT("MiCheckForControlAreaDeletion: FIXME MmDereferenceSegmentHeader (paging)\n");
