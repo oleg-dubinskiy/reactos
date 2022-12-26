@@ -361,6 +361,7 @@ extern SLIST_HEADER MmDeadStackSListHead;
 extern PVOID MmHighSectionBase;
 extern ULONG MmSpecialPoolTag;
 extern LIST_ENTRY MmUnusedSubsectionList;
+extern LIST_ENTRY MmUnusedSegmentList;
 extern ULONG MmMaximumDeadKernelStacks;
 extern ULONG MmDataClusterSize;
 extern ULONG MmCodeClusterSize;
@@ -376,6 +377,7 @@ extern KEVENT MmAvailablePagesEventHigh;
 extern ULONG MiMaximumWorkingSet;
 extern SIZE_T MmMaximumWorkingSetSize;
 extern LIST_ENTRY MmWorkingSetExpansionHead;
+extern KEVENT MmUnusedSegmentCleanup;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1719,6 +1721,8 @@ MmArmInitSystem(
 
         /* Initialize lists and event */
         InitializeListHead(&MmUnusedSubsectionList);
+        InitializeListHead(&MmUnusedSegmentList);
+        KeInitializeEvent(&MmUnusedSegmentCleanup, NotificationEvent, FALSE);
 
         /* Look for large page cache entries that need caching */
         MiSyncCachedRanges();

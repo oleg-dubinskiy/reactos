@@ -26,6 +26,7 @@ KGUARDED_MUTEX MmSectionBasedMutex;
 KEVENT MmCollidedFlushEvent;
 PVOID MmHighSectionBase;
 LIST_ENTRY MmUnusedSubsectionList;
+LIST_ENTRY MmUnusedSegmentList;
 MMSESSION MmSession;
 MM_AVL_TABLE MmSectionBasedRoot;
 ULONG MmUnusedSegmentCount = 0;
@@ -33,6 +34,7 @@ ULONG MmUnusedSubsectionCount = 0;
 ULONG MmUnusedSubsectionCountPeak = 0;
 SIZE_T MiUnusedSubsectionPagedPool;
 //SIZE_T MiUnusedSubsectionPagedPoolPeak;
+KEVENT MmUnusedSegmentCleanup;
 
 ACCESS_MASK MmMakeSectionAccess[8] =
 {
@@ -671,8 +673,8 @@ MiSegmentDelete(
 
     if (ControlArea->DereferenceList.Flink)
     {
-        DPRINT1("MiSegmentDelete: FIXME\n");
-        ASSERT(FALSE);
+        RemoveEntryList(&ControlArea->DereferenceList);
+        MmUnusedSegmentCount--;
     }
 
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
