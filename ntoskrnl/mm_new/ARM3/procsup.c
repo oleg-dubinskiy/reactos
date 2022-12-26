@@ -22,6 +22,8 @@ extern LARGE_INTEGER MmCriticalSectionTimeout;
 extern SIZE_T MmMinimumStackCommitInBytes;
 extern BOOLEAN MmTrackLockedPages;
 extern PEPROCESS PsInitialSystemProcess;
+extern ULONG MiMaximumWorkingSet;
+extern SIZE_T MmPagesAboveWsMinimum;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -86,10 +88,15 @@ MmCleanProcessAddressSpace(
     _In_ PEPROCESS Process)
 {
     PETHREAD Thread = PsGetCurrentThread();
+    PMMWSLE MmWsle = (PMMWSLE)(MmWorkingSetList + 1);
     PMM_AVL_TABLE VadTree;
     PMMVAD Vad;
+    PMMPTE Pte;
+    PMMPTE LastPte;
+    LONG AboveMinimum;
+    SIZE_T NumberOfCommittedPageTables;
 
-    DPRINT("MmCleanProcessAddressSpace: %p '%16s'\n", Process, Process->ImageFileName);
+    DPRINT1("MmCleanProcessAddressSpace: %p '%16s'\n", Process, Process->ImageFileName);
 
     if (Process->VmDeleted)
     {
@@ -98,21 +105,44 @@ MmCleanProcessAddressSpace(
         return;
     }
 
-    /* Only support this */
-    ASSERT(Process->AddressSpaceInitialized == 2);
+    if (Process->AddressSpaceInitialized == 0)
+    {
+        DPRINT("MmCleanProcessAddressSpace: AddressSpaceInitialized is 0\n");
+        MiSessionRemoveProcess();
+        return;
+    }
+
+    if (Process->AddressSpaceInitialized == 1)
+    {
+        DPRINT1("MmCleanProcessAddressSpace: AddressSpaceInitialized is 1\n");
+
+        DPRINT1("MmCleanProcessAddressSpace: FIXME\n");
+        ASSERT(FALSE);
+
+        MiSessionRemoveProcess();
+        return;
+    }
+
+    MiUnlinkWorkingSet(&Process->Vm);
 
     /* Remove from the session */
     MiSessionRemoveProcess();
+
+    Pte = (MiAddressToPte(&MmWsle[MiMaximumWorkingSet]) + 1);
 
     /* Lock the process address space from changes */
     MmLockAddressSpace(&Process->Vm);
     MiLockProcessWorkingSetUnsafe(Process, Thread);
 
     /* VM is deleted now */
-    Process->VmDeleted = TRUE;
+    InterlockedOr((PLONG)&Process->Flags, PSF_VM_DELETED_BIT);
 
+    //MiDeleteAddressesInWorkingSet(Process);
     /* HACK!!! This must be cleared during the cleanup of the working set of the process. */
     MiCleanUserSharedData(Process);
+
+    LastPte = MiAddressToPte(MmWorkingSetList->HighestPermittedHashAddress);
+    DPRINT1("MmCleanProcessAddressSpace: FIXME MiDeletePteRange(%p, %p, %p (%X))\n", Process, Pte, LastPte, (LastPte - Pte));
 
     MiUnlockProcessWorkingSetUnsafe(Process, Thread);
 
@@ -142,17 +172,44 @@ MmCleanProcessAddressSpace(
         ASSERT(VadTree->NumberGenericTableElements >= 1);
         MiRemoveNode((PMMADDRESS_NODE)Vad, VadTree);
 
-        /* Only regular VADs supported for now */
-//        ASSERT(Vad->u.VadFlags.VadType == VadNone);
+        if (MmHighestUserAddress > (PVOID)(MM_SHARED_USER_DATA_VA + 0x10000) &&
+            Vad->StartingVpn == (MM_SHARED_USER_DATA_VA / PAGE_SIZE))
+        {
+            DPRINT1("MmCleanProcessAddressSpace: FIXME\n");
+            ASSERT(FALSE);
+        }
 
         /* Check if this is a section VAD */
-        if (!Vad->u.VadFlags.PrivateMemory && Vad->ControlArea)
+        if ((!Vad->u.VadFlags.PrivateMemory && Vad->ControlArea) ||
+            Vad->u.VadFlags.VadType == VadDevicePhysicalMemory)
         {
+            if (Vad->u.VadFlags.VadType == VadRotatePhysical)
+            {
+                DPRINT1("MmCleanProcessAddressSpace: FIXME MiPhysicalViewRemover()\n");
+                ASSERT(FALSE);
+            }
+
             /* Remove the view */
             MiRemoveMappedView(Process, Vad);
         }
+        else if (Vad->u.VadFlags.VadType == VadLargePages)
+        {
+            DPRINT1("MmCleanProcessAddressSpace: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else if (Vad->u.VadFlags.VadType == VadAwe)
+        {
+            DPRINT1("MmCleanProcessAddressSpace: FIXME\n");
+            ASSERT(FALSE);
+        }
         else
         {
+            if (Vad->u.VadFlags.VadType == VadWriteWatch)
+            {
+                DPRINT1("MmCleanProcessAddressSpace: FIXME MiPhysicalViewRemover()\n");
+                ASSERT(FALSE);
+            }
+
             /* Delete the addresses */
             MiDeleteVirtualAddresses((Vad->StartingVpn * PAGE_SIZE),
                                      ((Vad->EndingVpn * PAGE_SIZE) | (PAGE_SIZE - 1)),
@@ -170,24 +227,94 @@ MmCleanProcessAddressSpace(
             continue;
         }
 
+        ASSERT(MmHighestUserAddress > (PVOID)MM_SHARED_USER_DATA_VA);
+
         /* Free the VAD memory */
         ExFreePool(Vad);
+    }
+
+    if (Process->AweInfo)
+    {
+        DPRINT1("MmCleanProcessAddressSpace: FIXME MiCleanPhysicalProcessPages()\n");
+        ASSERT(FALSE);
     }
 
     /* Lock the working set */
     MiLockProcessWorkingSetUnsafe(Process, Thread);
 
-    ASSERT(Process->CloneRoot == NULL);
-    ASSERT(Process->PhysicalVadRoot == NULL);
+    if (Process->CloneRoot)
+    {
+        DPRINT1("MmCleanProcessAddressSpace: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (Process->PhysicalVadRoot)
+    {
+        DPRINT1("MmCleanProcessAddressSpace: FIXME\n");
+        ASSERT(FALSE);
+    }
 
     /* Delete the shared user data section */
-    MiDeleteVirtualAddresses(USER_SHARED_DATA, USER_SHARED_DATA, NULL);
+    if (MmHighestUserAddress > (PVOID)MM_SHARED_USER_DATA_VA)
+        MiDeleteVirtualAddresses(MM_SHARED_USER_DATA_VA, MM_SHARED_USER_DATA_VA, NULL);
+
+    AboveMinimum = (LONG)(Process->Vm.WorkingSetSize - Process->Vm.MinimumWorkingSetSize);
+
+    /* Release the working set */
+    MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+
+    if (AboveMinimum > 0)
+        InterlockedExchangeAddSizeT(&MmPagesAboveWsMinimum, -AboveMinimum);
+
+    NumberOfCommittedPageTables = MmWorkingSetList->NumberOfCommittedPageTables;
+    ASSERT((SSIZE_T)(NumberOfCommittedPageTables) >= 0);
+
+    ASSERT(MmTotalCommittedPages >= (NumberOfCommittedPageTables));
+    InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -NumberOfCommittedPageTables);
+
+    Process->CommitCharge -= NumberOfCommittedPageTables;
+    PsReturnProcessPageFileQuota(Process, NumberOfCommittedPageTables);
+
+    /* Lock the working set */
+    MiLockProcessWorkingSetUnsafe(Process, Thread);
+
+    ASSERT(Process->CloneRoot == NULL);
+
+    if (Process->NumberOfLockedPages)
+    {
+        DPRINT1("MmCleanProcessAddressSpace: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (Process->NumberOfPrivatePages)
+    {
+        DPRINT1("MmCleanProcessAddressSpace: FIXME Process %p contains private pages %X\n", Process, Process->NumberOfPrivatePages);
+        //ASSERT(FALSE);//DbgBreakPoint();
+    }
+
+    DPRINT("MmCleanProcessAddressSpace: FIXME MiDeletePteRange(%p, %p, %p (%X))\n", Process, Pte, LastPte, (LastPte - Pte));
+
+    ASSERT(Process->Vm.MinimumWorkingSetSize >= 6); // MM_PROCESS_CREATE_CHARGE
+    ASSERT(Process->Vm.WorkingSetExpansionLinks.Flink == MM_WS_NOT_LISTED);
+
+    MmWorkingSetList->HashTableSize = 0;
+    MmWorkingSetList->HashTable = NULL;
+
+    DPRINT("MmCleanProcessAddressSpace: FIXME MiRemoveWorkingSetPages()\n");
+
+    InterlockedExchangeAddSizeT(&MmResidentAvailablePages, (Process->Vm.MinimumWorkingSetSize - 6));
 
     /* Release the working set */
     MiUnlockProcessWorkingSetUnsafe(Process, Thread);
 
     /* Release the address space */
     MmUnlockAddressSpace(&Process->Vm);
+
+    if (Process->JobStatus & 0x10)
+    {
+        DPRINT1("MmCleanProcessAddressSpace: FIXME PsChangeJobMemoryUsage()\n");
+        ASSERT(FALSE);
+    }
 }
 
 VOID
