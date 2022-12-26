@@ -105,7 +105,8 @@ FsRtlPruneTunnelCache(
     while(Entry != &Cache->TimerQueue)
     {
         /* get node entry */
-        CurEntry = CONTAINING_RECORD(Entry, TUNNEL_NODE_ENTRY, TimerQueueEntry);
+        ASSERT(!IsListEmpty(&Cache->TimerQueue));
+        CurEntry = CONTAINING_RECORD(Cache->TimerQueue.Flink, TUNNEL_NODE_ENTRY, TimerQueueEntry);
 
         /* get next entry */
          NextEntry = Entry->Flink;
