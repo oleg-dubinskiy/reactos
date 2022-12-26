@@ -490,18 +490,36 @@ NTSTATUS
 NTAPI
 MmInitializeHandBuiltProcess2(
     _In_ PEPROCESS Process)
+#if defined(ONE_CPU)
 {
-    // ? MmInitializeProcessAddressSpace()
+    DPRINT1("MmInitializeHandBuiltProcess2: Process %p\n", Process);
 
-    if (MmVirtualBias)
+    if ((ULONG_PTR)MmHighestUserAddress <= (MM_SHARED_USER_DATA_VA + 0x10000)) // FIXME
+        return STATUS_SUCCESS;
+
+    DPRINT1("MmInitializeHandBuiltProcess2: FIXME\n");
+    ASSERT(FALSE):
+
+    return STATUS_SUCCESS;
+}
+#else
+{
+    ULONG Flags = 0;
+    NTSTATUS Status;
+
+    DPRINT1("MmInitializeHandBuiltProcess2: Process %p\n", Process);
+
+    Status = MmInitializeProcessAddressSpace(Process, NULL, NULL, &Flags, NULL);
+
+    if (MmVirtualBias && !PsInitialSystemProcess && NT_SUCCESS(Status))
     {
-        /* Lock the VAD, ARM3-owned ranges away */
         UNIMPLEMENTED_DBGBREAK();
         return STATUS_NOT_IMPLEMENTED;
     }
 
-    return STATUS_SUCCESS;
+    return Status;
 }
+#endif
 
 NTSTATUS
 NTAPI
