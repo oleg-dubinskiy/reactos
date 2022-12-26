@@ -736,6 +736,7 @@ CcFlushCache(
     BOOLEAN IsLazyWrite = FALSE;
     BOOLEAN PendingTeardown = FALSE;
     BOOLEAN IsFreeVacb = FALSE;
+    BOOLEAN IsNotSuccess = FALSE;
     BOOLEAN IsVacbLocked;
     KIRQL OldIrql;
     NTSTATUS Status;
@@ -897,6 +898,9 @@ CcFlushCache(
         if (!SharedMap->FileSize.QuadPart && !(SharedMap->Flags & SHARE_FL_PIN_ACCESS))
             break;
 
+        if (IsNotSuccess)
+            break;
+
         if (!IsLazyWrite || PendingTeardown)
             length = Size;
         else
@@ -948,12 +952,67 @@ CcFlushCache(
 
         if (!HotSpot)
         {
+            ULONG CurrentSize;
+
             MmFlushSection(SharedMap->FileObject->SectionObjectPointer, &OffsetForFlush, Size, OutIoStatus, Flags);
 
             if (!NT_SUCCESS(OutIoStatus->Status))
             {
-                DPRINT1("CcFlushCache: FIXME\n");
-                ASSERT(FALSE);
+                DPRINT1("CcFlushCache: SharedMap %p, Status %X\n", SharedMap, OutIoStatus->Status);
+
+                CurrentSize = Size;
+
+                if (OutIoStatus->Status == STATUS_ENCOUNTERED_WRITE_IN_PROGRESS)
+                {
+                    IsSetDirty = TRUE;
+                }
+                else if (OutIoStatus->Status == STATUS_VERIFY_REQUIRED ||
+                         OutIoStatus->Status == STATUS_FILE_LOCK_CONFLICT)
+                {
+                    IsNotSuccess = TRUE;
+                    IsSetDirty = TRUE;
+                }
+                else
+                {
+                    do
+                    {
+                        MmFlushSection(SharedMap->FileObject->SectionObjectPointer, &OffsetForFlush, PAGE_SIZE, OutIoStatus, Flags);
+
+                        if (NT_SUCCESS(OutIoStatus->Status))
+                        {
+                            OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+                            SharedMap->Flags |= 0x400;
+                            KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+                        }
+                        else if (OutIoStatus->Status != STATUS_VERIFY_REQUIRED &&
+                                 OutIoStatus->Status != STATUS_FILE_LOCK_CONFLICT &&
+                                 OutIoStatus->Status != STATUS_ENCOUNTERED_WRITE_IN_PROGRESS)
+                        {
+                            DPRINT1("CcFlushCache: SharedMap %p, Status %X\n", SharedMap, OutIoStatus->Status);
+                            IsSaveStatus = TRUE;
+                            Status = OutIoStatus->Status;
+                        }
+
+                        if (!IsNotSuccess)
+                        {
+                            if (OutIoStatus->Status == STATUS_VERIFY_REQUIRED ||
+                                OutIoStatus->Status == STATUS_FILE_LOCK_CONFLICT ||
+                                OutIoStatus->Status == STATUS_ENCOUNTERED_WRITE_IN_PROGRESS)
+                            {
+                                IsNotSuccess = TRUE;
+                            }
+                        }
+
+                        OffsetForFlush.QuadPart += PAGE_SIZE;
+                        CurrentSize -= PAGE_SIZE;
+                    }
+                    while (CurrentSize);
+
+                    if (IsNotSuccess)
+                        IsSetDirty = TRUE;
+                    else
+                        IsSetDirty = FALSE;
+                }
             }
             else
             {
