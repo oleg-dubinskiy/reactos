@@ -15,7 +15,7 @@ ULONG MmCodeClusterSize;
 ULONG MmInPageSupportMinimum = 4;
 ULONG MiInPageSinglePages = 0;
 PFN_NUMBER MmFreeGoal = 100;
-SIZE_T MmSystemLockPagesCount;
+SIZE_T MmSystemLockPagesCount = 0; //FIXME: #if !defined(ONE_CPU) - SIZE_T MmSystemLockPagesCount[32] = {0};
 
 static CHAR MmMakeProtectNotWriteCopy[32] =
 {
@@ -588,9 +588,10 @@ MiInitializeCopyOnWritePfn(
 {
     PMMPFN Pfn;
     PMMPFN NewPfn;
-    //PMMWSLE Wsle;
+    PMMWSLE wsle;
     PMMPDE Pde;
     ULONG Protection;
+    ULONG NewProtection;
 
     DPRINT("MiInitializeCopyOnWritePfn: %X, %p [%I64X], %X, %p\n",
            PageNumber, Pte, MiGetPteContents(Pte), WsleIndex, WsList);
@@ -603,18 +604,17 @@ MiInitializeCopyOnWritePfn(
     NewPfn->PteAddress = Pte;
     NewPfn->OriginalPte.u.Long = 0;
 
-    // FIXME MiInitializeWorkingSetList
+    wsle = &WsList->Wsle[WsleIndex];
 
-    if (MmWorkingSetList->Wsle == (PVOID)(ULONG_PTR)0xDEADBABEDEADBABEULL)
-    {
-        Protection = MmMakeProtectNotWriteCopy[Pfn->OriginalPte.u.Soft.Protection];
-        NewPfn->OriginalPte.u.Soft.Protection = Protection;
-    }
+    if (!wsle->u1.e1.Protection)
+        Protection = Pfn->OriginalPte.u.Soft.Protection;
     else
-    {
-        DPRINT1("MiInitializeCopyOnWritePfn: FIXME\n");
-        ASSERT(FALSE);
-    }
+        Protection = wsle->u1.e1.Protection;
+
+    NewProtection = MmMakeProtectNotWriteCopy[Protection];
+
+    NewPfn->OriginalPte.u.Soft.Protection = NewProtection;
+    wsle->u1.e1.Protection = NewProtection;
 
     ASSERT(NewPfn->u3.e2.ReferenceCount == 0);
 
@@ -639,7 +639,6 @@ MiInitializeCopyOnWritePfn(
     NewPfn->u1.WsIndex = WsleIndex;
 
     Pde = MiAddressToPte(Pte);
-
     if (!Pde->u.Hard.Valid)
     {
         if (!NT_SUCCESS(MiCheckPdeForPagedPool(Pte)))
