@@ -886,6 +886,132 @@ MiRemoveImageSectionObject(
 
 VOID
 NTAPI
+MiPurgeImageSection(
+    _In_ PCONTROL_AREA ControlArea,
+    _In_ KIRQL OldIrql)
+{
+    PSUBSECTION Subsection;
+    PMMPTE LastPte;
+    PMMPTE Pte;
+    MMPTE TempPte;
+    MMPTE TempProto;
+    MMPTE PteContents;
+    PMMPFN Pfn;
+    ULONG SubsectionSize;
+    ULONG CurrentSize;
+    ULONG Protection;
+
+    DPRINT1("MiPurgeImageSection: ControlArea %p, OldIrql %X\n", ControlArea, OldIrql);
+
+    ASSERT(ControlArea->u.Flags.Image != 0);
+
+    if (ControlArea->u.Flags.GlobalOnlyPerSession || ControlArea->u.Flags.Rom)
+        Subsection = (PSUBSECTION)((PLARGE_CONTROL_AREA)ControlArea + 1);
+    else
+        Subsection = (PSUBSECTION)(ControlArea + 1);
+
+    do
+    {
+        if (!Subsection->u.SubsectionFlags.GlobalMemory)
+        {
+            Subsection = Subsection->NextSubsection;
+            continue;
+        }
+
+        TempProto.u.Long = 0;
+        PteContents.u.Long = 0;
+        SubsectionSize = 0;
+
+        if (Subsection->StartingSector)
+        {
+            MI_MAKE_SUBSECTION_PTE(&TempProto, Subsection);
+
+            SubsectionSize = (Subsection->NumberOfFullSectors * MM_SECTOR_SIZE);
+            SubsectionSize |= Subsection->u.SubsectionFlags.SectorEndOffset;
+        }
+
+        Protection = Subsection->u.SubsectionFlags.Protection;
+        TempProto.u.Soft.Protection = Protection;
+        PteContents.u.Soft.Protection = Protection;
+
+        Pte = Subsection->SubsectionBase;
+        LastPte = &Subsection->SubsectionBase[Subsection->PtesInSubsection];
+
+        ControlArea = Subsection->ControlArea;
+
+        if (!MiAddressToPte(Pte)->u.Hard.Valid)
+            MiMakeSystemAddressValidPfn(Pte, OldIrql);
+
+        while (Pte < LastPte)
+        {
+            if (MiIsPteOnPdeBoundary(Pte) && !MiAddressToPte(Pte)->u.Hard.Valid)
+                MiMakeSystemAddressValidPfn(Pte, OldIrql);
+
+            TempPte.u.Long = Pte->u.Long;
+            if (!TempPte.u.Long)
+                break;
+
+            ASSERT(TempPte.u.Hard.Valid == 0);
+
+            if (TempPte.u.Soft.Prototype || !TempPte.u.Soft.Transition)
+            {
+                DPRINT1("MiPurgeImageSection: FIXME\n");
+                ASSERT(FALSE);
+                goto NextPte;
+            }
+
+            Pfn = MiGetPfnEntry(TempPte.u.Trans.PageFrameNumber);
+
+            if (!Pfn->u3.e1.Modified && Pfn->OriginalPte.u.Soft.Prototype)
+                goto NextPte;
+
+            ASSERT(Pfn->OriginalPte.u.Hard.Valid == 0);
+
+            if (Pfn->u3.e2.ReferenceCount)
+            {
+                DPRINT1("MiPurgeImageSection: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            ASSERT(!((Pfn->OriginalPte.u.Soft.Prototype == 0) && (Pfn->OriginalPte.u.Soft.Transition == 1)));
+
+            MI_WRITE_INVALID_PTE(Pte, Pfn->OriginalPte);
+            ASSERT(Pfn->OriginalPte.u.Hard.Valid == 0);
+
+            if (Pfn->OriginalPte.u.Soft.Prototype)
+            {
+                ControlArea->NumberOfPfnReferences--;
+                ASSERT((LONG)ControlArea->NumberOfPfnReferences >= 0);
+            }
+
+            MiUnlinkPageFromList(Pfn);
+            MI_SET_PFN_DELETED(Pfn);
+
+            MiDecrementPfnShare(MiGetPfnEntry(Pfn->u4.PteFrame), Pfn->u4.PteFrame);
+
+            if (!Pfn->u3.e2.ReferenceCount)
+            {
+                MiReleasePageFileSpace(Pfn->OriginalPte);
+                MiInsertPageInFreeList(TempPte.u.Trans.PageFrameNumber);
+            }
+
+            MI_WRITE_INVALID_PTE(Pte, TempProto);
+
+NextPte:
+            Pte++;
+            CurrentSize += PAGE_SIZE;
+
+            if (CurrentSize >= SubsectionSize)
+                TempProto.u.Long = PteContents.u.Long;
+        }
+
+        Subsection = Subsection->NextSubsection;
+    }
+    while (Subsection);
+}
+
+VOID
+NTAPI
 MiCheckControlArea(
     _In_ PCONTROL_AREA ControlArea,
     _In_ KIRQL OldIrql)
