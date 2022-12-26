@@ -195,6 +195,7 @@ extern PVOID MiSessionSpaceEnd;
     (ULONGLONG)((Pte != NULL) ? (Pte->u.Long) : (0))
 
 #define WSLE_NULL_INDEX 0x0FFFFFFF
+#define MM_WS_NOT_LISTED  NULL
 
 /* FIXFIX: These should go in ex.h after the pool merge */
 
@@ -2581,6 +2582,12 @@ MiLocateWsle(
 VOID
 NTAPI
 MiAllowWorkingSetExpansion(
+    _In_ PMMSUPPORT WorkSet
+);
+
+VOID
+NTAPI
+MiUnlinkWorkingSet(
     _In_ PMMSUPPORT WorkSet
 );
 

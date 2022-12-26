@@ -841,7 +841,7 @@ MiDereferenceSessionFinal(VOID)
     {
         /* Remove the session from the list and zero the list entry */
         RemoveEntryList(&SessionGlobal->Vm.WorkingSetExpansionLinks);
-        SessionGlobal->Vm.WorkingSetExpansionLinks.Flink = 0;
+        SessionGlobal->Vm.WorkingSetExpansionLinks.Flink = MM_WS_NOT_LISTED;
     }
 
     /* Check if the session is in the workingset list */

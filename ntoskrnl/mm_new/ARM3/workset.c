@@ -51,6 +51,44 @@ MiAllowWorkingSetExpansion(
 
 }
 
+VOID
+NTAPI
+MiUnlinkWorkingSet(
+    _In_ PMMSUPPORT WorkSet)
+{
+    KEVENT Event;
+    KIRQL OldIrql;
+
+    OldIrql = MiAcquireExpansionLock();
+
+    if (WorkSet->WorkingSetExpansionLinks.Flink == MM_WS_NOT_LISTED)
+    {
+        MiReleaseExpansionLock(OldIrql);
+        return;
+    }
+
+    if (WorkSet->WorkingSetExpansionLinks.Flink != (PLIST_ENTRY)1)
+    {
+        RemoveEntryList(&WorkSet->WorkingSetExpansionLinks);
+        WorkSet->WorkingSetExpansionLinks.Flink = MM_WS_NOT_LISTED;
+        MiReleaseExpansionLock(OldIrql);
+        return;
+    }
+
+    //WorkSet->WorkingSetExpansionLinks.Flink == 1
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    WorkSet->WorkingSetExpansionLinks.Blink = (PLIST_ENTRY)&Event;
+
+    KeEnterCriticalRegion();
+    MiReleaseExpansionLock(OldIrql);
+    KeWaitForSingleObject(&Event, WrVirtualMemory, KernelMode, FALSE, NULL);
+    KeLeaveCriticalRegion();
+
+    ASSERT(WorkSet->WorkingSetExpansionLinks.Flink == MM_WS_NOT_LISTED);
+}
+
 BOOLEAN
 NTAPI
 MiEliminateWorkingSetEntry(
