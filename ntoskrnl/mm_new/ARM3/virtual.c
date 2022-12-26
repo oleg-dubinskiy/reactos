@@ -4745,8 +4745,16 @@ ErrorVadExit:
     */
     if (AllocationType == MEM_RESET)
     {
-        DPRINT1("NtAllocateVirtualMemory: FIXME\n");
-        ASSERT(FALSE);
+        EndingAddress = ((ULONG_PTR)PAGE_ALIGN((ULONG_PTR)PBaseAddress + PRegionSize) - 1);
+        StartingAddress = (ULONG_PTR)PAGE_ALIGN((PUCHAR)PBaseAddress + PAGE_SIZE - 1);
+
+        if (StartingAddress > EndingAddress)
+        {
+            DPRINT1("NtAllocateVirtualMemory: FIXME\n");
+            ASSERT(FALSE);
+            Status = STATUS_CONFLICTING_ADDRESSES;
+            goto ErrorExit;
+        }
     }
     else
     {
@@ -4808,8 +4816,8 @@ ErrorVadExit:
 
     if (AllocationType == MEM_RESET)
     {
-        DPRINT1("NtAllocateVirtualMemory: FIXME\n");
-        ASSERT(FALSE);
+        Status = MiResetVirtualMemory(StartingAddress, EndingAddress, FoundVad, Process);
+        KeReleaseGuardedMutex(&Process->AddressCreationLock);
         goto Exit;
     }
 
