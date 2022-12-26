@@ -509,6 +509,7 @@ CcWriteBehind(
     KLOCK_QUEUE_HANDLE LockHandle;
     LARGE_INTEGER validDataLength;
     PVACB ActiveVacb = NULL;
+    PUNICODE_STRING FileName;
     ULONG ActivePage;
     ULONG TargetPages;
     KIRQL OldIrql;
@@ -561,7 +562,6 @@ CcWriteBehind(
             SharedMap->Mbcb->PagesToWrite = TargetPages;
     }
 
-
     KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueueMasterLock]);
     KeReleaseInStackQueuedSpinLock(&LockHandle);
 
@@ -573,25 +573,45 @@ CcWriteBehind(
     (*SharedMap->Callbacks->ReleaseFromLazyWrite)(SharedMap->LazyWriteContext);
 
     if (!NT_SUCCESS(OutIoStatus->Status) && OutIoStatus->Status != STATUS_VERIFY_REQUIRED)
-    {
-        DPRINT1("CcWriteBehind: OutIoStatus->Status %X\n", OutIoStatus->Status);
-        ASSERT(FALSE);
-
         IsCancelWait = TRUE;
-    }
 
     if (!NT_SUCCESS(OutIoStatus->Status) &&
         OutIoStatus->Status != STATUS_VERIFY_REQUIRED &&
         OutIoStatus->Status != STATUS_FILE_LOCK_CONFLICT &&
         OutIoStatus->Status != STATUS_ENCOUNTERED_WRITE_IN_PROGRESS)
     {
-        DPRINT1("CcWriteBehind: OutIoStatus->Status %X\n", OutIoStatus->Status);
-        ASSERT(FALSE);
+        POBJECT_NAME_INFORMATION FileNameInfo = NULL;
+        NTSTATUS status;
+
+        //CcLostDelayedWrites++;
+
+        status = IoQueryFileDosDeviceName(SharedMap->FileObject, &FileNameInfo);
+
+        if (status != STATUS_SUCCESS)
+        {
+            FileName = &SharedMap->FileObject->FileName;
+
+            DPRINT1("CcWriteBehind: %X, %X, '%wZ'\n", OutIoStatus->Status, status, FileName);
+
+            if (FileName->Length && FileName->MaximumLength && FileName->Buffer)
+                IoRaiseInformationalHardError(STATUS_LOST_WRITEBEHIND_DATA, FileName, NULL);
+
+            //CcLogError(SharedMap->FileObject, FileName, 0x80040032, OutIoStatus->Status, 4);
+        }
+        else
+        {
+            DPRINT1("CcWriteBehind: %X, '%wZ'\n", OutIoStatus->Status, &FileNameInfo->Name);
+
+            IoRaiseInformationalHardError(STATUS_LOST_WRITEBEHIND_DATA, &FileNameInfo->Name, NULL);
+            //CcLogError(SharedMap->FileObject, &FileNameInfo->Name, 0x80040032, OutIoStatus->Status, 4);
+        }
+
+        if (FileNameInfo)
+            ExFreePoolWithTag(FileNameInfo, 0);
     }
-    else
+    else if (!IsListEmpty(&CcDeferredWrites))
     {
-        if (!IsListEmpty(&CcDeferredWrites))
-            CcPostDeferredWrites();
+        CcPostDeferredWrites();
     }
 
     KeAcquireInStackQueuedSpinLock(&SharedMap->BcbSpinLock, &LockHandle);
