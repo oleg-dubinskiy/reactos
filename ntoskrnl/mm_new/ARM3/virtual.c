@@ -2166,8 +2166,11 @@ MiProtectVirtualMemory(
             /* Check if data or page file mapping protection PTE is compatible */
             if (!Vad->ControlArea->u.Flags.Image)
             {
-                DPRINT1("MiProtectVirtualMemory: FIXME MiIsPteProtectionCompatible()\n");
-                ASSERT(FALSE);
+                if (!MiIsPteProtectionCompatible(Vad->u.VadFlags.Protection, NewProtection))
+                {
+                    Status = STATUS_SECTION_PROTECTION;
+                    goto ErrorExit;
+                }
             }
         }
 

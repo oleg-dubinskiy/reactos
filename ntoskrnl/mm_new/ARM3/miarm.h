@@ -2249,6 +2249,13 @@ MiCleanSection(
     _In_ BOOLEAN Parameter2
 );
 
+BOOLEAN
+NTAPI
+MiIsPteProtectionCompatible(
+    _In_ ULONG PteProtection,
+    _In_ ULONG NewProtection
+);
+
 /* ARM3\session.c */
 VOID
 NTAPI
