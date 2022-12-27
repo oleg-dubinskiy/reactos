@@ -2091,6 +2091,24 @@ MiIsProtectionCompatible(
     return ((CompatibleMask | NewSectionPageProtection) == CompatibleMask);
 }
 
+BOOLEAN
+NTAPI
+MiIsPteProtectionCompatible(
+    _In_ ULONG PteProtection,
+    _In_ ULONG NewProtection)
+{
+    ULONG CompatibleMask;
+
+    DPRINT("MiIsProtectionCompatible: %X, %X\n", PteProtection, NewProtection);
+
+    /* Calculate the compatible mask */
+    CompatibleMask = MmCompatibleProtectionMask[PteProtection & 0x7] |
+                     PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE;
+
+    /* See if the mapping protection is compatible with the create protection */
+    return ((CompatibleMask | NewProtection) == CompatibleMask);
+}
+
 VOID
 NTAPI
 MiInsertPhysicalViewAndRefControlArea(
