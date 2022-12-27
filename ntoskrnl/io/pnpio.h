@@ -880,6 +880,17 @@ IopPrepareDriverLoading(
     _In_ BOOLEAN IsFilter
 );
 
+NTSTATUS
+NTAPI
+IopInitializeBuiltinDriver(
+    _In_ PUNICODE_STRING DriverName,
+    _In_ PUNICODE_STRING RegistryPath,
+    _In_ PDRIVER_INITIALIZE EntryPoint,
+    _In_ PLDR_DATA_TABLE_ENTRY BootLdrEntry,
+    _In_ BOOLEAN IsFilter,
+    _Out_ PDRIVER_OBJECT * OutDriverObject
+);
+
 /* pnpirp.c */
 NTSTATUS
 NTAPI
