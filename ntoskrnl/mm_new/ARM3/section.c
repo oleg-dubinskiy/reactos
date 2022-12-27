@@ -8073,6 +8073,7 @@ MmCreateSection(
     PFILE_OBJECT File;
     PFILE_OBJECT ControlAreaFile;
     LARGE_INTEGER FileSize;
+    LARGE_INTEGER NewSectionSize;
     ULONG ControlAreaSize;
     ULONG ProtectionMask;
     ULONG SubsectionSize;
@@ -8888,8 +8889,26 @@ ErrorExit:
     if ((ControlArea->u.Flags.WasPurged && !IgnoreFileSizing) &&
         (!IsSectionSizeChanged || ((ULONGLONG)NewSection->SizeOfSection.QuadPart > NewSection->Segment->SizeOfSegment)))
     {
-        DPRINT1("MmCreateSection: FIXME MmExtendSection \n");
-        ASSERT(FALSE);
+        NewSectionSize.QuadPart = NewSection->SizeOfSection.QuadPart;
+        NewSection->SizeOfSection.QuadPart = (LONGLONG)NewSection->Segment->SizeOfSegment;
+
+        if (NewSection->InitialPageProtection & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE))
+        {
+            Status = MmExtendSection(NewSection, &NewSectionSize, IgnoreFileSizing);
+        }
+        else
+        {
+            RtlCopyMemory(&Section, NewSection, sizeof(Section));
+            Status = MmExtendSection(&Section, &NewSectionSize, IgnoreFileSizing);
+            NewSection->SizeOfSection.QuadPart = Section.SizeOfSection.QuadPart;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            ObDereferenceObject(NewSection);
+            DPRINT1("MmCreateSection: Status %X\n", Status);
+            return Status;
+        }
     }
 
     /* Return the object and the creation status */
