@@ -151,6 +151,7 @@ extern LARGE_INTEGER MmShortTime;
 extern LARGE_INTEGER Mm30Milliseconds;
 extern SIZE_T MmSharedCommit;
 extern MMPDE ValidKernelPde;
+extern MMPTE NoAccessPte;
 extern ULONG MmSecondaryColorMask;
 extern SIZE_T MmAllocationFragment;
 extern ULONG MmVirtualBias;
@@ -962,8 +963,12 @@ MiPurgeImageSection(
 
             if (TempPte.u.Soft.Prototype || !TempPte.u.Soft.Transition)
             {
-                DPRINT1("MiPurgeImageSection: FIXME\n");
-                ASSERT(FALSE);
+                if (!TempPte.u.Soft.Prototype && TempPte.u.Long != NoAccessPte.u.Long)
+                {
+                    MiReleasePageFileSpace(TempPte);
+                    Pte->u.Long = PteContents.u.Long;
+                }
+
                 goto NextPte;
             }
 
