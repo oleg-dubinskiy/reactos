@@ -1336,6 +1336,10 @@ VOID
 NTAPI
 MmFreeLoaderBlock(IN PLOADER_PARAMETER_BLOCK LoaderBlock);
 
+#if !defined(ONE_CPU)
+VOID NTAPI KeStartAllProcessors(VOID);
+#endif
+
 INIT_FUNCTION
 VOID
 NTAPI
@@ -1515,6 +1519,10 @@ Phase1InitializationDiscard(IN PVOID Context)
     if (Y2KHackRequired) Y2KHackRequired = strstr(Y2KHackRequired, "=");
     if (Y2KHackRequired) YearHack = atol(Y2KHackRequired + 1);
 
+  #if !defined(ONE_CPU)
+    KeStartAllProcessors();
+  #endif
+
     /* Query the clock */
     if ((ExCmosClockIsSane) && (HalQueryRealTimeClock(&TimeFields)))
     {
@@ -1560,6 +1568,11 @@ Phase1InitializationDiscard(IN PVOID Context)
         KeBootTime = UniversalBootTime;
         KeBootTimeBias = 0;
     }
+
+  #if !defined(ONE_CPU)
+    DPRINT1("Phase1InitializationDiscard: KeNumberProcessors %X\n", KeNumberProcessors);
+    //KeSetAffinityProcess(..);
+  #endif
 
     /* Initialize all processors */
     if (!HalAllProcessorsStarted()) KeBugCheck(HAL1_INITIALIZATION_FAILED);
