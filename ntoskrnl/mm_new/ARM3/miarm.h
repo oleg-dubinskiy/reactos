@@ -174,6 +174,25 @@ extern PVOID MiSessionSpaceEnd;
 #endif
 #define MI_GET_NEXT_PROCESS_COLOR(x)  (MI_GET_PAGE_COLOR(++(x)->NextPageColor))
 
+FORCEINLINE
+ULONG
+MiGetColor(VOID)
+{
+  #if !defined(ONE_CPU)
+    PKPRCB Prcb = KeGetCurrentPrcb();
+  #endif
+    ULONG Color;
+
+  #if defined(ONE_CPU)
+    Color = MI_GET_PAGE_COLOR(++MmSystemPageColor);
+  #else
+    Prcb->PageColor++;
+    Color = ((Prcb->PageColor & Prcb->SecondaryColorMask) | Prcb->NodeShiftedColor);
+  #endif
+
+   return Color;
+}
+
 /* Prototype PTEs that don't yet have a pagefile association */
 #ifdef _WIN64
   #define MI_PTE_LOOKUP_NEEDED 0xffffffffULL
