@@ -869,7 +869,7 @@ MiResolveDemandZeroFault(
         ASSERT(Process->ForkInProgress == NULL);
 
         /* Get process color */
-        Color = MI_GET_NEXT_PROCESS_COLOR(Process);
+        Color = MiGetColor();
         ASSERT(Color != 0xFFFFFFFF);
 
         /* We'll need a zero page */
@@ -3264,7 +3264,7 @@ MmAccessFault(
 
             /* Tell the trap handler to fail */
             DPRINT1("MmAccessFault: return %X\n", (STATUS_IN_PAGE_ERROR | 0x10000000));
-            ASSERT(FALSE);//DbgBreakPoint();
+            DbgBreakPoint();//ASSERT(FALSE);
             return (STATUS_IN_PAGE_ERROR | 0x10000000);
         }
 

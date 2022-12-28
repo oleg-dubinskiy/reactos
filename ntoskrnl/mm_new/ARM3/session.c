@@ -195,7 +195,7 @@ MiSessionInitializeWorkingSetList(VOID)
 
         /* Get a zeroed colored zero page */
         MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
-        Color = MI_GET_NEXT_COLOR();
+        Color = MiGetColor();
 
         PageFrameIndex = MiRemoveZeroPageSafe(Color);
         if (!PageFrameIndex)
@@ -230,7 +230,7 @@ MiSessionInitializeWorkingSetList(VOID)
 
     /* Get a zeroed colored zero page */
     MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
-    Color = MI_GET_NEXT_COLOR();
+    Color = MiGetColor();
 
     PageFrameIndex = MiRemoveZeroPageSafe(Color);
     if (!PageFrameIndex)
@@ -386,7 +386,7 @@ MiSessionCreateInternal(
 
         /* Get a zeroed colored zero page */
         MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
-        Color = MI_GET_NEXT_COLOR();
+        Color = MiGetColor();
 
         DataPage[ix] = MiRemoveZeroPageSafe(Color);
         if (!DataPage[ix])
@@ -413,7 +413,7 @@ MiSessionCreateInternal(
 
     /* Get a zeroed colored zero page */
     MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
-    Color = MI_GET_NEXT_COLOR();
+    Color = MiGetColor();
 
     SessionPageDirIndex = MiRemoveZeroPageSafe(Color);
     if (!SessionPageDirIndex)
@@ -459,7 +459,7 @@ MiSessionCreateInternal(
 
         /* Grab a zeroed colored page */
         MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
-        Color = MI_GET_NEXT_COLOR();
+        Color = MiGetColor();
 
         TagPage[ix] = MiRemoveZeroPageSafe(Color);
         if (!TagPage[ix])

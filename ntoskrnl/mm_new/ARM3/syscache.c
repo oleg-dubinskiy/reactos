@@ -316,7 +316,6 @@ MmCheckCachedPageState(
     MMPTE TempPte;
     PFN_NUMBER ProtoPageNumber;
     ULONG Protection;
-    ULONG Color;
     KIRQL OldIrql;
 
     DPRINT("MmCheckCachedPageState: CacheAddress %p, Param2 %X\n", CacheAddress, Param2);
@@ -418,18 +417,7 @@ MmCheckCachedPageState(
         Subsection = MiSubsectionPteToSubsection(SectionProto);
         Subsection->ControlArea->NumberOfPfnReferences++;
 
-      #if defined(ONE_CPU)
-        MmSystemPageColor++;
-        Color = MmSystemPageColor;
-        Color &= MmSecondaryColorMask;
-      #else
-        KeGetCurrentPrcb()->PageColor++;
-        Color = KeGetCurrentPrcb()->PageColor;
-        Color &= KeGetCurrentPrcb()->SecondaryColorMask;
-        Color |= KeGetCurrentPrcb()->NodeShiftedColor;
-      #endif
-
-        ProtoPageNumber = MiRemoveZeroPage(Color);
+        ProtoPageNumber = MiRemoveZeroPage(MiGetColor());
         ProtoPfn = MI_PFN_ELEMENT(ProtoPageNumber);
 
         MiInitializePfn(ProtoPageNumber, SectionProto, 1);
@@ -874,7 +862,7 @@ MmCopyToCachedPage(
     {
         if (IsNeedZeroPage)
         {
-            Color = MI_GET_NEXT_COLOR();
+            Color = MiGetColor();
 
             PageNumber = MiRemoveZeroPageSafe(Color);
             if (!PageNumber)
@@ -920,16 +908,7 @@ MmCopyToCachedPage(
 
             DPRINT("MmCopyToCachedPage: %p, %p, %p, %p\n", PageBlock, LockedProtoPfn, Proto, ControlArea);
 
-          #if defined(ONE_CPU)
-            Color = MI_GET_NEXT_COLOR();
-          #else
-            KeGetCurrentPrcb()->PageColor++;
-            Color = KeGetCurrentPrcb()->PageColor;
-            Color &= KeGetCurrentPrcb()->SecondaryColorMask;
-            Color |= KeGetCurrentPrcb()->NodeShiftedColor;
-          #endif
-
-            PageNumber = MiRemoveAnyPage(Color);
+            PageNumber = MiRemoveAnyPage(MiGetColor());
             Pfn = MI_PFN_ELEMENT(PageNumber);
 
             ASSERT(Pfn->u2.ShareCount == 0);

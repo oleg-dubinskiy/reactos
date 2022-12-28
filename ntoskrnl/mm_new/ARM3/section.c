@@ -1615,15 +1615,11 @@ MiFillSystemPageDirectory(
   #if (_MI_PAGING_LEVELS <= 2)
     PFN_NUMBER PageDirectoryPageNumber;
   #endif
-  #if !defined(ONE_CPU)
-    PKPRCB Prcb = KeGetCurrentPrcb();
-  #endif
     PMMPDE Pde;
     PMMPDE LastPde;
     PMMPDE SystemMapPde;
     MMPTE TempPde;
     PFN_NUMBER PageFrameIndex;
-    ULONG Color;
     KIRQL OldIrql;
 
     PAGED_CODE();
@@ -1667,16 +1663,8 @@ MiFillSystemPageDirectory(
 
         MiChargeCommitmentCantExpand(1, TRUE);
 
-    #if defined(ONE_CPU)
-        MmSystemPageColor++;
-        Color = (MmSystemPageColor & MmSecondaryColorMask);
-    #else
-        Prcb->PageColor++;
-        Color = ((Prcb->PageColor & Prcb->SecondaryColorMask) | Prcb->NodeShiftedColor);
-    #endif
-
         /* Grab a page for it */
-        PageFrameIndex = MiRemoveZeroPage(Color);
+        PageFrameIndex = MiRemoveZeroPage(MiGetColor());
 
         /* Use the PDE template */
         TempPde = ValidKernelPde;

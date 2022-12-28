@@ -64,7 +64,6 @@ MiAllocatePfn(
     _In_ ULONG Protection)
 {
     PFN_NUMBER PageFrameNumber;
-    ULONG Color;
     KIRQL OldIrql;
 
     DPRINT("MiAllocatePfn: Pte %p, Protection %X\n", Pte, Protection);
@@ -75,8 +74,7 @@ MiAllocatePfn(
     if (MmAvailablePages < 0x80)
         MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
-    Color = MI_GET_NEXT_COLOR();
-    PageFrameNumber = MiRemoveAnyPage(Color);
+    PageFrameNumber = MiRemoveAnyPage(MiGetColor());
 
     MI_WRITE_INVALID_PTE(Pte, DemandZeroPte);
     Pte->u.Soft.Protection |= Protection;

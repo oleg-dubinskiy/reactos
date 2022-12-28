@@ -299,7 +299,7 @@ MiAllocatePoolPages(
                 /* Request a page */
                 MI_SET_USAGE(MI_USAGE_PAGED_POOL);
                 MI_SET_PROCESS2("Kernel");
-                PageFrameNumber = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+                PageFrameNumber = MiRemoveAnyPage(MiGetColor());
                 TempPde.u.Hard.PageFrameNumber = PageFrameNumber;
 
               #if (_MI_PAGING_LEVELS >= 3)
@@ -525,7 +525,7 @@ MiAllocatePoolPages(
         /* Allocate a page */
         MI_SET_USAGE(MI_USAGE_PAGED_POOL);
         MI_SET_PROCESS2("Kernel");
-        PageFrameNumber = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        PageFrameNumber = MiRemoveAnyPage(MiGetColor());
 
         /* Get the PFN entry for it and fill it out */
         Pfn = MiGetPfnEntry(PageFrameNumber);

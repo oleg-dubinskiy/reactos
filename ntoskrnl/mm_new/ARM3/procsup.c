@@ -1392,7 +1392,7 @@ MmGrowKernelStackEx(
         /* Get a page and write the current invalid PTE */
         MI_SET_USAGE(MI_USAGE_KERNEL_STACK_EXPANSION);
         MI_SET_PROCESS2(PsGetCurrentProcess()->ImageFileName);
-        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        PageFrameIndex = MiRemoveAnyPage(MiGetColor());
         MI_WRITE_INVALID_PTE(LimitPte, InvalidPte);
 
         /* Initialize the PFN entry for this page */
