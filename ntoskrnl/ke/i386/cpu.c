@@ -60,6 +60,8 @@ static const CHAR CmpTransmetaID[]   = "GenuineTMx86";
 static const CHAR CmpCentaurID[]     = "CentaurHauls";
 static const CHAR CmpRiseID[]        = "RiseRiseRise";
 
+extern ULONG MmSecondaryColorMask;
+
 /* SUPPORT ROUTINES FOR MSVC COMPATIBILITY ***********************************/
 
 /* NSC/Cyrix CPU configuration register index */
@@ -1339,6 +1341,51 @@ KiFlushNPXState(IN PFLOATING_SAVE_AREA SaveArea)
     /* Restore interrupt state */
     __writeeflags(EFlags);
 }
+
+#if !defined(ONE_CPU)
+VOID
+NTAPI
+KiAllProcessorsStarted(VOID)
+{
+    PKPRCB Prcb;
+    ULONG ix;
+
+    DPRINT("KiAllProcessorsStarted: KeNumberProcessors %X\n", KeNumberProcessors);
+
+    //KiAdjustSimultaneousMultiThreadingCharacteristics();
+
+    for (ix = 0; ix < KeNumberProcessors; ix++)
+    {
+        Prcb = KiProcessorBlock[ix];
+
+        Prcb->NodeColor = Prcb->ParentNode->Color;
+        Prcb->NodeShiftedColor = Prcb->ParentNode->MmShiftedColor;
+        Prcb->SecondaryColorMask = MmSecondaryColorMask;
+
+        DPRINT1("KiAllProcessorsStarted: [%X] %p, %X, %X, %X\n", ix, Prcb, Prcb->NodeColor, Prcb->NodeShiftedColor, Prcb->SecondaryColorMask);
+    }
+
+    if (KeNumberNodes == 1)
+        KeNodeBlock[0]->ProcessorMask = KeActiveProcessors;
+}
+
+VOID
+NTAPI
+KeStartAllProcessors(VOID)
+{
+    DPRINT("KeStartAllProcessors: KeFeatureBits %X\n", KeFeatureBits);
+
+    if ((KeLoaderBlock->LoadOptions && strstr(KeLoaderBlock->LoadOptions, "RELOCATEPHYSICAL")) ||
+        !(KeFeatureBits & 0x200))
+    {
+        return;
+    }
+
+    DPRINT1("KeStartAllProcessors: FIXME\n");
+
+    KiAllProcessorsStarted();
+}
+#endif
 
 /* PUBLIC FUNCTIONS **********************************************************/
 
