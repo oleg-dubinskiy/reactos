@@ -165,6 +165,8 @@ MmMapViewInSystemCache(
     PMMPTE LastProto;
     MMPTE ProtoPte;
     ULONG SizeInPages;
+    ULONG PteStamp;
+    ULONG StampDiff;
     KIRQL OldIrql;
     NTSTATUS Status;
 
@@ -264,7 +266,29 @@ MmMapViewInSystemCache(
         ASSERT(FALSE);
     }
 
-    DPRINT("MmMapViewInSystemCache: FIXME Flush Tb\n");
+    PteStamp = Pte[1].u.List.NextEntry;
+
+    while (TRUE)
+    {
+        KeMemoryBarrier();
+
+        StampDiff = ((KiTbFlushTimeStamp - PteStamp) & 0xFFFFF);
+
+        if (StampDiff > 2 || (!(PteStamp & 1) && StampDiff >= 2))
+            break;
+
+        if (!(KiTbFlushTimeStamp & 1))
+        {
+            //MiFlushType[7]++;
+            KeFlushEntireTb(TRUE, TRUE);
+            break;
+        }
+
+        KeMemoryBarrier();
+
+        while (KiTbFlushTimeStamp & 1)
+            YieldProcessor();
+    }
 
     *OutBase = MiPteToAddress(Pte);
     DPRINT("MmMapViewInSystemCache: Pte %p, *OutBase %p\n", Pte, *OutBase);
