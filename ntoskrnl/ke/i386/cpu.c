@@ -1498,18 +1498,33 @@ NTAPI
 KeFlushEntireTb(IN BOOLEAN Invalid,
                 IN BOOLEAN AllProcessors)
 {
-    KIRQL OldIrql;
-#ifdef CONFIG_SMP
-    KAFFINITY TargetAffinity;
+#if !defined(ONE_CPU)
     PKPRCB Prcb = KeGetCurrentPrcb();
+    KAFFINITY TargetAffinity;
 #endif
+    LONG OldTime;
+    KIRQL OldIrql;
 
     /* Raise the IRQL for the TB Flush */
     OldIrql = KeRaiseIrqlToSynchLevel();
 
-#ifdef CONFIG_SMP
-    /* FIXME: Use KiTbFlushTimeStamp to synchronize TB flush */
+    do
+    {
+        while (TRUE)
+        {
+            OldTime = KiTbFlushTimeStamp;
 
+            if (!(KiTbFlushTimeStamp & 1))
+                break;
+
+            YieldProcessor();
+        }
+    }
+    while (InterlockedCompareExchange(&KiTbFlushTimeStamp,
+                                      (KiTbFlushTimeStamp | 1),
+                                      KiTbFlushTimeStamp) != OldTime);
+ 
+#if !defined(ONE_CPU)
     /* Get the current processor affinity, and exclude ourselves */
     TargetAffinity = KeActiveProcessors;
     TargetAffinity &= ~Prcb->SetMember;
@@ -1529,7 +1544,7 @@ KeFlushEntireTb(IN BOOLEAN Invalid,
     /* Flush the TB for the Current CPU, and update the flush stamp */
     KeFlushCurrentTb();
 
-#ifdef CONFIG_SMP
+#if !defined(ONE_CPU)
     /* If this is MP, wait for the other processors to finish */
     if (TargetAffinity)
     {
@@ -1542,6 +1557,7 @@ KeFlushEntireTb(IN BOOLEAN Invalid,
 #endif
 
     /* Update the flush stamp and return to original IRQL */
+    ASSERT((KiTbFlushTimeStamp & 1) == 1);
     InterlockedExchangeAdd(&KiTbFlushTimeStamp, 1);
     KeLowerIrql(OldIrql);
 }
