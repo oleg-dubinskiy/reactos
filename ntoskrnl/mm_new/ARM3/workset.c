@@ -20,6 +20,11 @@ SIZE_T MmPagesAboveWsMinimum;
 
 extern PVOID MmHyperSpaceEnd;
 extern LIST_ENTRY MmWorkingSetExpansionHead;
+extern ULONG MmTransitionSharedPages;
+extern ULONG MmTransitionSharedPagesPeak;
+extern PVOID MmSystemCacheStart;
+extern PVOID MmSystemCacheEnd;
+extern PMMWSLE MmSystemCacheWsle;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -97,6 +102,127 @@ MiDoReplacement(
 Exit:
 
     WorkSet->GrowthSinceLastEstimate += Growth;
+}
+
+BOOLEAN
+NTAPI
+MiAddWorkingSetPage(
+    _In_ PMMSUPPORT WorkSet)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+VOID
+NTAPI
+MiUpdateWsle(
+    _Out_ ULONG* OutWsIndex,
+    _In_ PVOID Address,
+    _In_ PMMSUPPORT WorkSet,
+    _In_ PMMPFN Pfn,
+    _In_ MMWSLE InWsle)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+ULONG
+NTAPI
+MiAllocateWsle(
+    _In_ PMMSUPPORT WorkSet,
+    _In_ PMMPTE Pte,
+    _In_ PMMPFN Pfn,
+    _In_ MMWSLE InWsle)
+{
+    PMMWSL WsList;
+    PMMWSLE Wsle;
+    PVOID Address;
+    ULONG WsIndex;
+
+    DPRINT("MiAllocateWsle: WorkSet %p, Pte %p, Pfn %X, InWsle %X\n", WorkSet, Pte, Pfn, InWsle);
+
+    WsList = WorkSet->VmWorkingSetList;
+    ASSERT(WsList != NULL);
+
+    Wsle = WsList->Wsle;
+    ASSERT(Wsle != NULL);
+
+    //DPRINT("MiAllocateWsle: %p, %p, %X, %X, %X\n", WsList, Wsle, WsList->FirstFree, WsList->FirstDynamic, WsList->LastInitializedWsle);
+
+    WorkSet->PageFaultCount++;
+    InterlockedIncrement(&KeGetCurrentPrcb()->MmPageFaultCount);
+
+    if ((ULONG_PTR)Pfn & 1)
+    {
+        MiDoReplacement(WorkSet, 2);
+
+        if (WsList->FirstFree == WSLE_NULL_INDEX)
+        {
+            return 0;
+        }
+
+        Pfn = (PMMPFN)((ULONG_PTR)Pfn & ~1);
+    }
+    else
+    {
+        MiDoReplacement(WorkSet, 0);
+
+        if (WsList->FirstFree == WSLE_NULL_INDEX)
+        {
+            if (!MiAddWorkingSetPage(WorkSet))
+            {
+                MiDoReplacement(WorkSet, 1);
+
+                if (WsList->FirstFree == WSLE_NULL_INDEX)
+                {
+                    //MiWsleFailures++;
+                    return 0;
+                }
+            }
+        }
+    }
+
+    ASSERT(WsList->FirstFree <= WsList->LastInitializedWsle);
+    ASSERT(WsList->FirstFree >= WsList->FirstDynamic);
+
+    WsIndex = WsList->FirstFree;
+    WsList->FirstFree = (Wsle[WsIndex].u1.Long / 0x10);
+
+    ASSERT((WsList->FirstFree <= WsList->LastInitializedWsle) || (WsList->FirstFree == WSLE_NULL_INDEX));
+    ASSERT(WorkSet->WorkingSetSize <= (WsList->LastInitializedWsle + 1));
+
+    WorkSet->WorkingSetSize++;
+
+    if (WorkSet->WorkingSetSize > WorkSet->MinimumWorkingSetSize)
+        InterlockedIncrementSizeT(&MmPagesAboveWsMinimum);
+
+    if (WorkSet->PeakWorkingSetSize < WorkSet->WorkingSetSize)
+        WorkSet->PeakWorkingSetSize = WorkSet->WorkingSetSize;
+
+    if (WorkSet == &MmSystemCacheWs)
+    {
+        if (MmTransitionSharedPagesPeak < (WorkSet->WorkingSetSize + MmTransitionSharedPages))
+            MmTransitionSharedPagesPeak = (WorkSet->WorkingSetSize + MmTransitionSharedPages);
+    }
+
+    if (WsIndex > WsList->LastEntry)
+        WsList->LastEntry = WsIndex;
+
+    ASSERT(Wsle[WsIndex].u1.e1.Valid == 0);
+
+    Address = MiPteToAddress(Pte);
+
+    MiUpdateWsle(&WsIndex, Address, WorkSet, Pfn, InWsle);
+
+    if (InWsle.u1.Long)
+        Wsle[WsIndex].u1.Long |= InWsle.u1.Long;
+
+    if ((Address >= MmSystemCacheStart && Address <= MmSystemCacheEnd))
+        //FIXME: || (Address >= MiSystemCacheStartExtra && Address <= MiSystemCacheEndExtra))
+    {
+        ASSERT(MmSystemCacheWsle[WsIndex].u1.e1.Protection == MM_ZERO_ACCESS);
+    }
+
+    return WsIndex;
 }
 
 VOID

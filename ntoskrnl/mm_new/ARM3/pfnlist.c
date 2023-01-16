@@ -27,6 +27,7 @@ BOOLEAN MmMirroring;
 ULONG MmSystemPageColor;
 ULONG MmStandbyRePurposed;
 ULONG MmTransitionSharedPages;
+ULONG MmTransitionSharedPagesPeak;
 ULONG MmTransitionPrivatePages;
 ULONG MmTotalPagesForPagingFile;
 KEVENT MmAvailablePagesEvent;
