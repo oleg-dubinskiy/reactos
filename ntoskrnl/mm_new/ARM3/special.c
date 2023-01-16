@@ -131,13 +131,13 @@ MmAllocateSpecialPool(
         return NULL;
 
     /* Lock PFN database */
-    Irql = MiAcquirePfnLock();
+    Irql = MiLockPfnDb(APC_LEVEL);
 
     /* Reject allocation in case amount of available pages is too small */
     if (MmAvailablePages < 0x100)
     {
         /* Release the PFN database lock */
-        MiReleasePfnLock(Irql);
+        MiUnlockPfnDb(Irql, APC_LEVEL);
         DPRINT1("Special pool: MmAvailablePages 0x%x is too small\n", MmAvailablePages);
         return NULL;
     }
@@ -151,7 +151,7 @@ MmAllocateSpecialPool(
             /* No reserves left, reject this allocation */
             static int once;
 
-            MiReleasePfnLock(Irql);
+            MiUnlockPfnDb(Irql, APC_LEVEL);
 
             if (!once++)
             {
@@ -187,7 +187,7 @@ MmAllocateSpecialPool(
     MiInitializePfnAndMakePteValid(PageFrameNumber, Pte, TempPte);
 
     /* Release the PFN database lock */
-    MiReleasePfnLock(Irql);
+    MiUnlockPfnDb(Irql, APC_LEVEL);
 
     /* Increase page counter */
     PagesInUse = InterlockedIncrementUL(&MmSpecialPagesInUse);
@@ -450,7 +450,7 @@ MmFreeSpecialPool(
         InterlockedDecrementUL(&MiSpecialPagesNonPaged);
 
         /* Lock PFN database */
-        Irql = MiAcquirePfnLock();
+        Irql = MiLockPfnDb(APC_LEVEL);
 
         /* Delete this PFN */
         MI_SET_PFN_DELETED(Pfn);
@@ -473,7 +473,7 @@ MmFreeSpecialPool(
         InterlockedDecrementUL(&MiSpecialPagesPagable);
 
         /* Lock PFN database */
-        Irql = MiAcquirePfnLock();
+        Irql = MiLockPfnDb(APC_LEVEL);
     }
 
     /* Mark next PTE as invalid */
@@ -490,7 +490,7 @@ MmFreeSpecialPool(
     MiSpecialPoolLastPte = Pte;
 
     /* Release the PFN database lock */
-    MiReleasePfnLock(Irql);
+    MiUnlockPfnDb(Irql, APC_LEVEL);
 
     /* Update page counter */
     InterlockedDecrementUL(&MmSpecialPagesInUse);
