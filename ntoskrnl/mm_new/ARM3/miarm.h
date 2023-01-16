@@ -2617,6 +2617,15 @@ MiUnlinkWorkingSet(
     _In_ PMMSUPPORT WorkSet
 );
 
+ULONG
+NTAPI
+MiAddValidPageToWorkingSet(
+    _In_ PVOID Address,
+    _In_ PMMPTE Pte,
+    _In_ PMMPFN Pfn,
+    _In_ MMWSLE Wsle
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION

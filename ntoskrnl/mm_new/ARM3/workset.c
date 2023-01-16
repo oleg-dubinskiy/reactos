@@ -272,6 +272,40 @@ MiReleaseWsle(
     WorkSet->WorkingSetSize--;
 }
 
+ULONG
+NTAPI
+MiAddValidPageToWorkingSet(
+    _In_ PVOID Address,
+    _In_ PMMPTE Pte,
+    _In_ PMMPFN Pfn,
+    _In_ MMWSLE Wsle)
+{
+    PMMSUPPORT WorkSet;
+
+    ASSERT(MI_IS_PAGE_TABLE_ADDRESS(Pte));
+    ASSERT(Pte->u.Hard.Valid == 1);
+
+    if ((Address < MmSessionBase || Address >= MiSessionSpaceEnd) &&
+        (Address < (PVOID)MiSessionBasePte || Address >= (PVOID)MiSessionLastPte))
+    {
+        if (Address <= MmHighestUserAddress ||
+            (Address >= (PVOID)PTE_BASE && Address <= MmHyperSpaceEnd))
+        {
+            WorkSet = &PsGetCurrentProcess()->Vm;
+        }
+        else
+        {
+            WorkSet = &MmSystemCacheWs;
+        }
+    }
+    else
+    {
+        WorkSet = &MmSessionSpace->Vm;
+    }
+
+    return MiAllocateWsle(WorkSet, Pte, Pfn, Wsle);
+}
+
 VOID
 NTAPI
 MiAllowWorkingSetExpansion(
