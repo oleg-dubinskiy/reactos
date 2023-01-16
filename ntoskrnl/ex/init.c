@@ -223,6 +223,8 @@ ExpInitNls(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     PMEMORY_ALLOCATION_DESCRIPTOR MdBlock;
     ULONG NlsTablesEncountered = 0;
     SIZE_T NlsTableSizes[3] = {0, 0, 0}; /* 3 NLS tables */
+    ULONG ViewSize1;
+    ULONG ViewSize2;
 
     /* Check if this is boot-time phase 0 initialization */
     if (!ExpInitializationPhase)
@@ -331,10 +333,14 @@ ExpInitNls(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
         KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, Status, 2, 0, 0);
     }
 
+    ViewSize1 = ViewSize2 = SectionSize.LowPart;
+    SectionSize.LowPart = 0;
+
     /* Map the NLS Section in system space */
-    Status = MmMapViewInSystemSpace(ExpNlsSectionPointer,
+    Status = MmMapViewInSystemCache(ExpNlsSectionPointer,
                                     &SectionBase,
-                                    &ExpNlsTableSize);
+                                    &SectionSize,
+                                    &ViewSize1);
     if (!NT_SUCCESS(Status))
     {
         /* Failed */
@@ -344,6 +350,13 @@ ExpInitNls(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     /* Copy the codepage data in its new location. */
     ASSERT(SectionBase >= MmSystemRangeStart);
     RtlCopyMemory(SectionBase, ExpNlsTableBase, ExpNlsTableSize);
+
+    MmUnmapViewInSystemCache(SectionBase, ExpNlsSectionPointer, FALSE);
+
+    Status = MmMapViewInSystemCache(ExpNlsSectionPointer,
+                                    &SectionBase,
+                                    &SectionSize,
+                                    &ViewSize2);
 
     /* Free the previously allocated buffer and set the new location */
     ExFreePoolWithTag(ExpNlsTableBase, TAG_RTLI);
