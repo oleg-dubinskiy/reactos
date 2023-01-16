@@ -226,6 +226,53 @@ MiAllocateWsle(
 }
 
 VOID
+FASTCALL 
+MiReleaseWsle(
+    _In_ ULONG WsIndex,
+    _In_ PMMSUPPORT WorkSet)
+{
+    PMMWSL WsList;
+    PMMWSLE Wsle;
+
+    DPRINT("MiReleaseWsle: WsIndex %X, WorkSet %p\n", WsIndex, WorkSet);
+
+    WsList = WorkSet->VmWorkingSetList;
+    Wsle = WsList->Wsle;
+
+    if (WorkSet == &MmSystemCacheWs)
+    {
+        ASSERT(PsGetCurrentThread()->OwnsSystemWorkingSetExclusive ||
+               PsGetCurrentThread()->OwnsSystemWorkingSetShared);
+    }
+    else if (WorkSet->Flags.SessionSpace)
+    {
+        ASSERT(PsGetCurrentThread()->OwnsSessionWorkingSetExclusive ||
+               PsGetCurrentThread()->OwnsSessionWorkingSetShared);
+    }
+    else
+    {
+        ASSERT(PsGetCurrentThread()->OwnsProcessWorkingSetExclusive ||
+               PsGetCurrentThread()->OwnsProcessWorkingSetShared);
+    }
+
+    ASSERT(WsIndex <= WsList->LastInitializedWsle);
+
+    ASSERT((WsList->FirstFree <= WsList->LastInitializedWsle) ||
+           (WsList->FirstFree == WSLE_NULL_INDEX));
+
+    Wsle[WsIndex].u1.Long = (WsList->FirstFree * 0x10);
+    WsList->FirstFree = WsIndex;
+
+    ASSERT((WsList->FirstFree <= WsList->LastInitializedWsle) ||
+           (WsList->FirstFree == WSLE_NULL_INDEX));
+
+    if (WorkSet->WorkingSetSize > WorkSet->MinimumWorkingSetSize)
+        InterlockedDecrementSizeT(&MmPagesAboveWsMinimum);
+
+    WorkSet->WorkingSetSize--;
+}
+
+VOID
 NTAPI
 MiAllowWorkingSetExpansion(
     _In_ PMMSUPPORT WorkSet)
