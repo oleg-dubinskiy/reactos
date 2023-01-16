@@ -230,7 +230,8 @@ CreateFreeLoaderReactOSEntries(
 #endif
     {
         /* DefaultOS=ReactOS */
-        BootOptions.CurrentBootEntryKey = MAKESTRKEY(L"ReactOS");
+        //BootOptions.CurrentBootEntryKey = MAKESTRKEY(L"ReactOS");
+        BootOptions.CurrentBootEntryKey = MAKESTRKEY(L"ReactOS_Debug");
     }
 
 #if DBG
