@@ -34,6 +34,7 @@ MiInitializeSystemCache(
     PMMPTE CacheWsListPte;
     PMMPTE CachePte;
     MMPTE TempPte;
+    PMMWSLE Wsle;
     PFN_NUMBER PageFrameIndex;
     ULONG_PTR HashStart;
     ULONG VacbCount;
@@ -100,8 +101,8 @@ MiInitializeSystemCache(
 
     MmSystemCacheWorkingSetList->HighestPermittedHashAddress = MmSystemCacheStart;
 
-    Count = ((ULONG_PTR)MmSystemCacheWorkingSetList + PAGE_SIZE);
-    Count -= ((ULONG_PTR)MmSystemCacheWsle / sizeof(PMMWSLE));
+    Count = ((ULONG_PTR)MmSystemCacheWorkingSetList + PAGE_SIZE - (ULONG_PTR)MmSystemCacheWsle);
+    Count /= sizeof(PMMWSLE);
     MinWsSize = Count - 1;
 
     MmSystemCacheWorkingSetList->LastEntry = MinWsSize;
@@ -113,7 +114,13 @@ MiInitializeSystemCache(
     MmSystemCacheWs.MinimumWorkingSetSize = MinWsSize;
     MmSystemCacheWs.MaximumWorkingSetSize = MaximumWorkingSetSize;
 
-    // FIXME init Wsles
+    Wsle = (MmSystemCacheWsle + 1);
+
+    for (ix = 1; ix < Count; ix++, Wsle++)
+        Wsle->u1.Long = ((ix + 1) * 0x10);
+
+    Wsle--;
+    Wsle->u1.Long = 0xFFFFFFF0; // (WSLE_NULL_INDEX * 0x10)
 
     /* Add the Cache Ptes in list */
 
