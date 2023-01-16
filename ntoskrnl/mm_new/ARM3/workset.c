@@ -25,6 +25,82 @@ extern LIST_ENTRY MmWorkingSetExpansionHead;
 
 VOID
 NTAPI
+MiDoReplacement(
+    _In_ PMMSUPPORT WorkSet,
+    _In_ ULONG InFlags)
+{
+    PMMWSL WsList;
+    ULONG TrimmedCount = 0;
+    ULONG Growth = 1;
+    ULONG flags = (InFlags & ~2);
+    KIRQL OldIrql;
+
+    DPRINT("MiDoReplacement: WorkSet %p, InFlags %X\n", WorkSet, InFlags);
+
+    if (WorkSet->WorkingSetSize < WorkSet->MinimumWorkingSetSize)
+    {
+        goto Exit;
+    }
+
+    WsList = WorkSet->VmWorkingSetList;
+
+    while (WorkSet->Flags.ForceTrim && InFlags != 2)
+    {
+        DPRINT1("MiDoReplacement: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    ASSERT(WorkSet->WorkingSetSize <= (WsList->LastInitializedWsle + 1));
+
+    if (WorkSet->Flags.MaximumWorkingSetHard &&
+        WorkSet->WorkingSetSize >= WorkSet->MaximumWorkingSetSize)
+    {
+        DPRINT1("MiDoReplacement: FIXME MiReplaceWorkingSetEntry()\n");
+        ASSERT(FALSE);
+        return;
+    }
+
+    if (flags != 1)
+    {
+        if (MmAvailablePages >= 10000)
+            goto Exit;
+
+        if (MmAvailablePages)
+        {
+            if (WorkSet->GrowthSinceLastEstimate <= (((0x1E * MmAvailablePages * MmAvailablePages) / 0x1000) + 1))
+                goto Exit;
+
+            if (PsGetCurrentThread()->MemoryMaker)
+                goto Exit;
+        }
+    }
+   
+    //MiReplacing = 1;
+
+    if (flags != 1 && PsGetCurrentThread()->MemoryMaker)
+    {
+        if (TrimmedCount > 1)
+        {
+            OldIrql = MiAcquireExpansionLock();
+            WorkSet->Flags.ForceTrim = 1;
+            MiReleaseExpansionLock(OldIrql);
+        }
+
+        goto Exit;
+    }
+
+    DPRINT1("MiDoReplacement: FIXME MiReplaceWorkingSetEntry()\n");
+    ASSERT(FALSE);
+
+    Growth = 0;
+
+Exit:
+
+    WorkSet->GrowthSinceLastEstimate += Growth;
+}
+
+VOID
+NTAPI
 MiAllowWorkingSetExpansion(
     _In_ PMMSUPPORT WorkSet)
 {
