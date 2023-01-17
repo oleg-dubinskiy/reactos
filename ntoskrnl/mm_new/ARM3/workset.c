@@ -136,14 +136,158 @@ MiInsertWsleHash(
 
 VOID
 NTAPI
+MiRemoveWsleFromFreeList(
+    _In_ ULONG WsIndex,
+    _In_ PMMWSLE Wsle,
+    _In_ PMMWSL WsList)
+{
+    DPRINT1("MiRemoveWsleFromFreeList: %X, %p, %p\n", WsIndex, Wsle, WsList);
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+MiRepointWsleHashIndex(
+    MMWSLE Wsle,
+    PMMWSL WsList,
+    ULONG HashIndex)
+{
+    DPRINT1("MiRepointWsleHashIndex: %X, %p, %p\n", Wsle.u1.Long, WsList, HashIndex);
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
 MiSwapWslEntries(
     _In_ ULONG WsIndex1,
     _In_ ULONG WsIndex2,
     _In_ PMMSUPPORT WorkSet,
     _In_ BOOLEAN Param4)
 {
-    DPRINT1("MiSwapWslEntries: %X, %X, %p, %X\n", WsIndex1, WsIndex2, WorkSet, Param4);
-    UNIMPLEMENTED_DBGBREAK();
+    PVOID Address;
+    PMMPTE Pte;
+    PMMPFN Pfn;
+    PMMWSL WsList;
+    PMMWSLE Wsle;
+    PMMWSLE_HASH Table;
+    MMWSLE Wsle1;
+    MMWSLE Wsle2;
+    ULONG Hash;
+    NTSTATUS Status;
+
+    DPRINT("MiSwapWslEntries: %X, %X, %p, %X\n", WsIndex1, WsIndex2, WorkSet, Param4);
+
+    WsList = WorkSet->VmWorkingSetList;
+    Wsle = WsList->Wsle;
+    Table = WsList->HashTable;
+
+    Wsle1 = Wsle[WsIndex1];
+    ASSERT(Wsle1.u1.e1.Valid != 0);
+
+    Wsle2 = Wsle[WsIndex2];
+    if (!Wsle2.u1.e1.Valid)
+    {
+        MiRemoveWsleFromFreeList(WsIndex2, Wsle, WsList);
+
+        Wsle[WsIndex2].u1.Long = Wsle1.u1.Long;
+
+        Pte = MiAddressToPte(Wsle1.u1.VirtualAddress);
+        if (!(Pte->u.Hard.Valid))
+        {
+            Status = MiCheckPdeForPagedPool(Wsle1.u1.VirtualAddress);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("KeBugCheckEx()\n");
+                ASSERT(FALSE);
+            }
+
+            ASSERT(Pte->u.Hard.Valid == 1);
+        }
+
+        if (Wsle1.u1.e1.Direct)
+        {
+            Pfn = MI_PFN_ELEMENT(Pte->u.Hard.PageFrameNumber);
+            ASSERT(Pfn->u1.WsIndex == WsIndex1);
+            Pfn->u1.WsIndex = WsIndex2;
+        }
+        else if (Table)
+        {
+            MiRepointWsleHashIndex(Wsle1, WsList, WsIndex2);
+        }
+
+        ASSERT((WsList->FirstFree <= WsList->LastInitializedWsle) || (WsList->FirstFree == WSLE_NULL_INDEX));
+
+        Wsle[WsIndex1].u1.Long = (WsList->FirstFree << MM_FREE_WSLE_SHIFT);
+        WsList->FirstFree = WsIndex1;
+
+        ASSERT((WsList->FirstFree <= WsList->LastInitializedWsle) || (WsList->FirstFree == WSLE_NULL_INDEX));
+
+        return;
+    }
+
+    Wsle[WsIndex1].u1.Long = Wsle2.u1.Long;
+
+    Pte = MiAddressToPte(Wsle2.u1.VirtualAddress);
+    if (!Pte->u.Hard.Valid)
+    {
+        Status = MiCheckPdeForPagedPool(Wsle2.u1.VirtualAddress);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("KeBugCheckEx()\n");
+            ASSERT(FALSE);
+        }
+
+        ASSERT(Pte->u.Hard.Valid == 1);
+    }
+
+    if (Wsle2.u1.e1.Direct)
+    {
+        Pfn = MI_PFN_ELEMENT(Pte->u.Hard.PageFrameNumber);
+        ASSERT(Pfn->u1.WsIndex == WsIndex2);
+        Pfn->u1.WsIndex = WsIndex1;
+    }
+    else if (Table)
+    {
+        if (Param4)
+        {
+            Address = (PVOID)(Wsle2.u1.Long & (0xFFFFF000 | 0x1));
+
+            for (Hash = 0; Hash < WsList->HashTableSize; Hash++)
+            {
+                ASSERT(Table[Hash].Key != Address);
+            }
+        }
+        else
+        {
+            MiRepointWsleHashIndex(Wsle2, WsList, WsIndex1);
+        }
+    }
+
+    Wsle[WsIndex2].u1.Long = Wsle1.u1.Long;
+
+    Pte = MiAddressToPte(Wsle1.u1.VirtualAddress);
+    if (!Pte->u.Hard.Valid)
+    {
+        Status = MiCheckPdeForPagedPool(Wsle1.u1.VirtualAddress);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("KeBugCheckEx()\n");
+            ASSERT(FALSE);
+        }
+
+        ASSERT(Pte->u.Hard.Valid == 1);
+    }
+
+    if (Wsle1.u1.e1.Direct)
+    {
+        Pfn = MI_PFN_ELEMENT(Pte->u.Hard.PageFrameNumber);
+        ASSERT(Pfn->u1.WsIndex == WsIndex1);
+        Pfn->u1.WsIndex = WsIndex2;
+    }
+    else if (Table)
+    {
+        MiRepointWsleHashIndex(Wsle1, WsList, WsIndex2);
+    }
 }
 
 VOID
