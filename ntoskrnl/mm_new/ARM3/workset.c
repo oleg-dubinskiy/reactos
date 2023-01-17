@@ -141,8 +141,69 @@ MiRemoveWsleFromFreeList(
     _In_ PMMWSLE Wsle,
     _In_ PMMWSL WsList)
 {
+    ULONG CurrentIdx;
+    ULONG PreviosIdx;
+    ULONG Idx;
+
     DPRINT1("MiRemoveWsleFromFreeList: %X, %p, %p\n", WsIndex, Wsle, WsList);
-    UNIMPLEMENTED_DBGBREAK();
+
+    if (WsIndex == WsList->FirstFree)
+    {
+        ASSERT(((Wsle[WsIndex].u1.Long >> MM_FREE_WSLE_SHIFT) <= WsList->LastInitializedWsle) ||
+               ((Wsle[WsIndex].u1.Long >> MM_FREE_WSLE_SHIFT) == WSLE_NULL_INDEX));
+
+        WsList->FirstFree = Wsle[WsIndex].u1.Long >> MM_FREE_WSLE_SHIFT;
+        goto Exit;
+    }
+
+    if (WsIndex && Wsle[WsIndex - 1].u1.e1.Valid)
+    {
+        if ((Wsle[WsIndex - 1].u1.Long >> MM_FREE_WSLE_SHIFT) != WsIndex)
+        {
+            Idx == -1;
+        }
+        else
+        {
+            Idx = (WsIndex - 1);
+        }
+    }
+    else if (WsIndex == WsList->LastInitializedWsle)
+    {
+        Idx == -1;
+    }
+    else if (Wsle[WsIndex + 1].u1.e1.Valid)
+    {
+        Idx == -1;
+    }
+    else if ((Wsle[WsIndex + 1].u1.Long >> MM_FREE_WSLE_SHIFT) != WsIndex)
+    {
+        Idx == -1;
+    }
+    else
+    {
+        Idx = (WsIndex + 1);
+    }
+
+    if (Idx != -1)
+    {
+        Wsle[Idx].u1.Long = Wsle[WsIndex].u1.Long;
+        goto Exit;
+    }
+
+    CurrentIdx = WsList->FirstFree;
+    while (CurrentIdx != WsIndex)
+    {
+        PreviosIdx = CurrentIdx;
+        ASSERT(Wsle[CurrentIdx].u1.e1.Valid == 0);
+        CurrentIdx = Wsle[CurrentIdx].u1.Long >> MM_FREE_WSLE_SHIFT;
+    }
+
+    Wsle[PreviosIdx].u1.Long = Wsle[WsIndex].u1.Long;
+
+Exit:
+
+    ASSERT((WsList->FirstFree <= WsList->LastInitializedWsle) ||
+           (WsList->FirstFree == WSLE_NULL_INDEX));
 }
 
 VOID
