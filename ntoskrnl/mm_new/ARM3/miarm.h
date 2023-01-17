@@ -213,8 +213,9 @@ MiGetColor(VOID)
 #define MiGetPteContents(Pte) \
     (ULONGLONG)((Pte != NULL) ? (Pte->u.Long) : (0))
 
-#define WSLE_NULL_INDEX 0x0FFFFFFF
-#define MM_WS_NOT_LISTED  NULL
+#define WSLE_NULL_INDEX     0x0FFFFFFF
+#define MM_WS_NOT_LISTED    NULL
+#define MM_FREE_WSLE_SHIFT  4
 
 /* FIXFIX: These should go in ex.h after the pool merge */
 

@@ -18,13 +18,24 @@ SIZE_T MmMinimumWorkingSetSize = 0x14;
 SIZE_T MmMaximumWorkingSetSize;
 SIZE_T MmPagesAboveWsMinimum;
 
+ULONG MmPagedPoolPage;
+ULONG MmSystemCachePage;
+ULONG MmSystemCodePage;
+ULONG MmSystemDriverPage;
+
 extern PVOID MmHyperSpaceEnd;
 extern LIST_ENTRY MmWorkingSetExpansionHead;
 extern ULONG MmTransitionSharedPages;
 extern ULONG MmTransitionSharedPagesPeak;
 extern PVOID MmSystemCacheStart;
 extern PVOID MmSystemCacheEnd;
+extern PMMWSL MmSystemCacheWorkingSetList;
 extern PMMWSLE MmSystemCacheWsle;
+extern PMM_SESSION_SPACE MmSessionSpace;
+extern PVOID MmPagedPoolStart;
+extern PVOID MmPagedPoolEnd;
+extern PVOID MmSpecialPoolStart;
+extern PVOID MmSpecialPoolEnd;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -114,6 +125,28 @@ MiAddWorkingSetPage(
 }
 
 VOID
+FASTCALL 
+MiInsertWsleHash(
+    _In_ ULONG WsIndex,
+    _In_ PMMSUPPORT WorkSet)
+{
+    DPRINT("MiInsertWsleHash: WsIndex %p, WorkSet %p\n", WsIndex, WorkSet);
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+MiSwapWslEntries(
+    _In_ ULONG WsIndex1,
+    _In_ ULONG WsIndex2,
+    _In_ PMMSUPPORT WorkSet,
+    _In_ BOOLEAN Param4)
+{
+    DPRINT1("MiSwapWslEntries: %X, %X, %p, %X\n", WsIndex1, WsIndex2, WorkSet, Param4);
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
 NTAPI
 MiUpdateWsle(
     _Out_ ULONG* OutWsIndex,
@@ -122,7 +155,173 @@ MiUpdateWsle(
     _In_ PMMPFN Pfn,
     _In_ MMWSLE InWsle)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMMWSL WsList;
+    PMMWSLE Wsle;
+    MMWSLE OldWsle;
+    ULONG WsIndex;
+    ULONG PfnIndex;
+    ULONG FreeIndex = 0;
+
+    DPRINT("MiUpdateWsle: %p, %p, %p, %X, %X\n", OutWsIndex, Address, WorkSet, Pfn, InWsle);
+
+    if (WorkSet == &MmSystemCacheWs)
+    {
+        ASSERT((PsGetCurrentThread()->OwnsSystemWorkingSetExclusive) ||
+               (PsGetCurrentThread()->OwnsSystemWorkingSetShared));
+    }
+    else if (WorkSet->Flags.SessionSpace)
+    {
+        ASSERT((PsGetCurrentThread()->OwnsSessionWorkingSetExclusive) ||
+               (PsGetCurrentThread()->OwnsSessionWorkingSetShared));
+    }
+    else
+    {
+        ASSERT((PsGetCurrentThread()->OwnsProcessWorkingSetExclusive) ||
+               (PsGetCurrentThread()->OwnsProcessWorkingSetShared));
+    }
+
+    WsList = WorkSet->VmWorkingSetList;
+    WsIndex = *OutWsIndex;
+
+    //DPRINT1("MiUpdateWsle: %p, %p, %p, %X, %p, %X\n", Address, WorkSet, Pfn, InWsle, WsList, WsIndex);
+
+    ASSERT(WsIndex >= WsList->FirstDynamic);
+    Wsle = WsList->Wsle;
+
+    if (WsList == MmSystemCacheWorkingSetList) // MM_SYSTEM_SPACE_START
+    {
+        ASSERT((Address < (PVOID)0xC0000000) || (Address >= (PVOID)MmSystemCacheWorkingSetList));
+
+        if (Address >= MmPagedPoolStart && Address <= MmPagedPoolEnd)
+        {
+            MmPagedPoolPage++;
+        }
+        else if ((Address >= MmSystemCacheStart && Address <= MmSystemCacheEnd)) // || (Address >= MiSystemCacheStartExtra && Address <= MiSystemCacheEndExtra))
+        {
+            MmSystemCachePage++;
+        }
+        else if (Address <= MmSpecialPoolEnd && Address >= MmSpecialPoolStart)
+        {
+            MmPagedPoolPage++;
+        }
+        //else if (Address < MiLowestSystemPteVirtualAddress)
+        //    MmSystemCodePage++;
+        //else
+        //    MmSystemDriverPage++;
+    }
+    else
+    {
+        ASSERT((Address < (PVOID)MmSystemCacheWorkingSetList) || (MI_IS_SESSION_ADDRESS(Address)));
+    }
+
+    if (Pfn->u1.WsIndex <= WsList->LastInitializedWsle)
+    {
+        ASSERT((PAGE_ALIGN(Address) != PAGE_ALIGN(Wsle[Pfn->u1.WsIndex].u1.VirtualAddress)) ||
+               (Wsle[Pfn->u1.WsIndex].u1.e1.Valid == 0));
+    }
+
+    if (!Pfn->u1.WsIndex)
+    {
+        if (!Pfn->u3.e1.PrototypePte)
+            Pfn->u1.WsIndex = WsIndex;
+
+        if (!Pfn->u3.e1.PrototypePte || !InterlockedCompareExchange((PLONG)&Pfn->u1.WsIndex, WsIndex, 0))
+        {
+            Wsle[WsIndex].u1.VirtualAddress = PAGE_ALIGN(Address);
+            Wsle[WsIndex].u1.Long |= InWsle.u1.Long;
+            Wsle[WsIndex].u1.e1.Valid = 1;
+            Wsle[WsIndex].u1.e1.Direct = 1;
+            return;
+        }
+    }
+
+    Wsle[WsIndex].u1.VirtualAddress = PAGE_ALIGN(Address);
+    Wsle[WsIndex].u1.e1.Valid = 1;
+
+    PfnIndex = Pfn->u1.WsIndex;
+
+    if (PfnIndex >= WsList->LastInitializedWsle ||
+        PfnIndex <= WsList->FirstDynamic ||
+        PfnIndex == WsIndex)
+    {
+        goto Exit;
+    }
+
+    if (Wsle[PfnIndex].u1.e1.Valid)
+    {
+        if (Wsle[PfnIndex].u1.e1.Direct)
+        {
+            MiSwapWslEntries(PfnIndex, WsIndex, WorkSet, 1);
+            WsIndex = PfnIndex;
+        }
+
+        goto Exit1;
+    }
+
+    ASSERT(WsList->FirstFree >= WsList->FirstDynamic);
+    ASSERT(WsIndex >= WsList->FirstDynamic);
+
+    if (WsList->FirstFree == PfnIndex)
+    {
+        WsList->FirstFree = WsIndex;
+        OldWsle.u1.Long = Wsle[WsIndex].u1.Long;
+        Wsle[WsIndex].u1.Long = Wsle[PfnIndex].u1.Long;
+        Wsle[PfnIndex].u1.Long = OldWsle.u1.Long;
+
+        WsIndex = PfnIndex;
+
+        ASSERT(((Wsle[WsList->FirstFree].u1.Long >> MM_FREE_WSLE_SHIFT) <= WsList->LastInitializedWsle) ||
+               ((Wsle[WsList->FirstFree].u1.Long >> MM_FREE_WSLE_SHIFT) == WSLE_NULL_INDEX));
+
+        goto Exit1;
+    }
+
+    if (Wsle[PfnIndex - 1].u1.e1.Valid)
+    {
+        if (!Wsle[PfnIndex + 1].u1.e1.Valid && (Wsle[PfnIndex + 1].u1.Long >> MM_FREE_WSLE_SHIFT) == PfnIndex)
+            FreeIndex = (PfnIndex + 1);
+    }
+    else
+    {
+        if ((Wsle[PfnIndex - 1].u1.Long >> MM_FREE_WSLE_SHIFT) == PfnIndex)
+            FreeIndex = (PfnIndex - 1);
+    }
+
+    if (!FreeIndex)
+        goto Exit1;
+
+    OldWsle.u1.Long = Wsle[WsIndex].u1.Long;
+    Wsle[FreeIndex].u1.Long = WsIndex << MM_FREE_WSLE_SHIFT;
+    Wsle[WsIndex].u1.Long = Wsle[PfnIndex].u1.Long;
+    Wsle[PfnIndex].u1.Long = OldWsle.u1.Long;
+
+    WsIndex = PfnIndex;
+
+    ASSERT(((Wsle[FreeIndex].u1.Long >> MM_FREE_WSLE_SHIFT) <= WsList->LastInitializedWsle) ||
+           ((Wsle[FreeIndex].u1.Long >> MM_FREE_WSLE_SHIFT) == WSLE_NULL_INDEX));
+
+Exit1:
+
+    *OutWsIndex = WsIndex;
+
+    if (WsIndex > WsList->LastEntry)
+        WsList->LastEntry = WsIndex;
+
+Exit:
+
+    ASSERT(Wsle[WsIndex].u1.e1.Valid == 1);
+    ASSERT(Wsle[WsIndex].u1.e1.Direct != 1);
+
+    Wsle[WsIndex].u1.Long |= InWsle.u1.Long;
+    Wsle[WsIndex].u1.e1.Hashed = 0;
+
+    WsList->NonDirectCount++;
+
+    if (WsIndex == Pfn->u1.WsIndex)
+        return;
+
+    if (WsList->HashTable)
+        MiInsertWsleHash(WsIndex, WorkSet);
 }
 
 ULONG
