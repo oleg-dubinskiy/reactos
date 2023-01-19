@@ -115,15 +115,6 @@ Exit:
     WorkSet->GrowthSinceLastEstimate += Growth;
 }
 
-BOOLEAN
-NTAPI
-MiAddWorkingSetPage(
-    _In_ PMMSUPPORT WorkSet)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
-}
-
 VOID
 FASTCALL 
 MiInsertWsleHash(
@@ -527,6 +518,159 @@ Exit:
 
     if (WsList->HashTable)
         MiInsertWsleHash(WsIndex, WorkSet);
+}
+
+BOOLEAN
+NTAPI
+MiAddWorkingSetPage(
+    _In_ PMMSUPPORT WorkSet)
+{
+    PVOID NextWsleArray;
+    PMMWSL WsList;
+    PMMWSLE Wsle;
+    PMMWSLE CurrentWsle;
+    PMMPFN Pfn;
+    PMMPTE Pte;
+    MMPTE TempPte;
+    MMWSLE dummy;
+    PFN_NUMBER PageFrameNumber;
+    ULONG NumberOfEntriesMapped;
+    ULONG WsIndex1;
+    ULONG WsIndex2;
+    ULONG WsIndex;
+    ULONG Idx;
+    KIRQL OldIrql;
+
+    WsList = WorkSet->VmWorkingSetList;
+    Wsle = WsList->Wsle;
+
+    DPRINT("MiAddWorkingSetPage: %p, %p, %p\n", WorkSet, WsList, Wsle);
+
+    if (WorkSet == &MmSystemCacheWs)
+    {
+        ASSERT((PsGetCurrentThread()->OwnsSystemWorkingSetExclusive) ||
+               (PsGetCurrentThread()->OwnsSystemWorkingSetShared));
+    }
+    else if (WorkSet->Flags.SessionSpace)
+    {
+        ASSERT((PsGetCurrentThread()->OwnsSessionWorkingSetExclusive) ||
+               (PsGetCurrentThread()->OwnsSessionWorkingSetShared));
+    }
+    else
+    {
+        ASSERT((PsGetCurrentThread()->OwnsProcessWorkingSetExclusive) ||
+               (PsGetCurrentThread()->OwnsProcessWorkingSetShared));
+    }
+
+    Pte = MiAddressToPte(&Wsle[WsList->LastInitializedWsle]);
+    ASSERT(Pte->u.Hard.Valid == 1);
+
+    Pte++;
+
+    NextWsleArray = MiPteToAddress(Pte);
+
+    if (NextWsleArray >= WsList->HashTableStart)
+        return FALSE;
+
+    if (!MiChargeCommitmentCantExpand(1, FALSE))
+        return FALSE;
+
+    MI_MAKE_SOFTWARE_PTE(&TempPte, MM_READWRITE);
+    ASSERT(Pte->u.Hard.Valid == 0);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (MmAvailablePages < 0x80 || (MmResidentAvailablePages - MmSystemLockPagesCount) < 0x80) // MmSystemLockPagesCount[0]
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        ASSERT(MmTotalCommittedPages >= 1);
+        InterlockedDecrementSizeT(&MmTotalCommittedPages);
+        return FALSE;
+    }
+
+    InterlockedDecrementSizeT(&MmResidentAvailablePages);
+    //InterlockedIncrementSizeT(&MmResTrack[48]);
+
+    PageFrameNumber = MiRemoveZeroPage(MiGetColor());
+    MI_WRITE_INVALID_PTE(Pte, TempPte);
+
+    MiInitializePfn(PageFrameNumber, Pte, 1);
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    MI_MAKE_HARDWARE_PTE(&TempPte, Pte, MM_READWRITE, PageFrameNumber);
+    MI_MAKE_DIRTY_PAGE(&TempPte);
+    MI_WRITE_VALID_PTE(Pte, TempPte);
+
+    NumberOfEntriesMapped = ((((ULONG_PTR)NextWsleArray - (ULONG_PTR)Wsle) + PAGE_SIZE) / sizeof(PMMWSLE));
+
+    if (WorkSet->Flags.SessionSpace)
+    {
+        InterlockedIncrementSizeT(&MmSessionSpace->NonPageablePages);//NonPagablePages
+        InterlockedIncrementSizeT(&MmSessionSpace->CommittedPages);
+    }
+
+    WsIndex = (WsList->LastInitializedWsle + 1);
+    ASSERT(NumberOfEntriesMapped > WsIndex);
+
+    CurrentWsle = &Wsle[WsIndex - 1];
+
+    for (Idx = WsIndex; Idx < NumberOfEntriesMapped; Idx++)
+    {
+        CurrentWsle++;
+        CurrentWsle->u1.Long = ((Idx + 1) << MM_FREE_WSLE_SHIFT);
+    }
+
+    CurrentWsle->u1.Long = WsList->FirstFree << MM_FREE_WSLE_SHIFT;
+
+
+    ASSERT(WsIndex >= WsList->FirstDynamic);
+
+    WsList->FirstFree = WsIndex;
+    WsList->LastInitializedWsle = (NumberOfEntriesMapped - 1);
+
+    ASSERT((WsList->FirstFree <= WsList->LastInitializedWsle) || (WsList->FirstFree == WSLE_NULL_INDEX));
+
+    Pfn = MI_PFN_ELEMENT(Pte->u.Hard.PageFrameNumber);
+    Pfn->u1.WsIndex = 0;
+
+    ASSERT(WorkSet->WorkingSetSize <= (WsList->LastInitializedWsle + 1));
+    WorkSet->WorkingSetSize++;
+
+    ASSERT(WsList->FirstFree != WSLE_NULL_INDEX);
+    ASSERT(WsList->FirstFree >= WsList->FirstDynamic);
+
+    WsIndex1 = WsList->FirstFree;
+    WsList->FirstFree = (Wsle[WsList->FirstFree].u1.Long >> MM_FREE_WSLE_SHIFT);
+
+    ASSERT((WsList->FirstFree <= WsList->LastInitializedWsle) || (WsList->FirstFree == WSLE_NULL_INDEX));
+
+    if (WorkSet->WorkingSetSize > WorkSet->MinimumWorkingSetSize)
+        InterlockedIncrementSizeT(&MmPagesAboveWsMinimum);
+
+    if (WsIndex1 > WsList->LastEntry)
+        WsList->LastEntry = WsIndex1;
+
+    dummy.u1.Long = 0;
+    MiUpdateWsle(&WsIndex1, NextWsleArray, WorkSet, Pfn, dummy);
+
+    WsIndex2 = WsList->FirstDynamic;
+    if (WsIndex1 >= WsIndex2)
+    {
+        if (WsIndex1 != WsIndex2)
+            MiSwapWslEntries(WsIndex1, WsIndex2, WorkSet, 0);
+
+        WsList->FirstDynamic++;
+
+        Wsle[WsIndex2].u1.e1.LockedInWs = 1;
+        ASSERT(Wsle[WsIndex2].u1.e1.Valid == 1);
+    }
+
+    ASSERT((MiAddressToPte(&Wsle[WsList->LastInitializedWsle]))->u.Hard.Valid == 1);
+
+    if (!WsList->HashTable && MmAvailablePages > 0x80)
+        WorkSet->Flags.GrowWsleHash = 1;
+
+    return TRUE;
 }
 
 ULONG
