@@ -2451,6 +2451,7 @@ MiDispatchFault(
     ULONG MdlPageCount;
     ULONG Flags = 0;
     ULONG Index;
+    ULONG WsIndex;
     ULONG ix;
     ULONG jx;
     KIRQL OldIrql;
@@ -2528,7 +2529,7 @@ MiDispatchFault(
                     (!Process->Vm.Flags.MaximumWorkingSetHard || Process->Vm.MaximumWorkingSetSize >= (Process->Vm.WorkingSetSize + 8)) &&
                     !Recursive)
                 {
-                    PteCount = 8;
+                    PteCount = 8; // MmMaxTransitionCluster
 
                     if (SectionProto >= Vad->FirstPrototypePte &&
                         SectionProto <= Vad->LastContiguousPte)
@@ -2561,7 +2562,7 @@ MiDispatchFault(
                         }
                     }
 
-                    if (ix < 8)
+                    if (ix < 8) // MmMaxTransitionCluster
                         PteCount = ix;
 
                     if (PteCount > (PAGE_SIZE - ((ULONG_PTR)Pte & (PAGE_SIZE - 1))) / 4)
@@ -2823,7 +2824,8 @@ MiDispatchFault(
                     ASSERT(MI_IS_PAGE_TABLE_ADDRESS(Pte));
                     ASSERT(Pte->u.Hard.Valid == 1);
 
-                    DPRINT("MiDispatchFault: FIXME MiAllocateWsle(). ProcessedPtes %X\n", ProcessedPtes);
+                    WsIndex = MiAllocateWsle(&Process->Vm, Pte, Pfn, ProtoProtect);
+                    ASSERT(WsIndex != 0);
 
                     if (Pfn->OriginalPte.u.Soft.Prototype)
                     {
@@ -2905,13 +2907,13 @@ Finish:
             ASSERT(SectionProto != NULL);
 
             /* Lock the PFN database */
-            OldIrql = MiLockPfnDb(APC_LEVEL);
+            LockIrql = MiLockPfnDb(APC_LEVEL);
 
             ASSERT(LockedProtoPfn->u3.e2.ReferenceCount >= 1);
             MiDereferencePfnAndDropLockCount(LockedProtoPfn);
 
             /* Unlock the PFN database */
-            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            MiUnlockPfnDb(LockIrql, APC_LEVEL);
         }
 
         if (SessionWs)
@@ -2957,10 +2959,8 @@ Finish:
         }
         else if (Process)
         {
-            PKTHREAD _Thread = &CurrentThread->Tcb;
-            KeEnterCriticalRegionThread(_Thread);
+            KeEnterCriticalRegion();
             MiUnlockWorkingSet(CurrentThread, &Process->Vm);
-
             Flags |= 0x10;
         }
         else
@@ -2993,10 +2993,7 @@ Finish:
         CurrentThread->ActiveFaultCount--;
 
         if (Flags & 0x10)
-        {
-            PKTHREAD _Thread = &CurrentThread->Tcb;
-            KeLeaveCriticalRegionThread(_Thread);
-        }
+            KeLeaveCriticalRegion();
 
         PageBlockPfn = PageBlock->Pfn;
         MdlPages = PageBlock->MdlPages;
@@ -3154,14 +3151,14 @@ Finish:
                                              Address,
                                              Pte,
                                              SectionProto,
-                                             OldIrql,
+                                             LockIrql,
                                              &LockedProtoPfn);
 
             ASSERT(KeAreAllApcsDisabled() == TRUE);
         }
         else
         {
-            DPRINT1("MiDispatchFault: FIXME\n");
+            DPRINT1("MiDispatchFault: FIXME MiAddValidPageToWorkingSet()\n");
             ASSERT(FALSE);
         }
 
@@ -3187,13 +3184,13 @@ Finish:
         ASSERT(SectionProto != NULL);
 
         /* Lock the PFN database */
-        OldIrql = MiLockPfnDb(APC_LEVEL);
+        LockIrql = MiLockPfnDb(APC_LEVEL);
 
         ASSERT(LockedProtoPfn->u3.e2.ReferenceCount >= 1);
         MiDereferencePfnAndDropLockCount(LockedProtoPfn);
 
         /* Unlock the PFN database */
-        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        MiUnlockPfnDb(LockIrql, APC_LEVEL);
     }
 
     ASSERT(OldIrql == KeGetCurrentIrql());
