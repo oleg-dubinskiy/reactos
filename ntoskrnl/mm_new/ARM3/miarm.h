@@ -2627,6 +2627,15 @@ MiAddValidPageToWorkingSet(
     _In_ MMWSLE Wsle
 );
 
+ULONG
+NTAPI
+MiAllocateWsle(
+    _In_ PMMSUPPORT WorkSet,
+    _In_ PMMPTE Pte,
+    _In_ PMMPFN Pfn,
+    _In_ MMWSLE InWsle
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION

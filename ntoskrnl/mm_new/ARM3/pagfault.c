@@ -3462,14 +3462,11 @@ MmAccessFault(
                              2);
             }
         }
-        else
+        else if (MI_IS_PAGE_LARGE(Pde))
         {
-            if (MI_IS_PAGE_LARGE(Pde))
-            {
-                DPRINT1("MmAccessFault: FIXME! MI_IS_PAGE_LARGE(Pde) %p\n", Pde);
-                ASSERT(FALSE);//DbgBreakPoint();
-                return STATUS_SUCCESS;
-            }
+            DPRINT1("MmAccessFault: FIXME! MI_IS_PAGE_LARGE(Pde) %p\n", Pde);
+            ASSERT(FALSE);//DbgBreakPoint();
+            return STATUS_SUCCESS;
         }
 
         /* Session faults? */
@@ -3522,10 +3519,18 @@ MmAccessFault(
         /* Check if this was a session PTE that needs to remap the session PDE */
         if (MI_IS_SESSION_PTE(Address))
         {
-            /* Do the remapping */
-            DPRINT1("MmAccessFault: FIXME! MI_IS_SESSION_PTE(%p) is TRUE\n", Address);
-            ASSERT(FALSE);//DbgBreakPoint(); 
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = MiCheckPdeForSessionSpace(Address);
+            if (!NT_SUCCESS (Status))
+            {
+                if (KeInvalidAccessAllowed(TrapInformation))
+                {
+                    DPRINT("MmAccessFault: return STATUS_ACCESS_VIOLATION\n");
+                    return STATUS_ACCESS_VIOLATION;
+                }
+
+                DPRINT1("KeBugCheckEx()\n");
+                DbgBreakPoint();//ASSERT(FALSE);
+            }
         }
 
         /* Check for a fault on the page table or hyperspace */
@@ -3583,14 +3588,14 @@ MmAccessFault(
             }
             else
             {
-                OldIrql = MiLockPfnDb(APC_LEVEL);
-
               #if !defined(ONE_CPU)
-                if (MI_IS_WRITE_ACCESS(FaultCode) && !Pte->u.Hard.Dirty )
-                    MiSetDirtyBit (Address,Pte,TRUE);
-              #endif
+                PfnLockIrql = MiLockPfnDb(APC_LEVEL);
 
-                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                if (MI_IS_WRITE_ACCESS(FaultCode) && !Pte->u.Hard.Dirty)
+                    MiSetDirtyBit(Address, Pte, TRUE);
+
+                MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
+              #endif
             }
 
             MiUnlockWorkingSet(CurrentThread, WorkingSet);
@@ -3862,6 +3867,8 @@ UserFault:
         goto Exit3;
     }
 
+    Vad = NULL;
+
     if (!TempPte.u.Long)
     {
         /* Check if this address range belongs to a valid allocation (VAD) */
@@ -3938,6 +3945,8 @@ UserFault:
         /* Did we get a prototype PTE back? */
         if (!SectionProto)
         {
+            MMWSLE TempWsle;
+
             /* Is this PTE actually part of the PDE-PTE self-mapping directory? */
             if (Pde == MiAddressToPde(PTE_BASE))
             {
@@ -3989,16 +3998,17 @@ UserFault:
             }
 
             /* Initialize the PFN entry now */
+            Pfn = MI_PFN_ELEMENT(PageFrameIndex);
             MiInitializePfn(PageFrameIndex, Pte, 1);
+
+            /* And we're done with the lock */
+            MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
 
             /* Increment the count of pages in the process */
             CurrentProcess->NumberOfPrivatePages++;
 
             /* One more demand-zero fault */
             InterlockedIncrement(&KeGetCurrentPrcb()->MmDemandZeroCount);
-
-            /* And we're done with the lock */
-            MiUnlockPfnDb(PfnLockIrql, APC_LEVEL);
 
             /* Fault on user PDE, or fault on user PTE? */
             if (Pte <= MiHighestUserPte)
@@ -4014,10 +4024,16 @@ UserFault:
 
             /* And now write down the PTE, making the address valid */
             MI_WRITE_VALID_PTE(Pte, TempPte);
-            Pfn = MI_PFN_ELEMENT(PageFrameIndex);
             ASSERT(Pfn->u1.Event == NULL);
 
-            DPRINT("MmAccessFault: FIXME MiAllocateWsle()\n");
+            TempWsle.u1.Long = 0;
+
+            if (!MiAllocateWsle(&CurrentProcess->Vm, Pte, Pfn, TempWsle))
+            {
+                DPRINT1("MmAccessFault: FIXME MiTrimPte()\n");
+                ASSERT(Pfn->u3.e1.PrototypePte == 0);
+                ASSERT(FALSE);
+            }
 
             DPRINT("MmAccessFault: return STATUS_PAGE_FAULT_DEMAND_ZERO\n");
             Status = STATUS_PAGE_FAULT_DEMAND_ZERO;
