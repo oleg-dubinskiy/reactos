@@ -820,6 +820,58 @@ MiReleaseWsle(
     WorkSet->WorkingSetSize--;
 }
 
+VOID
+FASTCALL 
+MiRemoveWsle(
+    _In_ ULONG WsIndex,
+    _In_ PMMWSL WsList)
+{
+    DPRINT1("MiRemoveWsle: %X, %p\n", WsIndex, WsList);
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+MiTerminateWsle(
+    _In_ PVOID Address,
+    _In_ PMMSUPPORT WorkSet,
+    _In_ ULONG InWsIndex)
+{
+    PMMWSL WsList;
+    ULONG WsIndex;
+    MMWSLE WsleContents;
+
+    WsList = WorkSet->VmWorkingSetList;
+
+    DPRINT("MiTerminateWsle: %p, %p, %p, %X\n", Address, WorkSet, WsList, InWsIndex);
+
+    WsIndex = MiLocateWsle(Address, WorkSet->VmWorkingSetList, InWsIndex, TRUE);
+    ASSERT(WsIndex != WSLE_NULL_INDEX);
+
+    WsleContents.u1.Long = WsList->Wsle[WsIndex].u1.Long;
+
+    ASSERT(PAGE_ALIGN(Address) == PAGE_ALIGN(WsleContents.u1.VirtualAddress));
+    ASSERT(WsleContents.u1.e1.Valid == 1);
+
+    MiRemoveWsle(WsIndex, WsList);
+    MiReleaseWsle(WsIndex, WorkSet);
+
+    if (!WsleContents.u1.e1.LockedInWs && !WsleContents.u1.e1.LockedInMemory)
+    {
+        ASSERT(WsIndex >= WsList->FirstDynamic);
+        return;
+    }
+
+    ASSERT(WsIndex < WsList->FirstDynamic);
+    WsList->FirstDynamic--;
+
+    if (WsIndex == WsList->FirstDynamic)
+        return;
+
+    ASSERT(WsList->Wsle[WsList->FirstDynamic].u1.e1.Valid);
+    MiSwapWslEntries(WsList->FirstDynamic, WsIndex, WorkSet, FALSE);
+}
+
 ULONG
 NTAPI
 MiAddValidPageToWorkingSet(
