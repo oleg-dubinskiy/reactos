@@ -3422,7 +3422,7 @@ MmAccessFault(
 
       #if !defined(ONE_CPU)
         if (MI_IS_WRITE_ACCESS(FaultCode) && !Pte->u.Hard.Dirty)
-            MiSetDirtyBit(Address, Pte, TRUE);
+            MiSetDirtyBit(Address, Pte, FALSE);
       #endif
 
         /* Nothing is actually wrong */
