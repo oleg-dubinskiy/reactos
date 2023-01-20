@@ -1960,7 +1960,7 @@ MiResolveTransitionFault(
 
         /* Get the PFN and the PFN entry */
         PageFrameIndex = TempPte.u.Trans.PageFrameNumber;
-        Pfn = MiGetPfnEntry(PageFrameIndex);
+        Pfn = MI_PFN_ELEMENT(PageFrameIndex);
     }
     else
     {
@@ -2008,7 +2008,6 @@ MiResolveTransitionFault(
     if (Pfn->u3.e1.ReadInProgress)
     {
         PETHREAD Thread = PsGetCurrentThread();
-        PKTHREAD _Thread = &Thread->Tcb;
         PMI_PAGE_SUPPORT_BLOCK PageBlock;
 
         PageBlock = CONTAINING_RECORD(Pfn->u1.Event, MI_PAGE_SUPPORT_BLOCK, Event);
@@ -2038,7 +2037,7 @@ MiResolveTransitionFault(
         {
             if (CurrentProcess)
             {
-                KeEnterCriticalRegionThread(_Thread);
+                KeEnterCriticalRegion();
                 MiUnlockWorkingSet(Thread, &CurrentProcess->Vm);
                 IsNeedUnlockThread = TRUE;
             }
@@ -2060,7 +2059,7 @@ MiResolveTransitionFault(
         ASSERT(Pfn->u3.e1.ReadInProgress == 0);
 
         if (IsNeedUnlockThread)
-            KeLeaveCriticalRegionThread(_Thread);
+            KeLeaveCriticalRegion();
 
         if (Status != STATUS_SUCCESS)
         {
@@ -2183,10 +2182,18 @@ MiResolveTransitionFault(
 
     if (IsNeedUnlock)
     {
+        MMWSLE TempWsle;
+
         ASSERT(Pfn->u3.e1.PrototypePte == 0);
         MiUnlockPfnDb(OldIrql, APC_LEVEL);
-        DPRINT("MiResolveTransitionFault: FIXME MiAddValidPageToWorkingSet()\n");
-        //ASSERT(FALSE);
+
+        TempWsle.u1.Long = 0;
+        if (!MiAddValidPageToWorkingSet(Address, Pte, Pfn, TempWsle))
+        {
+            DPRINT("MiResolveTransitionFault: FIXME MiTrimPte()\n");
+            ASSERT(FALSE);
+            return STATUS_NO_MEMORY;
+        }
     }
 
     /* Return success */
