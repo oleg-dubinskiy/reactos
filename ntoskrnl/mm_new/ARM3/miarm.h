@@ -2636,6 +2636,12 @@ MiAllocateWsle(
     _In_ MMWSLE InWsle
 );
 
+VOID
+NTAPI
+MiGrowWsleHash(
+    _In_ PMMSUPPORT WorkSet
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION

@@ -961,6 +961,178 @@ MiTerminateWsle(
     MiSwapWslEntries(WsList->FirstDynamic, WsIndex, WorkSet, FALSE);
 }
 
+BOOLEAN
+NTAPI
+MiAddWsleHash(
+    _In_ PMMSUPPORT WorkSet,
+    _In_ PMMPTE Pte)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+VOID
+NTAPI
+MiFillWsleHash(
+    _In_ PMMWSL WsList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+MiGrowWsleHash(
+    _In_ PMMSUPPORT WorkSet)
+{
+    PMMWSL WsList;
+    PMMWSLE_HASH Table;
+    PMMWSLE_HASH NewTable;
+    PMMPDE AllocatedPde;
+    PMMPDE Pde;
+    PMMPTE FirstPte;
+    PMMPTE LastPte;
+    PMMPTE Pte;
+    PVOID TableEnd;
+    PVOID Address;
+    ULONG BytesOfGrow;
+    ULONG OldCount;
+    LONG BytesLeft;
+    BOOLEAN IsLocatePde;
+
+    WsList = WorkSet->VmWorkingSetList;
+    NewTable = Table = WsList->HashTable;
+    OldCount = WsList->HashTableSize;
+
+    DPRINT("MiGrowWsleHash: %p, %p, %p, %X\n", WorkSet, WsList, Table, OldCount);
+
+    if (Table)
+    {
+        BytesOfGrow = ((WsList->NonDirectCount / 4) * sizeof(MMWSLE_HASH));
+        BytesOfGrow = (BytesOfGrow + (PAGE_SIZE - 1)) & ~(PAGE_SIZE - 1);
+
+        if (BytesOfGrow < 0x4000)
+            BytesOfGrow = 0x4000;
+
+        if (BytesOfGrow / PAGE_SIZE >= (WsList->LastInitializedWsle - WorkSet->WorkingSetSize))
+            BytesOfGrow = PAGE_SIZE;
+    }
+    else
+    {
+        BytesOfGrow = (2 * (WsList->NonDirectCount + 1) * sizeof(MMWSLE_HASH));
+        BytesOfGrow = ((BytesOfGrow + (PAGE_SIZE - 1)) & ~(PAGE_SIZE - 1));
+
+        if (OldCount && BytesOfGrow < ((OldCount * sizeof(MMWSLE_HASH)) + PAGE_SIZE))
+        {
+            WorkSet->Flags.GrowWsleHash = 0;
+            return;
+        }
+
+        NewTable = WsList->HashTableStart;
+        WsList->HashTableSize = 0;
+    }
+
+    TableEnd = &NewTable[OldCount];
+
+    if ((ULONG_PTR)TableEnd + BytesOfGrow > (ULONG_PTR)WsList->HighestPermittedHashAddress)
+    {
+        BytesOfGrow = ((ULONG_PTR)WsList->HighestPermittedHashAddress - (ULONG_PTR)TableEnd);
+        if (!BytesOfGrow)
+        {
+            if (!Table)
+                WsList->HashTableSize = OldCount;
+
+            WorkSet->Flags.GrowWsleHash = 0;
+            return;
+        }
+    }
+
+    ASSERT((TableEnd == WsList->HighestPermittedHashAddress) ||
+           (MiAddressToPde(TableEnd)->u.Hard.Valid == 0) ||
+           (MiAddressToPte(TableEnd)->u.Hard.Valid == 0));
+
+    Pte = FirstPte = MiAddressToPte(TableEnd);
+    LastPte = &Pte[BytesOfGrow / PAGE_SIZE];
+
+    Pde = AllocatedPde = NULL;
+    IsLocatePde = TRUE;
+
+    BytesLeft = BytesOfGrow;
+
+    do
+    {
+        if (!IsLocatePde && !MiIsPteOnPdeBoundary(Pte))
+        {
+            AllocatedPde = NULL;
+        }
+        else
+        {
+            Pde = MiAddressToPte(Pte);
+            if (!Pde->u.Hard.Valid)
+            {
+                if (!MiAddWsleHash(WorkSet, Pde))
+                    break;
+
+                AllocatedPde = Pde;
+            }
+
+            IsLocatePde = FALSE;
+        }
+
+        if (!Pte->u.Hard.Valid && !MiAddWsleHash(WorkSet, Pte))
+            break;
+
+        BytesLeft -= PAGE_SIZE;
+        Pte++;
+    }
+    while (BytesLeft > 0);
+
+    if (Pte != LastPte)
+    {
+        if (AllocatedPde)
+        {
+            ASSERT(AllocatedPde->u.Hard.Valid == 1);
+
+            if (WorkSet->VmWorkingSetList == MmWorkingSetList)
+            {
+                DPRINT1("MiGrowWsleHash: FIXME MiDeletePte()\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                DPRINT1("MiGrowWsleHash: FIXME MiDeleteValidSystemPte()\n");
+                ASSERT(FALSE);
+            }
+        }
+
+        if (Pte == FirstPte)
+        {
+            if (!Table)
+                WsList->HashTableSize = OldCount;
+
+            WorkSet->Flags.GrowWsleHash = 0;
+            return;
+        }
+    }
+
+    Address = MiPteToAddress(Pte);
+    ASSERT((Address == WsList->HighestPermittedHashAddress) || (MiIsAddressValid(Address) == FALSE));
+
+    BytesOfGrow = (((Pte - FirstPte) * PAGE_SIZE));
+    WsList->HashTableSize = (OldCount + (BytesOfGrow / sizeof(MMWSLE_HASH)));
+    WsList->HashTable = NewTable;
+
+    Address = &NewTable[WsList->HashTableSize];
+    ASSERT((Address == WsList->HighestPermittedHashAddress) || (MiIsAddressValid(Address) == FALSE));
+
+    if (OldCount)
+        RtlZeroMemory(NewTable, OldCount * sizeof(MMWSLE_HASH));
+
+    WorkSet->Flags.GrowWsleHash = 0;
+
+    if (WsList->NonDirectCount)
+        MiFillWsleHash(WsList);
+}
+
 ULONG
 NTAPI
 MiAddValidPageToWorkingSet(

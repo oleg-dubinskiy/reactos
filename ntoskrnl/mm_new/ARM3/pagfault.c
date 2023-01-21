@@ -3702,10 +3702,7 @@ MmAccessFault(
         ASSERT(KeAreAllApcsDisabled() == TRUE);
 
         if (WorkingSet->Flags.GrowWsleHash)
-        {
-            DPRINT1("MmAccessFault: FIXME! WorkingSet->Flags.GrowWsleHash\n");
-            ASSERT(FALSE);
-        }
+            MiGrowWsleHash(WorkingSet);
 
         MiUnlockWorkingSet(CurrentThread, WorkingSet);
         ASSERT(WsLockIrql != MM_NOIRQL);
@@ -4165,10 +4162,7 @@ Exit3:
     ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
 
     if (CurrentProcess->Vm.Flags.GrowWsleHash)
-    {
-        DPRINT1("MmAccessFault: FIXME\n");
-        ASSERT(FALSE);
-    }
+        MiGrowWsleHash(&CurrentProcess->Vm);
 
 Exit2:
 
