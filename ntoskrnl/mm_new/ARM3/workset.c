@@ -830,6 +830,95 @@ MiRemoveWsle(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+ULONG
+NTAPI
+MiLocateWsle(
+    _In_ PVOID Address,
+    _In_ PMMWSL WsList,
+    _In_ ULONG InWsIndex,
+    _In_ BOOLEAN IsResetHash)
+{
+    PMMWSLE Wsle;
+    PMMWSLE LastWsle;
+    PMMWSLE_HASH Table;
+    ULONG WsIndex;
+    ULONG Hash;
+    ULONG Tries;
+    ULONG ix;
+
+    DPRINT("MiLocateWsle: %p, %p, %X, %X\n", Address, WsList, InWsIndex, IsResetHash);
+
+    Wsle = WsList->Wsle;
+    Address = (PVOID)((ULONG_PTR)PAGE_ALIGN(Address) | 1);
+
+    if (InWsIndex <= WsList->LastInitializedWsle &&
+        (Wsle[InWsIndex].u1.Long & (0xFFFFF000 | 1)) == (ULONG_PTR)Address)
+    {
+        return InWsIndex;
+    }
+
+    Table = WsList->HashTable;
+    if (Table)
+    {
+        Tries = 0;
+        ix = Hash = (((ULONG_PTR)Address * 4) % (WsList->HashTableSize - 1));
+
+        while (Table[ix].Key != Address)
+        {
+            ix++;
+
+            if (ix >= WsList->HashTableSize)
+            {
+                ix = 0;
+
+                ASSERT(Tries == 0);
+                Tries = 1;
+            }
+
+            if (ix == Hash)
+            {
+                Tries = 2;
+                break;
+            }
+        }
+
+        if (Tries < 2)
+        {
+            WsIndex = Table[ix].Index;
+
+            ASSERT(Wsle[WsIndex].u1.e1.Hashed == 1);
+            ASSERT(Wsle[WsIndex].u1.e1.Direct == 0);
+            ASSERT((Wsle[WsIndex].u1.Long & (0xFFFFF000 | 1)) == (ULONG_PTR)Table[ix].Key);
+
+            if (IsResetHash)
+            {
+                Wsle[WsIndex].u1.e1.Hashed = 0;
+                Table[ix].Key = 0;
+            }
+
+            return WsIndex;
+        }
+    }
+
+    LastWsle = &Wsle[WsList->LastInitializedWsle];
+
+    while ((Wsle->u1.Long & (0xFFFFF000 | 1)) != (ULONG_PTR)Address)
+    {
+        Wsle++;
+
+        if (Wsle > LastWsle)
+        {
+            DPRINT1("MiLocateWsle: KeBugCheckEx()\n");
+            DbgBreakPoint();//ASSERT(FALSE);
+        }
+    }
+
+    ASSERT((Wsle->u1.e1.Hashed == 0) || (WsList->HashTable == NULL));
+    ASSERT(Wsle->u1.e1.Direct == 0);
+
+    return (Wsle - WsList->Wsle);
+}
+
 VOID
 NTAPI
 MiTerminateWsle(
@@ -1459,20 +1548,6 @@ MiInitializeWorkingSetList(
 
     MmWorkingSetList->LastInitializedWsle = (WsleCount - 1);
     DPRINT1("MiInitializeWorkingSetList: FirstFree %X, LastInitializedWsle %X\n", MmWorkingSetList->FirstFree, MmWorkingSetList->LastInitializedWsle);
-}
-
-ULONG
-NTAPI
-MiLocateWsle(
-    _In_ PVOID Address,
-    _In_ PMMWSL WsList,
-    _In_ ULONG InWsIndex,
-    _In_ BOOLEAN Parametr4)
-{
-    DPRINT1("MiLocateWsle: Address %p, WsList %p, InWsIndex %X, Parametr4 %X\n", Address, WsList, InWsIndex, Parametr4);
-    UNIMPLEMENTED;
-    //ASSERT(FALSE);
-    return 0;
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/

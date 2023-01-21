@@ -2603,7 +2603,7 @@ MiLocateWsle(
     _In_ PVOID Address,
     _In_ PMMWSL WsList,
     _In_ ULONG InWsIndex,
-    _In_ BOOLEAN Parametr4
+    _In_ BOOLEAN IsResetHash
 );
 
 VOID
