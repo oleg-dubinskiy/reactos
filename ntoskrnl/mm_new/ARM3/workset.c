@@ -826,8 +826,102 @@ MiRemoveWsle(
     _In_ ULONG WsIndex,
     _In_ PMMWSL WsList)
 {
-    DPRINT1("MiRemoveWsle: %X, %p\n", WsIndex, WsList);
-    UNIMPLEMENTED_DBGBREAK();
+    PMMWSLE Wsle;
+    PVOID Address;
+    PMMWSLE_HASH Table;
+    ULONG ix;
+    ULONG Hash;
+    ULONG Tries;
+    MMWSLE WsleContents;
+
+    DPRINT("MiRemoveWsle: WsIndex %X, WsList %p\n", WsIndex, WsList);
+
+    if (WsIndex > WsList->LastInitializedWsle)
+    {
+        DPRINT1("MiRemoveWsle: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+    }
+
+    Wsle = &WsList->Wsle[WsIndex];
+
+    WsleContents.u1.Long = Wsle->u1.Long;
+    ASSERT(WsleContents.u1.e1.Valid == 1);
+
+    Address = PAGE_ALIGN(WsleContents.u1.VirtualAddress);
+
+    if (WsList == MmSystemCacheWorkingSetList)
+    {
+        if (Address >= MmPagedPoolStart && Address <= MmPagedPoolEnd)
+        {
+            MmPagedPoolPage--;
+        }
+        else if ((Address >= MmSystemCacheStart && Address <= MmSystemCacheEnd)) // || (Address >= MiSystemCacheStartExtra && Address <= MiSystemCacheEndExtra))
+        {
+            MmSystemCachePage--;
+        }
+        else if (Address <= MmSpecialPoolEnd && Address >= MmSpecialPoolStart)
+        {
+            MmPagedPoolPage--;
+        }
+        //else if (Address < MiLowestSystemPteVirtualAddress)
+        //    MmSystemCodePage--;
+        //else
+        //    MmSystemDriverPage--;
+    }
+
+    Wsle->u1.e1.Valid = 0;
+    WsleContents.u1.e1.Valid = 0;
+
+    if (WsleContents.u1.e1.Direct)
+        return;
+
+    WsList->NonDirectCount--;
+
+    if (!WsleContents.u1.e1.Hashed)
+    {
+        Table = WsList->HashTable;
+        if (!Table)
+            return;
+
+        Address = (PVOID)((ULONG_PTR)Address | 1);
+
+        for (ix = 0; ix < WsList->HashTableSize; ix++)
+        {
+            ASSERT(Table[ix].Key != Address);
+        }
+
+        return;
+    }
+
+    Table = WsList->HashTable;
+    if (!Table)
+        return;
+
+    Hash = ((WsleContents.u1.e1.VirtualPageNumber * 4) % (WsList->HashTableSize - 1));
+
+    Address = (PVOID)((ULONG_PTR)Address | 1);
+    Tries = 0;
+
+    for (ix = Hash; Table[ix].Key != Address; )
+    {
+        ix++;
+
+        if (ix >= WsList->HashTableSize)
+        {
+            ASSERT(Tries == 0);
+            ix = 0;
+            Tries = 1;
+        }
+
+        if (ix == Hash)
+        {
+            ASSERT(WsleContents.u1.e1.Hashed == 0);
+            return;
+        }
+    }
+
+    ASSERT(WsleContents.u1.e1.Hashed == 1);
+    Table[ix].Key = 0;
 }
 
 ULONG
