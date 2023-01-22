@@ -754,6 +754,7 @@ MmCopyToCachedPage(
     PMMPTE CopyPte;
     MMPTE TempPte;
     MMPTE TempProto;
+    MMWSLE TempWsle;
     PVOID CopyBuffer;
     PVOID StartVa;
     PVOID Buffer;
@@ -1179,6 +1180,17 @@ MmCopyToCachedPage(
     ASSERT(Pfn->PteAddress == Proto);
 
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    TempWsle.u1.Long = 0;
+    if (!MiAllocateWsle(&MmSystemCacheWs, Pte, Pfn, TempWsle))
+    {
+        ASSERT(Pfn->u3.e1.PrototypePte == 1);
+        ASSERT(Proto == Pfn->PteAddress);
+
+        DPRINT1("MmCopyToCachedPage: FIXME MiTrimPte()\n");
+        ASSERT(FALSE);
+    }
+
     MiUnlockWorkingSet(CurrentThread, &MmSystemCacheWs);
 
     if (!PageBlock)
