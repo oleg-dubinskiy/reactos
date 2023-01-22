@@ -2642,6 +2642,14 @@ MiGrowWsleHash(
     _In_ PMMSUPPORT WorkSet
 );
 
+VOID
+NTAPI
+MiTerminateWsle(
+    _In_ PVOID Address,
+    _In_ PMMSUPPORT WorkSet,
+    _In_ ULONG InWsIndex
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION

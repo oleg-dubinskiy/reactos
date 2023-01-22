@@ -563,7 +563,7 @@ MmUnmapViewInSystemCache(
 
             Pfn = MI_PFN_ELEMENT(TempPte.u.Hard.PageFrameNumber);
 
-            DPRINT("MmUnmapViewInSystemCache: FIXME MiTerminateWsle()\n");
+            MiTerminateWsle(BaseAddress, &MmSystemCacheWs, Pfn->u1.WsIndex);
 
             if (FileObject)
             {
