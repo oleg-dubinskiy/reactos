@@ -1061,8 +1061,100 @@ MiAddWsleHash(
     _In_ PMMSUPPORT WorkSet,
     _In_ PMMPTE Pte)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PMMPFN Pfn;
+    PMMWSLE Wsle;
+    PMMWSL WsList;
+    PFN_NUMBER PageFrameNumber;
+    MMPTE TempPte;
+    MMWSLE TempWsle;
+    ULONG WsIndex;
+    ULONG SwapEntry;
+    KIRQL OldIrql;
+
+    DPRINT("MiAddWsleHash: %p, %p, %p, %p\n", WorkSet, Pte, WorkSet->VmWorkingSetList, WsList->Wsle);
+
+    if (!MiChargeCommitmentCantExpand(1, FALSE))
+    {
+        DPRINT1("MiAddWsleHash: MiChargeCommitmentCantExpand() failed\n");
+        return FALSE;
+    }
+
+    WsList = WorkSet->VmWorkingSetList;
+    Wsle = WsList->Wsle;
+
+    ASSERT(Pte->u.Hard.Valid == 0);
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (MmAvailablePages < 0x80)
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        ASSERT(MmTotalCommittedPages >= 1);
+        InterlockedDecrementSizeT(&MmTotalCommittedPages);
+        return FALSE;
+    }
+
+    if (MmResidentAvailablePages - MmSystemLockPagesCount < 0x80) // MmSystemLockPagesCount[0]
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        ASSERT(MmTotalCommittedPages >= 1);
+        InterlockedDecrementSizeT(&MmTotalCommittedPages);
+        return FALSE;
+    }
+
+    InterlockedDecrementSizeT(&MmResidentAvailablePages);
+    //InterlockedIncrementSizeT(&MmResTrack[70]);
+
+    MI_MAKE_SOFTWARE_PTE(&TempPte, MM_READWRITE);
+    MI_WRITE_INVALID_PTE(Pte, TempPte);
+
+    PageFrameNumber = MiRemoveZeroPage(MiGetColor());
+    MiInitializePfn(PageFrameNumber, Pte, TRUE);
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    MI_MAKE_HARDWARE_PTE(&TempPte, Pte, MM_READWRITE, PageFrameNumber);
+    MI_MAKE_DIRTY_PAGE(&TempPte);
+    MI_WRITE_VALID_PTE(Pte, TempPte);
+
+    Pfn = MI_PFN_ELEMENT(PageFrameNumber);
+    Pfn->u1.WsIndex = 0;
+
+    TempWsle.u1.Long = 0;
+
+    WsIndex = MiAllocateWsle(WorkSet, Pte, (PMMPFN)((ULONG_PTR)Pfn | 1), TempWsle);
+    if (!WsIndex)
+    {
+        ASSERT(Pfn->u3.e1.PrototypePte == 0);
+
+        DPRINT1("MiAddWsleHash: FIXME MiTrimPte()\n");
+        ASSERT(FALSE);
+
+        return FALSE;
+    }
+
+    SwapEntry = WsList->FirstDynamic;
+
+    if (WsIndex >= SwapEntry)
+    {
+        if (WsIndex != SwapEntry)
+            MiSwapWslEntries(WsIndex, SwapEntry, WorkSet, FALSE);
+
+        WsList->FirstDynamic++;
+
+        Wsle[SwapEntry].u1.e1.LockedInWs = 1;
+        ASSERT(Wsle[SwapEntry].u1.e1.Valid == 1);
+    }
+
+    if (WorkSet->Flags.SessionSpace)
+    {
+        InterlockedIncrementSizeT(&MmSessionSpace->NonPageablePages);//NonPagablePages
+        InterlockedIncrementSizeT(&MmSessionSpace->CommittedPages);
+    }
+
+    return TRUE;
 }
 
 VOID
