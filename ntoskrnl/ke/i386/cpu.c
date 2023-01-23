@@ -1387,6 +1387,23 @@ KeStartAllProcessors(VOID)
 }
 #endif
 
+VOID
+FASTCALL
+KeFlushSingleTb(
+    _In_ PVOID Address,
+    _In_ BOOLEAN AllProcesors)
+{
+  #if !defined(ONE_CPU)
+    if (KeNumberProcessors > 1)
+    {
+        DPRINT1("KeFlushSingleTb: FIXME! KeNumberProcessors %X\n", KeNumberProcessors);
+        ASSERT(FALSE);
+    }
+  #endif
+
+    KeInvalidateTlbEntry(Address);
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*

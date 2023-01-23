@@ -1058,4 +1058,11 @@ KeBugCheckUnicodeToAnsi(
     IN ULONG Length
 );
 
+VOID
+FASTCALL
+KeFlushSingleTb(
+    _In_ PVOID Address,
+    _In_ BOOLEAN AllProcesors
+);
+
 #include "ke_x.h"

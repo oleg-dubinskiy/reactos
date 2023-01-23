@@ -943,8 +943,7 @@ MiDeletePte(
         if (!FlushList)
         {
             /* Flush the TLB */
-            //FIXME: Use KeFlushSingleTb(Va, 0) instead
-            KeFlushCurrentTb();
+            KeFlushSingleTb(Va, FALSE);
         }
         else
         {
