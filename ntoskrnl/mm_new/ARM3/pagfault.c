@@ -424,7 +424,7 @@ MiZeroPfn(
     PVOID ZeroAddress;
 
     /* Get the PFN for this page */
-    Pfn = MiGetPfnEntry(PageFrameNumber);
+    Pfn = MI_PFN_ELEMENT(PageFrameNumber);
     ASSERT(Pfn);
 
     /* Grab a system PTE we can use to zero the page */
@@ -1003,31 +1003,32 @@ MiCompleteProtoPteFault(
     _In_ PMMPFN* LockedProtoPfn)
 {
     PMMPTE OriginalPte;
-    PMMPDE Pde;
     PMMPFN Pfn;
     MMPTE TempPte;
     ULONG_PTR Protection;
     PFN_NUMBER PageFrameIndex;
+    MMWSLE ProtoProtect;
     BOOLEAN OriginalProtection;
     BOOLEAN DirtyPage;
+    NTSTATUS Status;
 
     DPRINT("MiCompleteProtoPteFault: %X, %p, %p [%I64X], %p [%I64X], %X\n",
            StoreInstruction, Address, Pte, MiGetPteContents(Pte), SectionProto, MiGetPteContents(SectionProto), OldIrql);
 
     /* Must be called with an valid prototype PTE, with the PFN lock held */
     MI_ASSERT_PFN_LOCK_HELD();
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
     ASSERT(SectionProto->u.Hard.Valid == 1);
 
     /* Increment the share count for the page table */
-    Pde = MiAddressToPte(Pte);
-    Pfn = MiGetPfnEntry(Pde->u.Hard.PageFrameNumber);
+    Pfn = MI_PFN_ELEMENT((MiAddressToPte(Pte))->u.Hard.PageFrameNumber);
     Pfn->u2.ShareCount++;
 
     /* Get the page */
     PageFrameIndex = PFN_FROM_PTE(SectionProto);
 
     /* Get the PFN entry and set it as a prototype PTE */
-    Pfn = MiGetPfnEntry(PageFrameIndex);
+    Pfn = MI_PFN_ELEMENT(PageFrameIndex);
     Pfn->u3.e1.PrototypePte = 1;
 
     OriginalPte = &Pfn->OriginalPte;
@@ -1095,21 +1096,16 @@ MiCompleteProtoPteFault(
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
     /* Remove special/caching bits */
-    Protection &= ~MM_PROTECT_SPECIAL;
+    ProtoProtect.u1.e1.Protection = Protection;
+    Protection &= MM_PROTECT_ACCESS;
 
     /* Setup caching */
     if (Pfn->u3.e1.CacheAttribute == MiWriteCombined)
-    {
         /* Write combining, no caching */
-        MI_PAGE_DISABLE_CACHE(&TempPte);
-        MI_PAGE_WRITE_COMBINED(&TempPte);
-    }
+        Protection |= MM_WRITECOMBINE;
     else if (Pfn->u3.e1.CacheAttribute == MiNonCached)
-    {
         /* Write through, no caching */
-        MI_PAGE_DISABLE_CACHE(&TempPte);
-        MI_PAGE_WRITE_THROUGH(&TempPte);
-    }
+        Protection |= MM_NOCACHE;
 
     /* Check if this is a kernel or user address */
     if (Address < MmSystemRangeStart)
@@ -1128,12 +1124,27 @@ MiCompleteProtoPteFault(
 
     /* Reset the protection if needed */
     if (OriginalProtection)
-        Protection = MM_ZERO_ACCESS;
+        ProtoProtect.u1.e1.Protection = MM_ZERO_ACCESS;
+
+    if (MiAddValidPageToWorkingSet(Address, Pte, Pfn, ProtoProtect))
+    {
+        Status = STATUS_SUCCESS;
+        goto Exit;
+    }
+
+    DPRINT1("MiCompleteProtoPteFault: FIXME MiTrimPte()\n");
+    ASSERT(FALSE);
+
+    Status = STATUS_NO_MEMORY;
+
+Exit:
+
+    DPRINT("MiCompleteProtoPteFault: FIXME CcPfNumActiveTraces\n");
 
     /* Return success */
     ASSERT(Pte == MiAddressToPte(Address));
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 PMI_PAGE_SUPPORT_BLOCK
