@@ -1162,7 +1162,97 @@ NTAPI
 MiFillWsleHash(
     _In_ PMMWSL WsList)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PMMWSLE CurrentWsle;
+    PMMWSLE FirstWsle;
+    PMMWSLE_HASH Table;
+    PMMWSLE_HASH EndTable;
+    PMMWSLE_HASH StartHash;
+    PMMWSLE_HASH CurrentHash;
+    PMMPTE Pte;
+    ULONG WsIndex = 0;
+    ULONG HashIndex;
+    ULONG Count;
+
+    FirstWsle = WsList->Wsle;
+    Table = WsList->HashTable;
+    EndTable = &Table[WsList->HashTableSize];
+    Count = WsList->NonDirectCount;
+
+    DPRINT("MiFillWsleHash: %p, %p, %X, %X\n", WsList, Table, WsList->HashTableSize, Count);
+
+    for (CurrentWsle = FirstWsle; TRUE; CurrentWsle++, WsIndex++)
+    {
+        ASSERT(CurrentWsle <= &FirstWsle[WsList->LastEntry]);
+
+        if (!CurrentWsle->u1.e1.Valid)
+            continue;
+
+        if (CurrentWsle->u1.e1.Direct)
+        {
+            ASSERT((CurrentWsle->u1.e1.Hashed == 0) ||
+                   (CurrentWsle->u1.e1.LockedInWs == 1) ||
+                   (CurrentWsle->u1.e1.LockedInMemory == 1));
+
+            continue;
+        }
+
+        CurrentWsle->u1.e1.Hashed = 0;
+
+        Pte = MiAddressToPte(CurrentWsle->u1.VirtualAddress);
+        ASSERT(Pte->u.Hard.Valid);
+
+        if ((MI_PFN_ELEMENT(Pte->u.Hard.PageFrameNumber))->u1.WsIndex != WsIndex)
+        {
+            HashIndex = ((CurrentWsle->u1.e1.VirtualPageNumber * 4) % (WsList->HashTableSize - 1));
+            CurrentHash = StartHash = &Table[HashIndex];
+
+            while (TRUE)
+            {
+                if (!CurrentHash->Key)
+                {
+                    CurrentHash->Key = (PVOID)(CurrentWsle->u1.Long & (0xFFFFF000 | 1));
+                    CurrentHash->Index = WsIndex;
+
+                    CurrentWsle->u1.e1.Hashed = 1;
+                    break;
+                }
+
+                CurrentHash++;
+                ASSERT(CurrentHash <= EndTable);
+
+                if (CurrentHash == EndTable)
+                    CurrentHash = Table;
+
+                if (CurrentHash == StartHash)
+                {
+                    do
+                    {
+                        ASSERT(CurrentWsle <= &FirstWsle[WsList->LastEntry]);
+
+                        if (CurrentWsle->u1.e1.Valid && !CurrentWsle->u1.e1.Direct)
+                        {
+                            Count--;
+                            CurrentWsle->u1.e1.Hashed = 0;
+                        }
+
+                        CurrentWsle++;
+                    }
+                    while (Count);
+
+                    return;
+                }
+            }
+        }
+
+        Count--;
+        if (!Count)
+        {
+            //MiCheckWsleHash(WsList);
+            return;
+        }
+    }
+
+    return;
 }
 
 VOID
