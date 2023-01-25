@@ -618,7 +618,7 @@ NTAPI
 MiInitializeCopyOnWritePfn(
     _In_ PFN_NUMBER PageNumber,
     _In_ PMMPTE Pte,
-    _In_ ULONG WsleIndex,
+    _In_ ULONG WsIndex,
     _In_ PMMWSL WsList)
 {
     PMMPFN Pfn;
@@ -629,7 +629,7 @@ MiInitializeCopyOnWritePfn(
     ULONG NewProtection;
 
     DPRINT("MiInitializeCopyOnWritePfn: %X, %p [%I64X], %X, %p\n",
-           PageNumber, Pte, MiGetPteContents(Pte), WsleIndex, WsList);
+           PageNumber, Pte, MiGetPteContents(Pte), WsIndex, WsList);
 
     ASSERT(Pte->u.Hard.Valid == 1);
 
@@ -639,7 +639,7 @@ MiInitializeCopyOnWritePfn(
     NewPfn->PteAddress = Pte;
     NewPfn->OriginalPte.u.Long = 0;
 
-    wsle = &WsList->Wsle[WsleIndex];
+    wsle = &WsList->Wsle[WsIndex];
 
     if (!wsle->u1.e1.Protection)
         Protection = Pfn->OriginalPte.u.Soft.Protection;
@@ -671,7 +671,7 @@ MiInitializeCopyOnWritePfn(
         NewPfn->u3.e1.CacheAttribute = Pfn->u3.e1.CacheAttribute;
     }
 
-    NewPfn->u1.WsIndex = WsleIndex;
+    NewPfn->u1.WsIndex = WsIndex;
 
     Pde = MiAddressToPte(Pte);
     if (!Pde->u.Hard.Valid)
@@ -679,7 +679,7 @@ MiInitializeCopyOnWritePfn(
         if (!NT_SUCCESS(MiCheckPdeForPagedPool(Pte)))
         {
             DPRINT1("MiInitializeCopyOnWritePfn: KeBugCheckEx()\n");
-            ASSERT(FALSE);
+            DbgBreakPoint();//ASSERT(FALSE);
             KeBugCheckEx(0x1A, 0x61940, (ULONG_PTR)Pte, (ULONG_PTR)Pde->u.Long, (ULONG_PTR)MiPteToAddress(Pte));
         }
     }
