@@ -302,10 +302,9 @@ Exit:
 #endif
 
 NTSTATUS
-NTAPI
+FASTCALL
 MiCheckForUserStackOverflow(
-    _In_ PVOID Address,
-    _In_ PVOID TrapInformation)
+    _In_ PVOID Address)
 {
     PETHREAD CurrentThread = PsGetCurrentThread();
     PTEB Teb = CurrentThread->Tcb.Teb;
@@ -3970,7 +3969,7 @@ UserFault:
             }
 
             /* Handle stack expansion */
-            Status = MiCheckForUserStackOverflow(Address, TrapInformation);
+            Status = MiCheckForUserStackOverflow(Address);
             return Status;
         }
 
@@ -4169,7 +4168,7 @@ UserFault:
             if (Status == STATUS_GUARD_PAGE_VIOLATION)
             {
                 /* Handle stack expansion */
-                Status = MiCheckForUserStackOverflow(Address, TrapInformation);
+                Status = MiCheckForUserStackOverflow(Address);
                 DPRINT("MmAccessFault: return %X\n", Status);
                 return Status;
             }
