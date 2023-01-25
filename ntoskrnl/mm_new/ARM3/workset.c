@@ -200,12 +200,50 @@ Exit:
 VOID
 NTAPI
 MiRepointWsleHashIndex(
-    MMWSLE Wsle,
+    MMWSLE WsleEntry,
     PMMWSL WsList,
-    ULONG HashIndex)
+    ULONG WsIndex)
 {
-    DPRINT1("MiRepointWsleHashIndex: %X, %p, %p\n", Wsle.u1.Long, WsList, HashIndex);
-    UNIMPLEMENTED_DBGBREAK();
+    PMMWSLE_HASH Table;
+    ULONG HashIndex;
+    ULONG StartIndex;
+    LONG Tries = 0;
+
+    Table = WsList->HashTable;
+
+    DPRINT("MiRepointWsleHashIndex: %X, %p, %X, %p\n", WsleEntry.u1.Long, WsList, WsIndex, Table);
+
+    if (!WsleEntry.u1.e1.Hashed)
+    {
+        if (Table)
+        {
+            for (HashIndex = 0; HashIndex < WsList->HashTableSize; HashIndex++)
+            {
+                ASSERT(Table[HashIndex].Key != (PVOID)(WsleEntry.u1.Long & (0xFFFFF000 | 1)));
+            }
+        }
+
+        return;
+    }
+
+    HashIndex = StartIndex = ((WsleEntry.u1.e1.VirtualPageNumber * 4) % (WsList->HashTableSize - 1));
+
+    while (Table[HashIndex].Key != (PVOID)(WsleEntry.u1.Long & (0xFFFFF000 | 1)))
+    {
+        HashIndex++;
+
+        if (HashIndex >= WsList->HashTableSize)
+        {
+            HashIndex = 0;
+            ASSERT(Tries == 0);
+            Tries = 1;
+        }
+
+        if (StartIndex == HashIndex)
+            return;
+    }
+
+    Table[HashIndex].Index = WsIndex;
 }
 
 VOID
