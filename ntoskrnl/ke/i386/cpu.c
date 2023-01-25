@@ -1404,6 +1404,30 @@ KeFlushSingleTb(
     KeInvalidateTlbEntry(Address);
 }
 
+VOID
+NTAPI
+KeFlushMultipleTb(
+    _In_ ULONG Number,
+    _In_ PVOID* FlushList,
+    _In_ BOOLEAN AllProcessors)
+{
+    ULONG ix;
+
+  #if !defined(ONE_CPU)
+    if (KeNumberProcessors > 1)
+    {
+        DPRINT1("KeFlushMultipleTb: FIXME! KeNumberProcessors %X\n", KeNumberProcessors);
+        ASSERT(FALSE);
+    }
+  #endif
+
+    for (ix = 0; ix < Number; ix++)
+    {
+        KeInvalidateTlbEntry(FlushList[ix]);
+    }
+
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*

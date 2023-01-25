@@ -1065,4 +1065,12 @@ KeFlushSingleTb(
     _In_ BOOLEAN AllProcesors
 );
 
+VOID
+NTAPI
+KeFlushMultipleTb(
+    _In_ ULONG Number,
+    _In_ PVOID* FlushList,
+    _In_ BOOLEAN AllProcessors
+);
+
 #include "ke_x.h"
