@@ -2650,6 +2650,20 @@ MiTerminateWsle(
     _In_ ULONG InWsIndex
 );
 
+VOID
+FASTCALL 
+MiRemoveWsle(
+    _In_ ULONG WsIndex,
+    _In_ PMMWSL WsList
+);
+
+VOID
+FASTCALL 
+MiReleaseWsle(
+    _In_ ULONG WsIndex,
+    _In_ PMMSUPPORT WorkSet
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION

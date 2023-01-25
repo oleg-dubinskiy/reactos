@@ -23,6 +23,7 @@ extern PMM_SESSION_SPACE MmSessionSpace;
 extern volatile LONG KiTbFlushTimeStamp;
 extern PVOID MmSystemCacheStart;
 extern PVOID MmSystemCacheEnd;
+extern PMMWSL MmSystemCacheWorkingSetList;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -581,6 +582,11 @@ MiDeleteSystemPageableVm(
                     DPRINT1("MiDeleteSystemPageableVm: FIXME\n");
                     ASSERT(FALSE);
                 }
+            }
+            else if (WorkingSet == &MmSystemCacheWs)
+            {
+                MiRemoveWsle(WsIndex, MmSystemCacheWorkingSetList);
+                MiReleaseWsle(WsIndex, &MmSystemCacheWs);
             }
             else
             {
