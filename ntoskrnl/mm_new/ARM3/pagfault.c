@@ -844,20 +844,20 @@ NTAPI
 MiResolveDemandZeroFault(
     _In_ PVOID Address,
     _In_ PMMPTE Pte,
-    _In_ ULONG Protection,
     _In_ PEPROCESS Process,
     _In_ KIRQL OldIrql)
 {
     PFN_NUMBER PageFrameNumber;
     MMPTE TempPte;
     PMMPFN Pfn;
+    MMWSLE TempWsle;
     ULONG Color;
     BOOLEAN IsNeedAnyPage = FALSE;
     BOOLEAN HaveLock = FALSE;
     BOOLEAN IsZeroPage = FALSE;
 
     DPRINT("MiResolveDemandZeroFault: (%p) Pte %p [%I64X], %X, %p, %X\n",
-           Address, Pte, MiGetPteContents(Pte), Protection, Process, OldIrql);
+           Address, Pte, MiGetPteContents(Pte), Process, OldIrql);
 
     /* Must currently only be called by paging path */
     if (Process > HYDRA_PROCESS && OldIrql == MM_NOIRQL)
@@ -865,11 +865,15 @@ MiResolveDemandZeroFault(
         /* Sanity check */
         ASSERT(MI_IS_PAGE_TABLE_ADDRESS(Pte));
 
-        /* No forking yet */
-        ASSERT(Process->ForkInProgress == NULL);
+        if (Process->ForkInProgress)
+        {
+            /* No forking yet */
+            DPRINT1("MiResolveDemandZeroFault: FIXME MiWaitForForkToComplete()\n");
+            ASSERT(FALSE);
+        }
 
         /* Get process color */
-        Color = MiGetColor();
+        Color = MI_GET_NEXT_PROCESS_COLOR(Process);
         ASSERT(Color != 0xFFFFFFFF);
 
         /* We'll need a zero page */
@@ -902,6 +906,7 @@ MiResolveDemandZeroFault(
 
     /* We either manually locked the PFN DB, or already came with it locked */
     MI_ASSERT_PFN_LOCK_HELD();
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
     ASSERT(Pte->u.Hard.Valid == 0);
 
     /* Assert we have enough pages */
@@ -928,7 +933,7 @@ MiResolveDemandZeroFault(
     else
     {
         /* Get a color, and see if we should grab a zero or non-zero page */
-        Color = MI_GET_NEXT_COLOR();
+        Color = MiGetColor();
 
         if (IsNeedAnyPage)
             /* Process or system doesn't want a zero page, grab anything */
@@ -984,7 +989,13 @@ MiResolveDemandZeroFault(
         ASSERT(Pfn->u1.Event == 0);
         ASSERT(Pfn->u3.e1.PrototypePte == 0);
 
-        DPRINT("MiResolveDemandZeroFault: FIXME MiAddValidPageToWorkingSet()\n");
+        TempWsle.u1.Long = 0;
+        if (!MiAddValidPageToWorkingSet(Address, Pte, Pfn, TempWsle))
+        {
+            DPRINT1("MiResolveDemandZeroFault: FIXME MiTrimPte()\n");
+            ASSERT(FALSE);
+            return STATUS_NO_MEMORY;
+        }
     }
 
     /* It's all good now */
@@ -2358,7 +2369,7 @@ MiResolveProtoPteFault(
 
         Pte->u.Long = NewPte.u.Long;
 
-        Status = MiResolveDemandZeroFault(Address, Pte, Protection, Process, MM_NOIRQL);
+        Status = MiResolveDemandZeroFault(Address, Pte, Process, MM_NOIRQL);
 
         DPRINT("MiResolveProtoPteFault: Status %X\n", Status);
         return Status;
@@ -2407,7 +2418,7 @@ MiResolveProtoPteFault(
         ASSERT(OldIrql != MM_NOIRQL);
 
         /* Resolve the demand zero fault */
-        Status = MiResolveDemandZeroFault(Address, SectionProto, (ULONG)TempProto.u.Soft.Protection, Process, OldIrql);
+        Status = MiResolveDemandZeroFault(Address, SectionProto, Process, OldIrql);
     }
 
     if (NT_SUCCESS(Status))
@@ -2911,7 +2922,7 @@ OtherPteTypes:
     }
     else
     {
-        Status = MiResolveDemandZeroFault(Address, Pte, Pte->u.Soft.Protection, Process, MM_NOIRQL);
+        Status = MiResolveDemandZeroFault(Address, Pte, Process, MM_NOIRQL);
     }
 
 Finish:
@@ -3871,7 +3882,7 @@ UserFault:
     if (TempPte.u.Long == (MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS))
     {
         /* Resolve the fault */
-        MiResolveDemandZeroFault(Address, Pte, MM_READWRITE, CurrentProcess, MM_NOIRQL);
+        MiResolveDemandZeroFault(Address, Pte, CurrentProcess, MM_NOIRQL);
 
         /* Return the status */
         DPRINT("MmAccessFault: return STATUS_PAGE_FAULT_DEMAND_ZERO\n");
