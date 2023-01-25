@@ -472,8 +472,8 @@ PMMPTE
 NTAPI
 MiCheckVirtualAddress(
     _In_ PVOID VirtualAddress,
-    _Out_ PULONG ProtectCode,
-    _Out_ PMMVAD* ProtoVad)
+    _Out_ ULONG* OutProtectCode,
+    _Out_ PMMVAD* OutProtoVad)
 {
     PMMVAD Vad;
     PMMVAD_LONG VadLong;
@@ -483,7 +483,7 @@ MiCheckVirtualAddress(
     ULONG_PTR Count;
 
     /* No prototype/section support for now */
-    *ProtoVad = NULL;
+    *OutProtoVad = NULL;
 
     /* User or kernel fault? */
     if (VirtualAddress <= MM_HIGHEST_USER_ADDRESS)
@@ -492,7 +492,7 @@ MiCheckVirtualAddress(
         if (PAGE_ALIGN(VirtualAddress) == (PVOID)MM_SHARED_USER_DATA_VA)
         {
             /* It's a read-only page */
-            *ProtectCode = MM_READONLY;
+            *OutProtectCode = MM_READONLY;
             return MmSharedUserDataPte;
         }
 
@@ -501,7 +501,7 @@ MiCheckVirtualAddress(
         if (!Vad)
         {
             /* Bogus virtual address */
-            *ProtectCode = MM_NOACCESS;
+            *OutProtectCode = MM_NOACCESS;
             return NULL;
         }
 
@@ -517,10 +517,10 @@ MiCheckVirtualAddress(
             /* This must be a TEB/PEB VAD */
             if (Vad->u.VadFlags.MemCommit)
                 /* It's committed, so return the VAD protection */
-                *ProtectCode = (ULONG)Vad->u.VadFlags.Protection;
+                *OutProtectCode = (ULONG)Vad->u.VadFlags.Protection;
             else
                 /* It has not yet been committed, so return no access */
-                *ProtectCode = MM_NOACCESS;
+                *OutProtectCode = MM_NOACCESS;
 
             /* In both cases, return no PTE */
             return NULL;
@@ -530,22 +530,22 @@ MiCheckVirtualAddress(
 
         if (Vad->u.VadFlags.VadType == VadImageMap)
         {
-            *ProtectCode = 0x100;
+            *OutProtectCode = 0x100;
         }
         else
         {
             /* Return the Prototype PTE and the protection for the page mapping */
-            *ProtectCode = Vad->u.VadFlags.Protection;
+            *OutProtectCode = Vad->u.VadFlags.Protection;
 
             if (!Vad->u2.VadFlags2.ExtendableFile)
                 /* Return the proto VAD */
-                *ProtoVad = Vad;
+                *OutProtoVad = Vad;
         }
 
         /* Get the section proto for this page */
         SectionProto = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, Vpn);
         if (!SectionProto)
-            *ProtectCode = MM_NOACCESS;
+            *OutProtectCode = MM_NOACCESS;
 
         if (!Vad->u2.VadFlags2.ExtendableFile)
             return SectionProto;
@@ -555,7 +555,7 @@ MiCheckVirtualAddress(
         CommittedSize = (VadLong->u4.ExtendedInfo->CommittedSize - 1);
 
         if (Count > (ULONG_PTR)(CommittedSize / PAGE_SIZE))
-            *ProtectCode = MM_NOACCESS;
+            *OutProtectCode = MM_NOACCESS;
 
         return SectionProto;
     }
@@ -567,23 +567,50 @@ MiCheckVirtualAddress(
             (PMMPTE)VirtualAddress <= MmPagedPoolInfo.LastPteForPagedPool)
         {
             /* Fail such access */
-            *ProtectCode = MM_NOACCESS;
+            *OutProtectCode = MM_NOACCESS;
             return NULL;
         }
 
         /* Return full access rights */
-        *ProtectCode = MM_READWRITE;
+        *OutProtectCode = MM_READWRITE;
         return NULL;
     }
 
-    if (MI_IS_SESSION_ADDRESS(VirtualAddress))
+    if (!MI_IS_SESSION_ADDRESS(VirtualAddress))
+    {
+        *OutProtectCode = MM_NOACCESS;
+        return NULL;
+    }
+
+    if (&MmSessionSpace->Vm == &MmSystemCacheWs)
+    {
+        ASSERT((PsGetCurrentThread()->OwnsSystemWorkingSetExclusive) ||
+               (PsGetCurrentThread()->OwnsSystemWorkingSetShared));
+    }
+    else if (MmSessionSpace->Vm.Flags.SessionSpace)
+    {
+        ASSERT((PsGetCurrentThread()->OwnsSessionWorkingSetExclusive) ||
+               (PsGetCurrentThread()->OwnsSessionWorkingSetShared));
+    }
+    else
+    {
+        ASSERT((PsGetCurrentThread()->OwnsProcessWorkingSetExclusive) ||
+               (PsGetCurrentThread()->OwnsProcessWorkingSetShared));
+    }
+
+    *OutProtectCode = MM_NOACCESS;
+
+    SectionProto = NULL;
+
+    while (MmSessionSpace->ImageList.Flink != &MmSessionSpace->ImageList)
+    {
         /* ReactOS does not have an image list yet, so bail out to failure case */
+        DPRINT1("MiCheckVirtualAddress: FIXME MmSessionSpace->ImageList\n");
         ASSERT(IsListEmpty(&MmSessionSpace->ImageList));
+        break;
+    }
 
-    /* Default case -- failure */
-    *ProtectCode = MM_NOACCESS;
-
-    return NULL;
+    return SectionProto;
 }
 
 VOID
