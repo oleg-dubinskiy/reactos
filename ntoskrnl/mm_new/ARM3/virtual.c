@@ -841,6 +841,7 @@ NTAPI
 MiDeletePte(
     _In_ PMMPTE Pte,
     _In_ PVOID Va,
+    _In_ BOOLEAN IsNotTerminateWsle,
     _In_ PEPROCESS CurrentProcess,
     _In_ PMMPTE Proto,
     _In_ PMMPTE_FLUSH_LIST FlushList,
@@ -852,6 +853,7 @@ MiDeletePte(
     MMPTE TempPte;
     PFN_NUMBER PageFrameIndex;
     PFN_NUMBER PageNumber;
+    ULONG WsIndex;
 
     DPRINT("MiDeletePte: Pte %p [%p], Va %p, Proto %p [%p], OldIrql %X\n",
            Pte, (Pte ? Pte->u.Long : 0), Va, Proto, (Proto ? Proto->u.Long : 0), OldIrql);
@@ -868,6 +870,7 @@ MiDeletePte(
         /* Get the PFN entry */
         PageFrameIndex = PFN_FROM_PTE(&TempPte);
         Pfn = MiGetPfnEntry(PageFrameIndex);
+        WsIndex = Pfn->u1.WsIndex;
 
         /* Check if this is a valid, prototype PTE */
         if (Pfn->u3.e1.PrototypePte)
@@ -943,6 +946,11 @@ MiDeletePte(
             CurrentProcess->NumberOfPrivatePages--;
         }
 
+        if (!IsNotTerminateWsle)
+        {
+            MiTerminateWsle(Va, &CurrentProcess->Vm, WsIndex);
+        }
+
         /* Erase it */
         MI_ERASE_PTE(Pte);
 
@@ -951,7 +959,15 @@ MiDeletePte(
             /* Flush the TLB */
             KeFlushSingleTb(Va, FALSE);
         }
-        else
+        else if (FlushList->Count != 0x21)
+        {
+            ASSERT(FlushList->Count < (0x21 - 1));
+
+            FlushList->FlushVa[FlushList->Count] = Va;
+            FlushList->Count++;
+        }
+
+        if (!IsNotTerminateWsle && CurrentProcess->CloneRoot)
         {
             DPRINT1("MiDeletePte: FIXME\n");
             ASSERT(FALSE);
@@ -1166,7 +1182,7 @@ MiDeleteVirtualAddresses(
                         //DPRINT1("MiDeleteVirtualAddresses: Pte %p [%p], Va %p, Proto %p, OldIrql %X\n", Pte, TempPte.u.Long, Va, Proto, OldIrql);
 
                         /* Delete the PTE proper */
-                        MiDeletePte(Pte, (PVOID)Va, CurrentProcess, Proto, NULL, OldIrql);
+                        MiDeletePte(Pte, (PVOID)Va, (CurrentProcess->CloneRoot == 0), CurrentProcess, Proto, NULL, OldIrql);
                     }
                 }
                 else
@@ -1207,7 +1223,7 @@ MiDeleteVirtualAddresses(
                 }
 
                  /* Delete the PTE proper */
-                MiDeletePte(Pde, MiPteToAddress(Pde), CurrentProcess, NULL, NULL, OldIrql);
+                MiDeletePte(Pde, MiPteToAddress(Pde), FALSE, CurrentProcess, NULL, NULL, OldIrql);
 
                 ASSERT(OldIrql != MM_NOIRQL);
                 MiUnlockPfnDb(OldIrql, APC_LEVEL);
@@ -1252,7 +1268,7 @@ MiMakeSystemAddressValidPfn(
         Status = MmAccessFault(0, VirtualAddress, KernelMode, NULL);
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("MiDeletePte: VirtualAddress %p, Status %X\n", VirtualAddress, Status);
+            DPRINT1("MiMakeSystemAddressValidPfn: VirtualAddress %p, Status %X\n", VirtualAddress, Status);
             KeBugCheckEx(0x7A, 3, Status, (ULONG_PTR)VirtualAddress, 0);
         }
 

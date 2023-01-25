@@ -2576,6 +2576,7 @@ NTAPI
 MiDeletePte(
     _In_ PMMPTE Pte,
     _In_ PVOID VirtualAddress,
+    _In_ BOOLEAN IsNotTerminateWsle,
     _In_ PEPROCESS CurrentProcess,
     _In_ PMMPTE PrototypePte,
     _In_ PMMPTE_FLUSH_LIST FlushList,

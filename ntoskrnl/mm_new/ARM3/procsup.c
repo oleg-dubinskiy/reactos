@@ -529,7 +529,7 @@ MmDeleteProcessAddressSpace(
                so we must clean up a bit when process closes
             */
             if (Pde->u.Hard.Valid)
-                MiDeletePte(Pde, MiPdeToPte(Pde), Process, NULL, NULL, OldIrql);
+                MiDeletePte(Pde, MiPdeToPte(Pde), FALSE, Process, NULL, NULL, OldIrql);
 
             ASSERT(Pde->u.Hard.Valid == 0);
         }
