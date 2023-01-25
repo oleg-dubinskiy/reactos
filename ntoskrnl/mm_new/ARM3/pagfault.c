@@ -52,6 +52,7 @@ extern LARGE_INTEGER MmShortTime;
 extern LARGE_INTEGER Mm30Milliseconds;
 extern LARGE_INTEGER MmHalfSecond;
 extern LONG MiDelayPageFaults;
+extern BOOLEAN MiWriteCombiningPtes;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -670,7 +671,7 @@ MiCopyOnWrite(
     PMMPTE MappingPte;
     MMPTE TempPte;
     ULONG Color;
-    ULONG WsleIndex;
+    ULONG WsIndex;
     PFN_NUMBER PageNumber;
     PFN_NUMBER CopyPageNumber;
     KIRQL OldIrql;
@@ -684,7 +685,7 @@ MiCopyOnWrite(
     PageNumber = TempPte.u.Hard.PageFrameNumber;
     Pfn = MI_PFN_ELEMENT(PageNumber);
 
-    if ((ULONG_PTR)Address >= (ULONG_PTR)MmSessionBase)
+    if (Address >= MmSessionBase)
     {
         DPRINT1("MiCopyOnWrite: FIXME\n");
         ASSERT(FALSE);
@@ -704,15 +705,24 @@ MiCopyOnWrite(
             IsNotCopyOnWrite = TRUE;
     }
 
-    DPRINT("MiCopyOnWrite: FIXME MiLocateWsle()\n");
-    //WsleIndex = MiLocateWsle(...);
+    WsIndex = MiLocateWsle(Address, WsList, Pfn->u1.WsIndex, FALSE);
 
     OldIrql = MiLockPfnDb(APC_LEVEL);
 
     if (MmAvailablePages < 0x80)
     {
-        DPRINT1("MiCopyOnWrite: FIXME\n");
-        ASSERT(FALSE);
+        PEPROCESS process;
+
+        if (Session)
+            process = HYDRA_PROCESS;
+        else
+            process = CurrentProcess;
+
+        if (MiEnsureAvailablePageOrWait(process, OldIrql))
+        {
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            return FALSE;
+        }
     }
 
     ASSERT(Pfn->u3.e1.PrototypePte == 1);
@@ -740,16 +750,15 @@ MiCopyOnWrite(
         }
 
         Color = MI_GET_NEXT_PROCESS_COLOR(CurrentProcess);
-        CopyPageNumber = MiRemoveAnyPage(MI_GET_PAGE_COLOR(Color));
+        CopyPageNumber = MiRemoveAnyPage(Color);
     }
 
-    WsleIndex = 0;
-    MiInitializeCopyOnWritePfn(CopyPageNumber, Pte, WsleIndex, WsList);
+    MiInitializeCopyOnWritePfn(CopyPageNumber, Pte, WsIndex, WsList);
 
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
     InterlockedIncrement(&KeGetCurrentPrcb()->MmCopyOnWriteCount);
 
-    MappingPte = MiReserveSystemPtes(1, 0);
+    MappingPte = MiReserveSystemPtes(1, SystemPteSpace);
 
     if (MappingPte)
     {
@@ -765,8 +774,16 @@ MiCopyOnWrite(
         }
         else if (Pfn->u3.e1.CacheAttribute == MiWriteCombined)
         {
-            tempPte.u.Hard.CacheDisable = 1;
-            tempPte.u.Hard.WriteThrough = 0;
+            if (MiWriteCombiningPtes)
+            {
+                tempPte.u.Hard.CacheDisable = 0;
+                tempPte.u.Hard.WriteThrough = 1;
+            }
+            else
+            {
+                tempPte.u.Hard.CacheDisable = 1;
+                tempPte.u.Hard.WriteThrough = 0;
+            }
         }
 
         MI_WRITE_VALID_PTE(MappingPte, tempPte);
@@ -787,7 +804,7 @@ MiCopyOnWrite(
     }
     else
     {
-        MiReleaseSystemPtes(MappingPte, 1, 0);
+        MiReleaseSystemPtes(MappingPte, 1, SystemPteSpace);
     }
 
     if (!IsNotCopyOnWrite)
@@ -807,20 +824,12 @@ MiCopyOnWrite(
 
     if (!Session)
     {
-        /* Flush the TLB */
-        //KeFlushSingleTb(Address, 0);
-        //FIXME: Use KeFlushSingleTb() instead
-        KeFlushEntireTb(TRUE, FALSE);
-
+        KeFlushSingleTb(Address, FALSE);
         CurrentProcess->NumberOfPrivatePages++;
     }
     else
     {
-        /* Flush the TLB */
-        //KeFlushSingleTb(Address, 1);
-        //FIXME: Use KeFlushSingleTb() instead
-        KeFlushEntireTb(TRUE, TRUE);
-
+        KeFlushSingleTb(Address, TRUE);
         ASSERT(Pfn->u3.e1.PrototypePte == 1);
     }
 
