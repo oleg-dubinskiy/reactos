@@ -439,8 +439,16 @@ MiZeroPfn(
     if (Pfn->u3.e1.CacheAttribute == MiWriteCombined)
     {
         /* Write combining, no caching */
-        MI_PAGE_DISABLE_CACHE(&TempPte);
-        MI_PAGE_WRITE_COMBINED(&TempPte);
+        if (MiWriteCombiningPtes)
+        {
+            MI_PAGE_NO_DISABLE_CACHE(&TempPte);
+            MI_PAGE_WRITE_THROUGH(&TempPte);
+        }
+        else
+        {
+            MI_PAGE_DISABLE_CACHE(&TempPte);
+            MI_PAGE_WRITE_COMBINED(&TempPte);
+        }
     }
     else if (Pfn->u3.e1.CacheAttribute == MiNonCached)
     {
