@@ -88,6 +88,7 @@
 #endif
 #define MI_MAKE_ACCESSED_PAGE(x)     ((x)->u.Hard.Accessed = 1)
 #define MI_PAGE_DISABLE_CACHE(x)     ((x)->u.Hard.CacheDisable = 1)
+#define MI_PAGE_NO_DISABLE_CACHE(x)  ((x)->u.Hard.CacheDisable = 0)
 #define MI_PAGE_WRITE_THROUGH(x)     ((x)->u.Hard.WriteThrough = 1)
 #define MI_PAGE_WRITE_COMBINED(x)    ((x)->u.Hard.WriteThrough = 0)
 #define MI_IS_PAGE_LARGE(x)          ((x)->u.Hard.LargePage == 1)
