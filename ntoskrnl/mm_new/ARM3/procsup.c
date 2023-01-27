@@ -84,6 +84,154 @@ MiCleanUserSharedData(
 
 VOID
 NTAPI
+MiDeletePteRange(
+    _In_ PMMSUPPORT WorkSet,
+    _In_ PMMPTE Pte,
+    _In_ PMMPTE LastPte,
+    _In_ BOOLEAN IsNotTerminateWsle)
+{
+    PEPROCESS Process;
+    PMMPTE CurrentPte;
+    PMMPTE CurrentPde;
+    PMMPFN Pfn;
+    MMPTE_FLUSH_LIST FlushList;
+    ULONG OldIrql;
+    ULONG CommittedPages = 0;
+    BOOLEAN AllProcessors;
+    BOOLEAN IsFinish;
+
+    DPRINT("MiDeletePteRange: %p, %p, %p, %X\n", WorkSet, Pte, LastPte, IsNotTerminateWsle);
+
+    if (Pte >= LastPte)
+        return;
+
+    if (WorkSet->VmWorkingSetList == MmWorkingSetList)
+    {
+        Process = CONTAINING_RECORD(WorkSet, EPROCESS, Vm);
+        AllProcessors = FALSE;
+    }
+    else
+    {
+        Process = NULL;
+        AllProcessors = TRUE;
+    }
+
+    FlushList.Count = 0;
+    FlushList.FlushVa[0] = 0;
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if ((MiAddressToPte(Pte))->u.Hard.Valid && Pte->u.Hard.Valid)
+    {
+        CurrentPte = (Pte - 1);
+
+        while (TRUE)
+        {
+            ASSERT(Pte->u.Hard.Valid == 1);
+
+            if (Process)
+            {
+                MiDeletePte(Pte, MiPteToAddress(Pte), IsNotTerminateWsle, Process, NULL, &FlushList, OldIrql);
+                Process->NumberOfPrivatePages++;
+            }
+            else
+            {
+                DPRINT1("MiDeletePteRange: FIXME MiDeleteValidSystemPte()\n");
+                ASSERT(FALSE);
+            }
+
+            CommittedPages++;
+            CurrentPte++;
+            Pte++;
+
+            IsFinish = (Pte >= LastPte || !((MiAddressToPte(Pte))->u.Hard.Valid) || !Pte->u.Hard.Valid);
+
+            if (!MiIsPteOnPdeBoundary(Pte) && !IsFinish)
+                continue;
+
+            if (FlushList.Count)
+            {
+                if (FlushList.Count == 1)
+                {
+                    KeFlushSingleTb(FlushList.FlushVa[0], AllProcessors);
+                }
+                else if (FlushList.Count < 0x21)
+                {
+                    KeFlushMultipleTb(FlushList.Count, FlushList.FlushVa, AllProcessors);
+                }
+                else if (AllProcessors)
+                {
+                    //MiFlushType[28]++;
+                    KeFlushEntireTb(TRUE, TRUE);
+                }
+                else
+                {
+                    KeFlushProcessTb();
+                }
+            }
+
+            CurrentPde = MiAddressToPte(CurrentPte);
+            ASSERT(CurrentPde->u.Hard.Valid == 1);
+
+            Pfn = MI_PFN_ELEMENT(CurrentPde->u.Hard.PageFrameNumber);
+
+            if (Pfn->u2.ShareCount == 1 && Pfn->u3.e2.ReferenceCount == 1 && Pfn->u1.WsIndex)
+            {
+                if (Process)
+                {
+                    MiDeletePte(CurrentPde, CurrentPte, IsNotTerminateWsle, Process, NULL, NULL, OldIrql);
+                    Process->NumberOfPrivatePages++;
+                }
+                else
+                {
+                    DPRINT1("MiDeletePteRange: FIXME MiDeleteValidSystemPte()\n");
+                    ASSERT(FALSE);
+                }
+
+                CommittedPages++;
+            }
+
+            if (IsFinish)
+                break;
+        }
+    }
+
+    if (FlushList.Count)
+    {
+        if (FlushList.Count == 1)
+        {
+            KeFlushSingleTb(FlushList.FlushVa[0], AllProcessors);
+        }
+        else if (FlushList.Count < 0x21)
+        {
+            KeFlushMultipleTb(FlushList.Count, FlushList.FlushVa, AllProcessors);
+        }
+        else if (AllProcessors)
+        {
+            //MiFlushType[29]++;
+            KeFlushEntireTb(TRUE, TRUE);
+        }
+        else
+        {
+            KeFlushProcessTb();
+        }
+    }
+
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    if (!CommittedPages)
+        return;
+
+    ASSERT((SSIZE_T)(CommittedPages) >= 0);
+    ASSERT(MmTotalCommittedPages >= (CommittedPages));
+
+    InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -CommittedPages);
+    InterlockedExchangeAddSizeT(&MmResidentAvailablePages, CommittedPages);
+    //InterlockedExchangeAddSizeT(&MmResTrack[72], CommittedPages);
+}
+
+VOID
+NTAPI
 MmCleanProcessAddressSpace(
     _In_ PEPROCESS Process)
 {
