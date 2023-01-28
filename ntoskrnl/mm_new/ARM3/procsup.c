@@ -27,61 +27,6 @@ extern SIZE_T MmPagesAboveWsMinimum;
 
 /* FUNCTIONS ******************************************************************/
 
-/* HACK!!! This must be cleared during the cleanup of the working set of the process. */
-VOID
-NTAPI
-MiCleanUserSharedData(
-    _In_ PEPROCESS Process)
-{
-    KIRQL OldIrql;
-    PMMPTE PointerPde;
-    PMMPTE PointerPte;
-    PMMPFN Pfn1;
-    PMMPFN Pfn2;
-    PFN_NUMBER PageFrameIndex;
-    PFN_NUMBER PageTableFrameIndex;
-    MMPTE DemandZeroWritePte;
-    extern RTL_BITMAP MiPfnBitMap;
-
-    MI_MAKE_SOFTWARE_PTE(&DemandZeroWritePte, MM_READWRITE);
-    DPRINT("MiCleanUserSharedData: %X\n", DemandZeroWritePte.u.Long);
-
-    OldIrql = MiLockPfnDb(APC_LEVEL);
-
-    PointerPte = MiAddressToPte(USER_SHARED_DATA);
-    ASSERT(PointerPte->u.Hard.Valid == 1);
-    PageFrameIndex = PFN_FROM_PTE(PointerPte);
-    Pfn1 = MI_PFN_ELEMENT(PageFrameIndex);
-
-    DPRINT("MiCleanUserSharedData: %p, %X\n", PointerPte, PointerPte->u.Long);
-
-    PointerPde = MiAddressToPte(PointerPte);
-    PageTableFrameIndex = PFN_FROM_PTE(PointerPde);
-    Pfn2 = MI_PFN_ELEMENT(PageTableFrameIndex);
-
-    if (!Pfn1->u3.e1.Modified && PointerPte->u.Hard.Dirty)
-    {
-        ASSERT(Pfn1->u3.e1.Rom == 0);
-        Pfn1->u3.e1.Modified = 1;
-
-        if (!Pfn1->OriginalPte.u.Soft.Prototype && !Pfn1->u3.e1.WriteInProgress)
-        {
-            MiReleasePageFileSpace(Pfn1->OriginalPte);
-            Pfn1->OriginalPte.u.Soft.PageFileHigh = 0;
-        }
-    }
-
-    MiDecrementPfnShare(Pfn2, PageTableFrameIndex);
-    MiDecrementShareCount(Pfn1, PageFrameIndex);
-
-    MI_WRITE_INVALID_PTE(PointerPte, DemandZeroWritePte);
-    ASSERT(MiPteToAddress(PointerPte) <= MM_HIGHEST_USER_ADDRESS);
-
-    MiUnlockPfnDb(OldIrql, APC_LEVEL);
-
-    DPRINT("MiCleanUserSharedData: %p, %p\n", PointerPte, *PointerPte);
-}
-
 VOID
 NTAPI
 MiDeletePteRange(
