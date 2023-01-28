@@ -1028,17 +1028,20 @@ MiDeleteVirtualAddresses(
     _In_ PMMVAD Vad)
 {
     PEPROCESS CurrentProcess = PsGetCurrentProcess();
+    PSUBSECTION Subsection;
     PVOID AddressForReferences;
+    PVOID VirtualAddress; 
     PMMPDE Pde;
     PMMPTE Pte;
+    PMMPTE EndPte;
+    PMMPTE CurrentPte; 
     PMMPTE Proto;
     PMMPTE LastProto;
     MMPTE TempPte;
     KIRQL OldIrql = MM_NOIRQL;
     BOOLEAN AddressGap = FALSE;
-    BOOLEAN IsNotCloneRoot;
+    BOOLEAN IsTerminateWsle;
     BOOLEAN IsLocked = FALSE;
-    PSUBSECTION Subsection;
 
     //DPRINT1("MiDeleteVirtualAddresses: Va %p, EndingAddress %p, Vad %p\n", Va, EndingAddress, Vad);
 
@@ -1062,9 +1065,9 @@ MiDeleteVirtualAddresses(
     }
 
     if (!CurrentProcess->CloneRoot)
-        IsNotCloneRoot = TRUE;
+        IsTerminateWsle = TRUE;
     else
-        IsNotCloneRoot = FALSE;
+        IsTerminateWsle = FALSE;
 
     /* Loop the PTE for each VA */
     while (TRUE)
@@ -1125,10 +1128,39 @@ MiDeleteVirtualAddresses(
                 LastProto = NULL;
         }
 
-        if (IsNotCloneRoot)
+        if (IsTerminateWsle)
         {
             ASSERT(CurrentProcess->CloneRoot == NULL);
-            DPRINT("MiDeleteVirtualAddresses: FIXME MiTerminateWsle()\n");
+
+            EndPte = MiAddressToPte(EndingAddress);
+            CurrentPte = (PMMPTE)(((ULONG_PTR)Pte | (PAGE_SIZE - 1)) - (sizeof(MMPTE) - 1));
+
+            if (CurrentPte > EndPte)
+                CurrentPte = EndPte;
+
+            VirtualAddress = MiPteToAddress(CurrentPte);
+            do
+            {
+                TempPte.u.Long = CurrentPte->u.Long;
+
+                if (TempPte.u.Hard.Valid)
+                {
+                  #if !defined(ONE_CPU)
+                    if (TempPte.u.Hard.Writable)
+                    {
+                        ASSERT(TempPte.u.Hard.Dirty == 1);
+                    }
+                  #endif
+
+                    MiTerminateWsle(VirtualAddress,
+                                    &CurrentProcess->Vm,
+                                    (MI_PFN_ELEMENT(TempPte.u.Hard.PageFrameNumber))->u1.WsIndex);
+                }
+
+                CurrentPte--;
+                VirtualAddress = (PVOID)((ULONG_PTR)VirtualAddress - PAGE_SIZE);
+            }
+            while (CurrentPte >= Pte);
         }
 
         do
@@ -1162,7 +1194,7 @@ MiDeleteVirtualAddresses(
 
                     /* Check for prototype PTE */
                     if (!TempPte.u.Hard.Valid && TempPte.u.Soft.Prototype &&
-                        IsNotCloneRoot)
+                        IsTerminateWsle)
                     {
                         ASSERT(CurrentProcess->CloneRoot == NULL);
 
@@ -1182,7 +1214,7 @@ MiDeleteVirtualAddresses(
                         //DPRINT1("MiDeleteVirtualAddresses: Pte %p [%p], Va %p, Proto %p, OldIrql %X\n", Pte, TempPte.u.Long, Va, Proto, OldIrql);
 
                         /* Delete the PTE proper */
-                        MiDeletePte(Pte, (PVOID)Va, (CurrentProcess->CloneRoot == 0), CurrentProcess, Proto, NULL, OldIrql);
+                        MiDeletePte(Pte, (PVOID)Va, IsTerminateWsle, CurrentProcess, Proto, NULL, OldIrql);
                     }
                 }
                 else
