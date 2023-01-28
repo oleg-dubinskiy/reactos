@@ -2665,6 +2665,15 @@ MiReleaseWsle(
     _In_ PMMSUPPORT WorkSet
 );
 
+VOID
+NTAPI
+MiSwapWslEntries(
+    IN ULONG NewIndex,
+    IN ULONG OldIndex,
+    IN PMMSUPPORT WorkSet,
+    IN BOOLEAN Param4
+);
+
 /* i386\page.c */
 /* i386\pagepae.c */
 INIT_FUNCTION

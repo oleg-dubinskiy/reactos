@@ -2989,14 +2989,18 @@ MiDecommitPages(
     _In_ PMMVAD Vad)
 {
     PETHREAD CurrentThread = PsGetCurrentThread();
-    PMMPTE ValidPteList[0X100];
-    PMMPTE CommitPte = NULL;
-    PMMPDE Pde;
+    PMMPTE ValidPteList[0x100];
+    PMMPTE CommitPte;
+    PMMPTE Pde;
     PMMPTE Pte;
     PMMPFN Pfn;
     MMPTE PteContents;
+    PMMWSLE MmWsle;
+    MMWSLE WsleContents;
+    ULONG WsIndex;
     ULONG CommitReduction = 0;
     ULONG PteCount = 0;
+    KIRQL OldIrql;
 
     /* Get the PTE and PTE for the address, and lock the working set
        If this was a VAD for a MEM_COMMIT allocation,
@@ -3007,6 +3011,8 @@ MiDecommitPages(
 
     if (Vad->u.VadFlags.MemCommit)
         CommitPte = (MiAddressToPte(Vad->EndingVpn * PAGE_SIZE));
+    else
+        CommitPte = NULL;
 
     MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
 
@@ -3057,34 +3063,116 @@ MiDecommitPages(
                     /* It's valid. At this point make sure that it is not a ROS PFN.
                        Also, we don't support ProtoPTEs in this code path.
                     */
-                    Pfn = MiGetPfnEntry(PteContents.u.Hard.PageFrameNumber);
-                    ASSERT(Pfn->u3.e1.PrototypePte == FALSE);
+                    Pfn = MI_PFN_ELEMENT(PteContents.u.Hard.PageFrameNumber);
 
-                    /* Flush any pending PTEs that we had not yet flushed,
-                       if our list has gotten too big, then add this PTE to the flush list.
-                    */
-                    if (PteCount == 0x100)
+                    if (Pfn->u3.e1.PrototypePte)
                     {
-                        MiProcessValidPteList(ValidPteList, PteCount);
+                        if (PteCount)
+                        {
+                            MiProcessValidPteList(&ValidPteList[0], PteCount);
+                            PteCount = 0;
+                        }
+
+                        OldIrql = MiLockPfnDb(APC_LEVEL);
+                        MiDeletePte(Pte, StartingAddress, FALSE, Process, NULL, NULL, OldIrql);
+                        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                        Process->NumberOfPrivatePages++;
+                        MI_WRITE_INVALID_PTE(Pte, MmDecommittedPte);
+                    }
+                    else
+                    {
+                        if (PteCount == 0x100)
+                        {
+                            MiProcessValidPteList(&ValidPteList[0], PteCount);
+                            PteCount = 0;
+                        }
+
+                        ValidPteList[PteCount] = Pte;
+                        PteCount++;
+
+                        WsIndex = Pfn->u1.WsIndex;
+                        MmWsle = (PMMWSLE)(MmWorkingSetList + 1);
+                        ASSERT(PAGE_ALIGN(MmWsle[WsIndex].u1.VirtualAddress) == StartingAddress);
+
+                        WsleContents = MmWsle[WsIndex];
+
+                        MiRemoveWsle(WsIndex, MmWorkingSetList);
+                        MiReleaseWsle(WsIndex, &Process->Vm);
+
+                        if (WsleContents.u1.e1.LockedInWs || WsleContents.u1.e1.LockedInMemory)
+                        {
+                            MmWorkingSetList->FirstDynamic--;
+                            if (WsIndex != MmWorkingSetList->FirstDynamic)
+                            {
+                                ASSERT(MmWsle[MmWorkingSetList->FirstDynamic].u1.e1.Valid);
+                                MiSwapWslEntries(MmWorkingSetList->FirstDynamic, WsIndex, &Process->Vm, FALSE);
+                            }
+                        }
+                    }
+                }
+                else if (PteContents.u.Soft.Prototype)
+                {
+                    if (PteCount)
+                    {
+                        MiProcessValidPteList(&ValidPteList[0], PteCount);
                         PteCount = 0;
                     }
 
-                    ValidPteList[PteCount++] = Pte;
+                    OldIrql = MiLockPfnDb(APC_LEVEL);
+                    MiDeletePte(Pte, StartingAddress, FALSE, Process, NULL, NULL, OldIrql);
+                    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                    Process->NumberOfPrivatePages++;
+                    MI_WRITE_INVALID_PTE(Pte, MmDecommittedPte);
+                }
+                else if (PteContents.u.Soft.Transition)
+                {
+                    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+                    PteContents = *Pte;
+                    if (PteContents.u.Soft.Transition)
+                    {
+                        Pfn = MI_PFN_ELEMENT(PteContents.u.Trans.PageFrameNumber);
+
+                        MI_SET_PFN_DELETED(Pfn);
+                        MiDecrementPfnShare(MI_PFN_ELEMENT(Pfn->u4.PteFrame), Pfn->u4.PteFrame);
+
+                        if (!Pfn->u3.e2.ReferenceCount)
+                        {
+                            MiUnlinkPageFromList(Pfn);
+                            MiReleasePageFileSpace(Pfn->OriginalPte);
+                            MiInsertPageInFreeList(PteContents.u.Trans.PageFrameNumber);
+                        }
+                    }
+                    else
+                    {
+                        ASSERT(PteContents.u.Soft.Valid == 0);
+                        ASSERT(PteContents.u.Soft.Prototype == 0);
+                        ASSERT(PteContents.u.Soft.PageFileHigh != 0);
+
+                        MiReleasePageFileSpace(PteContents);
+                    }
+
+                    MI_WRITE_INVALID_PTE(Pte, MmDecommittedPte);
+                    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                }
+                else if (PteContents.u.Soft.PageFileHigh)
+                {
+                    OldIrql = MiLockPfnDb(APC_LEVEL);
+                    MiReleasePageFileSpace(PteContents);
+                    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+                    MI_WRITE_INVALID_PTE(Pte, MmDecommittedPte);
                 }
                 else
                 {
-                    /* We do not support any of these other scenarios at the moment */
-                    ASSERT(PteContents.u.Soft.Prototype == 0);
-                    ASSERT(PteContents.u.Soft.Transition == 0);
-                    ASSERT(PteContents.u.Soft.PageFileHigh == 0);
-
-                    /* So the only other possibility is that it is still a demand zero PTE,
-                       in which case we undo the accounting we did earlier and simply make the page decommitted.
-                    */
                     Process->NumberOfPrivatePages++;
                     MI_WRITE_INVALID_PTE(Pte, MmDecommittedPte);
                 }
             }
+
+            goto NextPte;
         }
         else
         {
@@ -3101,6 +3189,7 @@ MiDecommitPages(
             MI_WRITE_INVALID_PTE(Pte, MmDecommittedPte);
         }
 
+NextPte:
         /* Move to the next PTE and the next address */
         Pte++;
         StartingAddress = (PVOID)((ULONG_PTR)StartingAddress + PAGE_SIZE);
