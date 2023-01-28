@@ -1884,7 +1884,7 @@ MiDecrementPfnShare(
     ASSERT(MmPfnOwner == KeGetCurrentThread());
     ASSERT(PageNumber > 0);
 
-    ASSERT(MI_PFN_ELEMENT(PageNumber) == Pfn);
+    ASSERT(MiGetPfnEntry(PageNumber) == Pfn);
     ASSERT(Pfn->u2.ShareCount != 0);
 
     if (Pfn->u3.e1.PageLocation != ActiveAndValid &&
