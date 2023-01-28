@@ -244,7 +244,7 @@ MmCleanProcessAddressSpace(
     LONG AboveMinimum;
     SIZE_T NumberOfCommittedPageTables;
 
-    DPRINT1("MmCleanProcessAddressSpace: %p '%16s'\n", Process, Process->ImageFileName);
+    //DPRINT1("MmCleanProcessAddressSpace: %p '%16s'\n", Process, Process->ImageFileName);
 
     if (Process->VmDeleted)
     {
@@ -286,11 +286,13 @@ MmCleanProcessAddressSpace(
     InterlockedOr((PLONG)&Process->Flags, PSF_VM_DELETED_BIT);
 
     //MiDeleteAddressesInWorkingSet(Process);
-    /* HACK!!! This must be cleared during the cleanup of the working set of the process. */
-    MiCleanUserSharedData(Process);
 
     LastPte = MiAddressToPte(MmWorkingSetList->HighestPermittedHashAddress);
-    DPRINT1("MmCleanProcessAddressSpace: FIXME MiDeletePteRange(%p, %p, %p (%X))\n", Process, Pte, LastPte, (LastPte - Pte));
+
+    MiDeletePteRange(&Process->Vm, Pte, LastPte, FALSE);
+
+    MmWorkingSetList->HashTableSize = 0;
+    MmWorkingSetList->HashTable = NULL;
 
     MiUnlockProcessWorkingSetUnsafe(Process, Thread);
 
@@ -440,7 +442,7 @@ MmCleanProcessAddressSpace(
         //ASSERT(FALSE);//DbgBreakPoint();
     }
 
-    DPRINT("MmCleanProcessAddressSpace: FIXME MiDeletePteRange(%p, %p, %p (%X))\n", Process, Pte, LastPte, (LastPte - Pte));
+    DPRINT1("MmCleanProcessAddressSpace: FIXME MiDeletePteRange(%p, %p, %p (%X))\n", Process, Pte, LastPte, (LastPte - Pte));
 
     ASSERT(Process->Vm.MinimumWorkingSetSize >= 6); // MM_PROCESS_CREATE_CHARGE
     ASSERT(Process->Vm.WorkingSetExpansionLinks.Flink == MM_WS_NOT_LISTED);
@@ -448,7 +450,7 @@ MmCleanProcessAddressSpace(
     MmWorkingSetList->HashTableSize = 0;
     MmWorkingSetList->HashTable = NULL;
 
-    DPRINT("MmCleanProcessAddressSpace: FIXME MiRemoveWorkingSetPages()\n");
+    //DPRINT1("MmCleanProcessAddressSpace: FIXME MiRemoveWorkingSetPages()\n");
 
     InterlockedExchangeAddSizeT(&MmResidentAvailablePages, (Process->Vm.MinimumWorkingSetSize - 6));
 
