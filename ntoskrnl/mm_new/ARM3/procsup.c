@@ -548,7 +548,11 @@ MmDeleteProcessAddressSpace2(
         MiDecrementShareCount(Pfn2, Pfn1->u4.PteFrame);
         MiDecrementShareCount(Pfn1, HyperFrameIndex);
 
-        ASSERT((Pfn1->u3.e2.ReferenceCount == 0) || (Pfn1->u3.e1.WriteInProgress));
+        if (Pfn1->u3.e2.ReferenceCount && !Pfn1->u3.e1.WriteInProgress)
+        {
+            DPRINT1("MmDeleteProcessAddressSpace2: FIXME. ReferenceCount %X, WriteInProgress %X\n", Pfn1->u3.e2.ReferenceCount, Pfn1->u3.e1.WriteInProgress);
+        }
+        //ASSERT((Pfn1->u3.e2.ReferenceCount == 0) || (Pfn1->u3.e1.WriteInProgress));
 
         /* Finally, nuke the PDE itself */
         PdeFrameIndex = (Process->Pcb.DirectoryTableBase[0] / PAGE_SIZE);
@@ -568,6 +572,8 @@ MmDeleteProcessAddressSpace2(
 
     /* Release the PFN lock */
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    InterlockedExchangeAddSizeT(&MmResidentAvailablePages, 6);
 
     /* Drop a reference on the session */
     if (Process->Session)
