@@ -598,6 +598,9 @@ MmDeleteProcessAddressSpace(
     RemoveEntryList(&Process->MmProcessLinks);
     MiReleaseExpansionLock(OldIrql);
 
+    ASSERT(MmTotalCommittedPages >= (4));
+    InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -4);
+
     MmLockAddressSpace(&Process->Vm);
 
     /* There should not be any memory areas left! */
@@ -647,6 +650,8 @@ MmDeleteProcessAddressSpace(
 
     DPRINT("Finished MmDeleteProcessAddressSpace()\n");
     MmDeleteProcessAddressSpace2(Process);
+
+    DPRINT("MmDeleteProcessAddressSpace: FIXME MiContractPagingFiles()\n");
 
     return(STATUS_SUCCESS);
 }
