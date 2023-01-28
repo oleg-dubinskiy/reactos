@@ -687,7 +687,7 @@ MmInitializeHandBuiltProcess(
     _In_ PEPROCESS Process,
     _In_ PULONG_PTR DirectoryTableBase)
 {
-    DPRINT1("MmInitializeHandBuiltProcess: Process %p\n", Process);
+    DPRINT("MmInitializeHandBuiltProcess: Process %p\n", Process);
 
 #if defined(ONE_CPU)
 
@@ -742,7 +742,7 @@ MmInitializeHandBuiltProcess2(
     ULONG Flags = 0;
     NTSTATUS Status;
 
-    DPRINT1("MmInitializeHandBuiltProcess2: Process %p\n", Process);
+    DPRINT("MmInitializeHandBuiltProcess2: Process %p\n", Process);
 
     Status = MmInitializeProcessAddressSpace(Process, NULL, NULL, &Flags, NULL);
 
@@ -1011,7 +1011,7 @@ MmInitializeProcessAddressSpace(
 
 Exit1:
 
-    DPRINT("MmInitializeProcessAddressSpace: FIXME MiAllowWorkingSetExpansion\n");
+    MiAllowWorkingSetExpansion(&Process->Vm);
     KeDetachProcess();
 
 Exit:
