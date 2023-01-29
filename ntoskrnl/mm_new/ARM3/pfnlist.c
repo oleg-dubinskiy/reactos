@@ -70,6 +70,8 @@ extern PFN_NUMBER MmMinimumFreePages;
 extern PVOID MmPagedPoolEnd;
 extern ULONG MmFrontOfList;
 extern MMPTE DemandZeroPte;
+extern MMPTE ValidKernelPde;
+extern MMPTE ValidKernelPdeLocal;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1647,6 +1649,58 @@ MiEnsureAvailablePageOrWait(
 
     UNIMPLEMENTED_DBGBREAK();
     return TRUE;
+}
+
+NTSTATUS
+NTAPI
+MiInitializeAndChargePfn(
+    _Out_ PPFN_NUMBER PageFrameIndex,
+    _In_ PMMPDE Pde,
+    _In_ PFN_NUMBER ContainingPageFrame,
+    _In_ BOOLEAN SessionAllocation)
+{
+    MMPDE TempPde;
+    KIRQL OldIrql;
+
+    /* Use either a global or local PDE */
+    TempPde = SessionAllocation ? ValidKernelPdeLocal : ValidKernelPde;
+
+    /* Lock the PFN database */
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (MmAvailablePages < 0x20 ||
+        MmResidentAvailablePages <= (MmSystemLockPagesCount + 1))
+    {
+        /* Release the lock and return error */
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        return STATUS_NO_MEMORY;
+    }
+
+    /* Make sure nobody is racing us */
+    if (Pde->u.Hard.Valid)
+    {
+        /* Release the lock and return error */
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        return STATUS_RETRY;
+    }
+
+    InterlockedDecrementSizeT(&MmResidentAvailablePages);
+    //InterlockedIncrementSizeT(&MmResTrack[42]);
+
+    /* Grab a zero page and set the PFN, then make it valid */
+    *PageFrameIndex = MiRemoveZeroPage(MiGetColor());
+    TempPde.u.Hard.PageFrameNumber = *PageFrameIndex;
+
+    MI_WRITE_VALID_PDE(Pde, TempPde);
+
+    /* Initialize the PFN */
+    MiInitializePfnForOtherProcess(*PageFrameIndex, Pde, ContainingPageFrame);
+
+    ASSERT(MI_PFN_ELEMENT(*PageFrameIndex)->u1.WsIndex == 0);
+
+    /* Release the lock and return success */
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+    return STATUS_SUCCESS;
 }
 
 /* EOF */
