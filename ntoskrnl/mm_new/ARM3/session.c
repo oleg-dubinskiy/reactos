@@ -140,14 +140,20 @@ NTAPI
 MiSessionInitializeWorkingSetList(VOID)
 {
     PMM_SESSION_SPACE SessionGlobal;
-    PMMWSL WorkingSetList;
-    PMMPDE Pde;
-    PMMPTE Pte;
+    PMMWSLE CurrentWsle;
+    PMMWSL WsList;
+    PMMPDE WsListPde;
+    PMMPTE WsListPte;
     MMPDE TempPde;
     MMPTE TempPte;
+    PMMPFN Pfn;
     PFN_NUMBER PageFrameIndex;
+    ULONG ResidentPages;
+    ULONG PdeCount;
+    ULONG WsIndex;
+    ULONG LastIndex;
+    ULONG WsleCount;
     ULONG Color;
-    ULONG Index;
     KIRQL OldIrql;
     BOOLEAN AllocatedPageTable;
 
@@ -155,46 +161,69 @@ MiSessionInitializeWorkingSetList(VOID)
 
     /* Get pointers to session global and the session working set list */
     SessionGlobal = MmSessionSpace->GlobalVirtualAddress;
-    WorkingSetList = (PMMWSL)MiSessionSpaceWs;
+    WsList = (PMMWSL)MiSessionSpaceWs;
 
     /* Fill out the two pointers */
-    MmSessionSpace->Vm.VmWorkingSetList = WorkingSetList;
-    MmSessionSpace->Wsle = (PMMWSLE)WorkingSetList->UsedPageTableEntries;
+    MmSessionSpace->Vm.VmWorkingSetList = WsList;
+    MmSessionSpace->Wsle = (PMMWSLE)WsList->UsedPageTableEntries;
 
     /* Get the PDE for the working set, and check if it's already allocated */
-    Pde = MiAddressToPde(WorkingSetList);
-    if (Pde->u.Hard.Valid)
+    WsListPde = MiAddressToPde(WsList);
+
+    if (WsListPde->u.Hard.Valid)
     {
         /* Nope, we'll have to do it */
-      #ifndef _M_ARM
-        ASSERT(Pde->u.Hard.Global == 0);
-      #endif
+        ASSERT(WsListPde->u.Hard.Global == 0);
 
         AllocatedPageTable = FALSE;
+        ResidentPages = 1;
     }
     else
     {
         /* Yep, that makes our job easier */
         AllocatedPageTable = TRUE;
+        ResidentPages = 2;
     }
 
     /* Get the PTE for the working set */
-    Pte = MiAddressToPte(WorkingSetList);
+    WsListPte = MiAddressToPte(WsList);
+
+    if (!MiChargeCommitment(ResidentPages, NULL))
+    {
+        //MmSessionFailureCauses[1]++;
+        return STATUS_NO_MEMORY;
+    }
 
     /* Initialize the working set lock, and lock the PFN database */
     ExInitializePushLock(&SessionGlobal->Vm.WorkingSetMutex);
-    //MmLockPageableSectionByHandle(ExPageLockHandle);
+    //MmLockPageableSectionByHandle(ExPageLockHandle);//MmLockPagableSectionByHandle
 
     OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if ((SPFN_NUMBER)ResidentPages > (MmResidentAvailablePages - MmSystemLockPagesCount - 20)) // MmSystemLockPagesCount[0]
+    {
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+        //MmUnlockPageableImageSection(ExPageLockHandle);//MmUnlockPagableImageSection
+
+        ASSERT(MmTotalCommittedPages >= (ResidentPages));
+        InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -ResidentPages);
+        //MmSessionFailureCauses[2]++;
+
+        return STATUS_NO_MEMORY;
+    }
+
+    InterlockedExchangeAddSizeT(&MmResidentAvailablePages, -ResidentPages);
+    //InterlockedExchangeAddSizeT(&MmResTrack[50], ResidentPages);
 
     /* Check if we need a page table */
     if (AllocatedPageTable)
     {
+        MMPDE NewPde = {{0}};
+
         if (MmAvailablePages < 0x80)
             MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
         /* Get a zeroed colored zero page */
-        MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
         Color = MiGetColor();
 
         PageFrameIndex = MiRemoveZeroPageSafe(Color);
@@ -210,26 +239,26 @@ MiSessionInitializeWorkingSetList(VOID)
         }
 
         /* Write a valid PDE for it */
-        TempPde = ValidKernelPdeLocal;
+        TempPde.u.Long = ValidKernelPdeLocal.u.Long;
         TempPde.u.Hard.PageFrameNumber = PageFrameIndex;
-        MI_WRITE_VALID_PDE(Pde, TempPde);
+        MI_WRITE_VALID_PTE(&NewPde, TempPde);
 
         /* Add this into the list */
-        Index = (((ULONG_PTR)WorkingSetList - (ULONG_PTR)MmSessionBase) >> 22);
-
-#ifndef _M_AMD64
-        MmSessionSpace->PageTables[Index] = TempPde;
-#endif
+        PdeCount = (MiAddressToPdeOffset(WsList) - MiAddressToPdeOffset(MmSessionBase));
+        MmSessionSpace->PageTables[PdeCount] = NewPde;
+ 
         /* Initialize the page directory page, and now zero the working set list itself */
-        MiInitializePfnForOtherProcess(PageFrameIndex, Pde, MmSessionSpace->SessionPageDirectoryIndex);
-        KeZeroPages(Pte, PAGE_SIZE);
+        MiInitializePfnForOtherProcess(PageFrameIndex, &NewPde, MmSessionSpace->SessionPageDirectoryIndex);
+
+        KeZeroPages(WsListPte, PAGE_SIZE);
+
+        ASSERT(MI_PFN_ELEMENT(PageFrameIndex)->u1.WsIndex == 0);
     }
 
     if (MmAvailablePages < 0x80)
         MiEnsureAvailablePageOrWait(NULL, OldIrql);
 
     /* Get a zeroed colored zero page */
-    MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
     Color = MiGetColor();
 
     PageFrameIndex = MiRemoveZeroPageSafe(Color);
@@ -244,26 +273,116 @@ MiSessionInitializeWorkingSetList(VOID)
         OldIrql = MiLockPfnDb(APC_LEVEL);
     }
 
+    ASSERT(MI_PFN_ELEMENT(PageFrameIndex)->u1.WsIndex == 0);
+
     /* Write a valid PTE for it */
-    TempPte = ValidKernelPteLocal;
-    MI_MAKE_DIRTY_PAGE(&TempPte);
+    TempPte.u.Long = ValidKernelPteLocal.u.Long;
     TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
+    MI_MAKE_DIRTY_PAGE(&TempPte);
 
     /* Initialize the working set list page */
-    MiInitializePfnAndMakePteValid(PageFrameIndex, Pte, TempPte);
+    MiInitializePfnAndMakePteValid(PageFrameIndex, WsListPte, TempPte);
+
+    ASSERT(MI_PFN_ELEMENT(PageFrameIndex)->u1.WsIndex == 0);
 
     /* Now we can release the PFN database lock */
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
+    CurrentWsle = MmSessionSpace->Wsle;
+
+    CurrentWsle->u1.VirtualAddress = MiAddressToPte(MmSessionSpace);
+    CurrentWsle->u1.e1.Valid = 1;
+    CurrentWsle->u1.e1.LockedInWs = 1;
+    CurrentWsle->u1.e1.Direct = 1;
+
+    Pfn = MI_PFN_ELEMENT((MiAddressToPte(MiAddressToPte(MmSessionSpace)))->u.Hard.PageFrameNumber);
+    ASSERT(Pfn->u1.WsIndex == 0);
+    Pfn->u1.WsIndex = (CurrentWsle - MmSessionSpace->Wsle);
+
+    CurrentWsle++;
+
+    CurrentWsle->u1.VirtualAddress = WsList;
+    CurrentWsle->u1.e1.Valid = 1;
+    CurrentWsle->u1.e1.LockedInWs = 1;
+    CurrentWsle->u1.e1.Direct = 1;
+
+    Pfn = MI_PFN_ELEMENT(WsListPte->u.Hard.PageFrameNumber);
+    ASSERT(Pfn->u1.WsIndex == 0);
+    Pfn->u1.WsIndex = (CurrentWsle - MmSessionSpace->Wsle);
+
+    CurrentWsle++;
+
+    if (AllocatedPageTable)
+    {
+        CurrentWsle->u1.VirtualAddress = WsListPte;
+        CurrentWsle->u1.e1.Valid = 1;
+        CurrentWsle->u1.e1.LockedInWs = 1;
+        CurrentWsle->u1.e1.Direct = 1;
+
+        Pfn = MI_PFN_ELEMENT(MiAddressToPte(WsListPte)->u.Hard.PageFrameNumber);
+        ASSERT(Pfn->u1.WsIndex == 0);
+        Pfn->u1.WsIndex = (CurrentWsle - MmSessionSpace->Wsle);
+
+        CurrentWsle++;
+    }
+
+    CurrentWsle->u1.VirtualAddress = MiAddressToPte(MmSessionSpace->PagedPoolStart);
+    CurrentWsle->u1.e1.Valid = 1;
+    CurrentWsle->u1.e1.LockedInWs = 1;
+    CurrentWsle->u1.e1.Direct = 1;
+
+    Pfn = MI_PFN_ELEMENT((MiAddressToPte(MiAddressToPte(MmSessionSpace->PagedPoolStart)))->u.Hard.PageFrameNumber);
+    ASSERT(Pfn->u1.WsIndex == 0);
+    Pfn->u1.WsIndex = (CurrentWsle - MmSessionSpace->Wsle);
+
     /* Fill out the working set structure */
     MmSessionSpace->Vm.Flags.SessionSpace = 1;
-    MmSessionSpace->Vm.MinimumWorkingSetSize = 0x14;
-    MmSessionSpace->Vm.MaximumWorkingSetSize = 0x180;
 
-    WorkingSetList->LastEntry = 0x14;
-    WorkingSetList->HashTable = NULL;
-    WorkingSetList->HashTableSize = 0;
-    WorkingSetList->Wsle = MmSessionSpace->Wsle;
+    MmSessionSpace->Vm.MinimumWorkingSetSize = 0x14;  // 20
+    MmSessionSpace->Vm.MaximumWorkingSetSize = 0x180; // 384
+
+    WsList->LastEntry = 0x14;
+    WsList->HashTable = 0;
+    WsList->HashTableSize = 0;
+
+    WsList->Wsle = MmSessionSpace->Wsle;
+
+    PdeCount = (MiAddressToPdeOffset(MiSessionSpaceEnd) - MiAddressToPdeOffset(MmSessionBase));
+    WsleCount = (((ULONG_PTR)MiSessionSpaceEnd - (ULONG_PTR)MmSessionBase) / PAGE_SIZE) + PdeCount + 1;
+
+    WsList->HashTableStart = (PVOID)(((ULONG_PTR)&MmSessionSpace->Wsle[WsleCount] & 0xFFFFF000) + PAGE_SIZE);
+    WsList->HighestPermittedHashAddress = (PVOID)((ULONG_PTR)MiSessionImageStart - 0x10000);
+
+    LastIndex = (CurrentWsle - MmSessionSpace->Wsle) + 1;
+
+    WsList->FirstFree = LastIndex;
+    WsList->FirstDynamic = LastIndex;
+    WsList->NextSlot = LastIndex;
+
+    MmSessionSpace->Vm.WorkingSetSize = LastIndex;
+
+    WsleCount = (((ULONG_PTR)WsList + PAGE_SIZE - (ULONG_PTR)MmSessionSpace->Wsle) / sizeof(MMWSLE));
+
+    InterlockedExchangeAddSizeT(&MmSessionSpace->NonPageablePages, ResidentPages);//NonPagablePages
+    InterlockedExchangeAddSizeT(&MmSessionSpace->CommittedPages, ResidentPages);
+
+    WsIndex = LastIndex;
+
+    for (CurrentWsle = &MmSessionSpace->Wsle[WsIndex]; ; CurrentWsle++)
+    {
+        WsIndex++;
+
+        if (WsIndex >= WsleCount)
+            break;
+
+        CurrentWsle->u1.Long = (WsIndex << MM_FREE_WSLE_SHIFT);
+    }
+
+    CurrentWsle->u1.Long = 0xFFFFFFF0;
+    WsList->LastInitializedWsle = (WsleCount - 1);
+
+    ASSERT(SessionGlobal->Vm.WorkingSetExpansionLinks.Flink == NULL);
+    ASSERT(SessionGlobal->Vm.WorkingSetExpansionLinks.Blink == NULL);
 
     /* Acquire the expansion lock while touching the session */
     OldIrql = MiAcquireExpansionLock();
@@ -271,17 +390,15 @@ MiSessionInitializeWorkingSetList(VOID)
     /* Handle list insertions */
     ASSERT(SessionGlobal->WsListEntry.Flink == NULL);
     ASSERT(SessionGlobal->WsListEntry.Blink == NULL);
-    InsertTailList(&MiSessionWsList, &SessionGlobal->WsListEntry);
 
-    ASSERT(SessionGlobal->Vm.WorkingSetExpansionLinks.Flink == NULL);
-    ASSERT(SessionGlobal->Vm.WorkingSetExpansionLinks.Blink == NULL);
+    InsertTailList(&MiSessionWsList, &SessionGlobal->WsListEntry);
     InsertTailList(&MmWorkingSetExpansionHead, &SessionGlobal->Vm.WorkingSetExpansionLinks);
 
     /* Release the lock again */
     MiReleaseExpansionLock(OldIrql);
 
     /* All done, return */
-    //MmUnlockPageableImageSection(ExPageLockHandle);
+    //MmUnlockPageableImageSection(ExPageLockHandle);//MmUnlockPagableImageSection
 
     return STATUS_SUCCESS;
 }
