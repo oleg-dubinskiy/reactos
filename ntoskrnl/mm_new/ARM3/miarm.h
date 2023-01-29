@@ -735,6 +735,9 @@ MiReleasePfnLockFromDpcLevel(VOID)
 {
     PKSPIN_LOCK_QUEUE LockQueue;
 
+    ASSERT(MmPfnOwner == KeGetCurrentThread());
+    MmPfnOwner = NULL;
+
     LockQueue = &KeGetCurrentPrcb()->LockQueue[LockQueuePfnLock];
     KeReleaseQueuedSpinLockFromDpcLevel(LockQueue);
     ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
@@ -827,6 +830,9 @@ MiAcquirePfnLockAtDpcLevel(VOID)
     ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
     LockQueue = &KeGetCurrentPrcb()->LockQueue[LockQueuePfnLock];
     KeAcquireQueuedSpinLockAtDpcLevel(LockQueue);
+
+    ASSERT(MmPfnOwner == NULL);
+    MmPfnOwner = KeGetCurrentThread();
 }
 
 FORCEINLINE
