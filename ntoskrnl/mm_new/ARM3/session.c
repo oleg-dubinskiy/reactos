@@ -622,8 +622,8 @@ MiSessionCreateInternal(
     DPRINT1("MiSessionCreateInternal: Session %X is ready to go: %p, %p, %X, %p\n", *OutSessionId, MmSessionSpace, SessionGlobal, SessionPageDirIndex, PageTables);
 
     /* Initialize session pool */
-    //Status = MiInitializeSessionPool();
-    Status = STATUS_SUCCESS;
+    Status = MiInitializeSessionPool();
+    //Status = STATUS_SUCCESS;
     ASSERT(NT_SUCCESS(Status) == TRUE);
 
     /* Initialize system space */

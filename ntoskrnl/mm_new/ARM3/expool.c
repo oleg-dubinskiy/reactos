@@ -712,7 +712,8 @@ ExInitializePoolDescriptor(
     }
 
     /* Note that ReactOS does not support Session Pool Yet */
-    ASSERT(PoolType != PagedPoolSession);
+    DPRINT1("ExInitializePoolDescriptor: ?! PoolType == PagedPoolSession\n");
+    //ASSERT(PoolType != PagedPoolSession);
 }
 
 NTSTATUS

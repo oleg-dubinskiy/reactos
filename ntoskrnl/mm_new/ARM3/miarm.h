@@ -1922,6 +1922,17 @@ InitializePool(
     _In_ ULONG Threshold
 );
 
+INIT_FUNCTION
+VOID
+NTAPI
+ExInitializePoolDescriptor(
+    _In_ PPOOL_DESCRIPTOR PoolDescriptor,
+    _In_ POOL_TYPE PoolType,
+    _In_ ULONG PoolIndex,
+    _In_ ULONG Threshold,
+    _In_ PVOID PoolLock
+);
+
 /* ARM3\hypermap.c */
 PVOID
 NTAPI
@@ -2127,6 +2138,15 @@ MiEnsureAvailablePageOrWait(
     _In_ KIRQL OldIrql
 );
 
+NTSTATUS
+NTAPI
+MiInitializeAndChargePfn(
+    OUT PPFN_NUMBER PageFrameIndex,
+    IN PMMPDE PointerPde,
+    IN PFN_NUMBER ContainingPageFrame,
+    IN BOOLEAN SessionAllocation
+);
+
 /* ARM3\pool.c */
 INIT_FUNCTION
 VOID
@@ -2165,6 +2185,12 @@ INIT_FUNCTION
 VOID
 NTAPI
 MiInitializePoolEvents(
+    VOID
+);
+
+NTSTATUS
+NTAPI
+MiInitializeSessionPool(
     VOID
 );
 
@@ -2575,10 +2601,10 @@ ULONG
 NTAPI
 MiDeletePte(
     _In_ PMMPTE Pte,
-    _In_ PVOID VirtualAddress,
+    _In_ PVOID Va,
     _In_ BOOLEAN IsNotTerminateWsle,
     _In_ PEPROCESS CurrentProcess,
-    _In_ PMMPTE PrototypePte,
+    _In_ PMMPTE Proto,
     _In_ PMMPTE_FLUSH_LIST FlushList,
     _In_ KIRQL OldIrql
 );
