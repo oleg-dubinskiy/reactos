@@ -796,7 +796,7 @@ MiUnlockPfnWithWait(KIRQL OldIrql)
     ASSERT(MmPfnOwner == KeGetCurrentThread());
     MmPfnOwner = NULL;
 
-    MiReleasePfnLockFromDpcLevel();
+    KeReleaseQueuedSpinLockFromDpcLevel(&KeGetCurrentPrcb()->LockQueue[LockQueuePfnLock]);
 
     CurrentThread = KeGetCurrentThread();
     CurrentThread->WaitIrql = OldIrql;
