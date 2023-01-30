@@ -39,6 +39,163 @@ extern PVOID MmSpecialPoolEnd;
 
 /* FUNCTIONS ******************************************************************/
 
+BOOLEAN
+NTAPI
+MiEliminateWorkingSetEntry(
+    _In_ ULONG WsIndex,
+    _In_ PMMPTE Pte,
+    _In_ PMMPFN InPfn,
+    _In_ PMMSUPPORT WorkSet,
+    _In_ BOOLEAN IsNotCheckRefs)
+{
+    PEPROCESS Process;
+    PMMWSLE Wsle;
+    PMMPDE Pde;
+    PMMPFN Pfn;
+    MMWSLE WsleContents;
+    MMPTE TempPte;
+    MMPTE OldPteContents;
+    PFN_NUMBER PdeFrameNumber;
+    PFN_NUMBER PteFrameNumber;
+    KIRQL OldIrql;
+    BOOLEAN AllProcesors;
+
+    DPRINT("MiEliminateWorkingSetEntry: %X, %p [%X], %p, %p, %X\n", WsIndex, Pte, *Pte, InPfn, WorkSet, IsNotCheckRefs);
+
+    Wsle = WorkSet->VmWorkingSetList->Wsle;
+    WsleContents.u1.Long = Wsle[WsIndex].u1.Long;
+
+    AllProcesors = (Wsle != (PMMWSLE)&MmWorkingSetList[1]);
+
+    TempPte.u.Long = Pte->u.Long;
+    ASSERT(TempPte.u.Hard.Valid == 1);
+    PteFrameNumber = TempPte.u.Hard.PageFrameNumber;
+
+    ASSERT(InPfn == MI_PFN_ELEMENT(PteFrameNumber));
+    ASSERT(MI_IS_PFN_DELETED(InPfn) == 0);
+
+  #if !defined(ONE_CPU)
+    if (TempPte.u.Hard.Writable)
+    {
+        ASSERT(TempPte.u.Hard.Dirty == 1);
+    }
+  #endif
+
+    if (InPfn->u3.e1.PrototypePte)
+    {
+        if (WsleContents.u1.e1.Protection != MM_ZERO_ACCESS)
+        {
+            TempPte.u.Long = 0;
+            TempPte.u.Soft.Prototype = 1;
+            TempPte.u.Soft.Protection = WsleContents.u1.e1.Protection;
+            TempPte.u.Soft.PageFileHigh = MI_PTE_LOOKUP_NEEDED;
+        }
+        else
+        {
+            MI_MAKE_PROTOTYPE_PTE(&TempPte, InPfn->PteAddress);
+        }
+
+        Pde = MiAddressToPte(Pte);
+        if (!Pde->u.Hard.Valid && !NT_SUCCESS(MiCheckPdeForPagedPool(Pte)))
+        {
+            DPRINT1("MiEliminateWorkingSetEntry: KeBugCheckEx()\n");
+            ASSERT(FALSE);
+            KeBugCheckEx(0x1A, 0x61940, (ULONG_PTR)Pte, Pde->u.Long, (ULONG_PTR)MiPteToAddress(Pte));
+        }
+
+        PdeFrameNumber = Pde->u.Hard.PageFrameNumber;
+        Pfn = MI_PFN_ELEMENT(PdeFrameNumber);
+    }
+    else
+    {
+        ASSERT((InPfn->u2.ShareCount == 1) || (WsleContents.u1.VirtualAddress > (PVOID)MM_HIGHEST_USER_ADDRESS));
+
+        TempPte.u.Soft.Valid = 0;
+        TempPte.u.Soft.Prototype = 0;
+        TempPte.u.Soft.Transition = 1;
+        TempPte.u.Soft.Protection = InPfn->OriginalPte.u.Soft.Protection;
+
+        PdeFrameNumber = 0;
+        Pfn = NULL;
+    }
+
+    OldIrql = MiLockPfnDb(APC_LEVEL);
+
+    if (!IsNotCheckRefs)
+    {
+        if (WorkSet != &MmSystemCacheWs)
+        {
+            if (InPfn->u2.ShareCount > 1 && !InPfn->u3.e1.PrototypePte)
+            {
+                if (WorkSet->Flags.SessionSpace)
+                {
+                    ASSERT(MI_IS_SESSION_ADDRESS(WsleContents.u1.VirtualAddress));
+                }
+                else
+                {
+                    ASSERT((WsleContents.u1.VirtualAddress >= (PVOID)0xC0000000) &&
+                           (WsleContents.u1.VirtualAddress <= (PVOID)0xC03FFFFF));
+                }
+
+                MiUnlockPfnDb(OldIrql, APC_LEVEL);
+                return FALSE;
+            }
+        }
+        else if (InPfn->u3.ReferenceCount > 1)
+        {
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            return FALSE;
+        }
+    }
+
+    if (InPfn->u3.e1.PrototypePte)
+    {
+        MiDecrementPfnShare(Pfn, PdeFrameNumber);
+    }
+    else
+    {
+        ASSERT(InPfn->u1.WsIndex != 0);
+        InPfn->u1.WsIndex = 0;
+    }
+
+    OldPteContents = *Pte;
+    ASSERT(OldPteContents.u.Hard.Valid == 1);
+    MI_WRITE_INVALID_PTE(Pte, TempPte);
+
+    KeFlushSingleTb(WsleContents.u1.VirtualAddress, AllProcesors);
+
+    ASSERT(KeGetCurrentIrql() > APC_LEVEL);
+
+    if (!InPfn->u3.e1.Modified && OldPteContents.u.Hard.Dirty)
+    {
+        ASSERT(InPfn->u3.e1.Rom == 0);
+        InPfn->u3.e1.Modified = 1;
+
+        if (!InPfn->OriginalPte.u.Soft.Prototype && !InPfn->u3.e1.WriteInProgress)
+        {
+            MiReleasePageFileSpace(InPfn->OriginalPte);
+            InPfn->OriginalPte.u.Soft.PageFileHigh = 0;
+        }
+    }
+
+    if (!InPfn->u3.e1.PrototypePte && OldPteContents.u.Hard.Dirty)
+    {
+        Process = PsGetCurrentProcess();
+
+        if (Process->Flags & 0x8000)
+        {
+            DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
+            ASSERT(FALSE);
+            //MiCaptureWriteWatchDirtyBit(Process, MiPteToAddress(Pte));
+        }
+    }
+
+    MiDecrementPfnShare(InPfn, PteFrameNumber);
+    MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+    return TRUE;
+}
+
 VOID
 NTAPI
 MiDoReplacement(
@@ -1545,107 +1702,6 @@ MiUnlinkWorkingSet(
     KeLeaveCriticalRegion();
 
     ASSERT(WorkSet->WorkingSetExpansionLinks.Flink == MM_WS_NOT_LISTED);
-}
-
-BOOLEAN
-NTAPI
-MiEliminateWorkingSetEntry(
-    _In_ ULONG WorkingSetIndex,
-    _In_ PMMPTE Pte,
-    _In_ PMMPFN Pfn,
-    _In_ PMMSUPPORT WorkingSet,
-    _In_ BOOLEAN Parameter5)
-{
-    MMPTE TempPte;
-    MMPTE PreviousPte;
-    ULONG PageFrameIndex;
-    KIRQL OldIrql;
-
-    DPRINT("MiEliminateWorkingSetEntry: %X, %p [%X], %p, %p, %X\n", WorkingSetIndex, Pte, *Pte, Pfn, WorkingSet, Parameter5);
-
-    TempPte.u.Long = Pte->u.Long;
-    ASSERT(TempPte.u.Hard.Valid == 1);
-
-    PageFrameIndex = TempPte.u.Hard.PageFrameNumber;
-    ASSERT(Pfn == MI_PFN_ELEMENT(PageFrameIndex));
-    ASSERT(MI_IS_PFN_DELETED(Pfn) == 0);
-
-    if (TempPte.u.Hard.Writable)
-    {
-        ASSERT(TempPte.u.Hard.Dirty == 1);
-    }
-
-    if (Pfn->u3.e1.PrototypePte)
-    {
-        DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
-        ASSERT(FALSE);
-    }
-    else
-    {
-        ASSERT(Pfn->u2.ShareCount == 1); // FIXME
-
-        TempPte.u.Soft.Valid = 0;
-        TempPte.u.Soft.Transition = 1;
-        TempPte.u.Soft.Prototype = 0;
-        TempPte.u.Soft.Protection = Pfn->OriginalPte.u.Soft.Protection;
-    }
-
-    OldIrql = MiLockPfnDb(APC_LEVEL);
-
-    if (!Parameter5)
-    {
-        DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
-        ASSERT(FALSE);
-    }
-
-    if (!Pfn->u3.e1.PrototypePte)
-    {
-        //ASSERT(Pfn->u1.WsIndex != 0);
-        Pfn->u1.WsIndex = 0;
-    }
-    else
-    {
-        DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
-        ASSERT(FALSE);
-    }
-
-    PreviousPte = *Pte;
-
-    ASSERT(PreviousPte.u.Hard.Valid == 1);
-    ASSERT((TempPte).u.Hard.Valid == 0);
-    Pte->u.Long = TempPte.u.Long;
-
-    DPRINT("MiEliminateWorkingSetEntry: %p [%X], [%X]\n", Pte, *Pte, PreviousPte.u.Long);
-
-    //FIXME: KeFlushSingleTb()
-
-    ASSERT(PreviousPte.u.Hard.Valid == 1);
-    ASSERT(KeGetCurrentIrql() > APC_LEVEL);
-
-    if (!Pfn->u3.e1.Modified && PreviousPte.u.Hard.Dirty)
-    {
-        ASSERT(Pfn->u3.e1.Rom == 0);
-        Pfn->u3.e1.Modified = 1;
-
-        if (!Pfn->OriginalPte.u.Soft.Prototype && !Pfn->u3.e1.WriteInProgress)
-        {
-            MiReleasePageFileSpace(Pfn->OriginalPte);
-            Pfn->OriginalPte.u.Soft.PageFileHigh = 0;
-        }
-    }
-
-    if (!Pfn->u3.e1.PrototypePte &&
-        PreviousPte.u.Hard.Dirty &&
-        (PsGetCurrentProcess()->Flags & 0x8000))
-    {
-        DPRINT1("MiEliminateWorkingSetEntry: FIXME\n");
-        ASSERT(FALSE);
-    }
-
-    MiDecrementPfnShare(Pfn, PageFrameIndex);
-    MiUnlockPfnDb(OldIrql, APC_LEVEL);
-
-    return TRUE;
 }
 
 BOOLEAN
