@@ -25,6 +25,8 @@ KGUARDED_MUTEX MmSectionCommitMutex;
 KGUARDED_MUTEX MmSectionBasedMutex;
 KEVENT MmCollidedFlushEvent;
 PVOID MmHighSectionBase;
+KSEMAPHORE MiDereferenceSegmentSemaphore;
+LIST_ENTRY MiDereferenceSegmentList;
 LIST_ENTRY MmUnusedSubsectionList;
 LIST_ENTRY MmUnusedSegmentList;
 MMSESSION MmSession;

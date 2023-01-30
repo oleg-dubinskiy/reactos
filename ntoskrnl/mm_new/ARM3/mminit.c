@@ -378,6 +378,8 @@ extern ULONG MiMaximumWorkingSet;
 extern SIZE_T MmMaximumWorkingSetSize;
 extern LIST_ENTRY MmWorkingSetExpansionHead;
 extern KEVENT MmUnusedSegmentCleanup;
+extern KSEMAPHORE MiDereferenceSegmentSemaphore;
+extern LIST_ENTRY MiDereferenceSegmentList;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -1723,6 +1725,9 @@ MmArmInitSystem(
         InitializeListHead(&MmUnusedSubsectionList);
         InitializeListHead(&MmUnusedSegmentList);
         KeInitializeEvent(&MmUnusedSegmentCleanup, NotificationEvent, FALSE);
+
+        InitializeListHead(&MiDereferenceSegmentList);
+        KeInitializeSemaphore(&MiDereferenceSegmentSemaphore, 0, MAXLONG);
 
         /* Look for large page cache entries that need caching */
         MiSyncCachedRanges();
