@@ -1709,16 +1709,47 @@ NTAPI
 MiRemovePageFromWorkingSet(
     _In_ PMMPTE Pte,
     _In_ PMMPFN Pfn,
-    _In_ PMMSUPPORT WorkingSet)
+    _In_ PMMSUPPORT WorkSet)
 {
-    ULONG WorkingSetIndex;
+    PMMWSL WsList;
+    PMMWSLE Wsle;
+    PVOID Address1;
+    MMWSLE WsleContents;
+    ULONG WsIndex1;
+    ULONG WsIndex2;
 
-    DPRINT("MiRemovePageFromWorkingSet: %p, %p, %p\n", Pte, Pfn, WorkingSet);
+    WsList = WorkSet->VmWorkingSetList;
+    Wsle = WsList->Wsle;
 
-    WorkingSetIndex = 0;//MiLocateWsle(..);
-    MiEliminateWorkingSetEntry(WorkingSetIndex, Pte, Pfn, WorkingSet, 1);
+    WsIndex2 = MiLocateWsle(MiPteToAddress(Pte), WorkSet->VmWorkingSetList, Pfn->u1.WsIndex, TRUE);
+    ASSERT(WsIndex2 != WSLE_NULL_INDEX);
 
-    return FALSE;
+    MiEliminateWorkingSetEntry(WsIndex2, Pte, Pfn, WorkSet, TRUE);
+
+    WsleContents = Wsle[WsIndex2];
+
+    MiRemoveWsle(WsIndex2, WsList);
+    MiReleaseWsle(WsIndex2, WorkSet);
+
+    if (!WsleContents.u1.e1.LockedInWs && !WsleContents.u1.e1.LockedInMemory)
+    {
+        ASSERT(WsIndex2 >= WsList->FirstDynamic);
+        return FALSE;
+    }
+
+    WsList->FirstDynamic--;
+    WsIndex1 = WsList->FirstDynamic;
+
+    if (WsIndex1 == WsIndex2)
+        return TRUE;
+
+    Address1 = PAGE_ALIGN(Wsle[WsIndex1].u1.VirtualAddress);
+    Pfn = MI_PFN_ELEMENT((MiAddressToPte(Address1))->u.Hard.PageFrameNumber);
+
+    ASSERT(WsIndex1 == MiLocateWsle(Address1, WsList, Pfn->u1.WsIndex, FALSE));
+    MiSwapWslEntries(WsIndex1, WsIndex2, WorkSet, FALSE);
+
+    return TRUE;
 }
 
 NTSTATUS
