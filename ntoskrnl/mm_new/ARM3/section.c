@@ -8057,7 +8057,9 @@ NTAPI
 MmInitSectionImplementation(VOID)
 {
     OBJECT_TYPE_INITIALIZER ObjectTypeInitializer;
+    OBJECT_ATTRIBUTES ObjectAttributes;
     UNICODE_STRING SectionName = RTL_CONSTANT_STRING(L"Section");
+    HANDLE ThreadHandle;
     NTSTATUS Status;
 
     DPRINT("MmInitSectionImplementation: Creating Section Object Type\n");
@@ -8085,6 +8087,23 @@ MmInitSectionImplementation(VOID)
         DPRINT1("MmInitSectionImplementation: Status %X\n", Status);
         return Status;
     }
+
+    InitializeObjectAttributes(&ObjectAttributes, NULL, 0, NULL, NULL);
+
+    Status = PsCreateSystemThread(&ThreadHandle,
+                                  THREAD_ALL_ACCESS,
+                                  &ObjectAttributes,
+                                  0,
+                                  NULL,
+                                  MiDereferenceSegmentThread,
+                                  NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmInitSectionImplementation: Status %X\n", Status);
+        return Status;
+    }
+
+    ZwClose(ThreadHandle);
 
     Status = MmCreatePhysicalMemorySection();
     if (!NT_SUCCESS(Status))
