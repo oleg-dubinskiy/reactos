@@ -8043,6 +8043,14 @@ MmCreatePhysicalMemorySection(VOID)
     return Status;
 }
 
+VOID
+NTAPI
+MiDereferenceSegmentThread(
+    _In_ PVOID StartContext)
+{
+    UNIMPLEMENTED;
+}
+
 INIT_FUNCTION
 NTSTATUS
 NTAPI
