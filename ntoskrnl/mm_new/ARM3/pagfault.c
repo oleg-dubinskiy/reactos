@@ -8,8 +8,6 @@
 
 /* GLOBALS ********************************************************************/
 
-#define HYDRA_PROCESS (PEPROCESS)1
-
 ULONG MmDataClusterSize;
 ULONG MmCodeClusterSize;
 ULONG MmInPageSupportMinimum = 4;

@@ -1713,13 +1713,20 @@ MiSessionCommitPageTables(
     MMPDE TempPde = ValidKernelPdeLocal;
     PMMPDE StartPde;
     PMMPDE EndPde;
+    PMMPDE Pde;
     PMMPFN Pfn;
+    PMMWSL WsList;
+    PVOID SessionPte;
     PFN_NUMBER PageCount = 0;
     PFN_NUMBER ActualPages = 0;
     PFN_NUMBER PageFrameNumber;
-    ULONG Color;
+    MMWSLE TempWsle;
+    ULONG StartIndex;
     ULONG Index;
+    ULONG WsIndex1;
+    ULONG WsIndex2;
     KIRQL OldIrql;
+    NTSTATUS Status = STATUS_SUCCESS;
 
     DPRINT("MiSessionCommitPageTables: StartVa %p, EndVa %p\n", StartVa, EndVa);
 
@@ -1729,94 +1736,152 @@ MiSessionCommitPageTables(
     ASSERT(PAGE_ALIGN(EndVa) == EndVa);
 
     /* Get the start and end PDE, then loop each one */
-    StartPde = MiAddressToPde(StartVa);
+    Pde = StartPde = MiAddressToPde(StartVa);
     EndPde = MiAddressToPde((PVOID)((ULONG_PTR)EndVa - 1));
 
-    Index = (((ULONG_PTR)StartVa - (ULONG_PTR)MmSessionBase) >> 22);
+    Index = StartIndex = (((ULONG_PTR)StartVa - (ULONG_PTR)MmSessionBase) >> 22);
 
-    while (StartPde <= EndPde)
+    while (Pde <= EndPde)
     {
         /* If we don't already have a page table for it, increment count */
         if (!MmSessionSpace->PageTables[Index].u.Long)
             PageCount++;
 
         /* Move to the next one */
-        StartPde++;
+        Pde++;
         Index++;
     }
 
     /* If there's no page tables to create, bail out */
     if (!PageCount)
-        return STATUS_SUCCESS;
+        return Status;
+
+    if (!MiChargeCommitment(PageCount, NULL))
+    {
+        DPRINT1("MiSessionCommitPageTables: STATUS_NO_MEMORY\n");
+        return STATUS_NO_MEMORY;
+    }
 
     /* Acquire the PFN lock */
     OldIrql = MiLockPfnDb(APC_LEVEL);
 
-    DPRINT1("MiSessionCommitPageTables: FIXME MiChargeCommitment()\n");
-
-    if (PageCount > (MmResidentAvailablePages - MmSystemLockPagesCount - 20))
+    if ((SPFN_NUMBER)PageCount > (MmResidentAvailablePages - MmSystemLockPagesCount - 20)) // MmSystemLockPagesCount[0]
     {
-        DPRINT1("MiSessionCommitPageTables: FIXME. STATUS_NO_MEMORY\n");
-        ASSERT(FALSE);
+        DPRINT1("MiSessionCommitPageTables: STATUS_NO_MEMORY\n");
+
         MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        ASSERT((SSIZE_T)(PageCount) >= 0);
+        ASSERT(MmTotalCommittedPages >= (PageCount));
+        InterlockedExchangeAddSizeT(&MmTotalCommittedPages, -PageCount);
+        //MmSessionFailureCauses[2]++;
+
         return STATUS_NO_MEMORY;
     }
 
     InterlockedExchangeAddSizeT(&MmResidentAvailablePages, -PageCount);
+    //InterlockedExchangeAddSizeT(&MmResTrack[44], PageCount);
+
     MiUnlockPfnDb(OldIrql, APC_LEVEL);
 
+    WsList = MmSessionSpace->Vm.VmWorkingSetList;
+
     /* Reset the start PDE and index */
-    StartPde = MiAddressToPde(StartVa);
-    Index = (((ULONG_PTR)StartVa - (ULONG_PTR)MmSessionBase) >> 22);
+    Pde = StartPde;
+    Index = StartIndex;
 
     /* Loop each PDE while holding the working set lock */
-    //MiLockWorkingSet(PsGetCurrentThread(), &MmSessionSpace->GlobalVirtualAddress->Vm);
+    MiLockWorkingSet(PsGetCurrentThread(), &MmSessionSpace->GlobalVirtualAddress->Vm);
 
-    while (StartPde <= EndPde)
+    while (Pde <= EndPde)
     {
         /* Check if we already have a page table */
-        if (!MmSessionSpace->PageTables[Index].u.Long)
+        if (MmSessionSpace->PageTables[Index].u.Long)
         {
-            /* We don't, so the PDE shouldn't be ready yet */
-            ASSERT(StartPde->u.Hard.Valid == 0);
-
-            /* Acquire the PFN lock and grab a zero page */
-            OldIrql = MiLockPfnDb(APC_LEVEL);
-
-            if (MiEnsureAvailablePageOrWait((PEPROCESS)1, OldIrql))
-            {
-                MiUnlockPfnDb(OldIrql, APC_LEVEL);
-                continue;
-            }
-
-            MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
-            MI_SET_PROCESS2(PsGetCurrentProcess()->ImageFileName);
-
-            Color = ((++MmSessionSpace->Color) & MmSecondaryColorMask);
-            PageFrameNumber = MiRemoveZeroPage(Color);
-            TempPde.u.Hard.PageFrameNumber = PageFrameNumber;
-            MI_WRITE_VALID_PDE(StartPde, TempPde);
-
-            /* Write the page table in session space structure */
-            ASSERT(MmSessionSpace->PageTables[Index].u.Long == 0);
-            MmSessionSpace->PageTables[Index] = TempPde;
-
-            /* Initialize the PFN */
-            MiInitializePfnForOtherProcess(PageFrameNumber, StartPde, MmSessionSpace->SessionPageDirectoryIndex);
-
-            /* And now release the lock */
-            MiUnlockPfnDb(OldIrql, APC_LEVEL);
-
-            /* Get the PFN entry and make sure there's no event for it */
-            Pfn = MI_PFN_ELEMENT(PageFrameNumber);
-            ASSERT(Pfn->u1.Event == NULL);
-
-            /* Increment the number of pages */
-            ActualPages++;
+            /* Move to the next PDE */
+            Pde++;
+            Index++;
+            continue;
         }
 
+        /* We don't, so the PDE shouldn't be ready yet */
+        ASSERT(Pde->u.Hard.Valid == 0);
+
+        /* Acquire the PFN lock and grab a zero page */
+        OldIrql = MiLockPfnDb(APC_LEVEL);
+
+        if (MiEnsureAvailablePageOrWait(HYDRA_PROCESS, OldIrql))
+        {
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+            continue;
+        }
+
+        MmSessionSpace->Color++;
+        PageFrameNumber = MiRemoveZeroPage(MI_GET_PAGE_COLOR(MmSessionSpace->Color));
+
+        TempPde.u.Hard.PageFrameNumber = PageFrameNumber;
+        MI_WRITE_VALID_PDE(Pde, TempPde);
+
+        /* Write the page table in session space structure */
+        ASSERT(MmSessionSpace->PageTables[Index].u.Long == 0);
+        MmSessionSpace->PageTables[Index] = TempPde;
+
+        /* Initialize the PFN */
+        MiInitializePfnForOtherProcess(PageFrameNumber, Pde, MmSessionSpace->SessionPageDirectoryIndex);
+
+        /* And now release the lock */
+        MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+        /* Get the PFN entry and make sure there's no event for it */
+        Pfn = MI_PFN_ELEMENT(PageFrameNumber);
+        ASSERT(Pfn->u1.WsIndex == 0);
+
+        SessionPte = MiPteToAddress(Pde);
+        TempWsle.u1.Long = 0;
+
+        WsIndex1 = MiAddValidPageToWorkingSet(SessionPte, Pde, Pfn, TempWsle);
+        if (!WsIndex1)
+        {
+            MMPDE ZeroPde = {{ 0 }};
+
+            DPRINT1("MiSessionCommitPageTables: STATUS_NO_MEMORY\n");
+
+            OldIrql = MiLockPfnDb(APC_LEVEL);
+            MI_SET_PFN_DELETED(Pfn);
+            MiUnlockPfnDb(OldIrql, APC_LEVEL);
+
+            MiTrimPte(SessionPte, Pde, Pfn, HYDRA_PROCESS, ZeroPde);
+
+            ASSERT(MmSessionSpace->PageTables[Index].u.Long != 0);
+            MmSessionSpace->PageTables[Index].u.Long = 0;
+
+            Status = STATUS_NO_MEMORY;
+            break;
+        }
+
+        /* Increment the number of pages */
+        ActualPages++;
+
+        ASSERT(WsIndex1 == MiLocateWsle(SessionPte, WsList, Pfn->u1.WsIndex, FALSE));
+
+        WsIndex2 = WsList->FirstDynamic;
+
+        if (WsIndex2 > WsIndex1)
+        {
+            WsIndex2 = WsIndex1;
+        }
+        else
+        {
+            if (WsIndex2 != WsIndex1)
+                MiSwapWslEntries(WsIndex1, WsIndex2, &MmSessionSpace->Vm, FALSE);
+
+            WsList->FirstDynamic++;
+        }
+
+        MmSessionSpace->Wsle[WsIndex2].u1.e1.LockedInWs = 1;
+
         /* Move to the next PDE */
-        StartPde++;
+        Pde++;
         Index++;
     }
 
@@ -1824,13 +1889,13 @@ MiSessionCommitPageTables(
     ASSERT(ActualPages <= PageCount);
 
     /* Release the working set lock */
-    //MiUnlockWorkingSet(PsGetCurrentThread(), &MmSessionSpace->GlobalVirtualAddress->Vm);
+    MiUnlockWorkingSet(PsGetCurrentThread(), &MmSessionSpace->GlobalVirtualAddress->Vm);
 
     /* If we did at least one page... */
     if (ActualPages)
     {
         /* Update the performance counters! */
-        InterlockedExchangeAddSizeT(&MmSessionSpace->NonPageablePages, ActualPages);
+        InterlockedExchangeAddSizeT(&MmSessionSpace->NonPageablePages, ActualPages); // NonPagablePages
         InterlockedExchangeAddSizeT(&MmSessionSpace->CommittedPages, ActualPages);
     }
 
@@ -1839,12 +1904,13 @@ MiSessionCommitPageTables(
         ASSERT((SSIZE_T)(PageCount - ActualPages) >= 0);
         ASSERT(MmTotalCommittedPages >= (PageCount - ActualPages));
 
-        InterlockedExchangeAddSizeT(&MmTotalCommittedPages, ActualPages - PageCount);
+        InterlockedExchangeAddSizeT(&MmTotalCommittedPages, (ActualPages - PageCount));
         InterlockedExchangeAddSizeT(&MmResidentAvailablePages, (PageCount - ActualPages));
+        //InterlockedExchangeAddSizeT(&MmResTrack[73], PageCount - ActualPages);
     }
 
     /* Return status */
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 NTSTATUS

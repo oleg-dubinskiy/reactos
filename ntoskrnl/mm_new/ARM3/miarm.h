@@ -105,6 +105,8 @@ extern PMMPTE MiSessionLastPte;
 extern PVOID MmSessionBase;
 extern PVOID MiSessionSpaceEnd;
 
+#define HYDRA_PROCESS (PEPROCESS)1
+
 /* Assertions for session images, addresses, and PTEs */
 #define MI_IS_SESSION_IMAGE_ADDRESS(Address) \
     (((Address) >= MiSessionImageStart) && ((Address) < MiSessionImageEnd))
