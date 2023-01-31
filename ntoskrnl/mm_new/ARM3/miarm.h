@@ -2069,6 +2069,16 @@ MiFreeInPageSupportBlock(
     _In_ PMI_PAGE_SUPPORT_BLOCK Support
 );
 
+VOID
+NTAPI
+MiTrimPte(
+     _In_ PVOID VirtualAddress,
+     _Inout_ PMMPTE Pte,
+     _In_ PMMPFN Pfn,
+     _In_ PEPROCESS Process,
+     _In_ MMPTE NewPteContents
+);
+
 /* ARM3\pfnlist.c */
 PFN_NUMBER
 NTAPI

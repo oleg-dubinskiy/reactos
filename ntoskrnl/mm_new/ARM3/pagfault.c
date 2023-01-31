@@ -882,6 +882,18 @@ MiCopyOnWrite(
     return TRUE;
 }
 
+VOID
+NTAPI
+MiTrimPte(
+    _In_ PVOID VirtualAddress,
+    _Inout_ PMMPTE Pte,
+    _In_ PMMPFN Pfn,
+    _In_ PEPROCESS Process,
+    _In_ MMPTE NewPteContents)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 MiResolveDemandZeroFault(
