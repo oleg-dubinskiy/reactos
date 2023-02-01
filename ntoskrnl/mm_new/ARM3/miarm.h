@@ -571,7 +571,6 @@ extern SIZE_T MmSystemLockPagesCount;
 extern ULONG MmUnusedSubsectionCount;
 extern ULONG MmUnusedSubsectionCountPeak;
 extern SIZE_T MiUnusedSubsectionPagedPool;
-extern SIZE_T MmTotalCommitLimit;
 extern PFN_NUMBER MmResidentAvailablePages;
 
 #if (_MI_PAGING_LEVELS <= 3)

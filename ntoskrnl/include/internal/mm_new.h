@@ -15,6 +15,7 @@ extern MMSUPPORT MmSystemCacheWs;
 extern PFN_NUMBER MmAvailablePages;
 extern SIZE_T MmTotalCommittedPages;
 extern SIZE_T MmPeakCommitment;
+extern SIZE_T MmTotalCommitLimit;
 
 /* Although Microsoft says this isn't hardcoded anymore, they won't be able to change it.
    Stuff depends on it
@@ -593,6 +594,13 @@ MmCopyVirtualMemory(
     _In_ SIZE_T BufferSize,
     _In_ KPROCESSOR_MODE PreviousMode,
     _Out_ PSIZE_T ReturnSize
+);
+
+/* ARM3\workset.c */
+VOID
+NTAPI
+MmQuerySystemCacheWorkingSetInformation(
+    _Out_ PSYSTEM_FILECACHE_INFORMATION OutSci
 );
 
 /* ARM3\zeropage.c */

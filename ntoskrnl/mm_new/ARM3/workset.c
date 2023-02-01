@@ -38,6 +38,7 @@ extern PVOID MmPagedPoolStart;
 extern PVOID MmPagedPoolEnd;
 extern PVOID MmSpecialPoolStart;
 extern PVOID MmSpecialPoolEnd;
+extern ULONG MmStandbyRePurposed;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -2346,6 +2347,42 @@ MiInitializeWorkingSetList(
 
     MmWorkingSetList->LastInitializedWsle = (WsleCount - 1);
     DPRINT1("MiInitializeWorkingSetList: FirstFree %X, LastInitializedWsle %X\n", MmWorkingSetList->FirstFree, MmWorkingSetList->LastInitializedWsle);
+}
+
+VOID
+NTAPI
+MmQuerySystemCacheWorkingSetInformation(
+    _Out_ SYSTEM_FILECACHE_INFORMATION* OutSci)
+{
+    PETHREAD Thread = PsGetCurrentThread();
+
+    DPRINT("MmQuerySystemCacheWorkingSetInformation: OutSci %p\n", OutSci);
+
+    ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+
+    OutSci->Flags = 0;
+
+    MiLockWorkingSet(Thread, &MmSystemCacheWs);
+
+    OutSci->CurrentSize = (MmSystemCacheWs.WorkingSetSize * PAGE_SIZE);
+    OutSci->PeakSize = (MmSystemCacheWs.PeakWorkingSetSize * PAGE_SIZE);
+
+    OutSci->MinimumWorkingSet = MmSystemCacheWs.MinimumWorkingSetSize;
+    OutSci->MaximumWorkingSet = MmSystemCacheWs.MaximumWorkingSetSize;
+
+    OutSci->CurrentSizeIncludingTransitionInPages = (MmSystemCacheWs.WorkingSetSize + MmTransitionSharedPages);
+    OutSci->PeakSizeIncludingTransitionInPages = MmTransitionSharedPagesPeak;
+
+    OutSci->PageFaultCount = MmSystemCacheWs.PageFaultCount;
+    OutSci->TransitionRePurposeCount = MmStandbyRePurposed;
+
+    if (MmSystemCacheWs.Flags.MinimumWorkingSetHard)
+        OutSci->Flags |= 4;
+
+    if (MmSystemCacheWs.Flags.MaximumWorkingSetHard)
+        OutSci->Flags |= 1;
+
+    MiUnlockWorkingSet(Thread, &MmSystemCacheWs);
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
