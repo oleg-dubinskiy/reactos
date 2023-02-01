@@ -285,6 +285,36 @@ Exit:
 }
 
 VOID
+NTAPI
+MiCheckWsleHash(
+    _In_ PMMWSL WsList)
+{
+    PMMWSLE Wsle;
+    PMMWSLE_HASH Table;
+    ULONG Count = 0;
+    ULONG ix;
+
+    Wsle = WsList->Wsle;
+
+    for (ix = 0; ix < WsList->HashTableSize; ix++)
+    {
+        Table = WsList->HashTable;
+        if (!Table[ix].Key)
+            continue;
+
+        Count++;
+
+        ASSERT(Table[ix].Key == (PVOID)(Wsle[Table[ix].Index].u1.Long & (0xFFFFF000 | 1)));
+    }
+
+    if (Count > WsList->NonDirectCount)
+    {
+        DPRINT1("MiCheckWsleHash: Count %X, NonDirectCount %X\n", Count, WsList->NonDirectCount);
+        DbgBreakPoint();
+    }
+}
+
+VOID
 FASTCALL 
 MiInsertWsleHash(
     _In_ ULONG WsIndex,
