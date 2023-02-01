@@ -23,6 +23,8 @@ ULONG MmSystemCachePage;
 ULONG MmSystemCodePage;
 ULONG MmSystemDriverPage;
 
+ULONG MmNumberOfInserts;
+
 extern PVOID MmHyperSpaceEnd;
 extern LIST_ENTRY MmWorkingSetExpansionHead;
 extern ULONG MmTransitionSharedPages;
@@ -315,13 +317,194 @@ MiCheckWsleHash(
 }
 
 VOID
-FASTCALL 
+FASTCALL
 MiInsertWsleHash(
-    _In_ ULONG WsIndex,
+    _In_ ULONG InWsIndex,
     _In_ PMMSUPPORT WorkSet)
 {
-    DPRINT("MiInsertWsleHash: WsIndex %p, WorkSet %p\n", WsIndex, WorkSet);
-    UNIMPLEMENTED_DBGBREAK();
+    PMMWSL WsList;
+    PMMWSLE Wsle;
+    MMWSLE WsleContents;
+    PMMWSLE_HASH Table;
+    PMMWSLE_HASH TableEnd;
+    PMMWSLE_HASH HashEntry;
+    PMMWSLE_HASH OldHashEntry = NULL;
+    ULONG Count;
+    ULONG HashIndex;
+    ULONG WsIndex;
+    ULONG OldWsIndex;
+    ULONG Accessed = 0;
+    ULONG Tries = 0;
+    ULONG ix;
+    BOOLEAN FindOldEntry = TRUE;
+
+    WsList = WorkSet->VmWorkingSetList;
+    Wsle = WsList->Wsle;
+
+    DPRINT("MiInsertWsleHash: %X, %p, %p, %p\n", InWsIndex, WorkSet, WsList, Wsle);
+
+    ASSERT(Wsle[InWsIndex].u1.e1.Valid == 1);
+    ASSERT(Wsle[InWsIndex].u1.e1.Direct != 1);
+    ASSERT(Wsle[InWsIndex].u1.e1.Hashed == 0);
+
+    if (!WsList->HashTable)
+        return;
+
+    MmNumberOfInserts++;
+
+    Count = WsList->HashTableSize;
+    HashIndex = ((Wsle[InWsIndex].u1.e1.VirtualPageNumber * 4) % (Count - 1));
+
+    Table = WsList->HashTable;
+    TableEnd = &Table[Count];
+
+    if (Count < (WsList->NonDirectCount + (Count / 16) + 10))
+    {
+        if ((PVOID)&TableEnd[0x400] <= WsList->HighestPermittedHashAddress)
+            WorkSet->Flags.GrowWsleHash = 1;
+
+        if (Count < WsList->NonDirectCount + (Count / 16))
+        {
+            if (Count < 16)
+                ix = Count;
+            else
+                ix = 16;
+
+            WsleContents.u1.Long = 0;
+
+            HashEntry = &Table[HashIndex];
+            if (!HashEntry->Key)
+                goto Finish;
+
+            /* Looking for the oldest hash entry */
+
+            while (TRUE)
+            {
+                WsIndex = HashEntry->Index;
+
+                ASSERT(Wsle[WsIndex].u1.e1.Direct == 0);
+                ASSERT(Wsle[WsIndex].u1.e1.Valid == 1);
+
+                ASSERT(HashEntry->Key == (PVOID)(Wsle[WsIndex].u1.Long & (0xFFFFF000 | 1)));
+
+                if (!OldHashEntry)
+                {
+                    WsleContents.u1.Long = Wsle[WsIndex].u1.Long;
+                    Accessed = (MiAddressToPte(HashEntry->Key))->u.Hard.Accessed;
+
+                    if (WsIndex < WsList->FirstDynamic)
+                        FindOldEntry = FALSE;
+
+                    OldHashEntry = HashEntry;
+                }
+                else if (WsIndex < WsList->FirstDynamic)
+                {
+                    ;
+                }
+                else if (!FindOldEntry)
+                {
+                    WsleContents.u1.Long = Wsle[WsIndex].u1.Long;
+                    Accessed = (MiAddressToPte(HashEntry->Key))->u.Hard.Accessed;
+
+                    FindOldEntry = TRUE;
+                    OldHashEntry = HashEntry;
+                }
+                else if (Wsle[WsIndex].u1.e1.Age > WsleContents.u1.e1.Age)
+                {
+                    WsleContents.u1.Long = Wsle[WsIndex].u1.Long;
+                    Accessed = (MiAddressToPte(HashEntry->Key))->u.Hard.Accessed;
+
+                    FindOldEntry = TRUE;
+                    OldHashEntry = HashEntry;
+                }
+                else if (Wsle[WsIndex].u1.e1.Age == WsleContents.u1.e1.Age &&
+                         Accessed &&
+                         !(MiAddressToPte(HashEntry->Key)->u.Hard.Accessed))
+                {
+                    WsleContents.u1.Long = Wsle[WsIndex].u1.Long;
+                    Accessed = 0;
+
+                    FindOldEntry = TRUE;
+                    OldHashEntry = HashEntry;
+                }
+
+                ix--;
+                if (!ix)
+                {
+                    OldWsIndex = OldHashEntry->Index;
+
+                    if (FindOldEntry)
+                    {
+                        if (MiFreeWsle(OldWsIndex, WorkSet, MiAddressToPte(OldHashEntry->Key)))
+                        {
+                            HashEntry = OldHashEntry;
+                            ASSERT(HashEntry->Key == 0);
+                        }
+                        else
+                        {
+                            ASSERT(Wsle[OldWsIndex].u1.e1.Hashed == 1);
+                            Wsle[OldWsIndex].u1.e1.Hashed == 0;
+
+                            HashEntry = OldHashEntry;
+                            OldHashEntry->Key = 0;
+                        }
+                    }
+
+                    goto Finish;
+                }
+
+                HashEntry++;
+
+                if (HashEntry >= TableEnd)
+                {
+                    HashEntry = Table;
+
+                    ASSERT(Tries == 0);
+                    Tries = 1;
+                }
+
+                if (!HashEntry->Key)
+                    goto Finish;
+            }
+        }
+    }
+
+    Tries = 0;
+    HashEntry = &Table[HashIndex];
+
+    while (HashEntry->Key)
+    {
+        HashEntry++;
+
+        if (HashEntry >= TableEnd)
+        {
+            HashEntry = &Table[0];
+
+            ASSERT(Tries == 0);
+            Tries = 1;
+        }
+
+        if (HashEntry == &Table[HashIndex])
+        {
+            ASSERT(Wsle[InWsIndex].u1.e1.Hashed == 0);
+            return;
+        }
+    }
+
+Finish:
+
+    ASSERT(HashEntry->Key == 0);
+    ASSERT(HashEntry < TableEnd);
+
+    Wsle[InWsIndex].u1.e1.Hashed = 1;
+
+    HashEntry->Key = (PVOID)(Wsle[InWsIndex].u1.Long & (0xFFFFF000 | 1));
+    HashEntry->Index = InWsIndex;
+
+    if (!(MmNumberOfInserts % 1000))
+        MiCheckWsleHash(WsList);
+
+    return;
 }
 
 VOID
