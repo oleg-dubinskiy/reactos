@@ -5100,17 +5100,22 @@ Return Value:
 
                 if (FatIndexBitSize == 32) {
 
-#ifndef __REACTOS__
-#ifdef _MSC_VER
-#pragma warning( suppress: 4213 )
-#endif
+                  #ifndef __REACTOS__
+
+                    #ifdef _MSC_VER
+                    #pragma warning( suppress: 4213 )
+                    #endif
+
                     FatEntry = *((PULONG)FatBuffer)++;
+
+                  #else
+
+                    FatEntry = *(PULONG)FatBuffer;
+                    FatBuffer += 2;
+
+                  #endif
+
                     FatEntry = FatEntry & FAT32_ENTRY_MASK;
-#else
-                    FatEntry = *FatBuffer;
-                    FatBuffer += 1;
-                    FatEntry = FatEntry & FAT32_ENTRY_MASK;
-#endif
 
                 } else {
 
