@@ -196,6 +196,18 @@ MiEliminateWorkingSetEntry(
     return TRUE;
 }
 
+ULONG
+NTAPI
+MiFreeWsle(
+    IN ULONG WsIndex,
+    IN PMMSUPPORT WorkSet,
+    IN PMMPTE Pte)
+{
+    DPRINT1("MiFreeWsle: WsIndex %p, WorkSet %p, Pte %p\n", WsIndex, WorkSet, Pte);
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
 VOID
 NTAPI
 MiDoReplacement(
