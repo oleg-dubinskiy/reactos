@@ -724,15 +724,9 @@ QSI_DEF(SystemPerformanceInformation)
 
     Spi->AvailablePages = (ULONG)MmAvailablePages;
     Spi->CommittedPages = (ULONG)MmTotalCommittedPages;
-
-    /*
-     *  Add up the full system total + pagefile.
-     *  All this make Taskmgr happy but not sure it is the right numbers.
-     *  This too, fixes some of GlobalMemoryStatusEx numbers.
-     */
-    Spi->CommitLimit = MmNumberOfPhysicalPages + MiFreeSwapPages + MiUsedSwapPages;
-
+    Spi->CommitLimit = MmTotalCommitLimit;
     Spi->PeakCommitment = MmPeakCommitment;
+
     Spi->PageFaultCount = 0; /* FIXME */
     Spi->CopyOnWriteCount = 0; /* FIXME */
     Spi->TransitionCount = 0; /* FIXME */
@@ -1469,28 +1463,32 @@ QSI_DEF(SystemVdmBopInformation)
 QSI_DEF(SystemFileCacheInformation)
 {
     SYSTEM_FILECACHE_INFORMATION *Sci = (SYSTEM_FILECACHE_INFORMATION *) Buffer;
+    SYSTEM_FILECACHE_INFORMATION sci;
 
     *ReqSize = sizeof(SYSTEM_FILECACHE_INFORMATION);
 
     if (Size < *ReqSize)
     {
+        DPRINT1("NtQuerySystemInformation: (SystemFileCacheInformation) STATUS_INFO_LENGTH_MISMATCH %X\n", Size);
         return STATUS_INFO_LENGTH_MISMATCH;
     }
 
     RtlZeroMemory(Sci, sizeof(SYSTEM_FILECACHE_INFORMATION));
 
-    /* Return the Byte size not the page size. */
-    Sci->CurrentSize =
-        MiMemoryConsumers[MC_CACHE].PagesUsed * PAGE_SIZE;
-    Sci->PeakSize =
-            MiMemoryConsumers[MC_CACHE].PagesUsed * PAGE_SIZE; /* FIXME */
-    /* Taskmgr multiplies this one by page size right away */
-    Sci->CurrentSizeIncludingTransitionInPages =
-        MiMemoryConsumers[MC_CACHE].PagesUsed; /* FIXME: Should be */
-    /* system working set and standby pages. */
-    Sci->PageFaultCount = 0; /* FIXME */
-    Sci->MinimumWorkingSet = 0; /* FIXME */
-    Sci->MaximumWorkingSet = 0; /* FIXME */
+    MmQuerySystemCacheWorkingSetInformation(&sci);
+
+    Sci->Flags = sci.Flags;
+    Sci->CurrentSize = sci.CurrentSize;
+    Sci->PeakSize = sci.PeakSize;
+
+    Sci->MinimumWorkingSet = sci.MinimumWorkingSet;
+    Sci->MaximumWorkingSet = sci.MaximumWorkingSet;
+
+    Sci->CurrentSizeIncludingTransitionInPages = sci.CurrentSizeIncludingTransitionInPages;
+    Sci->PeakSizeIncludingTransitionInPages = sci.PeakSizeIncludingTransitionInPages;
+
+    Sci->TransitionRePurposeCount = sci.TransitionRePurposeCount;
+    Sci->PageFaultCount = sci.PageFaultCount;
 
     return STATUS_SUCCESS;
 }
