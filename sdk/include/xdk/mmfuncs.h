@@ -325,7 +325,11 @@ MmMapLockedPagesSpecifyCache(
   _In_ __drv_strictTypeMatch(__drv_typeCond) MEMORY_CACHING_TYPE CacheType,
   _In_opt_ PVOID RequestedAddress,
   _In_ ULONG BugCheckOnFailure,
+#if (NTDDI_VERSION >= NTDDI_WIN8)
   _In_ ULONG Priority);
+#else
+  _In_ MM_PAGE_PRIORITY Priority);
+#endif
 
 _IRQL_requires_max_(APC_LEVEL)
 NTKERNELAPI
