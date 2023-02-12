@@ -2732,7 +2732,11 @@ ClasspIsMediaChangeDisabledDueToHardwareLimitation(
     PSTORAGE_DEVICE_DESCRIPTOR deviceDescriptor = FdoExtension->DeviceDescriptor;
     OBJECT_ATTRIBUTES objectAttributes = {0};
     HANDLE serviceKey = NULL;
+  #ifndef __REACTOS__
     RTL_QUERY_REGISTRY_TABLE parameters[2] = {0};
+  #else
+    RTL_QUERY_REGISTRY_TABLE parameters[2] = {{0}};
+  #endif
 
     UNICODE_STRING deviceUnicodeString;
     ANSI_STRING deviceString;
@@ -2961,7 +2965,11 @@ ClasspIsMediaChangeDisabledForClass(
     OBJECT_ATTRIBUTES objectAttributes = {0};
     HANDLE serviceKey = NULL;
     HANDLE parametersKey = NULL;
+  #ifndef __REACTOS__
     RTL_QUERY_REGISTRY_TABLE parameters[3] = {0};
+  #else
+    RTL_QUERY_REGISTRY_TABLE parameters[3] = {{0}};
+  #endif
 
     UNICODE_STRING paramStr;
 

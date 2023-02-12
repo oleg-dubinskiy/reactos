@@ -79,7 +79,11 @@ ClassGetDeviceParameter(
     )
 {
     NTSTATUS                 status;
+  #ifndef __REACTOS__
     RTL_QUERY_REGISTRY_TABLE queryTable[2] = {0};
+  #else
+    RTL_QUERY_REGISTRY_TABLE queryTable[2] = {{0}};
+  #endif
     HANDLE                   deviceParameterHandle = NULL;
     HANDLE                   deviceSubkeyHandle = NULL;
     ULONG                    defaultParameterValue;
@@ -6045,7 +6049,11 @@ Arguments:
     PVOID senseData = NULL;
     PIO_WORKITEM workItem = NULL;
     ULONG senseBufferSize = 0;
+  #ifndef __REACTOS__
     LARGE_INTEGER lba = {0};
+  #else
+    LARGE_INTEGER lba = {{0}};
+  #endif
 
     if (!commonExtension->IsFdo) {
         return;
@@ -8197,7 +8205,11 @@ ClasspGetHwFirmwareInfo(
     PSTORAGE_HW_FIRMWARE_INFO firmwareInfo = NULL;
     PSTORAGE_HW_FIRMWARE_INFO_QUERY query = NULL;
 
-    IO_STATUS_BLOCK ioStatus = {0};
+  #ifndef __REACTOS__
+    IO_STATUS_BLOCK ioStatus = { 0 };
+  #else
+    IO_STATUS_BLOCK ioStatus = {{ 0 }};
+  #endif
     ULONG dataLength = sizeof(STORAGE_HW_FIRMWARE_INFO);
     ULONG iteration = 1;
 
