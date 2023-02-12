@@ -1148,7 +1148,11 @@ Routine Description:
     {
         KEVENT event;
         LARGE_INTEGER diskOffset;
+      #ifndef __REACTOS__
         IO_STATUS_BLOCK ioStatus = { 0 };
+      #else
+        IO_STATUS_BLOCK ioStatus = {{ 0 }};
+      #endif
         PIRP irp;
 
         KeInitializeEvent(&event, NotificationEvent, FALSE);

@@ -96,7 +96,11 @@ Return Value:
         OBJECT_ATTRIBUTES objectAttributes = {0};
         HANDLE diskKey;
 
+      #ifndef __REACTOS__
         RTL_QUERY_REGISTRY_TABLE queryTable[2] = { 0 };
+      #else
+        RTL_QUERY_REGISTRY_TABLE queryTable[2] = {{ 0 }};
+      #endif
 
         status = IoOpenDeviceRegistryKey(PhysicalDeviceObject,
                                          PLUGPLAY_REGKEY_DEVICE,
@@ -484,7 +488,11 @@ Return Value:
     {
         PIRP irp;
         KEVENT event;
+      #ifndef __REACTOS__
         IO_STATUS_BLOCK statusBlock = { 0 };
+      #else
+        IO_STATUS_BLOCK statusBlock = {{ 0 }};
+      #endif
 
         KeInitializeEvent(&event, SynchronizationEvent, FALSE);
 
@@ -958,7 +966,11 @@ Return Value:
     {
         PIRP irp;
         KEVENT event;
+      #ifndef __REACTOS__
         IO_STATUS_BLOCK statusBlock = { 0 };
+      #else
+        IO_STATUS_BLOCK statusBlock = {{ 0 }};
+      #endif
 
         KeInitializeEvent(&event, SynchronizationEvent, FALSE);
 

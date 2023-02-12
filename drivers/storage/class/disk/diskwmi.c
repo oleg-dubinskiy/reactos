@@ -524,7 +524,11 @@ Return Value:
     ULONG availableBufferSize;
     KEVENT event;
     PIRP irp;
+  #ifndef __REACTOS__
     IO_STATUS_BLOCK ioStatus = { 0 };
+  #else
+    IO_STATUS_BLOCK ioStatus = {{ 0 }};
+  #endif
     SCSI_REQUEST_BLOCK srb = {0};
     LARGE_INTEGER startingOffset;
     ULONG length;
@@ -858,7 +862,11 @@ DiskSendFailurePredictIoctl(
 {
     KEVENT event;
     PDEVICE_OBJECT deviceObject;
+  #ifndef __REACTOS__
     IO_STATUS_BLOCK ioStatus = { 0 };
+  #else
+    IO_STATUS_BLOCK ioStatus = {{ 0 }};
+  #endif
     PIRP irp;
     NTSTATUS status;
 

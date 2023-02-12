@@ -2310,7 +2310,11 @@ Return Value:
     UCHAR scsiStatus = 0;
     UCHAR senseBufferLength = 0;
     PVOID senseBuffer = NULL;
+  #ifndef __REACTOS__
     CDB noOp = {0};
+  #else
+    CDB noOp = {{0}};
+  #endif
 
     //
     // Get relevant fields from SRB
@@ -4300,7 +4304,11 @@ Return Value:
 
     PSTORAGE_PREDICT_FAILURE checkFailure;
     STORAGE_FAILURE_PREDICT_STATUS diskSmartStatus;
+  #ifndef __REACTOS__
     IO_STATUS_BLOCK ioStatus = { 0 };
+  #else
+    IO_STATUS_BLOCK ioStatus = {{ 0 }};
+  #endif
     KEVENT event;
 
     //
@@ -5572,7 +5580,11 @@ Return Value:
 
     PGETVERSIONINPARAMS versionParams;
     PSRB_IO_CONTROL srbControl;
+  #ifndef __REACTOS__
     IO_STATUS_BLOCK ioStatus = { 0 };
+  #else
+    IO_STATUS_BLOCK ioStatus = {{ 0 }};
+  #endif
     PUCHAR buffer;
 
     //
@@ -5695,7 +5707,11 @@ Return Value:
 
     PSENDCMDINPARAMS cmdInParameters = ((PSENDCMDINPARAMS)Irp->AssociatedIrp.SystemBuffer);
     PSRB_IO_CONTROL srbControl;
+  #ifndef __REACTOS__
     IO_STATUS_BLOCK ioStatus = { 0 };
+  #else
+    IO_STATUS_BLOCK ioStatus = {{ 0 }};
+  #endif
     ULONG controlCode = 0;
     PUCHAR buffer;
     PIRP irp2;
@@ -5922,7 +5938,11 @@ Return Value:
 
     PSENDCMDINPARAMS cmdInParameters = ((PSENDCMDINPARAMS)Irp->AssociatedIrp.SystemBuffer);
     PSRB_IO_CONTROL srbControl;
+  #ifndef __REACTOS__
     IO_STATUS_BLOCK ioStatus = { 0 };
+  #else
+    IO_STATUS_BLOCK ioStatus = {{ 0 }};
+  #endif
     ULONG controlCode = 0;
     PUCHAR buffer;
     PIRP irp2;
