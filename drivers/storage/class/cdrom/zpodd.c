@@ -420,7 +420,11 @@ Return Value:
     KEVENT              event;
     NTSTATUS            status = STATUS_SUCCESS;
     PDEVICE_OBJECT      targetDevice = NULL;
+  #ifndef __REACTOS__
     IO_STATUS_BLOCK     ioStatus = {0};
+  #else
+    IO_STATUS_BLOCK     ioStatus = {{0}};
+  #endif
     PIO_STACK_LOCATION  irpStack = NULL;
 
     PAGED_CODE();
@@ -514,7 +518,11 @@ Return Value:
 {
     NTSTATUS            status = STATUS_SUCCESS;
     STORAGE_IDLE_POWER  idlePower = {0};
+  #ifndef __REACTOS__
     IO_STATUS_BLOCK     ioStatus = {0};
+  #else
+    IO_STATUS_BLOCK     ioStatus = {{0}};
+  #endif
     PIRP                irp = NULL;
     KEVENT              event;
 
@@ -627,7 +635,11 @@ Return Value:
 {
     NTSTATUS                status = STATUS_SUCCESS;
     PIRP                    irp = NULL;
+  #ifndef __REACTOS__
     IO_STATUS_BLOCK         ioStatus = {0};
+  #else
+    IO_STATUS_BLOCK         ioStatus = {{0}};
+  #endif
     KEVENT                  event;
 
     RtlZeroMemory(PowerupReason, sizeof (STORAGE_IDLE_POWERUP_REASON));

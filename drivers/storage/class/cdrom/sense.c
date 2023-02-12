@@ -1444,7 +1444,11 @@ SenseInfoLogError(
     ULONG                totalSize = 0;
     ULONG                senseBufferSize = 0;
     IO_ERROR_LOG_PACKET  staticErrLogEntry = {0};
+  #ifndef __REACTOS__
     CDROM_ERROR_LOG_DATA staticErrLogData = {0};
+  #else
+    CDROM_ERROR_LOG_DATA staticErrLogData = {{{0}}};
+  #endif
 
     // Calculate the total size of the error log entry.
     // add to totalSize in the order that they are used.

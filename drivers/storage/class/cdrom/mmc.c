@@ -424,7 +424,11 @@ NOTE: does not handle case where more than 65000 bytes are returned,
 --*/
 {
     NTSTATUS                    status = STATUS_SUCCESS;
+  #ifndef __REACTOS__
     GET_CONFIGURATION_HEADER    header = {0};  // eight bytes, not a lot
+  #else
+    GET_CONFIGURATION_HEADER    header = {{0}};  // eight bytes, not a lot
+  #endif
     PGET_CONFIGURATION_HEADER   buffer = NULL;
     ULONG                       returned = 0;
     ULONG                       size = 0;

@@ -1601,7 +1601,11 @@ Return Value:
 
         // Flag the StartIo routine to update its state and hook in the error handler
         DeviceExtension->DeviceAdditionalData.Mmc.UpdateState = CdromMmcUpdateRequired;
+  #ifndef __REACTOS__
         DeviceExtension->DeviceAdditionalData.ErrorHandler = DeviceErrorHandlerForMmc;
+  #else
+        DeviceExtension->DeviceAdditionalData.ErrorHandler = (PVOID)DeviceErrorHandlerForMmc;
+  #endif
 
         SET_FLAG(DeviceExtension->DeviceFlags, DEV_SAFE_START_UNIT);
 
@@ -1762,7 +1766,11 @@ Return Value:
         // own for a REPORT_KEY command.  It may also lose the AGIDs that
         // it has given, which will result in DVD playback failures.
         // This routine will just do what it can...
+  #ifndef __REACTOS__
         DeviceExtension->DeviceAdditionalData.ErrorHandler = DeviceErrorHandlerForHitachiGD2000;
+  #else
+        DeviceExtension->DeviceAdditionalData.ErrorHandler = (PVOID)DeviceErrorHandlerForHitachiGD2000;
+  #endif
 
         // this drive may require START_UNIT commands to spin
         // the drive up when it's spun itself down.
@@ -2163,7 +2171,11 @@ Return Value:
     // and set the "size" local variable to total GetConfig data size available.
     // NOTE: This will exit this function in some error paths.
     {
+  #ifndef __REACTOS__
         GET_CONFIGURATION_HEADER    localHeader = {0};
+  #else
+        GET_CONFIGURATION_HEADER    localHeader = {{0}};
+  #endif
         ULONG                       usable = 0;
 
         status = DeviceGetConfiguration(DeviceExtension->Device,

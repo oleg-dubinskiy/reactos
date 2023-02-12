@@ -2194,8 +2194,11 @@ Return Value:
     PSTORAGE_DEVICE_DESCRIPTOR  deviceDescriptor = DeviceExtension->DeviceDescriptor;
     WDFKEY                      wdfKey;
     HANDLE                      serviceKey = NULL;
+  #ifndef __REACTOS__
     RTL_QUERY_REGISTRY_TABLE    parameters[2] = {0};
-
+  #else
+    RTL_QUERY_REGISTRY_TABLE    parameters[2] = {{0}};
+  #endif
     UNICODE_STRING              deviceUnicodeString = {0};
     ANSI_STRING                 deviceString = {0};
     ULONG                       mediaChangeNotificationDisabled = 0;
@@ -3024,7 +3027,7 @@ Return Value:
 
     status = WdfRequestRetrieveInputBuffer(Request,
                                            sizeof(PREVENT_MEDIA_REMOVAL),
-                                           &mediaRemoval,
+                                           (PVOID *)&mediaRemoval,
                                            NULL);
 
     if (NT_SUCCESS(status))
