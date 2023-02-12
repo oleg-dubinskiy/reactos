@@ -238,6 +238,9 @@ ScsiPortCompleteRequest(IN PVOID HwDeviceExtension,
     PSCSI_PORT_LUN_EXTENSION LunExtension;
     PSCSI_REQUEST_BLOCK_INFO SrbInfo;
     PLIST_ENTRY ListEntry;
+    UINT8 pathId;
+    PSCSI_BUS_INFO bus;
+    PLIST_ENTRY lunEntry;
 
     DPRINT("ScsiPortCompleteRequest() called\n");
 
@@ -246,12 +249,12 @@ ScsiPortCompleteRequest(IN PVOID HwDeviceExtension,
                                         MiniPortDeviceExtension);
 
     /* Go through all buses */
-    for (UINT8 pathId = 0; pathId < DeviceExtension->NumberOfBuses; pathId++)
+    for (pathId = 0; pathId < DeviceExtension->NumberOfBuses; pathId++)
     {
-        PSCSI_BUS_INFO bus = &DeviceExtension->Buses[pathId];
+        bus = &DeviceExtension->Buses[pathId];
 
         /* Go through all logical units */
-        for (PLIST_ENTRY lunEntry = bus->LunsListHead.Flink;
+        for (lunEntry = bus->LunsListHead.Flink;
              lunEntry != &bus->LunsListHead;
              lunEntry = lunEntry->Flink)
         {
@@ -720,7 +723,7 @@ SpiAllocateCommonBuffer(PSCSI_PORT_DEVICE_EXTENSION DeviceExtension, ULONG NonCa
     else
     {
         /* Perform a full request since we have a DMA adapter*/
-        CommonBuffer = HalAllocateCommonBuffer(DeviceExtension->AdapterObject,
+        CommonBuffer = HalAllocateCommonBuffer((PDMA_ADAPTER)DeviceExtension->AdapterObject,
             CommonBufferLength,
             &DeviceExtension->PhysicalAddress,
             FALSE );
@@ -854,12 +857,14 @@ ScsiPortInitialize(
     NTSTATUS Status;
     ULONG MaxBus;
     PCI_SLOT_NUMBER SlotNumber;
-
     PDEVICE_OBJECT PortDeviceObject;
     UNICODE_STRING DeviceName;
     PIO_SCSI_CAPABILITIES PortCapabilities;
-
     PCM_RESOURCE_LIST ResourceList;
+    PSCSI_PORT_DRIVER_EXTENSION driverExtension;
+    PDEVICE_OBJECT LowerPDO;
+    SIZE_T BusConfigSize;
+    UINT8 pathId;
 
     DPRINT ("ScsiPortInitialize() called!\n");
 
@@ -872,8 +877,6 @@ ScsiPortInitialize(
     {
         return STATUS_REVISION_MISMATCH;
     }
-
-    PSCSI_PORT_DRIVER_EXTENSION driverExtension;
 
     // ScsiPortInitialize may be called multiple times by the same driver
     driverExtension = IoGetDriverObjectExtension(DriverObject, HwInitializationData->HwInitialize);
@@ -1174,7 +1177,7 @@ CreatePortConfig:
         /* Construct a resource list */
         ResourceList = SpiConfigToResource(DeviceExtension, PortConfig);
 
-        PDEVICE_OBJECT LowerPDO = NULL;
+        LowerPDO = NULL;
 
         Status = IoReportDetectedDevice(DriverObject,
                                         HwInitializationData->AdapterInterfaceType,
@@ -1216,8 +1219,8 @@ CreatePortConfig:
         DeviceExtension->MultipleReqsPerLun = PortConfig->MultipleRequestPerLu;
 
         /* Initialize bus scanning information */
-        size_t BusConfigSize = DeviceExtension->NumberOfBuses * sizeof(*DeviceExtension->Buses);
-        DeviceExtension->Buses = ExAllocatePoolZero(NonPagedPool, BusConfigSize, TAG_SCSIPORT);
+        BusConfigSize = DeviceExtension->NumberOfBuses * sizeof(*DeviceExtension->Buses);
+        DeviceExtension->Buses = ExAllocatePoolWithTag(NonPagedPool, BusConfigSize, TAG_SCSIPORT);
         if (!DeviceExtension->Buses)
         {
             DPRINT1("Out of resources!\n");
@@ -1225,8 +1228,10 @@ CreatePortConfig:
             break;
         }
 
+        RtlZeroMemory(DeviceExtension->Buses, BusConfigSize);
+
         // initialize bus data
-        for (UINT8 pathId = 0; pathId < DeviceExtension->NumberOfBuses; pathId++)
+        for (pathId = 0; pathId < DeviceExtension->NumberOfBuses; pathId++)
         {
             DeviceExtension->Buses[pathId].BusIdentifier =
                 DeviceExtension->PortConfig->InitiatorBusId[pathId];
@@ -2096,7 +2101,7 @@ SpiAdapterControl(PDEVICE_OBJECT DeviceObject,
             break;
 
         ScatterGatherList->Length = Srb->DataTransferLength - TotalLength;
-        ScatterGatherList->PhysicalAddress = IoMapTransfer(DeviceExtension->AdapterObject,
+        ScatterGatherList->PhysicalAddress = IoMapTransfer((PDMA_ADAPTER)DeviceExtension->AdapterObject,
                                                            Irp->MdlAddress,
                                                            MapRegisterBase,
                                                            DataVA + TotalLength,
@@ -2239,6 +2244,10 @@ ScsiPortIoTimer(PDEVICE_OBJECT DeviceObject,
     PSCSI_PORT_DEVICE_EXTENSION DeviceExtension;
     PSCSI_PORT_LUN_EXTENSION LunExtension;
     PIRP Irp;
+    UINT8 pathId;
+    PSCSI_BUS_INFO bus;
+    PLIST_ENTRY lunEntry;
+    RESETBUS_PARAMS ResetParams;
 
     DPRINT("ScsiPortIoTimer()\n");
 
@@ -2271,11 +2280,11 @@ ScsiPortIoTimer(PDEVICE_OBJECT DeviceObject,
     }
 
     /* Per-Lun scanning of timeouts is needed... */
-    for (UINT8 pathId = 0; pathId < DeviceExtension->NumberOfBuses; pathId++)
+    for (pathId = 0; pathId < DeviceExtension->NumberOfBuses; pathId++)
     {
-        PSCSI_BUS_INFO bus = &DeviceExtension->Buses[pathId];
+        bus = &DeviceExtension->Buses[pathId];
 
-        for (PLIST_ENTRY lunEntry = bus->LunsListHead.Flink;
+        for (lunEntry = bus->LunsListHead.Flink;
              lunEntry != &bus->LunsListHead;
              lunEntry = lunEntry->Flink)
         {
@@ -2304,8 +2313,6 @@ ScsiPortIoTimer(PDEVICE_OBJECT DeviceObject,
             }
             else if (LunExtension->RequestTimeout == 0)
             {
-                RESETBUS_PARAMS ResetParams;
-
                 LunExtension->RequestTimeout = -1;
 
                 DPRINT("Request timed out, resetting bus\n");

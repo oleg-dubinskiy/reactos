@@ -15,6 +15,7 @@ ScsiPortDispatchPower(
     _Inout_ PIRP Irp)
 {
     PSCSI_PORT_COMMON_EXTENSION comExt = DeviceObject->DeviceExtension;
+    NTSTATUS status;
 
     if (comExt->IsFDO)
     {
@@ -33,7 +34,7 @@ ScsiPortDispatchPower(
                 break;
         }
 
-        NTSTATUS status = Irp->IoStatus.Status;
+        status = Irp->IoStatus.Status;
         PoStartNextPowerIrp(Irp);
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
         return status;

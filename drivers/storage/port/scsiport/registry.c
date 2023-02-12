@@ -138,6 +138,8 @@ RegistryInitAdapterKey(
     ULONG BusNumber;
     ULONG UlongData;
     NTSTATUS Status;
+    PUNICODE_STRING driverNameU;
+    PWCHAR driverName;
 
     DPRINT("SpiBuildDeviceMap() called\n");
 
@@ -212,10 +214,10 @@ RegistryInitAdapterKey(
     }
 
     /* Set 'Driver' (REG_SZ) value */
-    PUNICODE_STRING driverNameU = &DeviceExtension->Common.DeviceObject->DriverObject->DriverName;
-    PWCHAR driverName = ExAllocatePoolWithTag(PagedPool,
-                                              driverNameU->Length + sizeof(UNICODE_NULL),
-                                              TAG_SCSIPORT);
+    driverNameU = &DeviceExtension->Common.DeviceObject->DriverObject->DriverName;
+    driverName = ExAllocatePoolWithTag(PagedPool,
+                                       driverNameU->Length + sizeof(UNICODE_NULL),
+                                       TAG_SCSIPORT);
     if (!driverName)
     {
         DPRINT("Failed to allocate driverName!\n");
@@ -362,10 +364,13 @@ RegistryInitLunKey(
     OBJECT_ATTRIBUTES objectAttributes;
     HANDLE targetKey;
     NTSTATUS status;
+    PWCHAR typeName;
+    PSCSI_PORT_DEVICE_EXTENSION portExt;
+    HANDLE busKey;
 
     // get the LUN's bus key
-    PSCSI_PORT_DEVICE_EXTENSION portExt = LunExtension->Common.LowerDevice->DeviceExtension;
-    HANDLE busKey = portExt->Buses[LunExtension->PathId].RegistryMapKey;
+    portExt = LunExtension->Common.LowerDevice->DeviceExtension;
+    busKey = portExt->Buses[LunExtension->PathId].RegistryMapKey;
 
     // create/open 'Target Id X' key
     swprintf(nameBuffer, L"Target Id %lu", LunExtension->TargetId);
@@ -421,7 +426,7 @@ RegistryInitLunKey(
     }
 
     // Set 'Type' (REG_SZ) value
-    PWCHAR typeName = (PWCHAR)GetPeripheralTypeW(&LunExtension->InquiryData);
+    typeName = (PWCHAR)GetPeripheralTypeW(&LunExtension->InquiryData);
     DPRINT("          Type = '%S'\n", typeName);
     RtlInitUnicodeString(&valueName, L"Type");
     status = ZwSetValueKey(LunExtension->RegistryMapKey,

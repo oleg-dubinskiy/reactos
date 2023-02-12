@@ -30,12 +30,11 @@ FdoSendInquiry(
     ULONG RetryCount = 0;
     SCSI_REQUEST_BLOCK Srb;
     PCDB Cdb;
-
-    DPRINT("FdoSendInquiry() called\n");
-
     PSCSI_PORT_LUN_EXTENSION LunExtension = DeviceObject->DeviceExtension;
     PSCSI_PORT_DEVICE_EXTENSION DeviceExtension =
         LunExtension->Common.LowerDevice->DeviceExtension;
+
+    DPRINT("FdoSendInquiry() called\n");
 
     InquiryBuffer = ExAllocatePoolWithTag(NonPagedPool, INQUIRYDATABUFFERSIZE, TAG_SCSIPORT);
     if (InquiryBuffer == NULL)
@@ -228,23 +227,31 @@ FdoScanAdapter(
 {
     NTSTATUS status;
     UINT32 totalLUNs = PortExtension->TotalLUCount;
+    PSCSI_BUS_INFO currentBus;
+    PSCSI_PORT_LUN_EXTENSION lunExt;
+    PDEVICE_OBJECT lunPDO;
+    PINQUIRYDATA InquiryData;
+    UINT8 pathId;
+    UINT8 targetId;
+    UINT8 lun;
+    BOOLEAN targetFound;
 
     DPRINT("FdoScanAdapter() called\n");
 
     /* Scan all buses */
-    for (UINT8 pathId = 0; pathId < PortExtension->NumberOfBuses; pathId++)
+    for (pathId = 0; pathId < PortExtension->NumberOfBuses; pathId++)
     {
         DPRINT("    Scanning bus/pathID %u\n", pathId);
 
         /* Get pointer to the scan information */
-        PSCSI_BUS_INFO currentBus = &PortExtension->Buses[pathId];
+        currentBus = &PortExtension->Buses[pathId];
 
         /* And send INQUIRY to every target */
-        for (UINT8 targetId = 0;
+        for (targetId = 0;
              targetId < PortExtension->PortConfig->MaximumNumberOfTargets;
              targetId++)
         {
-            BOOLEAN targetFound = FALSE;
+            targetFound = FALSE;
 
             /* TODO: Support scan bottom-up */
 
@@ -253,14 +260,10 @@ FdoScanAdapter(
                 continue;
 
             /* Scan all logical units */
-            for (UINT8 lun = 0; lun < PortExtension->MaxLunCount; lun++)
+            for (lun = 0; lun < PortExtension->MaxLunCount; lun++)
             {
                 // try to find an existing device
-                PSCSI_PORT_LUN_EXTENSION lunExt = GetLunByPath(PortExtension,
-                                                               pathId,
-                                                               targetId,
-                                                               lun);
-
+                lunExt = GetLunByPath(PortExtension, pathId, targetId, lun);
                 if (lunExt)
                 {
                     // check if the device still exists
@@ -287,7 +290,7 @@ FdoScanAdapter(
                 }
 
                 // create a new LUN device
-                PDEVICE_OBJECT lunPDO = PdoCreateLunDevice(PortExtension);
+                lunPDO = PdoCreateLunDevice(PortExtension);
                 if (!lunPDO)
                 {
                     continue;
@@ -310,7 +313,7 @@ FdoScanAdapter(
                 if (NT_SUCCESS(status))
                 {
                     /* Let's see if we really found a device */
-                    PINQUIRYDATA InquiryData = &lunExt->InquiryData;
+                    InquiryData = &lunExt->InquiryData;
 
                     /* Check if this device is unsupported */
                     if (InquiryData->DeviceTypeQualifier == DEVICE_QUALIFIER_NOT_SUPPORTED)
@@ -510,6 +513,13 @@ NTSTATUS
 FdoRemoveAdapter(
     _In_ PSCSI_PORT_DEVICE_EXTENSION DeviceExtension)
 {
+    WCHAR dosNameBuffer[12];
+    UNICODE_STRING dosDeviceName;
+    PCONFIGURATION_INFORMATION sysConfig;
+    UINT8 pathId;
+    PSCSI_BUS_INFO bus;
+    PVOID ptr;
+
     IoStopTimer(DeviceExtension->Common.DeviceObject);
 
     // release device interface
@@ -522,9 +532,6 @@ FdoRemoveAdapter(
     }
 
     // remove the dos device link
-    WCHAR dosNameBuffer[12];
-    UNICODE_STRING dosDeviceName;
-
     swprintf(dosNameBuffer, L"\\??\\Scsi%lu:", DeviceExtension->PortNumber);
     RtlInitUnicodeString(&dosDeviceName, dosNameBuffer);
 
@@ -533,7 +540,7 @@ FdoRemoveAdapter(
     // decrease the port count
     if (DeviceExtension->DeviceStarted)
     {
-        PCONFIGURATION_INFORMATION sysConfig = IoGetConfigurationInformation();
+        sysConfig = IoGetConfigurationInformation();
         sysConfig->ScsiPortCount--;
     }
 
@@ -547,9 +554,9 @@ FdoRemoveAdapter(
     // FIXME: delete LUNs
     if (DeviceExtension->Buses)
     {
-        for (UINT8 pathId = 0; pathId < DeviceExtension->NumberOfBuses; pathId++)
+        for (pathId = 0; pathId < DeviceExtension->NumberOfBuses; pathId++)
         {
-            PSCSI_BUS_INFO bus = &DeviceExtension->Buses[pathId];
+            bus = &DeviceExtension->Buses[pathId];
             if (bus->RegistryMapKey)
             {
                 ZwDeleteKey(bus->RegistryMapKey);
@@ -576,7 +583,7 @@ FdoRemoveAdapter(
         }
         else
         {
-            HalFreeCommonBuffer(DeviceExtension->AdapterObject,
+            HalFreeCommonBuffer((PDMA_ADAPTER)DeviceExtension->AdapterObject,
                                 DeviceExtension->CommonBufferLength,
                                 DeviceExtension->PhysicalAddress,
                                 DeviceExtension->SrbExtensionBuffer,
@@ -594,7 +601,7 @@ FdoRemoveAdapter(
         MmUnmapIoSpace(DeviceExtension->MappedAddressList->MappedAddress,
                        DeviceExtension->MappedAddressList->NumberOfBytes);
 
-        PVOID ptr = DeviceExtension->MappedAddressList;
+        ptr = DeviceExtension->MappedAddressList;
         DeviceExtension->MappedAddressList = DeviceExtension->MappedAddressList->NextMappedAddress;
 
         ExFreePoolWithTag(ptr, TAG_SCSIPORT);
@@ -612,6 +619,7 @@ FdoStartAdapter(
     WCHAR dosNameBuffer[12];
     UNICODE_STRING dosDeviceName;
     NTSTATUS status;
+    PCONFIGURATION_INFORMATION sysConfig;
 
     // Start our timer
     IoStartTimer(PortExtension->Common.DeviceObject);
@@ -629,7 +637,7 @@ FdoStartAdapter(
     RegistryInitAdapterKey(PortExtension);
 
     // increase the port count
-    PCONFIGURATION_INFORMATION sysConfig = IoGetConfigurationInformation();
+    sysConfig = IoGetConfigurationInformation();
     sysConfig->ScsiPortCount++;
 
     // Register and enable the device interface
@@ -657,6 +665,11 @@ FdoHandleDeviceRelations(
     _Inout_ PIRP Irp)
 {
     PIO_STACK_LOCATION ioStack = IoGetCurrentIrpStackLocation(Irp);
+    PDEVICE_RELATIONS deviceRelations;
+    UINT8 pathId;
+    PSCSI_BUS_INFO bus;
+    PLIST_ENTRY lunEntry;
+    PSCSI_PORT_LUN_EXTENSION lunExt;
 
     // FDO always only handles bus relations
     if (ioStack->Parameters.QueryDeviceRelations.Type == BusRelations)
@@ -667,10 +680,8 @@ FdoHandleDeviceRelations(
         // check that no filter driver has messed up this
         ASSERT(Irp->IoStatus.Information == 0);
 
-        PDEVICE_RELATIONS deviceRelations =
-            ExAllocatePoolWithTag(PagedPool,
-                                  (sizeof(DEVICE_RELATIONS) +
-                                   sizeof(PDEVICE_OBJECT) * (PortExtension->TotalLUCount - 1)),
+        deviceRelations = ExAllocatePoolWithTag(PagedPool,
+                                  (sizeof(DEVICE_RELATIONS) + sizeof(PDEVICE_OBJECT) * (PortExtension->TotalLUCount - 1)),
                                   TAG_SCSIPORT);
 
         if (!deviceRelations)
@@ -683,16 +694,15 @@ FdoHandleDeviceRelations(
 
         deviceRelations->Count = 0;
 
-        for (UINT8 pathId = 0; pathId < PortExtension->NumberOfBuses; pathId++)
+        for (pathId = 0; pathId < PortExtension->NumberOfBuses; pathId++)
         {
-            PSCSI_BUS_INFO bus = &PortExtension->Buses[pathId];
+            bus = &PortExtension->Buses[pathId];
 
-            for (PLIST_ENTRY lunEntry = bus->LunsListHead.Flink;
+            for (lunEntry = bus->LunsListHead.Flink;
                  lunEntry != &bus->LunsListHead;
                  lunEntry = lunEntry->Flink)
             {
-                PSCSI_PORT_LUN_EXTENSION lunExt =
-                    CONTAINING_RECORD(lunEntry, SCSI_PORT_LUN_EXTENSION, LunEntry);
+                lunExt = CONTAINING_RECORD(lunEntry, SCSI_PORT_LUN_EXTENSION, LunEntry);
 
                 deviceRelations->Objects[deviceRelations->Count++] = lunExt->Common.DeviceObject;
                 ObReferenceObject(lunExt->Common.DeviceObject);

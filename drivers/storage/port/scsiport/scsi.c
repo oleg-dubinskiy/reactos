@@ -641,10 +641,11 @@ SpiProcessCompletedRequest(
     LONG Result;
     PIRP Irp;
     //ULONG SequenceNumber;
+    PIO_STACK_LOCATION IoStack;
 
     Srb = SrbInfo->Srb;
     Irp = Srb->OriginalRequest;
-    PIO_STACK_LOCATION IoStack = IoGetCurrentIrpStackLocation(Irp);
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
 
     /* Get Lun extension */
     LunExtension = IoStack->DeviceObject->DeviceExtension;
@@ -796,7 +797,7 @@ SpiProcessCompletedRequest(
         {
             /* Nullify map registers */
             DeviceExtension->MapRegisterBase = NULL;
-            IoFreeAdapterChannel(DeviceExtension->AdapterObject);
+            IoFreeAdapterChannel((PDMA_ADAPTER)DeviceExtension->AdapterObject);
         }
 
          /* Exit, we're done */
@@ -812,7 +813,7 @@ SpiProcessCompletedRequest(
     {
         /* Result is negative, so this is a slave, free map registers */
         DeviceExtension->MapRegisterBase = NULL;
-        IoFreeAdapterChannel(DeviceExtension->AdapterObject);
+        IoFreeAdapterChannel((PDMA_ADAPTER)DeviceExtension->AdapterObject);
     }
 
     /* Convert status */
@@ -1113,6 +1114,7 @@ SpiSaveInterruptData(IN PVOID Context)
     PSCSI_REQUEST_BLOCK_INFO SrbInfo, NextSrbInfo;
     PSCSI_PORT_DEVICE_EXTENSION DeviceExtension;
     BOOLEAN IsTimed;
+    PIO_STACK_LOCATION IoStack;
 
     /* Get pointer to the device extension */
     DeviceExtension = InterruptContext->DeviceExtension;
@@ -1142,7 +1144,7 @@ SpiSaveInterruptData(IN PVOID Context)
         /* Get SRB and LunExtension */
         Srb = SrbInfo->Srb;
 
-        PIO_STACK_LOCATION IoStack = IoGetCurrentIrpStackLocation(Srb->OriginalRequest);
+        IoStack = IoGetCurrentIrpStackLocation(Srb->OriginalRequest);
         LunExtension = IoStack->DeviceObject->DeviceExtension;
         ASSERT(LunExtension && !LunExtension->Common.IsFDO);
 
@@ -1693,7 +1695,7 @@ ScsiPortStartIo(
                     Srb->DataTransferLength);
 
             /* Allocate adapter channel */
-            Status = IoAllocateAdapterChannel(DeviceExtension->AdapterObject,
+            Status = IoAllocateAdapterChannel((PDMA_ADAPTER)DeviceExtension->AdapterObject,
                                               DeviceExtension->Common.DeviceObject,
                                               SrbInfo->NumberOfMapRegisters,
                                               SpiAdapterControl,
@@ -1728,7 +1730,7 @@ ScsiPortStartIo(
         !DeviceExtension->MapRegisters)
     {
         IoAllocateAdapterChannel(
-            DeviceExtension->AdapterObject,
+            (PDMA_ADAPTER)DeviceExtension->AdapterObject,
             DeviceObject,
             DeviceExtension->PortCapabilities.MaximumPhysicalPages,
             ScsiPortAllocateAdapterChannel,

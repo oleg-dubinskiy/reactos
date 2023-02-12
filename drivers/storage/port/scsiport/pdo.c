@@ -71,20 +71,23 @@ GetLunByPath(
     _In_ UCHAR TargetId,
     _In_ UCHAR Lun)
 {
+    PSCSI_BUS_INFO bus;
+    PSCSI_PORT_LUN_EXTENSION lunExt;
+    PLIST_ENTRY lunEntry;
+
     if (PathId >= DeviceExtension->NumberOfBuses)
     {
         DPRINT1("Invalid PathId: %u\n", PathId);
         return NULL;
     }
 
-    PSCSI_BUS_INFO bus = &DeviceExtension->Buses[PathId];
+    bus = &DeviceExtension->Buses[PathId];
 
-    for (PLIST_ENTRY lunEntry = bus->LunsListHead.Flink;
+    for (lunEntry = bus->LunsListHead.Flink;
          lunEntry != &bus->LunsListHead;
          lunEntry = lunEntry->Flink)
     {
-        PSCSI_PORT_LUN_EXTENSION lunExt =
-            CONTAINING_RECORD(lunEntry, SCSI_PORT_LUN_EXTENSION, LunEntry);
+        lunExt = CONTAINING_RECORD(lunEntry, SCSI_PORT_LUN_EXTENSION, LunEntry);
 
         if (lunExt->PathId == PathId &&
             lunExt->TargetId == TargetId &&

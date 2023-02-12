@@ -25,6 +25,10 @@ SpiGetInquiryData(
     PSCSI_ADAPTER_BUS_INFO AdapterBusInfo;
     PSCSI_INQUIRY_DATA InquiryData;
     PUCHAR Buffer;
+    UINT8 pathId;
+    PSCSI_BUS_INFO bus;
+    PLIST_ENTRY lunEntry;
+    PSCSI_PORT_LUN_EXTENSION lunExt;
 
     DPRINT("SpiGetInquiryData() called\n");
 
@@ -64,7 +68,7 @@ SpiGetInquiryData(
                     (BusCount - 1) * sizeof(SCSI_BUS_DATA));
 
     /* Loop each bus */
-    for (UINT8 pathId = 0; pathId < DeviceExtension->NumberOfBuses; pathId++)
+    for (pathId = 0; pathId < DeviceExtension->NumberOfBuses; pathId++)
     {
         PSCSI_BUS_DATA BusData = &AdapterBusInfo->BusData[pathId];
 
@@ -78,14 +82,13 @@ SpiGetInquiryData(
         BusData->NumberOfLogicalUnits = DeviceExtension->Buses[pathId].LogicalUnitsCount;
 
         /* Loop all LUNs */
-        PSCSI_BUS_INFO bus = &DeviceExtension->Buses[pathId];
+        bus = &DeviceExtension->Buses[pathId];
 
-        for (PLIST_ENTRY lunEntry = bus->LunsListHead.Flink;
+        for (lunEntry = bus->LunsListHead.Flink;
              lunEntry != &bus->LunsListHead;
              lunEntry = lunEntry->Flink)
         {
-            PSCSI_PORT_LUN_EXTENSION lunExt =
-                CONTAINING_RECORD(lunEntry, SCSI_PORT_LUN_EXTENSION, LunEntry);
+            lunExt = CONTAINING_RECORD(lunEntry, SCSI_PORT_LUN_EXTENSION, LunEntry);
 
             DPRINT("(Bus %lu Target %lu Lun %lu)\n", pathId, lunExt->TargetId, lunExt->Lun);
 
@@ -151,12 +154,21 @@ PdoHandleQueryProperty(
     PIO_STACK_LOCATION ioStack = IoGetCurrentIrpStackLocation(Irp);
     PSCSI_PORT_LUN_EXTENSION lunExt = DeviceObject->DeviceExtension;
     NTSTATUS status;
+    PSTORAGE_PROPERTY_QUERY PropertyQuery;
+    PINQUIRYDATA inquiryData;
+    UINT32 FieldLengthVendor;
+    UINT32 FieldLengthProduct;
+    UINT32 FieldLengthRevision;
+    UINT32 TotalLength;
+    PSTORAGE_DESCRIPTOR_HEADER DescriptorHeader;
+    PSTORAGE_DEVICE_DESCRIPTOR deviceDescriptor;
+    PUCHAR Buffer;
 
     ASSERT(ioStack->Parameters.DeviceIoControl.InputBufferLength >= sizeof(STORAGE_PROPERTY_QUERY));
     ASSERT(Irp->AssociatedIrp.SystemBuffer);
     ASSERT(!lunExt->Common.IsFDO);
 
-    PSTORAGE_PROPERTY_QUERY PropertyQuery = Irp->AssociatedIrp.SystemBuffer;
+    PropertyQuery = Irp->AssociatedIrp.SystemBuffer;
 
     // check property type
     if (PropertyQuery->PropertyId != StorageDeviceProperty &&
@@ -186,16 +198,16 @@ PdoHandleQueryProperty(
     {
         case StorageDeviceProperty:
         {
-            PINQUIRYDATA inquiryData = &lunExt->InquiryData;
+            inquiryData = &lunExt->InquiryData;
 
             // compute extra parameters length
-            UINT32 FieldLengthVendor = GetFieldLength(inquiryData->VendorId, 8),
-                FieldLengthProduct = GetFieldLength(inquiryData->ProductId, 16),
-                FieldLengthRevision = GetFieldLength(inquiryData->ProductRevisionLevel, 4);
+            FieldLengthVendor = GetFieldLength(inquiryData->VendorId, 8);
+            FieldLengthProduct = GetFieldLength(inquiryData->ProductId, 16);
+            FieldLengthRevision = GetFieldLength(inquiryData->ProductRevisionLevel, 4);
 
             // total length required is sizeof(STORAGE_DEVICE_DESCRIPTOR) + FieldLength + 4 extra null bytes - 1
             // -1 due STORAGE_DEVICE_DESCRIPTOR contains one byte length of parameter data
-            UINT32 TotalLength = sizeof(STORAGE_DEVICE_DESCRIPTOR)
+            TotalLength = sizeof(STORAGE_DEVICE_DESCRIPTOR)
                                  + FieldLengthVendor
                                  + FieldLengthProduct
                                  + FieldLengthRevision
@@ -205,7 +217,7 @@ PdoHandleQueryProperty(
             if (ioStack->Parameters.DeviceIoControl.OutputBufferLength < TotalLength)
             {
                 // buffer too small
-                PSTORAGE_DESCRIPTOR_HEADER DescriptorHeader = Irp->AssociatedIrp.SystemBuffer;
+                DescriptorHeader = Irp->AssociatedIrp.SystemBuffer;
                 ASSERT(ioStack->Parameters.DeviceIoControl.OutputBufferLength >=
                        sizeof(STORAGE_DESCRIPTOR_HEADER));
 
@@ -219,7 +231,7 @@ PdoHandleQueryProperty(
             }
 
             // initialize the device descriptor
-            PSTORAGE_DEVICE_DESCRIPTOR deviceDescriptor = Irp->AssociatedIrp.SystemBuffer;
+            deviceDescriptor = Irp->AssociatedIrp.SystemBuffer;
 
             deviceDescriptor->Version = sizeof(STORAGE_DEVICE_DESCRIPTOR);
             deviceDescriptor->Size = TotalLength;
@@ -239,7 +251,7 @@ PdoHandleQueryProperty(
                 FieldLengthVendor + FieldLengthProduct + FieldLengthRevision + 3;
 
             // copy descriptors
-            PUCHAR Buffer = deviceDescriptor->RawDeviceProperties;
+            Buffer = deviceDescriptor->RawDeviceProperties;
 
             RtlCopyMemory(Buffer, inquiryData->VendorId, FieldLengthVendor);
             Buffer[FieldLengthVendor] = '\0';
@@ -297,12 +309,15 @@ FdoHandleQueryProperty(
     PIO_STACK_LOCATION ioStack = IoGetCurrentIrpStackLocation(Irp);
     PSCSI_PORT_DEVICE_EXTENSION portExt = DeviceObject->DeviceExtension;
     NTSTATUS status;
+    PSTORAGE_PROPERTY_QUERY PropertyQuery;
+    PSTORAGE_DESCRIPTOR_HEADER DescriptorHeader;
+    PSTORAGE_ADAPTER_DESCRIPTOR adapterDescriptor;
 
     ASSERT(ioStack->Parameters.DeviceIoControl.InputBufferLength >= sizeof(STORAGE_PROPERTY_QUERY));
     ASSERT(Irp->AssociatedIrp.SystemBuffer);
     ASSERT(portExt->Common.IsFDO);
 
-    PSTORAGE_PROPERTY_QUERY PropertyQuery = Irp->AssociatedIrp.SystemBuffer;
+    PropertyQuery = Irp->AssociatedIrp.SystemBuffer;
 
     // check property type (handle only StorageAdapterProperty)
     if (PropertyQuery->PropertyId != StorageAdapterProperty)
@@ -338,7 +353,7 @@ FdoHandleQueryProperty(
     if (ioStack->Parameters.DeviceIoControl.OutputBufferLength < sizeof(STORAGE_ADAPTER_DESCRIPTOR))
     {
         // buffer too small
-        PSTORAGE_DESCRIPTOR_HEADER DescriptorHeader = Irp->AssociatedIrp.SystemBuffer;
+        DescriptorHeader = Irp->AssociatedIrp.SystemBuffer;
         ASSERT(ioStack->Parameters.DeviceIoControl.OutputBufferLength
                >= sizeof(STORAGE_DESCRIPTOR_HEADER));
 
@@ -352,11 +367,12 @@ FdoHandleQueryProperty(
     }
 
     // get adapter descriptor, information is returned in the same buffer
-    PSTORAGE_ADAPTER_DESCRIPTOR adapterDescriptor = Irp->AssociatedIrp.SystemBuffer;
+    adapterDescriptor = Irp->AssociatedIrp.SystemBuffer;
 
     // fill out descriptor
     // NOTE: STORAGE_ADAPTER_DESCRIPTOR may vary in size, so it's important to zero out
     // all unused fields
+#if 0
     *adapterDescriptor = (STORAGE_ADAPTER_DESCRIPTOR) {
         .Version = sizeof(STORAGE_ADAPTER_DESCRIPTOR),
         .Size = sizeof(STORAGE_ADAPTER_DESCRIPTOR),
@@ -371,6 +387,20 @@ FdoHandleQueryProperty(
         .BusMajorVersion = 2,
         .BusMinorVersion = 0
     };
+#else
+    adapterDescriptor->Version = sizeof(STORAGE_ADAPTER_DESCRIPTOR);
+    adapterDescriptor->Size = sizeof(STORAGE_ADAPTER_DESCRIPTOR);
+    adapterDescriptor->MaximumTransferLength = portExt->PortCapabilities.MaximumTransferLength;
+    adapterDescriptor->MaximumPhysicalPages = portExt->PortCapabilities.MaximumPhysicalPages;
+    adapterDescriptor->AlignmentMask = portExt->PortCapabilities.AlignmentMask;
+    adapterDescriptor->AdapterUsesPio = portExt->PortCapabilities.AdapterUsesPio;
+    adapterDescriptor->AdapterScansDown = portExt->PortCapabilities.AdapterScansDown;
+    adapterDescriptor->CommandQueueing = portExt->PortCapabilities.TaggedQueuing;
+    adapterDescriptor->AcceleratedTransfer = TRUE;
+    adapterDescriptor->BusType = BusTypeScsi; // FIXME
+    adapterDescriptor->BusMajorVersion = 2;
+    adapterDescriptor->BusMinorVersion = 0;
+#endif
 
     // store returned length
     Irp->IoStatus.Information = sizeof(STORAGE_ADAPTER_DESCRIPTOR);
@@ -410,6 +440,8 @@ ScsiPortDeviceControl(
     PSCSI_PORT_DEVICE_EXTENSION portExt;
     PSCSI_PORT_LUN_EXTENSION lunExt;
     NTSTATUS status;
+    PSCSI_ADDRESS address;
+    PDUMP_POINTERS dumpPointers;
 
     DPRINT("ScsiPortDeviceControl()\n");
 
@@ -444,7 +476,7 @@ ScsiPortDeviceControl(
                 break;
             }
 
-            PSCSI_ADDRESS address = Irp->AssociatedIrp.SystemBuffer;
+            address = Irp->AssociatedIrp.SystemBuffer;
             if (!VerifyIrpOutBufferSize(Irp, sizeof(*address)))
             {
                 status = STATUS_BUFFER_TOO_SMALL;
@@ -474,7 +506,7 @@ ScsiPortDeviceControl(
                 return IoCallDriver(comExt->LowerDevice, Irp);
             }
 
-            PDUMP_POINTERS dumpPointers = Irp->AssociatedIrp.SystemBuffer;
+            dumpPointers = Irp->AssociatedIrp.SystemBuffer;
             if (!VerifyIrpOutBufferSize(Irp, sizeof(*dumpPointers)))
             {
                 status = STATUS_BUFFER_TOO_SMALL;

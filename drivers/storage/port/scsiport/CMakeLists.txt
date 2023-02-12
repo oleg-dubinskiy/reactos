@@ -21,7 +21,7 @@ add_library(scsiport MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/scsiport.def)
 
 #add_pch(scsiport precomp.h SOURCE)
-add_pch(scsiport scsiport.h "")
+#add_pch(scsiport scsiport.h "")
 #add_pch(scsiport scsiport.h "${PCH_SKIP_SOURCE}")
 
 set_module_type(scsiport kernelmodedriver)
