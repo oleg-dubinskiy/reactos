@@ -1389,7 +1389,7 @@ NTKERNELAPI
 NTSTATUS
 NTAPI
 IoAllocateAdapterChannel(
-  _In_ PADAPTER_OBJECT AdapterObject,
+  _In_ PDMA_ADAPTER DmaAdapter,
   _In_ PDEVICE_OBJECT DeviceObject,
   _In_ ULONG NumberOfMapRegisters,
   _In_ PDRIVER_CONTROL ExecutionRoutine,
@@ -1402,7 +1402,7 @@ NTHALAPI
 PHYSICAL_ADDRESS
 NTAPI
 IoMapTransfer(
-  _In_ PADAPTER_OBJECT AdapterObject,
+  _In_ PDMA_ADAPTER DmaAdapter,
   _In_ PMDL Mdl,
   _In_ PVOID MapRegisterBase,
   _In_ PVOID CurrentVa,
