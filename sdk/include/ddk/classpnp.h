@@ -1432,7 +1432,7 @@ ClassSendNotification(
 
 #endif /* (NTDDI_VERSION >= NTDDI_VISTA) */
 
-__inline
+FORCEINLINE
 UCHAR
 GET_FDO_EXTENSON_SENSE_DATA_LENGTH (
   _In_ PFUNCTIONAL_DEVICE_EXTENSION FdoExtension)
@@ -1459,7 +1459,7 @@ GET_FDO_EXTENSON_SENSE_DATA_LENGTH (
   return SenseDataLength;
 }
 
-static __inline
+FORCEINLINE
 BOOLEAN
 PORT_ALLOCATED_SENSE(
   _In_ PFUNCTIONAL_DEVICE_EXTENSION FdoExtension,
@@ -1470,7 +1470,7 @@ PORT_ALLOCATED_SENSE(
           (Srb->SenseInfoBuffer != FdoExtension->SenseData)));
 }
 
-static __inline
+FORCEINLINE
 VOID
 FREE_PORT_ALLOCATED_SENSE_BUFFER(
   _In_ PFUNCTIONAL_DEVICE_EXTENSION FdoExtension,
