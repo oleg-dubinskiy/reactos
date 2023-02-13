@@ -20,7 +20,7 @@ PFN_RTLQUERYMODULEINFORMATION pfnRtlQueryModuleInformation;
 LONG gKlibInitialized = 0;
 
 
-CODE_SEG("PAGE")
+//CODE_SEG("PAGE")
 NTSTATUS
 NTAPI
 AuxKlibInitialize(VOID)
@@ -47,7 +47,7 @@ AuxKlibInitialize(VOID)
     return STATUS_SUCCESS;
 }
 
-CODE_SEG("PAGE")
+//CODE_SEG("PAGE")
 NTSTATUS
 NTAPI
 AuxKlibQueryModuleInformation(
@@ -56,6 +56,12 @@ AuxKlibQueryModuleInformation(
     _Inout_ PAUX_MODULE_EXTENDED_INFO ModuleInfo)
 {
     NTSTATUS status;
+    RTL_PROCESS_MODULES processModulesMinimal;
+    PRTL_PROCESS_MODULES processModules;
+    ULONG sysInfoLength;
+    ULONG resultLength;
+    ULONG modulesSize;
+    UINT32 i;
 
     PAGED_CODE();
 
@@ -82,10 +88,8 @@ AuxKlibQueryModuleInformation(
     }
 
     // first call the function with a place for only 1 module
-    RTL_PROCESS_MODULES processModulesMinimal;
-    PRTL_PROCESS_MODULES processModules = &processModulesMinimal;
-    ULONG sysInfoLength = sizeof(processModulesMinimal);
-    ULONG resultLength;
+    processModules = &processModulesMinimal;
+    sysInfoLength = sizeof(processModulesMinimal);
     
     // loop until we have a large-enough buffer for all modules
     do
@@ -128,7 +132,6 @@ AuxKlibQueryModuleInformation(
         goto Cleanup;
     }
 
-    ULONG modulesSize;
     status = RtlULongMult(SizePerModule, processModules->NumberOfModules, &modulesSize);
     if (!NT_SUCCESS(status))
     {
@@ -150,7 +153,7 @@ AuxKlibQueryModuleInformation(
     }
 
     // copy the information to the input array
-    for (UINT32 i = 0; i < processModules->NumberOfModules; i++) 
+    for (i = 0; i < processModules->NumberOfModules; i++) 
     {
         ModuleInfo[i].BasicInfo.ImageBase = processModules->Modules[i].ImageBase;
 
@@ -201,7 +204,7 @@ AuxKlibGetImageExportDirectory(
 }
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
-CODE_SEG("PAGE")
+//CODE_SEG("PAGE")
 NTSTATUS
 NTAPI
 AuxKlibEnumerateSystemFirmwareTables (
@@ -214,7 +217,7 @@ AuxKlibEnumerateSystemFirmwareTables (
 }
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
-CODE_SEG("PAGE")
+//CODE_SEG("PAGE")
 NTSTATUS
 NTAPI
 AuxKlibGetSystemFirmwareTable (
