@@ -558,6 +558,7 @@ const POWER_POLICY_EVENT_TARGET_STATE FxPkgPnp::m_PowerPolWaitingArmedWakeInterr
 };
 
 const POWER_POLICY_STATE_TABLE FxPkgPnp::m_WdfPowerPolicyStates[] =
+#ifndef __REACTOS__
 {
     // transition function,
     // { first target state },
@@ -2045,6 +2046,1495 @@ const POWER_POLICY_STATE_TABLE FxPkgPnp::m_WdfPowerPolicyStates[] =
     // WdfDevStatePwrPolNull
     // *** no entry for this state ***
 };
+#else
+{
+    // transition function,
+    // { first target state },
+    // other target states
+    // queue open,
+
+    // WdfDevStatePwrPolObjectCreated
+    { NULL,
+      { PwrPolStart, WdfDevStatePwrPolStarting DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolObjectCreatedOtherStates,
+      {{ TRUE,
+        PwrPolS0 |  // Sx -> S0 transition on a PDO which was enumerated and
+                    // in the disabled state
+
+        PwrPolSx |  // Sx transition right after enumeration
+        PwrPolS0IdlePolicyChanged }},
+    },
+
+    // WdfDevStatePwrPolStarting
+    { FxPkgPnp::PowerPolStarting,
+      { PwrPolPowerUp, WdfDevStatePwrPolStartingPoweredUp DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStartingOtherStates,
+      {{ FALSE,
+        PwrPolPowerUpFailed   // If the power state machine fails D0 entry upon
+                              // initial start, we will get this event here.  The
+                              // pnp s.m. will not rely on the pwr pol s.m. to
+                              // power down the stack in this case.
+      }},
+    },
+
+    // WdfDevStatePwrPolStartingSucceeded
+    { FxPkgPnp::PowerPolStartingSucceeded,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStartingFailed
+    { FxPkgPnp::PowerPolStartingFailed,
+      { PwrPolRemove, WdfDevStatePwrPolRemoved DEBUGGED_EVENT },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStartingDecideS0Wake
+    { FxPkgPnp::PowerPolStartingDecideS0Wake,
+      { PwrPolNull, WdfDevStatePwrPolNull },  // transition out based on wake from S0 enabled
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStartedIdleCapable
+    { FxPkgPnp::PowerPolStartedIdleCapable,
+      { PwrPolPowerTimeoutExpired, WdfDevStatePwrPolIdleCapableDeviceIdle DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStartedIdleCapableOtherStates,
+      {{ TRUE,
+        PwrPolS0 | // If the machine send a query Sx and it fails, it will send
+                   // an S0 while in the running state (w/out ever sending a true set Sx irp)
+        PwrPolWakeArrived | // If the wake request is failed by the bus in between WakeArrived
+                            // being posted in TimerExpiredWakeCapapble and being
+                            // processed, this event will show up in this state if the idle
+                            // setting changed at this exact moment as well
+        PwrPolPowerUp |     // posted by power when we are powering up the first time
+        PwrPolIoPresent |   // posted by the idle state machine.  If we return
+                            // to idle this can happen
+        PwrPolDevicePowerNotRequired | // The device-power-not-required event arrived just after an
+                                       // I/O request or or an S0-idle policy change caused us to
+                                       // become active again. The event is ignored in this case.
+        PwrPolDevicePowerRequired // The device-power-required event arrived, but we had already
+                                  // powered-up the device proactively because we detected that
+                                  // power was needed. The event is ignored in this case.
+        }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredNoWake
+    { FxPkgPnp::PowerPolTimerExpiredNoWake,
+      { PwrPolPowerDownIoStopped, WdfDevStatePwrPolTimerExpiredNoWakeCompletePowerDown DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredNoWakeOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredNoWakeCompletePowerDown
+    { FxPkgPnp::PowerPolTimerExpiredNoWakeCompletePowerDown,
+      // NOTE: see the comments PowerPolWaitingArmedUsbSS() about why we query the
+      // idle state instead of going directly to WdfDevStatePwrPolWaitingUnarmed
+      { PwrPolPowerDown, WdfDevStatePwrPolTimerExpiredNoWakePoweredDownDisableIdleTimer DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredNoWakeCompletePowerDownOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolWaitingUnarmed
+    { NULL,
+      { PwrPolIoPresent, WdfDevStatePwrPolWaitingUnarmedQueryIdle DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolWaitingUnarmedOtherStates,
+      {{ TRUE,
+        PwrPolS0 | // If the machine send a query Sx and it fails, it will send
+                   // an S0 while in the running state (w/out ever sending a true set Sx irp)
+        PwrPolDevicePowerNotRequired   // When moving from Sx -> S0, we do not power up the
+                                       // device if:
+                                       // (UsingSystemManagedIdleTimeout == TRUE) and
+                                       // (IdleEnabled == TRUE) and
+                                       // (WakeFromS0Capable == FALSE) and
+                                       // (PowerUpIdleDeviceOnSystemWake == FALSE).
+                                       // In this situation, we declare to the active/idle
+                                       // state machine that we are idle, but ignore the
+                                       // device-power-not-required event, because we are
+                                       // already in Dx.
+      }},
+    },
+
+    // WdfDevStatePwrPolWaitingUnarmedQueryIdle
+    { FxPkgPnp::PowerPolWaitingUnarmedQueryIdle,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolS0NoWakePowerUp
+    { FxPkgPnp::PowerPolS0NoWakePowerUp,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolS0NoWakeCompletePowerUp DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolS0NoWakePowerUpOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolS0NoWakeCompletePowerUp
+    { FxPkgPnp::PowerPolS0NoWakeCompletePowerUp,
+      { PwrPolPowerUp, WdfDevStatePwrPolStartingDecideS0Wake DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolS0NoWakeCompletePowerUpOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemSleepFromDeviceWaitingUnarmed
+    { FxPkgPnp::PowerPolSystemSleepFromDeviceWaitingUnarmed,
+      { PwrPolNull, WdfDevStatePwrPolNull }, // transition out based on wake from Sx enabled
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemSleepNeedWake
+    { FxPkgPnp::PowerPolSystemSleepNeedWake,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolSystemSleepNeedWakeCompletePowerUp DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemSleepNeedWakeOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemSleepNeedWakeCompletePowerUp
+    { FxPkgPnp::PowerPolSystemSleepNeedWakeCompletePowerUp,
+      { PwrPolPowerUp, WdfDevStatePwrPolSleeping DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemSleepNeedWakeCompletePowerUpOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemSleepPowerRequestFailed
+    { FxPkgPnp::PowerPolSystemSleepPowerRequestFailed,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0, }},
+    },
+
+    // WdfDevStatePwrPolCheckPowerPageable
+    { FxPkgPnp::PowerPolCheckPowerPageable,
+      { PwrPolNull, WdfDevStatePwrPolNull }, // transition out based on which DO_POWER_Xxx flags set on DO
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSleepingWakeWakeArrived
+    { FxPkgPnp::PowerPolSleepingWakeWakeArrived,
+      { PwrPolPowerDown, WdfDevStatePwrPolSystemAsleepWakeArmed DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSleepingWakeWakeArrivedOtherStates,
+      {{ FALSE,
+        PwrPolWakeFailed |  // wake completed before we could cancel
+                            // the request, so the event may end up here
+        PwrPolWakeSuccess|  // -do-
+        PwrPolWakeInterruptFired // Wake interrupt fired when during power
+                                 // down as part of system sleep transition
+
+      }},
+    },
+
+    // WdfDevStatePwrPolSleepingWakeRevertArmWake
+    { FxPkgPnp::PowerPolSleepingWakeRevertArmWake,
+      { PwrPolWakeFailed, WdfDevStatePwrPolSleepingNoWakeCompletePowerDown DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSleepingWakeRevertArmWakeOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemAsleepWakeArmed
+    { FxPkgPnp::PowerPolSystemAsleepWakeArmed,
+      { PwrPolS0, WdfDevStatePwrPolSystemWakeDeviceWakeEnabled DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemAsleepWakeArmedOtherStates,
+      {{ TRUE,
+        PwrPolWakeFailed |        // Wake failed while in Sx
+        PwrPolIoPresent |         // IO arrived when the machine was going to Sx
+        PwrPolPowerTimeoutExpired | // we don't cancel the power timer when we goto
+                                    // sleep from an idleable state
+        PwrPolDevicePowerNotRequired // Upon receiving Sx, we simulated a device-power-
+                                     // not-required, so the device-power-requirement
+                                     // state machine sent us this event in response.
+                                     // We can drop it because we already powered down.
+        }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeEnabled
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeEnabled,
+      { PwrPolWakeFailed, WdfDevStatePwrPolSystemWakeDeviceWakeEnabledWakeCanceled DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemWakeDeviceWakeEnabledOtherStates,
+      {{ FALSE,
+        PwrPolWakeInterruptFired // wake interrupt fired as we were waking the
+                                 // device on receiving S0 due to other reasons.
+                                 // This event can fire until the wake interrupt
+                                 // machine is notified of the power up.
+      }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeEnabledWakeCanceled
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeEnabledWakeCanceled,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolSystemWakeDeviceWakeDisarm DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemWakeDeviceWakeEnabledWakeCanceledOtherStates,
+      {{ FALSE,
+        PwrPolWakeInterruptFired // wake interrupt fired as we were waking the
+                                 // device on receiving S0 due to other reasons.
+                                 // This event can fire until the wake interrupt
+                                 // machine is notified of the power up.
+      }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeDisarm
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeDisarm,
+      { PwrPolNull, WdfDevStatePwrPolNull }, // transition out is hardcoded in func
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeTriggered
+    { NULL,
+      { PwrPolS0, WdfDevStatePwrPolSystemWakeDeviceWakeTriggeredS0 DEBUGGED_EVENT },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeTriggeredS0
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeTriggeredS0,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolSystemWakeDeviceWokeDisarm DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemWakeDeviceWakeTriggeredS0OtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWokeDisarm
+    { FxPkgPnp::PowerPolSystemWakeDeviceWokeDisarm,
+      { PwrPolNull, WdfDevStatePwrPolNull }, // transition out is hardcoded in func
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSleepingWakeWakeArrivedNP,
+    { FxPkgPnp::PowerPolSleepingWakeWakeArrivedNP,
+      { PwrPolPowerDown, WdfDevStatePwrPolSystemAsleepWakeArmedNP DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSleepingWakeWakeArrivedNPOtherStates,
+      {{ FALSE,
+        PwrPolWakeFailed |  // wake completed before we could cancel
+                            // the request, so the event may end up here
+        PwrPolWakeSuccess|  // -do-
+        PwrPolWakeInterruptFired // Wake interrupt fired when during power
+                                 // down as part of system sleep transition
+
+      }},
+    },
+
+    // WdfDevStatePwrPolSleepingWakeRevertArmWakeNP,
+    { FxPkgPnp::PowerPolSleepingWakeRevertArmWakeNP,
+      { PwrPolWakeFailed, WdfDevStatePwrPolSleepingNoWakeCompletePowerDown DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSleepingWakeRevertArmWakeNPOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSleepingWakePowerDownFailed
+    { FxPkgPnp::PowerPolSleepingWakePowerDownFailed,
+      { PwrPolWakeSuccess, WdfDevStatePwrPolSleepingWakePowerDownFailedWakeCanceled TRAP_ON_EVENT },
+      FxPkgPnp::m_PowerPolSleepingWakePowerDownFailedOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSleepingWakePowerDownFailedWakeCanceled
+    { FxPkgPnp::PowerPolSleepingWakePowerDownFailedWakeCanceled,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemAsleepWakeArmedNP
+    { FxPkgPnp::PowerPolSystemAsleepWakeArmedNP,
+      { PwrPolS0, WdfDevStatePwrPolSystemWakeDeviceWakeEnabledNP DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemAsleepWakeArmedNPOtherStates,
+      {{ TRUE,
+        PwrPolWakeFailed |        // Wake failed while in Sx
+        PwrPolIoPresent |         // IO arrived when the machine was going to Sx
+        PwrPolPowerTimeoutExpired // we don't cancel the power timer when we goto
+                                  // sleep from an idleable state
+        }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeEnabledNP
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeEnabledNP,
+      { PwrPolWakeFailed, WdfDevStatePwrPolSystemWakeDeviceWakeEnabledWakeCanceledNP DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemWakeDeviceWakeEnabledNPOtherStates,
+      {{ FALSE,
+        PwrPolWakeInterruptFired // wake interrupt fired as we were waking the
+                                 // device on receiving S0 due to other reasons.
+                                 // This event can fire until the wake interrupt
+                                 // machine is notified of the power up.
+      }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeEnabledWakeCanceledNP
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeEnabledWakeCanceledNP,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolSystemWakeDeviceWakeDisarmNP DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemWakeDeviceWakeEnabledWakeCanceledNPOtherStates,
+      {{ FALSE,
+        PwrPolWakeSuccess | // wake succeeded and completed before we could cancel
+                            // the request, so the event ends up here
+
+        PwrPolWakeInterruptFired // wake interrupt fired as we were waking the
+                                 // device on receiving S0 due to other reasons.
+                                 // This event can fire until the wake interrupt
+                                 // machine is notified of the power up.
+      }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeDisarmNP
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeDisarmNP,
+      { PwrPolNull, WdfDevStatePwrPolNull }, // transition out is hardcoded in func
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeTriggeredNP
+    { NULL,
+      { PwrPolS0, WdfDevStatePwrPolSystemWakeDeviceWakeTriggeredS0NP DEBUGGED_EVENT },
+      NULL,
+      {{ TRUE,
+        PwrPolIoPresent     // I/O arrived before S0 arrival
+        }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeTriggeredS0NP
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeTriggeredS0NP,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolSystemWakeDeviceWokeDisarmNP DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemWakeDeviceWakeTriggeredS0NPOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWokeDisarmNP
+    { FxPkgPnp::PowerPolSystemWakeDeviceWokeDisarmNP,
+      { PwrPolNull, WdfDevStatePwrPolNull }, // transition out is hardcoded in func
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeCompletePowerUp
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeCompletePowerUp,
+      { PwrPolPowerUp, WdfDevStatePwrPolStartingDecideS0Wake DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemWakeDeviceWakeCompletePowerUpOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSleeping
+    { FxPkgPnp::PowerPolSleeping,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSleepingNoWakePowerDown
+    { FxPkgPnp::PowerPolSleepingNoWakePowerDown,
+      { PwrPolPowerDownIoStopped, WdfDevStatePwrPolSleepingNoWakeCompletePowerDown DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSleepingNoWakePowerDownOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSleepingNoWakeCompletePowerDown
+    { FxPkgPnp::PowerPolSleepingNoWakeCompletePowerDown,
+      { PwrPolPowerDown, WdfDevStatePwrPolSystemAsleepNoWake DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSleepingNoWakeCompletePowerDownOtherStates,
+      {{ FALSE,
+        PwrPolWakeArrived   // wake arrived event posted after the ww irp
+                            // completed from SleepingSendWake state. Ignore this
+                            // event since wake is already trigged.
+      }},
+    },
+
+    // WdfDevStatePwrPolSleepingNoWakeDxRequestFailed
+    { FxPkgPnp::PowerPolSleepingNoWakeDxRequestFailed,
+      { PwrPolNull, WdfDevStatePwrPolNull }, // transition out is hardcoded in func
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSleepingWakePowerDown
+    { FxPkgPnp::PowerPolSleepingWakePowerDown,
+      { PwrPolPowerDownIoStopped, WdfDevStatePwrPolSleepingSendWake DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSleepingWakePowerDownOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSleepingSendWake
+    { FxPkgPnp::PowerPolSleepingSendWake,
+      { PwrPolWakeArrived, WdfDevStatePwrPolCheckPowerPageable DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSleepingSendWakeOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemAsleepNoWake
+    { FxPkgPnp::PowerPolSystemAsleepNoWake,
+      { PwrPolS0, WdfDevStatePwrPolSystemWakeDeviceWakeDisabled DEBUGGED_EVENT },
+      NULL,
+      {{ TRUE,
+        PwrPolS0IdlePolicyChanged | // Policy changed while the device is in Dx
+                                    // because of Sx, we will reevaluate the idle
+                                    // settings when we return to S0 anyways
+        PwrPolWakeArrived | // If arming for wake from sx failed, the WakeArrived
+                            // event that was a part of that arming is dequeued here
+        PwrPolIoPresent   | // I/O showed up when going into Sx
+        PwrPolPowerTimeoutExpired |
+        PwrPolDevicePowerNotRequired // Upon receiving Sx, we simulated a device-power-
+                                     // not-required, so the device-power-requirement
+                                     // state machine sent us this event in response.
+                                     // We can drop it because we already powered down.
+       }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeDisabled
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeDisabled,
+      { PwrPolNull, WdfDevStatePwrPolNull }, // transition out based on wake from S0 enabled
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceToD0
+    { FxPkgPnp::PowerPolSystemWakeDeviceToD0,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolSystemWakeDeviceToD0CompletePowerUp DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemWakeDeviceToD0OtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceToD0CompletePowerUp
+    { FxPkgPnp::PowerPolSystemWakeDeviceToD0CompletePowerUp,
+      { PwrPolPowerUp, WdfDevStatePwrPolStartingDecideS0Wake DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolSystemWakeDeviceToD0CompletePowerUpOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeQueryIdle
+    { FxPkgPnp::PowerPolSystemWakeQueryIdle,
+      { PwrPolNull, WdfDevStatePwrPolNull}, // transition out based on timer expiration state
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStartedWakeCapable
+    { FxPkgPnp::PowerPolStartedWakeCapable,
+      { PwrPolPowerTimeoutExpired, WdfDevStatePwrPolWakeCapableDeviceIdle DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStartedWakeCapableOtherStates,
+      {{ TRUE,
+        PwrPolS0 | // If the machine send a query Sx and it fails, it will send
+                   // an S0 while in the running state (w/out ever sending a true set Sx irp)
+        PwrPolPowerUp |
+        PwrPolWakeArrived | // If the wake request is failed by the bus in between WakeArrived
+                            // being posted in TimerExpiredWakeCapapble and being
+                            // processed, this event will show up in this state
+
+        PwrPolWakeSuccess | // wake succeeded while we were trying to cancel it
+                            // while coming out of WaitingArmed b/c of io present
+
+        PwrPolWakeFailed |  // wake request failed while we were trying to cancel it
+                            // while coming out of WaitingArmed b/c of io present
+
+        PwrPolUsbSelectiveSuspendCallback |
+        PwrPolUsbSelectiveSuspendCompleted | // When returning from a success resume
+                                             // from USB SS, the completion of the irp will
+                                             // occur in the started state
+
+        PwrPolIoPresent |   // posted by the idle state machine.  If we return
+                            // to idle this can happen
+        PwrPolDevicePowerNotRequired | // The device-power-not-required event arrived just after an
+                                       // I/O request or or an S0-idle policy change caused us to
+                                       // become active again. The event is ignored in this case.
+        PwrPolDevicePowerRequired // The device-power-required event arrived, but we had already
+                                  // powered-up the device proactively because we detected that
+                                  // power was needed. The event is ignored in this case.
+        }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredDecideUsbSS
+    { FxPkgPnp::PowerPolTimerExpiredDecideUsbSS,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapablePowerDown
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapablePowerDown,
+      { PwrPolPowerDownIoStopped, WdfDevStatePwrPolTimerExpiredWakeCapableSendWake DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCapablePowerDownOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapableSendWake
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapableSendWake,
+      { PwrPolWakeArrived, WdfDevStatePwrPolTimerExpiredWakeCapableWakeArrived DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCapableSendWakeOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapableUsbSS
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapableUsbSS,
+      { PwrPolUsbSelectiveSuspendCallback, WdfDevStatePwrPolTimerExpiredWakeCapablePowerDown DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCapableUsbSSOtherStates,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapableWakeArrived
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapableWakeArrived,
+      { PwrPolPowerDown, WdfDevStatePwrPolWaitingArmedUsbSS DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCapableWakeArrivedOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapableCancelWake
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapableCancelWake,
+      { PwrPolWakeSuccess, WdfDevStatePwrPolTimerExpiredWakeCapableWakeCanceled TRAP_ON_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCapableCancelWakeOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapableWakeCanceled
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapableWakeCanceled,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapableCleanup
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapableCleanup,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolTimerExpiredWakeCompletedPowerDown TRAP_ON_EVENT },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapableDxAllocFailed
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapableDxAllocFailed,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolTimerExpiredWakeCapableUndoPowerDown TRAP_ON_EVENT },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCompletedPowerDown
+    { FxPkgPnp::PowerPolTimerExpiredWakeCompletedPowerDown,
+      { PwrPolPowerDown, WdfDevStatePwrPolTimerExpiredWakeCompletedPowerUp DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCompletedPowerDownOtherStates,
+      {{ FALSE,
+        PwrPolWakeSuccess | // arming callback failed while going into Dx armed for wake from S0
+                            // but bus completed wake request with success
+
+        PwrPolWakeArrived   // if the wake request completes before PwrPolWakeArrived
+                            // can be processed in the PwrPolTimerExpiredWakeCapableSendWake
+                            // state, it will show up here
+      }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCompletedPowerUp
+    { FxPkgPnp::PowerPolTimerExpiredWakeCompletedPowerUp,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolTimerExpiredWakeCompletedHardwareStarted DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCompletedPowerUpOtherStates,
+      {{ FALSE,
+        PwrPolWakeSuccess | // arming callback failed while going into Dx armed for wake from S0
+                            // but bus completed wake request with success
+
+        PwrPolWakeArrived   // if the wake request completes before PwrPolWakeArrived
+                            // can be processed in the WdfDevStatePwrPolTimerExpiredWakeCapableSendWake
+                            // state, it will show up here
+      }},
+    },
+
+    // WdfDevStatePwrPolWaitingArmedUsbSS
+    { FxPkgPnp::PowerPolWaitingArmedUsbSS,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolWaitingArmed
+    { NULL,
+      { PwrPolIoPresent, WdfDevStatePwrPolWaitingArmedQueryIdle DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolWaitingArmedOtherStates,
+      {{ TRUE,
+        PwrPolS0 // If the machine send a query Sx and it fails, it will send
+                 // an S0 while in the running state (w/out ever sending a true set Sx irp)
+      }},
+    },
+
+    // WdfDevStatePwrPolWaitingArmedQueryIdle
+    { FxPkgPnp::PowerPolWaitingArmedQueryIdle,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolIoPresentArmed
+    { FxPkgPnp::PowerPolIoPresentArmed,
+      { PwrPolWakeFailed, WdfDevStatePwrPolIoPresentArmedWakeCanceled DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolIoPresentArmedOtherStates,
+      {{ FALSE,
+        PwrPolWakeInterruptFired // wake interrupt fired as we were waking the
+                                 // device on receiving IO.This event can fire
+                                 // until the wake interrupt machine is notified
+                                 // of the power up.
+      }},
+    },
+
+    // WdfDevStatePwrPolIoPresentArmedWakeCanceled
+    { FxPkgPnp::PowerPolIoPresentArmedWakeCanceled,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolS0WakeDisarm DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolIoPresentArmedWakeCanceledOtherStates,
+      {{ FALSE,
+        PwrPolWakeSuccess | // The wake status was already processed before entering
+                            // this state - indicates that the client driver is
+                            // probably propagating a duplicate wake status using
+                            // the WdfDeviceIndicateWakeStatus ddi.
+
+        PwrPolWakeFailed  |  // The wake status was already processed before entering
+                             // this state - indicates that the client driver is
+                             // probably propagating a duplicate wake status using
+                             // the WdfDeviceIndicateWakeStatus ddi.
+
+        PwrPolWakeInterruptFired // wake interrupt fired as we were waking the
+                                 // device on receiving IO.This event can fire
+                                 // until the wake interrupt machine is notified
+                                 // of the power up.
+
+      }},
+    },
+
+    // WdfDevStatePwrPolS0WakeDisarm,
+    { FxPkgPnp::PowerPolS0WakeDisarm,
+      { PwrPolNull, WdfDevStatePwrPolNull }, // transition out is hardcoded in func
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolS0WakeCompletePowerUp
+    { FxPkgPnp::PowerPolS0WakeCompletePowerUp,
+      { PwrPolPowerUp, WdfDevStatePwrPolStartingDecideS0Wake DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolS0WakeCompletePowerUpOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeSucceeded
+    { FxPkgPnp::PowerPolTimerExpiredWakeSucceeded,
+      { PwrPolNull, WdfDevStatePwrPolNull }, // transition out is hardcoded in func
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCompletedDisarm
+    { FxPkgPnp::PowerPolTimerExpiredWakeCompletedDisarm,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapableWakeSucceeded
+    { NULL,
+      { PwrPolPowerDown, WdfDevStatePwrPolWokeFromS0UsbSS DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCapableWakeSucceededOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapableWakeFailed
+    { NULL,
+      { PwrPolPowerDown, WdfDevStatePwrPolWakeFailedUsbSS DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCapableWakeFailedOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolWakeFailedUsbSS
+    { FxPkgPnp::PowerPolWakeFailedUsbSS,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolIoPresentArmedWakeCanceled TRAP_ON_EVENT },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapablePowerDownFailedCancelWake
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapablePowerDownFailedCancelWake,
+      { PwrPolWakeSuccess, WdfDevStatePwrPolTimerExpiredWakeCapablePowerDownFailedWakeCanceled DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCapablePowerDownFailedCancelWakeOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapablePowerDownFailedWakeCanceled
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapablePowerDownFailedWakeCanceled,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapablePowerDownFailedUsbSS
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapablePowerDownFailedUsbSS,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolDevicePowerRequestFailed TRAP_ON_EVENT },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolCancelingWakeForSystemSleep
+    { FxPkgPnp::PowerPolCancelingWakeForSystemSleep,
+      { PwrPolWakeFailed, WdfDevStatePwrPolCancelingWakeForSystemSleepWakeCanceled DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolCancelingWakeForSystemSleepOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolCancelingWakeForSystemSleepWakeCanceled
+    { FxPkgPnp::PowerPolCancelingWakeForSystemSleepWakeCanceled,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolDisarmingWakeForSystemSleepCompletePowerUp DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolCancelingWakeForSystemSleepWakeCanceledOtherStates,
+      {{ FALSE,
+        PwrPolWakeSuccess   // Wake completed successfully right as the transition
+                            // from WaitingArmed to goto Sx occurred
+      }},
+    },
+
+    // WdfDevStatePwrPolDisarmingWakeForSystemSleepCompletePowerUp
+    { FxPkgPnp::PowerPolDisarmingWakeForSystemSleepCompletePowerUp,
+      { PwrPolPowerUp, WdfDevStatePwrPolStartedWakeCapableCancelTimerForSleep DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolDisarmingWakeForSystemSleepCompletePowerUpOtherStates,
+      {{ FALSE,
+        0, }},
+    },
+
+    // WdfDevStatePwrPolPowerUpForSystemSleepFailed
+    { FxPkgPnp::PowerPolPowerUpForSystemSleepFailed,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolWokeFromS0UsbSS
+    { FxPkgPnp::PowerPolWokeFromS0UsbSS,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolWokeFromS0 DEBUGGED_EVENT },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolWokeFromS0
+    { FxPkgPnp::PowerPolWokeFromS0,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolWokeFromS0NotifyDriver DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolWokeFromS0OtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolWokeFromS0NotifyDriver
+    { FxPkgPnp::PowerPolWokeFromS0NotifyDriver,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingResetDevice
+    { FxPkgPnp::PowerPolStoppingResetDevice,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolStoppingResetDeviceCompletePowerUp DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStoppingResetDeviceOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingResetDeviceCompletePowerUp
+    { FxPkgPnp::PowerPolStoppingResetDeviceCompletePowerUp,
+      { PwrPolPowerUp, WdfDevStatePwrPolStopping DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStoppingResetDeviceCompletePowerUpOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingResetDeviceFailed
+    { FxPkgPnp::PowerPolStoppingResetDeviceFailed,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingD0
+    { FxPkgPnp::PowerPolStoppingD0,
+      { PwrPolPowerUpHwStarted, WdfDevStatePwrPolStoppingDisarmWake DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStoppingD0OtherStates,
+      {{ FALSE,
+        PwrPolWakeSuccess | // In the waiting armed state, the wake completed
+                            // right after PwrPolStop arrived
+        PwrPolWakeFailed    // wake completed before we could cancel
+                            // the request, so the event may end up here
+      }},
+    },
+
+    // WdfDevStatePwrPolStoppingD0Failed
+    { FxPkgPnp::PowerPolStoppingD0Failed,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingDisarmWake
+    { FxPkgPnp::PowerPolStoppingDisarmWake,
+      { PwrPolPowerUp, WdfDevStatePwrPolStoppingDisarmWakeCancelWake DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStoppingDisarmWakeOtherStates,
+      {{ FALSE,
+        PwrPolWakeFailed |  // wake completed before we could cancel
+                            // the request, so the event may end up here
+        PwrPolWakeSuccess   // -do-
+      }},
+    },
+
+    // WdfDevStatePwrPolStoppingDisarmWakeCancelWake
+    { FxPkgPnp::PowerPolStoppingDisarmWakeCancelWake,
+      { PwrPolWakeFailed, WdfDevStatePwrPolStoppingDisarmWakeWakeCanceled DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStoppingDisarmWakeCancelWakeOtherStates,
+      {{ FALSE,
+        PwrPolUsbSelectiveSuspendCompleted // pwr pol stopped from a usb SS device
+                                           // in Dx and the irp completed when the D0
+                                           // irp was sent
+      }},
+    },
+
+    // WdfDevStatePwrPolStoppingDisarmWakeWakeCanceled
+    { FxPkgPnp::PowerPolStoppingDisarmWakeWakeCanceled,
+      { PwrPolNull, WdfDevStatePwrPolNull}, // transition to Stopping occurs in function
+      NULL,
+      {{ FALSE,
+        PwrPolUsbSelectiveSuspendCompleted // pwr pol stopped from a usb SS device
+                                           // in Dx and the irp completed when the D0
+                                           // irp was sent
+      }},
+    },
+
+    // WdfDevStatePwrPolStopping
+    { FxPkgPnp::PowerPolStopping,
+      { PwrPolPowerDown, WdfDevStatePwrPolStoppingSendStatus DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStoppingOtherStates,
+      {{ FALSE,
+        PwrPolUsbSelectiveSuspendCompleted // pwr pol stopped from a usb SS device
+                                           // in Dx and the irp completed when the D0
+                                           // irp was sent
+      }},
+    },
+
+    // WdfDevStatePwrPolStoppingFailed
+    { FxPkgPnp::PowerPolStoppingFailed,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingSendStatus
+    { FxPkgPnp::PowerPolStoppingSendStatus,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingCancelTimer
+    { FxPkgPnp::PowerPolStoppingCancelTimer,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingWaitForIdleTimeout
+    { NULL,
+      { PwrPolPowerTimeoutExpired, WdfDevStatePwrPolStopping DEBUGGED_EVENT },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingCancelUsbSS
+    { FxPkgPnp::PowerPolStoppingCancelUsbSS,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingWaitForUsbSSCompletion
+    { NULL,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolStoppingCancelTimer DEBUGGED_EVENT },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingCancelWake
+    { FxPkgPnp::PowerPolStoppingCancelWake,
+      { PwrPolWakeFailed, WdfDevStatePwrPolStopping DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStoppingCancelWakeOtherStates,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStopped
+    { NULL,
+      { PwrPolStart, WdfDevStatePwrPolRestarting DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStoppedOtherStates,
+      {{ TRUE,
+        PwrPolPowerTimeoutExpired | // idle timer fired right before stopping
+                                    // pwr policy and before pwr pol could process
+                                    // the timeout
+        PwrPolIoPresent |         // I/O arrived while transitioning to the
+                                  // stopped state
+        PwrPolDevicePowerRequired // Due to a power-related failure, we declared our device state
+                                  // as failed and stopped the power policy state machine. But
+                                  // before stopping the power policy machine, we would have
+                                  // declared ourselves as powered-on (maybe fake) in order to
+                                  // move the power framework to a consistent state. Since we've
+                                  // already declared ourselves as powered-on, we can drop this.
+      }},
+    },
+
+    // WdfDevStatePwrPolCancelUsbSS
+    { FxPkgPnp::PowerPolCancelUsbSS,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolStartedCancelTimer DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolCancelUsbSSOtherStates,
+      {{ TRUE,
+        PwrPolIoPresent // I/O arrived while we were waiting for the USB idle notification IOCTL
+                        // to be completed after we had canceled it. It is okay to drop this
+                        // event because we are already in the process to returning to the powered-
+                        // up state.
+      }},
+    },
+
+    // WdfDevStatePwrPolStarted
+    { FxPkgPnp::PowerPolStarted,
+      { PwrPolSx, WdfDevStatePwrPolSleeping DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolStartedOtherStates,
+      {{ TRUE,
+        PwrPolS0 | // If the machine send a query Sx and it fails, it will send
+                   // an S0 while in the running state (w/out ever sending a true set Sx irp)
+        PwrPolWakeArrived | // If the wake request is failed by the bus in between WakeArrived
+                            // being posted in TimerExpiredWakeCapapble and being
+                            // processed, this event will show up in this state if the idle
+                            // setting changed at this exact moment as well
+        PwrPolWakeSuccess | // returning from Dx armed for wake from Sx, wake
+                            // is completed w/success after S0 irp arrives
+        PwrPolPowerUp |
+        PwrPolUsbSelectiveSuspendCompleted  | // sent when we move out of the armed
+                                              // & idle enabled state into the
+                                              // idle disabled state
+        PwrPolIoPresent  |// This just indicates that I/O arrived, which is fine here
+        PwrPolPowerTimeoutExpired | // this can happen when idle timer is disabled
+                                    // due to policy change while powering up.
+        PwrPolDevicePowerRequired // idle policy changed when device was powered down
+                                  // due to S0-idle. The policy change caused us to power
+                                  // up. As part of powering up, the device-power-required
+                                  // event arrived. Can drop because we already powered-up.
+      }},
+    },
+
+    // WdfDevStatePwrPolStartedCancelTimer
+    { FxPkgPnp::PowerPolStartedCancelTimer,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStartedWaitForIdleTimeout
+    { NULL,
+      { PwrPolPowerTimeoutExpired, WdfDevStatePwrPolStartingDecideS0Wake TRAP_ON_EVENT },
+      FxPkgPnp::m_PowerPolStartedWaitForIdleTimeoutOtherStates,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStartedWakeCapableCancelTimerForSleep
+    { FxPkgPnp::PowerPolStartedWakeCapableCancelTimerForSleep,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStartedWakeCapableWaitForIdleTimeout
+    { NULL,
+      { PwrPolPowerTimeoutExpired, WdfDevStatePwrPolSleeping TRAP_ON_EVENT },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStartedWakeCapableSleepingUsbSS
+    { FxPkgPnp::PowerPolStartedWakeCapableSleepingUsbSS,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolSleeping DEBUGGED_EVENT },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStartedIdleCapableCancelTimerForSleep
+    { FxPkgPnp::PowerPolStartedIdleCapableCancelTimerForSleep,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStartedIdleCapableWaitForIdleTimeout
+    { NULL,
+      { PwrPolPowerTimeoutExpired, WdfDevStatePwrPolSleeping TRAP_ON_EVENT },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolDeviceD0PowerRequestFailed
+    { FxPkgPnp::PowerPolDeviceD0PowerRequestFailed,
+      { PwrPolNull, WdfDevStatePwrPolNull},
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolDevicePowerRequestFailed
+    { FxPkgPnp::PowerPolDevicePowerRequestFailed,
+      { PwrPolStop, WdfDevStatePwrPolStoppingCancelTimer DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolDevicePowerRequestFailedOtherStates,
+      {{ TRUE,
+        PwrPolUsbSelectiveSuspendCompleted | // Device was suspened and surprise
+                                             // removed while in Dx
+        PwrPolS0 | // If the device failed D0Exit while the machine was going into
+                   // Sx, then we will get this event when the machine comes back up
+
+        PwrPolWakeArrived | // wake was completed before PwrPolWakeArrived was
+                            // sent.  On immediate power down or up, the power
+                            // operation failed
+
+        PwrPolWakeFailed | // If the device failed exit d0 after being armed, the
+                           // this event will be processed in the failed state
+        PwrPolDevicePowerRequired | // We can drop because we already declared ourselves
+                                    // as being powered on (fake power-on in order to
+                                    // move the power framework to consistent state).
+        PwrPolIoPresent // We're being notified that we need to be powered-on because
+                        // there is I/O to process, but the device is already in failed
+                        // state and is about to be removed.
+      }},
+    },
+
+    // State exists only for the non power policy owner state machine
+    // WdfDevStatePwrPolGotoDx
+    { NULL,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolGotoDxInDx
+    { NULL,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // State exists only for the non power policy owner state machine
+    // WdfDevStatePwrPolDx
+    { NULL,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // State exists only for the non power policy owner state machine
+    // WdfDevStatePwrPolGotoD0
+    { NULL,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolGotoD0InD0
+    { NULL,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolFinal
+    { NULL,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSleepingPowerDownNotProcessed
+    { FxPkgPnp::PowerPolSleepingPowerDownNotProcessed,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapablePowerDownNotProcessed
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapablePowerDownNotProcessed,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredNoWakePowerDownNotProcessed
+    { FxPkgPnp::PowerPolTimerExpiredNoWakePowerDownNotProcessed,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredNoWakePoweredDownDisableIdleTimer
+    { FxPkgPnp::PowerPolTimerExpiredNoWakePoweredDownDisableIdleTimer,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingWaitingForImplicitPowerDown
+    { NULL,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingPoweringUp
+    { NULL,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppingPoweringDown
+    { NULL,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolPowerUpForSystemSleepNotSeen
+    { FxPkgPnp::PowerPolPowerUpForSystemSleepNotSeen,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolWaitingArmedStoppingCancelUsbSS
+    { FxPkgPnp::PowerPolWaitingArmedStoppingCancelUsbSS,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolStoppingCancelWake DEBUGGED_EVENT },
+      NULL,
+      {{ FALSE,
+        PwrPolWakeFailed |  // wake completed before we could cancel
+                            // the request, so the event may end up here
+        PwrPolWakeSuccess   // -do-
+      }},
+    },
+
+    // WdfDevStatePwrPolWaitingArmedWakeFailedCancelUsbSS
+    { FxPkgPnp::PowerPolWaitingArmedWakeFailedCancelUsbSS,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolIoPresentArmedWakeCanceled TRAP_ON_EVENT },
+      NULL,
+      {{ FALSE,
+          0 }},
+    },
+
+    // WdfDevStatePwrPolWaitingArmedIoPresentCancelUsbSS
+    { FxPkgPnp::PowerPolWaitingArmedIoPresentCancelUsbSS,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolIoPresentArmed DEBUGGED_EVENT },
+      NULL,
+      {{ FALSE,
+        PwrPolWakeFailed  |  // wake completed before we could cancel
+                             // the request, so the event may end up here
+        PwrPolWakeSuccess |  // -do-
+        PwrPolWakeInterruptFired // wake interrupt fired as we were waking the
+                                 // device on receiving IO.This event can fire
+                                 // until the wake interrupt machine is notified
+                                 // of the power up.
+      }},
+    },
+
+    // WdfDevStatePwrPolWaitingArmedWakeSucceededCancelUsbSS
+    { FxPkgPnp::PowerPolWaitingArmedWakeSucceededCancelUsbSS,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolWokeFromS0 DEBUGGED_EVENT },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolCancelingUsbSSForSystemSleep
+    { FxPkgPnp::PowerPolCancelingUsbSSForSystemSleep,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolCancelingWakeForSystemSleep DEBUGGED_EVENT },
+      NULL,
+      {{ FALSE,
+        PwrPolWakeFailed |  // wake completed before we could cancel
+                            // the request, so the event may end up here
+        PwrPolWakeSuccess   // -do-
+      }},
+    },
+
+    // WdfDevStatePwrPolStoppingD0CancelUsbSS
+    { FxPkgPnp::PowerPolStoppingD0CancelUsbSS,
+      { PwrPolUsbSelectiveSuspendCompleted, WdfDevStatePwrPolStoppingD0 TRAP_ON_EVENT },
+      NULL,
+      {{ FALSE,
+        PwrPolWakeFailed |  // wake completed before we could cancel
+                            // the request, so the event may end up here
+        PwrPolWakeSuccess   // -do-
+      }},
+    },
+
+    // WdfDevStatePwrPolStartingPoweredUp
+    { FxPkgPnp::PowerPolStartingPoweredUp,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolIdleCapableDeviceIdle
+    { FxPkgPnp::PowerPolIdleCapableDeviceIdle,
+      { PwrPolDevicePowerNotRequired, WdfDevStatePwrPolTimerExpiredNoWake DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolIdleCapableDeviceIdleOtherStates,
+      {{ TRUE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolDeviceIdleReturnToActive
+    { FxPkgPnp::PowerPolDeviceIdleReturnToActive,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolDeviceIdleSleeping
+    { FxPkgPnp::PowerPolDeviceIdleSleeping,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolDeviceIdleStopping
+    { FxPkgPnp::PowerPolDeviceIdleStopping,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredNoWakeUndoPowerDown
+    { FxPkgPnp::PowerPolTimerExpiredNoWakeUndoPowerDown,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolWakeCapableDeviceIdle
+    { FxPkgPnp::PowerPolWakeCapableDeviceIdle,
+      { PwrPolDevicePowerNotRequired, WdfDevStatePwrPolTimerExpiredDecideUsbSS DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolWakeCapableDeviceIdleOtherStates,
+      {{ TRUE,
+        PwrPolDevicePowerRequired // The device-power-required event arrived, but we had already
+                                  // powered-up the device proactively because we detected that
+                                  // power was needed. And after we powered up, we become idle
+                                  // again and arrived in our current state before the device-
+                                  // power-required event was received. The event is ignored in
+                                  // this case.
+      }},
+    },
+
+    // WdfDevStatePwrPolWakeCapableUsbSSCompleted
+    { FxPkgPnp::PowerPolWakeCapableUsbSSCompleted,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapableUndoPowerDown
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapableUndoPowerDown,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCompletedHardwareStarted
+    { FxPkgPnp::PowerPolTimerExpiredWakeCompletedHardwareStarted,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStoppedRemoving
+    { FxPkgPnp::PowerPolStoppedRemoving,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolRemoved
+    { FxPkgPnp::PowerPolRemoved,
+      { PwrPolStart, WdfDevStatePwrPolStarting DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolRemovedOtherStates,
+      {{ TRUE,
+        PwrPolSx | // device is disabled (must be a PDO) and then the machine
+                   // moves into an Sx state
+        PwrPolS0 |  // driver failed power up when moving out of S0 Dx idle
+                    // state and system resumed after failure
+        PwrPolS0IdlePolicyChanged // driver changes S0 idle settings while being
+                                  // removed
+      }},
+    },
+
+    // WdfDevStatePwrPolRestarting
+    { FxPkgPnp::PowerPolRestarting,
+      { PwrPolPowerUp, WdfDevStatePwrPolStartingSucceeded DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolRestartingOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolRestartingFailed
+    { FxPkgPnp::PowerPolRestartingFailed,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolStartingPoweredUpFailed
+    { FxPkgPnp::PowerPolStartingPoweredUpFailed,
+      { PwrPolPowerDown, WdfDevStatePwrPolStartingFailed DEBUGGED_EVENT },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredNoWakeReturnToActive
+    { FxPkgPnp::PowerPolTimerExpiredNoWakeReturnToActive,
+      { PwrPolNull, WdfDevStatePwrPolNull },
+      NULL,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolWaitingArmedWakeInterruptFired
+    { FxPkgPnp::PowerPolWaitingArmedWakeInterruptFired,
+      { PwrPolWakeFailed, WdfDevStatePwrPolWaitingArmedWakeSucceededCancelUsbSS DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolWaitingArmedWakeInterruptFiredOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeInterruptFired
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeInterruptFired,
+      { PwrPolWakeFailed, WdfDevStatePwrPolSystemWakeDeviceWakeTriggered TRAP_ON_EVENT },
+      FxPkgPnp::m_PowerPolSystemWakeDeviceWakeInterruptFiredOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolSystemWakeDeviceWakeInterruptFiredNP
+    { FxPkgPnp::PowerPolSystemWakeDeviceWakeInterruptFiredNP,
+      { PwrPolWakeFailed, WdfDevStatePwrPolSystemWakeDeviceWakeTriggeredNP TRAP_ON_EVENT },
+      FxPkgPnp::m_PowerPolSystemWakeDeviceWakeInterruptFiredNPOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapableWakeInterruptArrived
+    { FxPkgPnp::PowerPolTimerExpiredWakeCapableWakeInterruptArrived,
+      { PwrPolWakeFailed, WdfDevStatePwrPolTimerExpiredWakeCapableWakeSucceeded DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCapableWakeInterruptArrivedOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolTimerExpiredWakeCapablePowerDownFailedWakeInterruptArrived
+    { NULL,
+      { PwrPolWakeFailed, WdfDevStatePwrPolTimerExpiredWakeCapablePowerDownFailedWakeCanceled DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolTimerExpiredWakeCapablePowerDownFailedWakeInterruptArrivedOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolWaitingArmedWakeInterruptFiredDuringPowerDown
+    { NULL,
+      { PwrPolWakeFailed, WdfDevStatePwrPolWaitingArmedWakeSucceededCancelUsbSS DEBUGGED_EVENT },
+      FxPkgPnp::m_PowerPolWaitingArmedWakeInterruptFiredDuringPowerDownOtherStates,
+      {{ FALSE,
+        0 }},
+    },
+
+    // WdfDevStatePwrPolNull
+    // *** no entry for this state ***
+};
+#endif
 
 // @@SMVERIFY_SPLIT_END
 

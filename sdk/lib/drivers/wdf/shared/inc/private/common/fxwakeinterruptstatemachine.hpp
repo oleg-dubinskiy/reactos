@@ -11,6 +11,7 @@
 //
 const UCHAR FxWakeInterruptEventQueueDepth = 8;
 
+#ifndef __REACTOS__
 enum FxWakeInterruptEvents : UINT32 {
     WakeInterruptEventInvalid                  = 0x00,
     WakeInterruptEventIsr                      = 0x01,
@@ -20,6 +21,9 @@ enum FxWakeInterruptEvents : UINT32 {
     WakeInterruptEventLeavingD0NotArmedForWake = 0x10,
     WakeInterruptEventNull                     = 0xFF,
 };
+#else
+// --> fxforward.hpp
+#endif
 
 enum FxWakeInterruptStates {
     WakeInterruptInvalid = 0,

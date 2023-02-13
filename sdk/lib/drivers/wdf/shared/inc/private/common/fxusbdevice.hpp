@@ -23,10 +23,17 @@ Revision History:
 
 #include "fxusbrequestcontext.hpp"
 
+#ifndef __REACTOS__
 typedef enum _FX_URB_TYPE : UCHAR {
     FxUrbTypeLegacy,
     FxUrbTypeUsbdAllocated
 } FX_URB_TYPE;
+#else
+typedef enum _FX_URB_TYPE { // : UCHAR
+    FxUrbTypeLegacy,
+    FxUrbTypeUsbdAllocated
+} FX_URB_TYPE;
+#endif
 
 struct FxUsbDeviceControlContext : public FxUsbRequestContext {
     FxUsbDeviceControlContext(

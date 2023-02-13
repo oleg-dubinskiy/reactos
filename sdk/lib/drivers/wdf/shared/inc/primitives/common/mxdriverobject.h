@@ -20,7 +20,16 @@ Abstract:
 //
 // Forward declare enum
 //
+#ifndef __REACTOS__
 enum FxDriverObjectUmFlags : USHORT;
+#else // from fxldrum.h
+//
+// Valid flags for use in the DRIVER_OBJECT_UM::Flags field.
+//
+enum FxDriverObjectUmFlags { // : USHORT
+    DriverObjectUmFlagsLoggingEnabled = 0x1
+};
+#endif
 
 class MxDriverObject
 {

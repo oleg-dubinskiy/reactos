@@ -95,6 +95,7 @@ typedef enum _FX_TELEMETRY_DO_ONCE_BITS {
 //
 // bit-flags for tracking hardware info for device start telemetry event
 //
+#ifndef __REACTOS__
 enum FxDeviceInfoFlags : USHORT {
     DeviceInfoLineBasedLevelTriggeredInterrupt =   0x1,
     DeviceInfoLineBasedEdgeTriggeredInterrupt  =   0x2,
@@ -108,6 +109,21 @@ enum FxDeviceInfoFlags : USHORT {
     DeviceInfoHasDynamicChildren               = 0x200,
     DeviceInfoIsUsingDriverWppRecorder         = 0x400
 };
+#else
+enum FxDeviceInfoFlags { // : USHORT
+    DeviceInfoLineBasedLevelTriggeredInterrupt =   0x1,
+    DeviceInfoLineBasedEdgeTriggeredInterrupt  =   0x2,
+    DeviceInfoMsiXOrSingleMsi22Interrupt       =   0x4,
+    DeviceInfoMsi22MultiMessageInterrupt       =   0x8,
+    DeviceInfoPassiveLevelInterrupt            =  0x10,
+    DeviceInfoDmaBusMaster                     =  0x20,
+    DeviceInfoDmaSystem                        =  0x40,
+    DeviceInfoDmaSystemDuplex                  =  0x80,
+    DeviceInfoHasStaticChildren                = 0x100,
+    DeviceInfoHasDynamicChildren               = 0x200,
+    DeviceInfoIsUsingDriverWppRecorder         = 0x400
+};
+#endif
 
 //
 // wdf version strig example "01.011"

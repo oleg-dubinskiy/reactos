@@ -289,7 +289,11 @@ FxDriverGlobalsInitializeDebugExtension(
         return;
     }
 
+  #ifndef __REACTOS__
     *pExtension = {};
+  #else
+    RtlZeroMemory(&pExtension, sizeof(FxDriverGlobalsDebugExtension));
+  #endif
 
     pExtension->AllocatedTagTrackersLock.Initialize();
 
@@ -1064,7 +1068,11 @@ FxAllocateDriverGlobals(
         return NULL;
     }
 
+  #ifndef __REACTOS__
     *pFxDriverGlobals = {};
+  #else
+    RtlZeroMemory(&pFxDriverGlobals, sizeof(FX_DRIVER_GLOBALS));
+  #endif
 
     pFxDriverGlobals->Refcnt = 1;
 

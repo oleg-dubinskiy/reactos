@@ -706,6 +706,7 @@ FxDevice::AssignProperty (
         return status;
     }
 
+  #ifndef __REACTOS__
     status = IoSetDevicePropertyData(
                 pdo,
                 propertyKey,
@@ -715,6 +716,14 @@ FxDevice::AssignProperty (
                 BufferLength,
                 PropertyBuffer
                 );
+  #else
+    UNIMPLEMENTED;
+    ASSERT(FALSE);
+    if(propertyKey){;};
+    if(lcid){;};
+    if(flags){;};
+    status=0;
+  #endif
 
     if (!NT_SUCCESS(status)) {
         DoTraceLevelMessage(

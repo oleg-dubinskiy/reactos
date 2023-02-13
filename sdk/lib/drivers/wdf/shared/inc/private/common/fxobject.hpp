@@ -109,6 +109,7 @@ struct FxQueryInterfaceParams {
     WDFOBJECT_OFFSET Offset;
 };
 
+#ifndef __REACTOS__
 //
 // type of object being allocated.  An internal object does *NOT*
 // 1) have its size rounded up to an alignment value
@@ -120,6 +121,9 @@ enum FxObjectType : UINT32 {
     FxObjectTypeExternal,
     FxObjectTypeEmbedded,
 };
+#else
+// --> fxforward.hpp
+#endif
 
 // Ensures that a BOOL type is generated from a flag mask
 #define FLAG_TO_BOOL(_Flags, _FlagMask) (!!((_Flags) & (_FlagMask)))

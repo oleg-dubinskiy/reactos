@@ -580,7 +580,11 @@ Returns:
 
 {
     PDEVICE_CAPABILITIES pDeviceCapabilities;
+  #ifndef __REACTOS__
     STACK_DEVICE_CAPABILITIES parentStackCapabilities = {0};
+  #else
+    STACK_DEVICE_CAPABILITIES parentStackCapabilities = {{0}};
+  #endif
     NTSTATUS status;
 
     status = STATUS_UNSUCCESSFUL;

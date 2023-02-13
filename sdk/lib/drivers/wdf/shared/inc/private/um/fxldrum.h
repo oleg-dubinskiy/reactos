@@ -119,12 +119,16 @@ typedef const GUID *LPCGUID;
 typedef UINT64 WUDF_INTERFACE_CONTEXT;
 class FxDriver;
 
+#ifndef __REACTOS__
 //
 // Valid flags for use in the DRIVER_OBJECT_UM::Flags field.
 //
 enum FxDriverObjectUmFlags : USHORT {
     DriverObjectUmFlagsLoggingEnabled = 0x1
 };
+#else
+// --> mxdriverobject.h
+#endif
 
 //
 // Driver object's basic interface.

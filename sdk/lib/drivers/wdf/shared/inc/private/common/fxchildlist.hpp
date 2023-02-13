@@ -652,11 +652,19 @@ enum FxChildListDescriptionState {
 // end_wpp
 
 // begin_wpp enum
+#ifndef __REACTOS__
 enum FxChildListReportedMissingCallbackState : UCHAR {
     CallbackStateUnspecified = 0,
     CallbackNeedsToBeInvoked,
     CallbackInvoked,
 };
+#else
+enum FxChildListReportedMissingCallbackState { // : UCHAR
+    CallbackStateUnspecified = 0,
+    CallbackNeedsToBeInvoked,
+    CallbackInvoked,
+};
+#endif
 // end_wpp
 
 enum FxChildListValues {

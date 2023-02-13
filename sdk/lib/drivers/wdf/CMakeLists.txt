@@ -211,7 +211,13 @@ target_include_directories(wdf01000
 target_link_libraries(wdf01000 aux_klib ntoskrnl_vista ${PSEH_LIB})
 
 if(GCC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-reorder")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-invalid-offsetof")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-delete-non-virtual-dtor")
+
     target_compile_options(wdf01000
         PRIVATE -Wno-write-strings -Wno-unknown-pragmas -Wno-switch
-        PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wno-reorder -Wno-invalid-offsetof -Wno-delete-non-virtual-dtor>)
+#        PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wno-reorder -Wno-invalid-offsetof -Wno-delete-non-virtual-dtor>
+    )
+
 endif()

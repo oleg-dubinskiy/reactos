@@ -40,10 +40,17 @@ extern "C" {
 
 }
 
+#ifndef __REACTOS__
 enum FxTagTrackerType : UCHAR {
     FxTagTrackerTypeHandle = 0,
     FxTagTrackerTypePower
 };
+#else
+enum FxTagTrackerType { // : UCHAR
+    FxTagTrackerTypeHandle = 0,
+    FxTagTrackerTypePower
+};
+#endif
 
 enum FxTagRefType {
    TagAddRef = 0,

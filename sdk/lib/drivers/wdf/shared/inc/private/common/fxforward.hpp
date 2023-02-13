@@ -117,11 +117,44 @@ class  FxWorkItem;
 class  IFxHasCallbacks;
 class  IFxMemory;
 
+#ifndef __REACTOS__
 enum FxObjectType : UINT32;
-enum FxWmiInstanceAction : UINT32;
-enum FxDriverObjectUmFlags : USHORT;
-enum FxWakeInterruptEvents : UINT32;
+#else // from fxobject.hpp
+//
+// type of object being allocated.  An internal object does *NOT*
+// 1) have its size rounded up to an alignment value
+// 2) extra size and context header appended to the allocation
+//
+enum FxObjectType { // : UINT32;
+    FxObjectTypeInvalid = 0,
+    FxObjectTypeInternal,
+    FxObjectTypeExternal,
+    FxObjectTypeEmbedded
+};
+#endif
 
+#ifndef __REACTOS__
+enum FxWmiInstanceAction : UINT32;
+#else // from fxpkgpnp.hpp
+enum FxWmiInstanceAction { // : UINT32;
+    AddInstance,
+    RemoveInstance
+};
+#endif
+
+#ifndef __REACTOS__
+enum FxWakeInterruptEvents : UINT32;
+#else // from fxwakeinterruptstatemachine.hpp
+enum FxWakeInterruptEvents { // : UINT32
+    WakeInterruptEventInvalid                  = 0x00,
+    WakeInterruptEventIsr                      = 0x01,
+    WakeInterruptEventEnteringD0               = 0x02,
+    WakeInterruptEventLeavingD0                = 0x04,
+    WakeInterruptEventD0EntryFailed            = 0x08,
+    WakeInterruptEventLeavingD0NotArmedForWake = 0x10,
+    WakeInterruptEventNull                     = 0xFF,
+};
+#endif
 
 PVOID
 FxObjectHandleAlloc(

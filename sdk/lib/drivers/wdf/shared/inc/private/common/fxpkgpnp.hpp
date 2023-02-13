@@ -425,10 +425,14 @@ struct FxPowerCaps {
     ULONG D3Latency;
 };
 
+#ifndef __REACTOS__
 enum FxWmiInstanceAction : UINT32 {
     AddInstance,
     RemoveInstance
 };
+#else
+// --> fxforward.hpp
+#endif
 
 struct FxEnumerationInfo : public FxStump {
 public:

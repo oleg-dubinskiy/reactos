@@ -68,12 +68,21 @@ enum FxObjectDebugInfoFlags {
     FxObjectDebugTrackReferences = 0x0001,
 };
 
+#ifndef __REACTOS__
 typedef enum FxTrackPowerOption : UCHAR {
     FxTrackPowerNone = 0,
     FxTrackPowerRefs,
     FxTrackPowerRefsAndStack,
     FxTrackPowerMaxValue
 } FxTrackPowerOption;
+#else
+typedef enum FxTrackPowerOption { // : UCHAR
+    FxTrackPowerNone = 0,
+    FxTrackPowerRefs,
+    FxTrackPowerRefsAndStack,
+    FxTrackPowerMaxValue
+} FxTrackPowerOption;
+#endif
 
 typedef enum FxVerifierDownlevelOption {
     NotOkForDownLevel = 0,
