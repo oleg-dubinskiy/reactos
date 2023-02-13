@@ -68,8 +68,12 @@ protected:
      {
          UNREFERENCED_PARAMETER(Size);
 
+      #ifndef __REACTOS__
          ASSERTMSG("FxSyncRequest::operator new called, should only be"
                       " declared on the stack\n", FALSE);
+      #else
+         ASSERTMSG("FxSyncRequest::operator new called, should only be declared on the stack\n", FALSE);
+      #endif
 
          return (PVOID)1;
      }

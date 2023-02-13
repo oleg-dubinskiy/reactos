@@ -3740,9 +3740,13 @@ IdleTimeoutManagement::UseSystemManagedIdleTimeout(
                 // Status flag was already set. This should never happen for the
                 // IdleTimeoutSystemManaged flag. The caller ensures this.
                 //
+              #ifndef __REACTOS__
                 ASSERTMSG(
                     "IdleTimeoutManagement::UseSystemManagedIdleTimeout was "
                     "called more than once\n", FALSE);
+              #else
+                ASSERTMSG("IdleTimeoutManagement::UseSystemManagedIdleTimeout was called more than once\n", FALSE);
+              #endif
             }
 
             //
@@ -3972,9 +3976,14 @@ IdleTimeoutManagement::CommitPowerFrameworkSettings(
             // beginning of this function to ensure that only the first caller
             // attempts to set this flag.
             //
+          #ifndef __REACTOS__
             ASSERTMSG(
                 "Attempt to set the IdleTimeoutPoxSettingsSpecified flag more "
                 "than once\n", FALSE);
+          #else
+            ASSERTMSG("Attempt to set the IdleTimeoutPoxSettingsSpecified flag more than once\n", FALSE);
+          #endif
+
             status = STATUS_INTERNAL_ERROR;
             goto exit;
         }

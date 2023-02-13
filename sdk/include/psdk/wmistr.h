@@ -60,7 +60,7 @@ typedef struct tagWNODE_SINGLE_INSTANCE
     ULONG InstanceIndex;
     ULONG DataBlockOffset;
     ULONG SizeDataBlock;
-    UCHAR VariableData[];
+    UCHAR VariableData[1];
 } WNODE_SINGLE_INSTANCE, *PWNODE_SINGLE_INSTANCE;
 
 #define WMIREG_FLAG_EXPENSIVE           0x00000001
@@ -95,7 +95,7 @@ typedef struct
     ULONG RegistryPath;
     ULONG MofResourceName;
     ULONG GuidCount;
-    WMIREGGUIDW WmiRegGuid[];
+    WMIREGGUIDW WmiRegGuid[1];
 } WMIREGINFOW, *PWMIREGINFOW;
 
 typedef WMIREGINFOW WMIREGINFO;
@@ -116,7 +116,7 @@ typedef struct tagWNODE_ALL_DATA
     union
     {
         ULONG FixedInstanceSize;
-        OFFSETINSTANCEDATAANDLENGTH OffsetInstanceDataAndLength[0];
+        OFFSETINSTANCEDATAANDLENGTH OffsetInstanceDataAndLength[1];
     };
 } WNODE_ALL_DATA, *PWNODE_ALL_DATA;
 
@@ -128,7 +128,7 @@ typedef struct tagWNODE_SINGLE_ITEM
     ULONG ItemId;
     ULONG DataBlockOffset;
     ULONG SizeDataItem;
-    UCHAR VariableData[];
+    UCHAR VariableData[1];
 } WNODE_SINGLE_ITEM, *PWNODE_SINGLE_ITEM;
 
 typedef struct tagWNODE_METHOD_ITEM
@@ -139,7 +139,7 @@ typedef struct tagWNODE_METHOD_ITEM
     ULONG MethodId;
     ULONG DataBlockOffset;
     ULONG SizeDataBlock;
-    UCHAR VariableData[];
+    UCHAR VariableData[1];
 } WNODE_METHOD_ITEM, *PWNODE_METHOD_ITEM;
 
 typedef enum

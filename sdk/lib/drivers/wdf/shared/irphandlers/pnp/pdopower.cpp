@@ -167,9 +167,13 @@ FxPkgPdo::DispatchDeviceSetPower(
                 m_Device->GetHandle(),
                 m_Device->GetDeviceObject());
 
+  #ifndef __REACTOS__
             ASSERTMSG("Received set device power irp but the irp was not "
                 "requested by the device (the power policy owner)\n",
                 FALSE);
+  #else
+            ASSERTMSG("Received set device power irp but the irp was not requested by the device (the power policy owner)\n", FALSE);
+  #endif
         }
 
         //

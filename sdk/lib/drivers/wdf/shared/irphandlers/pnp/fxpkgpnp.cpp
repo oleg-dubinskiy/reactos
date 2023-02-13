@@ -1670,6 +1670,15 @@ Done:
     return status;
 }
 
+  #ifdef __REACTOS__
+#undef C_ASSERT
+#ifdef _MSC_VER
+# define C_ASSERT(e) typedef char __C_ASSERT__[(e)?1:-1]
+#else
+# define C_ASSERT(e) extern void __C_ASSERT__(int [(e)?1:-1])
+#endif
+  #endif
+
 _Must_inspect_result_
 NTSTATUS
 FxPkgPnp::QueryForCapabilities(
@@ -1754,7 +1763,8 @@ FxPkgPnp::QueryForCapabilities(
                 // which is a safe assumption to start with, one which may be
                 // overridden later.
                 //
-                C_ASSERT(PowerDeviceD0 == static_cast<DEVICE_POWER_STATE>(DeviceWakeDepthD0));
+
+                C_ASSERT((PowerDeviceD0 == static_cast<DEVICE_POWER_STATE>(DeviceWakeDepthD0)));
                 m_DeviceWake[i - PowerSystemWorking] = (BYTE) caps.DeviceCaps.DeviceWake;
             }
         }
