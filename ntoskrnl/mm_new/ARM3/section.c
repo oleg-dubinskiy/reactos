@@ -931,6 +931,7 @@ MiPurgeImageSection(
         TempProto.u.Long = 0;
         PteContents.u.Long = 0;
         SubsectionSize = 0;
+        CurrentSize = 0;
 
         if (Subsection->StartingSector)
         {
