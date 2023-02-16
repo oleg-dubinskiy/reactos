@@ -498,6 +498,8 @@ HalpInitializeIOUnits(VOID)
     HalpAddressUsageList = (PADDRESS_USAGE)&HalpApicUsage;
 }
 
+/* PM TIMER FUNCTIONS *********************************************************/
+
 INIT_FUNCTION
 BOOLEAN
 FASTCALL
@@ -1166,14 +1168,11 @@ HalpEndSystemInterrupt(
 
     HalReserved = (PHALP_PCR_HAL_RESERVED)KeGetPcr()->HalReserved;
 
-    if (OldIrql != PASSIVE_LEVEL)
-        goto Exit;
-
-    if (!HalReserved->ApcRequested)
-        goto Exit;
-
-    if ((UCHAR)(KeGetCurrentPrcb()->HalReserved[0]) == 0)
-        HalpCheckForSoftwareInterrupt(OldIrql, TrapFrame);
+    if (HalReserved->DpcRequested || (HalReserved->ApcRequested && OldIrql == PASSIVE_LEVEL))
+    {
+        if ((UCHAR)(KeGetCurrentPrcb()->HalReserved[0]) == 0)
+            HalpCheckForSoftwareInterrupt(OldIrql, TrapFrame);
+    }
 
 Exit:
     ;
