@@ -195,10 +195,10 @@ SendLinkCreated(IN PUNICODE_STRING SymbolicName)
     RtlCopyMemory(Name->Name, SymbolicName->Buffer, SymbolicName->Length);
 
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
-    /* Microsoft does it twice... Once with limited access, second with any
+    /* Microsoft does it twice... Once with any access, second with limited
      * So, first one here
      */
-    Irp = IoBuildDeviceIoControlRequest(CTL_CODE(MOUNTDEVCONTROLTYPE, 4, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS),
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTDEV_LINK_CREATED,
                                         DeviceObject,
                                         Name,
                                         NameSize,
@@ -222,7 +222,7 @@ SendLinkCreated(IN PUNICODE_STRING SymbolicName)
 
     /* Then, second one */
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
-    Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTDEV_LINK_CREATED,
+    Irp = IoBuildDeviceIoControlRequest(CTL_CODE(MOUNTDEVCONTROLTYPE, 4, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS),
                                         DeviceObject,
                                         Name,
                                         NameSize,
