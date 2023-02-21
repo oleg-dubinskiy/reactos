@@ -234,7 +234,13 @@ PpIrpQueryID(
     {
         if (*OutID != NULL)
         {
-            ASSERT(*OutID == NULL);
+           #if DBG
+             DPRINT1("PpIrpQueryID: Device %p, Type %X\n", DeviceObject, IdType);
+             DPRINT1("Dumping Nodes:\n");
+             PipDumpDeviceNodes(NULL, 1+2+4+8, 0);
+             ASSERT(*OutID == NULL);
+           #endif
+
             *OutID = NULL;
         }
 

@@ -1092,6 +1092,12 @@ PdoQueryId(
 
     DPRINT("PdoQueryId: IRP_MJ_PNP / IRP_MN_QUERY_ID / IdType - %X\n", IdType);
 
+    if (DeviceObject == IopRootDeviceNode->PhysicalDeviceObject)
+        return Irp->IoStatus.Status;
+
+    if (NT_SUCCESS(Irp->IoStatus.Status) && Irp->IoStatus.Information)
+        return Irp->IoStatus.Status;
+
     switch (IdType)
     {
         case BusQueryDeviceID:
@@ -1187,6 +1193,7 @@ PdoQueryId(
                 !DeviceExtension ||
                 !DeviceExtension->CompatibleIdListSize)
             {
+                Status = Irp->IoStatus.Status;
                 break;
             }
 
@@ -1207,6 +1214,7 @@ PdoQueryId(
         case BusQueryHardwareIDs:
         case BusQueryDeviceSerialNumber:
         {
+            Status = Irp->IoStatus.Status;
             break;
         }
         default:
