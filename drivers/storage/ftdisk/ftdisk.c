@@ -120,14 +120,65 @@ FtWmi(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+/* PNP */
+
+static
+NTSTATUS
+FASTCALL
+FtpPnpPdo(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+static
+NTSTATUS
+FASTCALL
+FtpPnpFdo(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 NTAPI
 FtDiskPnp(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PROOT_EXTENSION Extension;
+    NTSTATUS Status;
+
+    DPRINT("FtDiskPnp: %p, %p\n", DeviceObject, Irp);
+
+    Extension = DeviceObject->DeviceExtension;
+
+    if (Extension->DeviceExtensionType == 0) // ROOT
+    {
+        Status = FtpPnpFdo(DeviceObject, Irp);
+        DPRINT("FtDiskPnp: %p, %p, %X\n", DeviceObject, Irp, Status);
+        return Status;
+    }
+
+    if (Extension->DeviceExtensionType == 1) // VOLUME
+    {
+        Status = FtpPnpPdo(DeviceObject, Irp);
+        DPRINT("FtDiskPnp: %p, %p, %X\n", DeviceObject, Irp, Status);
+        return Status;
+    }
+
+    DPRINT("FtDiskPnp: %p, %p, DeviceExtensionType %X\n", DeviceObject, Irp, Extension->DeviceExtensionType);
+
+    Irp->IoStatus.Information = 0;
+    Irp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
+
+    IoCompleteRequest(Irp, 0);
+
+    return STATUS_INVALID_DEVICE_REQUEST;
 }
 
 /* REINITIALIZE DRIVER ROUTINES *********************************************/
