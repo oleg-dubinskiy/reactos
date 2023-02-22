@@ -10,10 +10,32 @@
 
 #include <ntifs.h>
 
+typedef struct _FT_LOGICAL_DISK_INFORMATION_SET
+{
+    ULONG DiskInfoCount;
+    PVOID* LogicalDiskInfoArray;
+    ULONG Reserved1;
+    ULONG Reserved2;
+} FT_LOGICAL_DISK_INFORMATION_SET, *PFT_LOGICAL_DISK_INFORMATION_SET;
+
 typedef struct _ROOT_EXTENSION
 {
-    PDEVICE_OBJECT VolControlRootPdo;
+    PDEVICE_OBJECT SelfDeviceObject; // RootFdo
+    struct _ROOT_EXTENSION* RootExtension;
+    ULONG DeviceExtensionType; // 0 Root, 1 Volume
+    KSPIN_LOCK SpinLock;
+    PDRIVER_OBJECT DriverObject;
+    PDEVICE_OBJECT AttachedToDevice; // RootFdo attached to ...
+    PDEVICE_OBJECT VolControlRootPdo; // Pdo created PNP Mgr
+    LIST_ENTRY VolumeList;
+    LIST_ENTRY EmptyVolumesList;
+    ULONG VolumeCounter;
+    PFT_LOGICAL_DISK_INFORMATION_SET LogicalDiskInfoSet;
+    LIST_ENTRY WorkerQueue;
+    LIST_ENTRY ChangeNotifyIrpList;
+    KSEMAPHORE RootSemaphore;
     UNICODE_STRING SymbolicLinkName;
+    UNICODE_STRING RegistryPath;
 } ROOT_EXTENSION, *PROOT_EXTENSION;
 
 NTSTATUS

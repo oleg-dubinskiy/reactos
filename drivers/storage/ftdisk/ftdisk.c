@@ -161,8 +161,121 @@ FtDiskAddDevice(
     _In_ PDEVICE_OBJECT VolControlRootPdo,
     _In_ PUNICODE_STRING RegistryPath)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PROOT_EXTENSION RootExtension;
+    PDEVICE_OBJECT RootFdo;
+    UNICODE_STRING NameString;
+    UNICODE_STRING SymbolicLinkName;
+    USHORT Size;
+    NTSTATUS Status;
+
+    DPRINT("FtDiskAddDevice: %p, %p, '%wZ'\n", DriverObject, VolControlRootPdo, RegistryPath);
+
+    RtlInitUnicodeString(&NameString, L"\\Device\\FtControl");
+
+    Status = IoCreateDevice(DriverObject,
+                            sizeof(*RootExtension),
+                            &NameString,
+                            FILE_DEVICE_NETWORK,
+                            FILE_DEVICE_SECURE_OPEN,
+                            FALSE,
+                            &RootFdo);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("FtDiskAddDevice: Status %X\n", Status);
+        return Status;
+    }
+
+    RtlInitUnicodeString(&SymbolicLinkName, L"\\DosDevices\\FtControl");
+    IoCreateSymbolicLink(&SymbolicLinkName, &NameString);
+
+    RootExtension = RootFdo->DeviceExtension;
+    RtlZeroMemory(RootExtension, sizeof(*RootExtension));
+
+    DPRINT("FtDiskAddDevice: RootFdo %p, %p\n", RootFdo, RootExtension);
+
+    RootExtension->DriverObject = DriverObject;
+    RootExtension->SelfDeviceObject = RootFdo;
+    RootExtension->RootExtension = RootExtension;
+
+    RootExtension->DeviceExtensionType = 0; // Root ext.
+
+    KeInitializeSpinLock(&RootExtension->SpinLock);
+
+    RootExtension->AttachedToDevice = IoAttachDeviceToDeviceStack(RootFdo, VolControlRootPdo);
+    if (!RootExtension->AttachedToDevice)
+    {
+        DPRINT1("FtDiskAddDevice: AttachedToDevice is NULL!\n");
+        IoDeleteSymbolicLink(&SymbolicLinkName);
+        IoDeleteDevice(RootFdo);
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    DPRINT("FtDiskAddDevice: RootPdo %p, RootFdo attached to %p\n", VolControlRootPdo, RootExtension->AttachedToDevice);
+
+    RootExtension->VolControlRootPdo = VolControlRootPdo;
+
+    InitializeListHead(&RootExtension->VolumeList);
+    InitializeListHead(&RootExtension->EmptyVolumesList);
+
+    RootExtension->VolumeCounter = 1;
+
+    RootExtension->LogicalDiskInfoSet = ExAllocatePoolWithTag(NonPagedPool, sizeof(*RootExtension->LogicalDiskInfoSet), 'tFcS');
+    if (!RootExtension->LogicalDiskInfoSet)
+    {
+        DPRINT1("FtDiskAddDevice: STATUS_INSUFFICIENT_RESOURCES\n");
+        IoDeleteSymbolicLink(&SymbolicLinkName);
+        IoDetachDevice(RootExtension->AttachedToDevice);
+        IoDeleteDevice(RootFdo);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(RootExtension->LogicalDiskInfoSet, sizeof(*RootExtension->LogicalDiskInfoSet));
+
+    InitializeListHead(&RootExtension->WorkerQueue);
+    InitializeListHead(&RootExtension->ChangeNotifyIrpList);
+    KeInitializeSemaphore(&RootExtension->RootSemaphore, 1, 1);
+
+    Size = (RegistryPath->Length + sizeof(WCHAR));
+    RootExtension->RegistryPath.MaximumLength = Size;
+
+    RootExtension->RegistryPath.Buffer = ExAllocatePoolWithTag(PagedPool, Size, 'tFcS');
+    if (!RootExtension->RegistryPath.Buffer)
+    {
+        DPRINT1("FtDiskAddDevice: STATUS_INSUFFICIENT_RESOURCES\n");
+
+        if (RootExtension->LogicalDiskInfoSet)
+            ExFreePoolWithTag(RootExtension->LogicalDiskInfoSet, 'tFcS');
+
+        IoDeleteSymbolicLink(&SymbolicLinkName);
+        IoDetachDevice(RootExtension->AttachedToDevice);
+        IoDeleteDevice(RootFdo);
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyUnicodeString(&RootExtension->RegistryPath, RegistryPath);
+
+    Status = IoRegisterShutdownNotification(RootFdo);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("FtDiskAddDevice: Status %X\n", Status);
+
+        ExFreePoolWithTag(RootExtension->RegistryPath.Buffer, 'tFcS');
+
+        if (RootExtension->LogicalDiskInfoSet)
+            ExFreePoolWithTag(RootExtension->LogicalDiskInfoSet, 'tFcS');
+
+        IoDeleteSymbolicLink(&SymbolicLinkName);
+        IoDetachDevice(RootExtension->AttachedToDevice);
+        IoDeleteDevice(RootFdo);
+
+        return Status;
+    }
+
+    RootFdo->Flags &= ~DO_DEVICE_INITIALIZING;
+
+    DPRINT1("FtDiskAddDevice: return STATUS_SUCCESS\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
