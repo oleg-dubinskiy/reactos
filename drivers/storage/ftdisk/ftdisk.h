@@ -10,6 +10,19 @@
 
 #include <ntifs.h>
 
+typedef struct _ROOT_EXTENSION
+{
+    PDEVICE_OBJECT VolControlRootPdo;
+    UNICODE_STRING SymbolicLinkName;
+} ROOT_EXTENSION, *PROOT_EXTENSION;
+
+NTSTATUS
+NTAPI
+DriverEntry(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PUNICODE_STRING RegistryPath
+);
+
 #endif /* _FTDISK_H_ */
 
 /* EOF */
