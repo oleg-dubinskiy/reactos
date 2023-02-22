@@ -24,8 +24,8 @@ extern ERESOURCE SepSubjectContextLock;
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
-static
 INIT_FUNCTION
+static
 BOOLEAN
 SepInitExports(VOID)
 {

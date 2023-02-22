@@ -31,13 +31,14 @@ Author:
 
   #if (_MSC_VER >= 1800) // Visual Studio 2013 / version 12.0
     #define INIT_FUNCTION __declspec(code_seg("INIT"))
+    #define CODE_SEG(segment) __declspec(code_seg(segment))
   #else
     #pragma section("INIT", read,execute,discard)
-    #define INIT_FUNCTION
+    #define INIT_FUNCTION __pragma(code_seg("INIT"))
+    #define CODE_SEG(segment) __pragma(code_seg(segment))
   #endif
 
   #define DATA_SEG(segment) __declspec(allocate(segment))
-  #define CODE_SEG(segment) __declspec(code_seg(segment))
 
 #else
   #error Invalid compiler!

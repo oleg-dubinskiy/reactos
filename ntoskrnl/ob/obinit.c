@@ -57,8 +57,8 @@ ULONG ObpProtectionMode = 0;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
-static
 INIT_FUNCTION
+static
 NTSTATUS
 NTAPI
 ObpCreateKernelObjectsSD(OUT PSECURITY_DESCRIPTOR *SecurityDescriptor)
