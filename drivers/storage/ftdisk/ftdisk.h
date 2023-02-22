@@ -23,6 +23,59 @@ DriverEntry(
     _In_ PUNICODE_STRING RegistryPath
 );
 
+NTSTATUS
+NTAPI
+FtDiskAddDevice(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_OBJECT VolControlRootPdo,
+    _In_ PUNICODE_STRING RegistryPath
+);
+
+VOID
+NTAPI
+FtDiskUnload(
+    _In_ PDRIVER_OBJECT DriverObject
+);
+
+NTSTATUS
+NTAPI
+FtDiskDeviceControl(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp
+);
+
+NTSTATUS
+NTAPI
+FtWmi(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp
+);
+
+NTSTATUS
+NTAPI
+FtDiskPnp(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp
+);
+
+VOID
+NTAPI
+FtpBootDriverReinitialization(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PVOID Context,
+    _In_ ULONG Count
+);
+
+VOID
+NTAPI
+FtpDriverReinitialization(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PVOID Context,
+    _In_ ULONG Count
+);
+
+
+
 #endif /* _FTDISK_H_ */
 
 /* EOF */

@@ -12,6 +12,16 @@
 
 #ifdef ALLOC_PRAGMA
   #pragma alloc_text(INIT, DriverEntry)
+  #pragma alloc_text(INIT, FtDiskAddDevice)
+#endif
+
+#ifdef ALLOC_PRAGMA
+  #pragma alloc_text(PAGE, FtDiskUnload)
+  #pragma alloc_text(PAGE, FtDiskDeviceControl)
+  #pragma alloc_text(PAGE, FtWmi)
+  #pragma alloc_text(PAGE, FtDiskPnp)
+  #pragma alloc_text(PAGE, IoRegisterBootDriverReinitialization)
+  #pragma alloc_text(PAGE, IoRegisterDriverReinitialization)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -19,6 +29,141 @@
 GUID VOLMGR_VOLUME_MANAGER_GUID = {0x53F5630E, 0xB6BF, 0x11D0, {0X94, 0XF2, 0X00, 0XA0, 0XC9, 0X1E, 0XFB, 0X8B}};
 
 /* FUNCTIONS ****************************************************************/
+
+VOID
+NTAPI
+FtDiskUnload(
+    _In_ PDRIVER_OBJECT DriverObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+/* DRIVER DISPATCH ROUTINES *************************************************/
+
+NTSTATUS
+NTAPI
+FtDiskCreate(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+FtDiskReadWrite(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+FtDiskDeviceControl(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+FtDiskInternalDeviceControl(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+FtDiskShutdownFlush(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+FtDiskCleanup(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+FtDiskPower(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+FtWmi(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+FtDiskPnp(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* REINITIALIZE DRIVER ROUTINES *********************************************/
+
+VOID
+NTAPI
+FtpDriverReinitialization(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PVOID Context,
+    _In_ ULONG Count)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+FtpBootDriverReinitialization(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PVOID Context,
+    _In_ ULONG Count)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+/* INIT DRIVER ROUTINES *****************************************************/
+
+NTSTATUS
+NTAPI
+FtDiskAddDevice(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_OBJECT VolControlRootPdo,
+    _In_ PUNICODE_STRING RegistryPath)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
 
 NTSTATUS
 NTAPI
