@@ -38,6 +38,16 @@ typedef struct _ROOT_EXTENSION
     UNICODE_STRING RegistryPath;
 } ROOT_EXTENSION, *PROOT_EXTENSION;
 
+typedef struct _VOLUME_EXTENSION
+{
+    PDEVICE_OBJECT SelfDeviceObject; // Volume PDO
+    struct _ROOT_EXTENSION* RootExtension;
+    ULONG DeviceExtensionType;
+    KSPIN_LOCK SpinLock;
+    LIST_ENTRY Link;
+    ULONG VolumeNumber;
+} VOLUME_EXTENSION, *PVOLUME_EXTENSION;
+
 NTSTATUS
 NTAPI
 DriverEntry(
@@ -96,6 +106,12 @@ FtpDriverReinitialization(
     _In_ ULONG Count
 );
 
+NTSTATUS
+NTAPI
+FtpQueryRootId(
+    _In_ PROOT_EXTENSION RootExtension,
+    _In_ PIRP Irp
+);
 
 
 #endif /* _FTDISK_H_ */
