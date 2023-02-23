@@ -1201,7 +1201,6 @@ MiGetProtoPteAddressExtended(
     PCONTROL_AREA ControlArea;
     PSUBSECTION Subsection;
     ULONG_PTR PteOffset;
-    ULONG PtesInSubsection;
 
     ControlArea = Vad->ControlArea;
 
@@ -1235,20 +1234,18 @@ MiGetProtoPteAddressExtended(
 
     ASSERT(PteOffset < 0xF0000000);
 
-    PtesInSubsection = Subsection->PtesInSubsection;
-    PteOffset += PtesInSubsection;
+    PteOffset += Subsection->PtesInSubsection;
 
-    while (PteOffset >= PtesInSubsection)
+    while (PteOffset >= Subsection->PtesInSubsection)
     {
+        PteOffset -= Subsection->PtesInSubsection;
+
         Subsection = Subsection->NextSubsection;
         if (!Subsection)
         {
             DPRINT1("MiGetProtoPteAddressExtended: return NULL\n");
             return NULL;
         }
-
-        PteOffset -= PtesInSubsection;
-        PtesInSubsection = Subsection->PtesInSubsection;
     }
 
     ASSERT(Subsection->SubsectionBase != NULL);
