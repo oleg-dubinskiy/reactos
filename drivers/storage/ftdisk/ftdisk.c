@@ -45,6 +45,22 @@ FtpSignalCompletion(
 
 VOID
 NTAPI
+FtpAcquire(
+    _In_ PROOT_EXTENSION RootExtension)
+{
+    KeWaitForSingleObject(&RootExtension->RootSemaphore, Executive, KernelMode, FALSE, NULL);
+}
+
+VOID
+NTAPI
+FtpRelease(
+    _In_ PROOT_EXTENSION RootExtension)
+{
+    KeReleaseSemaphore(&RootExtension->RootSemaphore, 0, 1, FALSE);
+}
+
+VOID
+NTAPI
 FtDiskUnload(
     _In_ PDRIVER_OBJECT DriverObject)
 {
