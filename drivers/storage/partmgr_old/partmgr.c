@@ -36,6 +36,19 @@ GUID VOLMGR_VOLUME_MANAGER_GUID = {0x53F5630E, 0xB6BF, 0x11D0, {0X94, 0XF2, 0X00
 
 NTSTATUS
 NTAPI
+PmSignalCompletion(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PVOID Context)
+{
+    PKEVENT Event = Context;
+
+    KeSetEvent(Event, 0, FALSE);
+    return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+NTSTATUS
+NTAPI
 PmPassThrough(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
