@@ -167,8 +167,31 @@ PmTableSignatureCompareRoutine(
     _In_ PVOID FirstStruct,
     _In_ PVOID SecondStruct)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    PPM_SIGNATURE First = FirstStruct;
+    PPM_SIGNATURE Second = SecondStruct;
+    ULONG FirstSignature;
+    ULONG SecondSignature;
+    RTL_GENERIC_COMPARE_RESULTS Result;
+
+    FirstSignature = First->Value;
+    SecondSignature = Second->Value;
+
+    DPRINT("PmTableSignatureCompareRoutine: %X, %X\n", FirstSignature, SecondSignature);
+
+    if (FirstSignature < SecondSignature)
+    {
+        Result = GenericLessThan;
+    }
+    else if (FirstSignature > SecondSignature)
+    {
+        Result = GenericGreaterThan;
+    }
+    else
+    {
+        Result = GenericEqual;
+    }
+
+    return Result;
 }
 
 RTL_GENERIC_COMPARE_RESULTS

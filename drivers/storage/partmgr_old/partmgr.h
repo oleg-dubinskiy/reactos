@@ -38,6 +38,13 @@ typedef struct _PM_DEVICE_EXTENSION
     WCHAR NameBuffer[64];
 } PM_DEVICE_EXTENSION, *PPM_DEVICE_EXTENSION;
 
+typedef struct _PM_SIGNATURE
+{
+    LIST_ENTRY Link;
+    PPM_DEVICE_EXTENSION DeviceExtension;
+    ULONG Value;
+} PM_SIGNATURE, *PPM_SIGNATURE;
+
 NTSTATUS
 NTAPI
 DriverEntry(
