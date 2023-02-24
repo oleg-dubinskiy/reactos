@@ -1258,7 +1258,7 @@ NTSTATUS
 NTAPI
 MiCreatePagingFileMap(
     _Out_ PSEGMENT* Segment,
-    _In_ PULONGLONG MaximumSize,
+    _In_ PLARGE_INTEGER InputMaximumSize,
     _In_ ULONG ProtectionMask,
     _In_ ULONG AllocationAttributes)
 {
@@ -1267,15 +1267,16 @@ MiCreatePagingFileMap(
     PSUBSECTION Subsection;
     PMMPTE SectionProto;
     MMPTE TempPte;
+    ULONGLONG MaximumSize = InputMaximumSize->QuadPart;
     ULONGLONG SizeLimit;
     PFN_COUNT ProtoCount;
 
     PAGED_CODE();
     DPRINT("MiCreatePagingFileMap: MaximumSize %I64X, Protection %X, AllocAttributes %X\n",
-           (!MaximumSize ? 0ull : (*MaximumSize)), ProtectionMask, AllocationAttributes);
+           MaximumSize, ProtectionMask, AllocationAttributes);
 
     /* Pagefile-backed sections need a known size */
-    if (!(*MaximumSize))
+    if (!MaximumSize)
     {
         DPRINT1("MiCreatePagingFileMap: STATUS_INVALID_PARAMETER_4 \n");
         return STATUS_INVALID_PARAMETER_4;
@@ -1285,14 +1286,14 @@ MiCreatePagingFileMap(
     SizeLimit = (((MAXULONG_PTR - sizeof(SEGMENT)) / sizeof(MMPTE)) * PAGE_SIZE);
 
     /* Fail if this size is too big */
-    if (*MaximumSize > SizeLimit)
+    if (MaximumSize > SizeLimit)
     {
         DPRINT1("MiCreatePagingFileMap: SizeLimit %I64X, STATUS_SECTION_TOO_BIG\n", SizeLimit);
         return STATUS_SECTION_TOO_BIG;
     }
 
     /* Calculate how many section protos will be needed */
-    ProtoCount = (PFN_COUNT)((*MaximumSize + (PAGE_SIZE - 1)) / PAGE_SIZE);
+    ProtoCount = (PFN_COUNT)((MaximumSize + (PAGE_SIZE - 1)) / PAGE_SIZE);
 
     if (AllocationAttributes & SEC_COMMIT)
     {
@@ -4105,7 +4106,7 @@ NTAPI
 MiCreateDataFileMap(
     _In_ PFILE_OBJECT File,
     _Out_ PSEGMENT* OutSegment,
-    _In_ PSIZE_T MaximumSize,
+    _In_ PLARGE_INTEGER InputMaximumSize,
     _In_ ULONG SectionPageProtection,
     _In_ ULONG AllocationAttributes,
     _In_ BOOLEAN IgnoreFileSizing)
@@ -4128,11 +4129,11 @@ MiCreateDataFileMap(
     PULONGLONG maximumSize;
 
     PAGED_CODE();
-    DPRINT("MiCreateDataFileMap: %p '%wZ', %I64X, %X, %X, %X\n", File, &File->FileName, MaximumSize, SectionPageProtection, AllocationAttributes, IgnoreFileSizing);
+    DPRINT("MiCreateDataFileMap: %p '%wZ', %I64X, %X, %X, %X\n", File, &File->FileName, InputMaximumSize, SectionPageProtection, AllocationAttributes, IgnoreFileSizing);
 
-    if (MaximumSize)
+    if (InputMaximumSize)
     {
-         maximum = *MaximumSize;
+         maximum = (ULONGLONG)InputMaximumSize->QuadPart;
          maximumSize = &maximum;
          //DPRINT("MiCreateDataFileMap: maximumSize %I64X\n", maximum);
     }
@@ -8395,6 +8396,9 @@ MmCreateSection(
 
                 if (AllocationAttributes & SEC_IMAGE)
                 {
+                    if (IsGlobal)
+                        ControlArea->u.Flags.GlobalOnlyPerSession = 1;
+
                     MiInsertImageSectionObject(File, (PLARGE_CONTROL_AREA)NewControlArea);
                 }
                 else
@@ -8558,7 +8562,7 @@ MmCreateSection(
                 /* So create a data file map */
                 Status = MiCreateDataFileMap(File,
                                              &Segment,
-                                             (PSIZE_T)InputMaximumSize,
+                                             InputMaximumSize,
                                              SectionPageProtection,
                                              AllocationAttributes,
                                              IgnoreFileSizing);
@@ -8753,7 +8757,7 @@ MmCreateSection(
         }
 
         /* So this must be a pagefile-backed section, create the mappings needed */
-        Status = MiCreatePagingFileMap(&NewSegment, (PULONGLONG)InputMaximumSize, ProtectionMask, AllocationAttributes);
+        Status = MiCreatePagingFileMap(&NewSegment, InputMaximumSize, ProtectionMask, AllocationAttributes);
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("MmCreateSection: Status %X\n", Status);
@@ -8990,8 +8994,8 @@ ErrorExit:
     /* Write flag if this a CC call */
     ControlArea->u.Flags.WasPurged |= IgnoreFileSizing;
 
-    if ((ControlArea->u.Flags.WasPurged && !IgnoreFileSizing) &&
-        (!IsSectionSizeChanged || ((ULONGLONG)NewSection->SizeOfSection.QuadPart > NewSection->Segment->SizeOfSegment)))
+    if ((ControlArea->u.Flags.WasPurged && !IgnoreFileSizing && !IsSectionSizeChanged) ||
+        ((ULONGLONG)NewSection->SizeOfSection.QuadPart > NewSection->Segment->SizeOfSegment))
     {
         NewSectionSize.QuadPart = NewSection->SizeOfSection.QuadPart;
         NewSection->SizeOfSection.QuadPart = (LONGLONG)NewSection->Segment->SizeOfSegment;
