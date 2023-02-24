@@ -40,8 +40,13 @@ PmPassThrough(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PPM_DEVICE_EXTENSION DeviceExtension;
+
+    DPRINT("PmPassThrough: %p, %p\n", DeviceObject, Irp);
+
+    DeviceExtension = DeviceObject->DeviceExtension;
+    IoSkipCurrentIrpStackLocation(Irp);
+    return IoCallDriver(DeviceExtension->AttachedToDevice, Irp);
 }
 
 VOID
