@@ -25,12 +25,14 @@ typedef struct _PM_DRIVER_EXTENSION
 
 typedef struct _PM_DEVICE_EXTENSION
 {
+    BOOLEAN IsDeviceRunning;
     PDEVICE_OBJECT PartitionFido; // self device object (filter device object for partition)
     PPM_DRIVER_EXTENSION DriverExtension;
     PDEVICE_OBJECT AttachedToDevice; // the topmost device object on the stack to which the current device is attached
     PDEVICE_OBJECT WholeDiskPdo; // PDO created for the disk device stack
     LIST_ENTRY PartitionList;
     LIST_ENTRY Link;
+    LONG PagingPathCount; // IRP_MN_DEVICE_USAGE_NOTIFICATION
     KEVENT Event;
     LIST_ENTRY ListOfSignatures;
     LIST_ENTRY ListOfGuids;
@@ -125,6 +127,12 @@ PmDriverReinit(
     _In_ ULONG Count
 );
 
+NTSTATUS
+NTAPI
+PmQueryDeviceRelations(
+    _In_ PPM_DEVICE_EXTENSION Extension,
+    _In_ PIRP Irp
+);
 
 #endif /* _PARTMGR_H_ */
 

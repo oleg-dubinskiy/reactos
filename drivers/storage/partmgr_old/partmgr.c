@@ -26,6 +26,7 @@
   #pragma alloc_text(PAGE, PmTableAllocateRoutine)
   #pragma alloc_text(PAGE, PmTableFreeRoutine)
   #pragma alloc_text(PAGE, PmVolumeManagerNotification)
+  #pragma alloc_text(PAGE, PmQueryDeviceRelations)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -223,6 +224,16 @@ PmTableFreeRoutine(
     ExFreePoolWithTag(Buffer, 'tRcS');
 }
 
+NTSTATUS
+NTAPI
+PmQueryDeviceRelations(
+    _In_ PPM_DEVICE_EXTENSION Extension,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* DRIVER DISPATCH ROUTINES *************************************************/
 
 NTSTATUS
@@ -271,8 +282,261 @@ PmPnp(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PPM_DEVICE_EXTENSION Extension;
+    PIO_STACK_LOCATION IoStack;
+    KEVENT Event;
+    BOOLEAN IsRemoveInPath = FALSE;
+    NTSTATUS Status = STATUS_NOT_SUPPORTED;
+
+    DPRINT("PmPnp: DeviceObject %p, Irp %p\n", DeviceObject, Irp);
+
+    Extension = DeviceObject->DeviceExtension;
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+  #if DBG
+    switch (IoStack->MinorFunction)
+    {
+        case IRP_MN_START_DEVICE:
+            DPRINT("IRP_MN_START_DEVICE\n");
+            break;
+
+        case IRP_MN_QUERY_REMOVE_DEVICE:
+            DPRINT("IRP_MN_QUERY_REMOVE_DEVICE\n");
+            break;
+
+        case IRP_MN_REMOVE_DEVICE:
+            DPRINT("USBPORT_FdoPnP: IRP_MN_REMOVE_DEVICE\n");
+            break;
+
+        case IRP_MN_CANCEL_REMOVE_DEVICE:
+            DPRINT("IRP_MN_CANCEL_REMOVE_DEVICE\n");
+            break;
+
+        case IRP_MN_STOP_DEVICE:
+            DPRINT("IRP_MN_STOP_DEVICE\n");
+            break;
+
+        case IRP_MN_QUERY_STOP_DEVICE:
+            DPRINT("IRP_MN_QUERY_STOP_DEVICE\n");
+            break;
+
+        case IRP_MN_CANCEL_STOP_DEVICE:
+            DPRINT("IRP_MN_CANCEL_STOP_DEVICE\n");
+            break;
+
+        case IRP_MN_QUERY_DEVICE_RELATIONS:
+            DPRINT("IRP_MN_QUERY_DEVICE_RELATIONS\n");
+            break;
+
+        case IRP_MN_QUERY_INTERFACE:
+            DPRINT("IRP_MN_QUERY_INTERFACE\n");
+            break;
+
+        case IRP_MN_QUERY_CAPABILITIES:
+            DPRINT("IRP_MN_QUERY_CAPABILITIES\n");
+            break;
+
+        case IRP_MN_QUERY_RESOURCES:
+            DPRINT("IRP_MN_QUERY_RESOURCES\n");
+            break;
+
+        case IRP_MN_QUERY_RESOURCE_REQUIREMENTS:
+            DPRINT("IRP_MN_QUERY_RESOURCE_REQUIREMENTS\n");
+            break;
+
+        case IRP_MN_QUERY_DEVICE_TEXT:
+            DPRINT("IRP_MN_QUERY_DEVICE_TEXT\n");
+            break;
+
+        case IRP_MN_FILTER_RESOURCE_REQUIREMENTS:
+            DPRINT("IRP_MN_FILTER_RESOURCE_REQUIREMENTS\n");
+            break;
+
+        case IRP_MN_READ_CONFIG:
+            DPRINT("IRP_MN_READ_CONFIG\n");
+            break;
+
+        case IRP_MN_WRITE_CONFIG:
+            DPRINT("IRP_MN_WRITE_CONFIG\n");
+            break;
+
+        case IRP_MN_EJECT:
+            DPRINT("IRP_MN_EJECT\n");
+            break;
+
+        case IRP_MN_SET_LOCK:
+            DPRINT("IRP_MN_SET_LOCK\n");
+            break;
+
+        case IRP_MN_QUERY_ID:
+            DPRINT("IRP_MN_QUERY_ID\n");
+            break;
+
+        case IRP_MN_QUERY_PNP_DEVICE_STATE:
+            DPRINT("IRP_MN_QUERY_PNP_DEVICE_STATE\n");
+            break;
+
+        case IRP_MN_QUERY_BUS_INFORMATION:
+            DPRINT("IRP_MN_QUERY_BUS_INFORMATION\n");
+            break;
+
+        case IRP_MN_DEVICE_USAGE_NOTIFICATION:
+            DPRINT("IRP_MN_DEVICE_USAGE_NOTIFICATION\n");
+            break;
+
+        case IRP_MN_SURPRISE_REMOVAL:
+            DPRINT1("IRP_MN_SURPRISE_REMOVAL\n");
+            break;
+
+        case IRP_MN_QUERY_LEGACY_BUS_INFORMATION:
+            DPRINT("IRP_MN_QUERY_LEGACY_BUS_INFORMATION\n");
+            break;
+
+        default:
+            DPRINT1("FtpPnpFdo: Unknown PNP IRP_MN_ (%X)\n", IoStack->MinorFunction);
+            break;
+    }
+  #endif
+
+    if (IoStack->MinorFunction == IRP_MN_DEVICE_USAGE_NOTIFICATION &&
+        IoStack->Parameters.UsageNotification.Type == DeviceUsageTypePaging)
+    {
+        KeWaitForSingleObject(&Extension->Event, Executive, KernelMode, FALSE, NULL);
+
+        if (!IoStack->Parameters.UsageNotification.InPath && !Extension->PagingPathCount)
+        {
+            if (!(DeviceObject->Flags & DO_POWER_INRUSH))
+            {
+                DeviceObject->Flags |= DO_POWER_PAGABLE;
+                IsRemoveInPath = TRUE;
+            }
+        }
+
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+        IoCopyCurrentIrpStackLocationToNext(Irp);
+        IoSetCompletionRoutine(Irp, PmSignalCompletion, &Event, TRUE, TRUE, TRUE);
+
+        Status = IoCallDriver(Extension->AttachedToDevice, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = Irp->IoStatus.Status;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            if (IsRemoveInPath)
+            {
+                DeviceObject->Flags &= ~DO_POWER_PAGABLE;
+            }
+        }
+        else
+        {
+            if (IoStack->Parameters.UsageNotification.InPath)
+            {
+                InterlockedIncrement(&Extension->PagingPathCount);
+
+                if (Extension->PagingPathCount == 1)
+                    DeviceObject->Flags &= ~DO_POWER_PAGABLE;
+            }
+            else
+            {
+                InterlockedDecrement(&Extension->PagingPathCount);
+            }
+        }
+
+        KeSetEvent(&Extension->Event, 0, FALSE);
+        IoCompleteRequest(Irp, 0);
+        return Status;
+    }
+
+    if (Extension->AttachedToDevice->Characteristics & FILE_REMOVABLE_MEDIA)
+    {
+        if (IoStack->MinorFunction == IRP_MN_REMOVE_DEVICE)
+        {
+            DPRINT1("PmPnp: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        IoSkipCurrentIrpStackLocation(Irp);
+        return IoCallDriver(Extension->AttachedToDevice, Irp);
+    }
+
+    switch (IoStack->MinorFunction)
+    {
+        case IRP_MN_START_DEVICE:
+        {
+            KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+            IoCopyCurrentIrpStackLocationToNext(Irp);
+            IoSetCompletionRoutine(Irp, PmSignalCompletion, &Event, TRUE, TRUE, TRUE);
+
+            IoCallDriver(Extension->AttachedToDevice, Irp);
+
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+            Status = Irp->IoStatus.Status;
+            if (Status >= 0 && !(Extension->AttachedToDevice->Characteristics & FILE_REMOVABLE_MEDIA))
+            {
+                DPRINT1("PmPnp: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            break;
+        }
+        case IRP_MN_QUERY_REMOVE_DEVICE:
+        case IRP_MN_CANCEL_REMOVE_DEVICE:
+        case IRP_MN_STOP_DEVICE:
+        case IRP_MN_QUERY_STOP_DEVICE:
+        case IRP_MN_CANCEL_STOP_DEVICE:
+        {
+            DPRINT1("PmPnp: FIXME\n");
+            ASSERT(FALSE);
+            break;
+        }
+        case IRP_MN_REMOVE_DEVICE:
+        case IRP_MN_SURPRISE_REMOVAL:
+        {
+            DPRINT1("PmPnp: FIXME\n");
+            ASSERT(FALSE);
+
+            IoSkipCurrentIrpStackLocation(Irp);
+            return IoCallDriver(Extension->AttachedToDevice, Irp);
+        }
+        case IRP_MN_QUERY_DEVICE_RELATIONS:
+        {
+            if (IoStack->Parameters.QueryDeviceRelations.Type == 0)
+            {
+                Status = PmQueryDeviceRelations(Extension, Irp);
+            }
+            else if (IoStack->Parameters.QueryDeviceRelations.Type == 3)
+            {
+                DPRINT1("PmPnp: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                IoSkipCurrentIrpStackLocation(Irp);
+                return IoCallDriver(Extension->AttachedToDevice, Irp);
+            }
+            break;
+        }
+        default:
+        {
+            DPRINT1("FtpPnpFdo: Unknown PNP IRP_MN_ (%X)\n", IoStack->MinorFunction);
+            IoSkipCurrentIrpStackLocation(Irp);
+            return IoCallDriver(Extension->AttachedToDevice, Irp);
+        }
+    }
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    DPRINT1("PmPnp: Status (%X)\n", Status);
+    return Status;
 }
 
 /* REINITIALIZE DRIVER ROUTINES *********************************************/
