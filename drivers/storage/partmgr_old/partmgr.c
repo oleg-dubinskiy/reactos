@@ -197,7 +197,7 @@ PmTableFreeRoutine(
     _In_ PRTL_AVL_TABLE Table,
     _In_ PVOID Buffer)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ExFreePoolWithTag(Buffer, 'tRcS');
 }
 
 /* DRIVER DISPATCH ROUTINES *************************************************/
