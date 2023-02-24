@@ -169,8 +169,50 @@ FtpQueryRootId(
     _In_ PROOT_EXTENSION RootExtension,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_STACK_LOCATION IoStack;
+    UNICODE_STRING IdString;
+    ULONG IdType;
+    PWSTR RootId;
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+    IdType = IoStack->Parameters.QueryId.IdType;
+
+    DPRINT("FtpQueryRootId: %p, %p, IdType %X\n", RootExtension, Irp, IdType);
+
+    if (IdType == BusQueryDeviceID)
+    {
+        RtlInitUnicodeString(&IdString, L"ROOT\\FTDISK");
+    }
+    else if (IdType == BusQueryHardwareIDs)
+    {
+        RtlInitUnicodeString(&IdString, L"ROOT\\FTDISK");
+    }
+    else if (IdType == BusQueryInstanceID)
+    {
+        RtlInitUnicodeString(&IdString, L"0000");
+    }
+    else
+    {
+        DPRINT1("FtpQueryRootId: STATUS_NOT_SUPPORTED\n");
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    RootId = ExAllocatePoolWithTag(PagedPool, (IdString.Length + 2 * sizeof(WCHAR)), 'tFcS');
+    if (!RootId)
+    {
+        DPRINT1("FtpQueryRootId: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(RootId, IdString.Buffer, IdString.Length);
+
+    RootId[IdString.Length / 2] = 0;
+    RootId[(IdString.Length / 2) + 1] = 0;
+
+    Irp->IoStatus.Information = (ULONG_PTR)RootId;
+    DPRINT("FtpQueryRootId: %p, %p, '%S'\n", RootExtension, Irp, Irp->IoStatus.Information);
+
+    return STATUS_SUCCESS;
 }
 
 static
