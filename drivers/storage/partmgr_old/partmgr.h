@@ -23,6 +23,21 @@ typedef struct _PM_DRIVER_EXTENSION
     UNICODE_STRING RegistryPath;
 } PM_DRIVER_EXTENSION, *PPM_DRIVER_EXTENSION;
 
+typedef struct _PM_DEVICE_EXTENSION
+{
+    PDEVICE_OBJECT PartitionFido; // self device object (filter device object for partition)
+    PPM_DRIVER_EXTENSION DriverExtension;
+    PDEVICE_OBJECT AttachedToDevice; // the topmost device object on the stack to which the current device is attached
+    PDEVICE_OBJECT WholeDiskPdo; // PDO created for the disk device stack
+    LIST_ENTRY PartitionList;
+    LIST_ENTRY Link;
+    KEVENT Event;
+    LIST_ENTRY ListOfSignatures;
+    LIST_ENTRY ListOfGuids;
+    UNICODE_STRING NameString;
+    WCHAR NameBuffer[64];
+} PM_DEVICE_EXTENSION, *PPM_DEVICE_EXTENSION;
+
 NTSTATUS
 NTAPI
 DriverEntry(

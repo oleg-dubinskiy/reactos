@@ -58,8 +58,76 @@ PmAddDevice(
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PDEVICE_OBJECT DiskPdo)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PPM_DEVICE_EXTENSION Extension;
+    PDEVICE_OBJECT PartitionFido;
+    PDEVICE_OBJECT TopDevice;
+    NTSTATUS Status;
+
+    DPRINT("PmAddDevice: %p, %p\n", DriverObject, DiskPdo);
+
+    TopDevice = IoGetAttachedDeviceReference(DiskPdo);
+    if (TopDevice)
+    {
+        ObDereferenceObject(TopDevice);
+
+        if (TopDevice->Characteristics & FILE_REMOVABLE_MEDIA)
+            return STATUS_SUCCESS;
+    }
+
+    Status = IoCreateDevice(DriverObject,
+                            sizeof(*Extension),
+                            NULL,
+                            FILE_DEVICE_UNKNOWN,
+                            0,
+                            FALSE,
+                            &PartitionFido);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PmAddDevice: %p, %p\n", DriverObject, DiskPdo);
+        return Status;
+    }
+
+    PartitionFido->Flags |= DO_DIRECT_IO;
+
+    if (TopDevice->Flags & DO_POWER_INRUSH)
+        PartitionFido->Flags |= DO_POWER_INRUSH;
+    else
+        PartitionFido->Flags |= DO_POWER_PAGABLE;
+
+    Extension = PartitionFido->DeviceExtension;
+    RtlZeroMemory(Extension, sizeof(*Extension));
+
+    Extension->PartitionFido = PartitionFido;
+    Extension->DriverExtension = IoGetDriverObjectExtension(DriverObject, PmAddDevice);
+
+    Extension->AttachedToDevice = IoAttachDeviceToDeviceStack(PartitionFido, DiskPdo);
+    if (!Extension->AttachedToDevice)
+    {
+        DPRINT1("PmAddDevice: AttachedToDevice is NULL! (%p, %p)\n", DriverObject, DiskPdo);
+        IoDeleteDevice(PartitionFido);
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    Extension->WholeDiskPdo = DiskPdo;
+
+    KeInitializeEvent(&Extension->Event, SynchronizationEvent, TRUE);
+
+    InitializeListHead(&Extension->PartitionList);
+    InitializeListHead(&Extension->ListOfSignatures);
+    InitializeListHead(&Extension->ListOfGuids);
+
+    KeWaitForSingleObject(&Extension->DriverExtension->Mutex, Executive, KernelMode, FALSE, NULL);
+    InsertTailList(&Extension->DriverExtension->ExtensionList, &Extension->Link);
+    KeReleaseMutex(&Extension->DriverExtension->Mutex, TRUE);
+
+    PartitionFido->DeviceType = Extension->AttachedToDevice->DeviceType;
+    PartitionFido->AlignmentRequirement = Extension->AttachedToDevice->AlignmentRequirement;
+
+    Extension->NameString.Buffer = Extension->NameBuffer;
+
+    PartitionFido->Flags &= ~DO_DEVICE_INITIALIZING;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
