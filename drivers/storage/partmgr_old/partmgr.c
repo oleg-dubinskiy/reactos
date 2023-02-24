@@ -14,11 +14,180 @@
   #pragma alloc_text(INIT, DriverEntry)
 #endif
 
+#ifdef ALLOC_PRAGMA
+  #pragma alloc_text(PAGE, PmAddDevice)
+  #pragma alloc_text(PAGE, PmDeviceControl)
+  #pragma alloc_text(PAGE, PmPower)
+  #pragma alloc_text(PAGE, PmWmi)
+  #pragma alloc_text(PAGE, PmkPnp)
+  #pragma alloc_text(PAGE, PmDriverReinit)
+  #pragma alloc_text(PAGE, PmTableSignatureCompareRoutine)
+  #pragma alloc_text(PAGE, PmTableGuidCompareRoutine)
+  #pragma alloc_text(PAGE, PmTableAllocateRoutine)
+  #pragma alloc_text(PAGE, PmTableFreeRoutine)
+  #pragma alloc_text(PAGE, PmVolumeManagerNotification)
+#endif
+
 /* GLOBALS *******************************************************************/
 
+GUID VOLMGR_VOLUME_MANAGER_GUID = {0x53F5630E, 0xB6BF, 0x11D0, {0X94, 0XF2, 0X00, 0XA0, 0XC9, 0X1E, 0XFB, 0X8B}};
 
 /* FUNCTIONS ****************************************************************/
 
+NTSTATUS
+NTAPI
+PmPassThrough(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+PmUnload(
+    _In_ PDRIVER_OBJECT DriverObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+PmAddDevice(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_OBJECT DiskPdo)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PmVolumeManagerNotification(
+    _In_ PVOID NotificationStructure,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* AVL TABLE ROUTINES *******************************************************/
+
+RTL_GENERIC_COMPARE_RESULTS
+NTAPI
+PmTableSignatureCompareRoutine(
+    _In_ PRTL_AVL_TABLE Table,
+    _In_ PVOID FirstStruct,
+    _In_ PVOID SecondStruct)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+RTL_GENERIC_COMPARE_RESULTS
+NTAPI
+PmTableGuidCompareRoutine(
+    _In_ PRTL_AVL_TABLE Table,
+    _In_ PVOID FirstStruct,
+    _In_ PVOID SecondStruct)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+PVOID
+NTAPI
+PmTableAllocateRoutine(
+    _In_ PRTL_AVL_TABLE Table,
+    _In_ CLONG ByteSize)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+VOID
+NTAPI
+PmTableFreeRoutine(
+    _In_ PRTL_AVL_TABLE Table,
+    _In_ PVOID Buffer)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+/* DRIVER DISPATCH ROUTINES *************************************************/
+
+NTSTATUS
+NTAPI
+PmReadWrite(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PmDeviceControl(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PmPower(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PmWmi(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PmPnp(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* REINITIALIZE DRIVER ROUTINES *********************************************/
+
+VOID
+NTAPI
+PmDriverReinit(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PVOID Context,
+    _In_ ULONG Count)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+PmBootDriverReinit(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PVOID Context,
+    _In_ ULONG Count)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
 
 /* INIT DRIVER ROUTINES *****************************************************/
 
@@ -33,7 +202,7 @@ DriverEntry(
     ULONG ix;
     NTSTATUS Status;
 
-    DPRINT("DriverEntry: %p, '%wZ'\n", DriverObject, RegistryPath);DriverExtension=0;
+    DPRINT("DriverEntry: %p, '%wZ'\n", DriverObject, RegistryPath);
 
     for (ix = 0; ix <= IRP_MJ_MAXIMUM_FUNCTION; ix++)
         DriverObject->MajorFunction[ix] = PmPassThrough;

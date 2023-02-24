@@ -30,6 +30,79 @@ DriverEntry(
     _In_ PUNICODE_STRING RegistryPath
 );
 
+NTSTATUS
+NTAPI
+PmAddDevice(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_OBJECT DiskPdo
+);
+
+NTSTATUS
+NTAPI
+PmDeviceControl(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp
+);
+
+NTSTATUS
+NTAPI
+PmPower(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp
+);
+
+NTSTATUS
+NTAPI
+PmWmi(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp
+);
+
+NTSTATUS
+NTAPI
+PmPnp(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp
+);
+
+RTL_GENERIC_COMPARE_RESULTS
+NTAPI
+PmTableSignatureCompareRoutine(
+    _In_ PRTL_AVL_TABLE Table,
+    _In_ PVOID FirstStruct,
+    _In_ PVOID SecondStruct
+);
+
+RTL_GENERIC_COMPARE_RESULTS
+NTAPI
+PmTableGuidCompareRoutine(
+    _In_ PRTL_AVL_TABLE Table,
+    _In_ PVOID FirstStruct,
+    _In_ PVOID SecondStruct
+);
+
+PVOID
+NTAPI
+PmTableAllocateRoutine(
+    _In_ PRTL_AVL_TABLE Table,
+    _In_ CLONG ByteSize
+);
+
+VOID
+NTAPI
+PmTableFreeRoutine(
+    _In_ PRTL_AVL_TABLE Table,
+    _In_ PVOID Buffer
+);
+
+VOID
+NTAPI
+PmDriverReinit(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PVOID Context,
+    _In_ ULONG Count
+);
+
 
 #endif /* _PARTMGR_H_ */
 
