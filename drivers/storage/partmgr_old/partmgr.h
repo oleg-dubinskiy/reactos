@@ -10,6 +10,26 @@
 
 #include <ntifs.h>
 
+typedef struct _PM_DRIVER_EXTENSION
+{
+    PDRIVER_OBJECT SelfDriverObject;
+    LIST_ENTRY NotifyList;
+    LIST_ENTRY ExtensionList;
+    PVOID NotificationEntry;
+    KMUTEX Mutex;
+    LONG IsReinitialized;
+    RTL_AVL_TABLE TableSignature;
+    RTL_AVL_TABLE TableGuid;
+    UNICODE_STRING RegistryPath;
+} PM_DRIVER_EXTENSION, *PPM_DRIVER_EXTENSION;
+
+NTSTATUS
+NTAPI
+DriverEntry(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PUNICODE_STRING RegistryPath
+);
+
 
 #endif /* _PARTMGR_H_ */
 
