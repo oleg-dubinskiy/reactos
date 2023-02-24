@@ -188,8 +188,7 @@ PmTableAllocateRoutine(
     _In_ PRTL_AVL_TABLE Table,
     _In_ CLONG ByteSize)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    return ExAllocatePoolWithTag(PagedPool, ByteSize, 'tRcS');
 }
 
 VOID
