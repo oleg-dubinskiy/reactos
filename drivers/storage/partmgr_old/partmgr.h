@@ -41,11 +41,13 @@ typedef struct _PM_DEVICE_EXTENSION
     LIST_ENTRY Link;
     LONG PagingPathCount; // IRP_MN_DEVICE_USAGE_NOTIFICATION
     KEVENT Event;
+    ULONG MbrSignature;
     LIST_ENTRY ListOfSignatures;
     LIST_ENTRY ListOfGuids;
     ULONG DeviceNumber;
     UNICODE_STRING NameString;
     WCHAR NameBuffer[64];
+    BOOLEAN IsDeviceIdRequested;
 } PM_DEVICE_EXTENSION, *PPM_DEVICE_EXTENSION;
 
 typedef struct _PM_SIGNATURE
@@ -183,6 +185,14 @@ NTAPI
 PmAddSignatures(
     _In_ PPM_DEVICE_EXTENSION Extension,
     _In_ PDRIVE_LAYOUT_INFORMATION_EX DriveLayout
+);
+
+NTSTATUS
+NTAPI
+PmCheckAndUpdateSignature(
+    _In_ PPM_DEVICE_EXTENSION Extension,
+    _In_ BOOLEAN Param2,
+    _In_ BOOLEAN Param3
 );
 
 #endif /* _PARTMGR_H_ */

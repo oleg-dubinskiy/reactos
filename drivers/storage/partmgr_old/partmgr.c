@@ -32,6 +32,7 @@
   #pragma alloc_text(PAGE, LockDriverWithTimeout)
   #pragma alloc_text(PAGE, PmQueryDeviceId)
   #pragma alloc_text(PAGE, PmAddSignatures)
+  #pragma alloc_text(PAGE, PmCheckAndUpdateSignature)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -298,11 +299,11 @@ PmDetermineDeviceNameAndNumber(
     Extension->NameString.MaximumLength = sizeof(Extension->NameBuffer);
     Extension->NameString.Buffer = Extension->NameBuffer;
 
-    Size = snwprintf(Extension->NameBuffer,
-                     (sizeof(Extension->NameBuffer) / sizeof(WCHAR)),
-                     L"\\Device\\Harddisk%d\\Partition%d",
-                     DeviceNumberBuffer.DeviceNumber,
-                     DeviceNumberBuffer.PartitionNumber);
+    Size = _snwprintf(Extension->NameBuffer,
+                      (sizeof(Extension->NameBuffer) / sizeof(WCHAR)),
+                      L"\\Device\\Harddisk%d\\Partition%d",
+                      DeviceNumberBuffer.DeviceNumber,
+                      DeviceNumberBuffer.PartitionNumber);
 
     Extension->NameString.Length = (Size * sizeof(WCHAR));
 
@@ -625,6 +626,69 @@ FinishMbrStyle:
     DPRINT1("PmAddSignatures: PARTITION_STYLE_GPT. FIXME\n");
     ASSERT(FALSE);
 
+}
+
+NTSTATUS
+NTAPI
+PmCheckAndUpdateSignature(
+    _In_ PPM_DEVICE_EXTENSION Extension,
+    _In_ BOOLEAN Param2,
+    _In_ BOOLEAN Param3)
+{
+    PDRIVE_LAYOUT_INFORMATION_EX DriveLayout;
+    BOOLEAN IsFailed;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("PmCheckAndUpdateSignature: Extension %p, Param2 %X, Param3 %X\n", Extension, Param2, Param3);
+
+    if (!Param3 && !Extension->IsPartitionNotFound)
+        return Status;
+
+    Status = PmReadPartitionTableEx(Extension->AttachedToDevice, &DriveLayout);
+
+    if (!Param3 && !Extension->IsPartitionNotFound)
+    {
+        if (NT_SUCCESS(Status))
+            ExFreePool(DriveLayout);
+
+        return STATUS_SUCCESS;
+    }
+
+    if (!NT_SUCCESS(Status) && Extension->IsPartitionNotFound)
+    {
+        return Status;
+    }
+
+    if (!LockDriverWithTimeout(Extension->DriverExtension))
+    {
+        if (NT_SUCCESS(Status))
+            ExFreePool(DriveLayout);
+
+        return Status;
+    }
+
+    IsFailed = (NT_SUCCESS(Status) == FALSE);
+
+    if (NT_SUCCESS(Status))
+    {
+        if (!Extension->Reserved00)
+        {
+            DPRINT("PmCheckAndUpdateSignature: FIXME PmSigCheckUpdateEpoch()\n");
+
+            PmAddSignatures(Extension, DriveLayout);
+            ExFreePool(DriveLayout);
+        }
+
+        //IsFailed = (NT_SUCCESS(Status) == FALSE);
+    }
+
+    Extension->IsPartitionNotFound = IsFailed;
+
+    KeReleaseMutex(&Extension->DriverExtension->Mutex, FALSE);
+
+    DPRINT("PmCheckAndUpdateSignature: FIXME PmSigCheckCompleteNotificationIrps()\n");
+
+    return Status;
 }
 
 /* AVL TABLE ROUTINES *******************************************************/
