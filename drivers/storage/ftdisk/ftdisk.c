@@ -68,6 +68,21 @@ FtDiskUnload(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+VOID
+NTAPI
+FtpCancelRoutine(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    RemoveEntryList(&Irp->Tail.Overlay.ListEntry);
+    IoReleaseCancelSpinLock(Irp->CancelIrql);
+
+    Irp->IoStatus.Information = 0;
+    Irp->IoStatus.Status = STATUS_CANCELLED;
+
+    IoCompleteRequest(Irp, 0);
+}
+
 /* DRIVER DISPATCH ROUTINES *************************************************/
 
 NTSTATUS
