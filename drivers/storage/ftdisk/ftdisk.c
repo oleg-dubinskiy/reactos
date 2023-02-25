@@ -102,8 +102,29 @@ FtpPartitionArrived(
     _In_ PROOT_EXTENSION RootExtension,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PFT_PARTITION_ARRIVED Partitions;
+    PIO_STACK_LOCATION IoStack;
+    NTSTATUS Status;
+
+    DPRINT("FtpPartitionArrived: RootExtension %p, Irp %p\n", RootExtension, Irp);
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    if (IoStack->Parameters.DeviceIoControl.InputBufferLength < sizeof(*Partitions))
+    {
+        DPRINT1("FtpPartitionArrived: STATUS_INVALID_PARAMETER (%X)\n", IoStack->Parameters.DeviceIoControl.InputBufferLength);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Partitions = Irp->AssociatedIrp.SystemBuffer;
+
+    DPRINT("FtpPartitionArrived: %p, %p\n", Partitions->PartitionPdo, Partitions->WholeDiskPdo);
+
+    Status = FtpPartitionArrivedHelper(RootExtension, Partitions->PartitionPdo, Partitions->WholeDiskPdo);
+
+    DPRINT("FtpPartitionArrived: Status %X\n", Status);
+
+    return Status;
 }
 
 /* DRIVER DISPATCH ROUTINES *************************************************/
