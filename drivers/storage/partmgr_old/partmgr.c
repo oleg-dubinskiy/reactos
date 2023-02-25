@@ -920,6 +920,7 @@ PmPnp(
 {
     PPM_DEVICE_EXTENSION Extension;
     PIO_STACK_LOCATION IoStack;
+    ULONG PartitionData;
     KEVENT Event;
     BOOLEAN IsRemoveInPath = FALSE;
     NTSTATUS Status = STATUS_NOT_SUPPORTED;
@@ -1115,10 +1116,16 @@ PmPnp(
             KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
 
             Status = Irp->IoStatus.Status;
-            if (Status >= 0 && !(Extension->AttachedToDevice->Characteristics & FILE_REMOVABLE_MEDIA))
+            if (NT_SUCCESS(Status) && !(Extension->AttachedToDevice->Characteristics & FILE_REMOVABLE_MEDIA))
             {
-                DPRINT1("PmPnp: FIXME\n");
-                ASSERT(FALSE);
+                PmDetermineDeviceNameAndNumber(DeviceObject, &PartitionData);
+
+                KeWaitForSingleObject(&Extension->DriverExtension->Mutex, Executive, KernelMode, FALSE, NULL);
+                Extension->IsDeviceRunning = TRUE;
+                KeReleaseMutex(&Extension->DriverExtension->Mutex, FALSE);
+
+                PmCheckAndUpdateSignature(Extension, TRUE, TRUE);
+                PmRegisterDevice(DeviceObject, PartitionData);
             }
 
             break;
