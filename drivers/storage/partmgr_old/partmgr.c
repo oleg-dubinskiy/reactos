@@ -27,6 +27,7 @@
   #pragma alloc_text(PAGE, PmTableFreeRoutine)
   #pragma alloc_text(PAGE, PmVolumeManagerNotification)
   #pragma alloc_text(PAGE, PmQueryDeviceRelations)
+  #pragma alloc_text(PAGE, PmDetermineDeviceNameAndNumber)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -236,6 +237,77 @@ Exit:
 
     KeReleaseMutex(Mutex, FALSE);
     return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+PmDetermineDeviceNameAndNumber(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG* OutPartitionData)
+{
+    STORAGE_DEVICE_NUMBER DeviceNumberBuffer;
+    PPM_DEVICE_EXTENSION Extension;
+    IO_STATUS_BLOCK IoStatusBlock;
+    KEVENT Event;
+    PIRP Irp;
+    ULONG PartitionData = 0;
+    ULONG Size;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("PmDetermineDeviceNameAndNumber: %p\n", DeviceObject);
+
+    Extension = DeviceObject->DeviceExtension;
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_STORAGE_GET_DEVICE_NUMBER,
+                                        Extension->AttachedToDevice,
+                                        NULL,
+                                        0,
+                                        &DeviceNumberBuffer,
+                                        sizeof(DeviceNumberBuffer),
+                                        FALSE,
+                                        &Event,
+                                        &IoStatusBlock);
+    if (!Irp)
+    {
+        DPRINT1("PmDetermineDeviceNameAndNumber: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = IoCallDriver(Extension->AttachedToDevice, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatusBlock.Status;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PmDetermineDeviceNameAndNumber: Status %X\n", Status);
+        return Status;
+    }
+
+    Extension->DeviceNumber = DeviceNumberBuffer.DeviceNumber;
+
+    Extension->NameString.MaximumLength = sizeof(Extension->NameBuffer);
+    Extension->NameString.Buffer = Extension->NameBuffer;
+
+    Size = snwprintf(Extension->NameBuffer,
+                     (sizeof(Extension->NameBuffer) / sizeof(WCHAR)),
+                     L"\\Device\\Harddisk%d\\Partition%d",
+                     DeviceNumberBuffer.DeviceNumber,
+                     DeviceNumberBuffer.PartitionNumber);
+
+    Extension->NameString.Length = (Size * sizeof(WCHAR));
+
+    if (!DeviceNumberBuffer.PartitionNumber)
+        PartitionData = 0x110000;
+
+    *OutPartitionData = PartitionData;
+
+    return Status;
 }
 
 /* AVL TABLE ROUTINES *******************************************************/

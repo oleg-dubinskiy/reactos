@@ -9,7 +9,9 @@
 #define _PARTMGR_H_
 
 #include <ntifs.h>
+#include <ntdddisk.h>
 #include <wdmguid.h>
+#include <stdio.h>
 
 typedef struct _PM_DRIVER_EXTENSION
 {
@@ -26,7 +28,11 @@ typedef struct _PM_DRIVER_EXTENSION
 
 typedef struct _PM_DEVICE_EXTENSION
 {
+    BOOLEAN Reserved00;
+    BOOLEAN Reserved01;
+    BOOLEAN Reserved02;
     BOOLEAN IsDeviceRunning;
+    BOOLEAN IsPartitionNotFound;
     PDEVICE_OBJECT PartitionFido; // self device object (filter device object for partition)
     PPM_DRIVER_EXTENSION DriverExtension;
     PDEVICE_OBJECT AttachedToDevice; // the topmost device object on the stack to which the current device is attached
@@ -37,6 +43,7 @@ typedef struct _PM_DEVICE_EXTENSION
     KEVENT Event;
     LIST_ENTRY ListOfSignatures;
     LIST_ENTRY ListOfGuids;
+    ULONG DeviceNumber;
     UNICODE_STRING NameString;
     WCHAR NameBuffer[64];
 } PM_DEVICE_EXTENSION, *PPM_DEVICE_EXTENSION;
@@ -142,6 +149,13 @@ NTAPI
 PmQueryDeviceRelations(
     _In_ PPM_DEVICE_EXTENSION Extension,
     _In_ PIRP Irp
+);
+
+NTSTATUS
+NTAPI
+PmDetermineDeviceNameAndNumber(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG* OutPartitionData
 );
 
 #endif /* _PARTMGR_H_ */
