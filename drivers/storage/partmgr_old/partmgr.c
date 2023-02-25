@@ -137,7 +137,7 @@ PmAddDevice(
 
     KeWaitForSingleObject(&Extension->DriverExtension->Mutex, Executive, KernelMode, FALSE, NULL);
     InsertTailList(&Extension->DriverExtension->ExtensionList, &Extension->Link);
-    KeReleaseMutex(&Extension->DriverExtension->Mutex, TRUE);
+    KeReleaseMutex(&Extension->DriverExtension->Mutex, FALSE);
 
     PartitionFido->DeviceType = Extension->AttachedToDevice->DeviceType;
     PartitionFido->AlignmentRequirement = Extension->AttachedToDevice->AlignmentRequirement;
@@ -145,6 +145,8 @@ PmAddDevice(
     Extension->NameString.Buffer = Extension->NameBuffer;
 
     PartitionFido->Flags &= ~DO_DEVICE_INITIALIZING;
+
+    DPRINT("PmAddDevice: STATUS_SUCCESS\n");
 
     return STATUS_SUCCESS;
 }
@@ -155,8 +157,85 @@ PmVolumeManagerNotification(
     _In_ PVOID NotificationStructure,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_INTERFACE_CHANGE_NOTIFICATION InterfaceChange = NotificationStructure;
+    PPM_DRIVER_EXTENSION DriverExtension = Context;
+    PPM_NOTIFICATION_DATA PmNotify;
+    PLIST_ENTRY Entry;
+    PRKMUTEX Mutex;
+    USHORT Size;
+
+    DPRINT("PmVolumeManagerNotification: %p, %p\n", InterfaceChange, DriverExtension);
+
+    Mutex = &DriverExtension->Mutex;
+    KeWaitForSingleObject(&DriverExtension->Mutex, Executive, KernelMode, FALSE, NULL);
+
+    if (IsEqualGUID(&InterfaceChange->Event, &GUID_DEVICE_INTERFACE_ARRIVAL))
+    {
+        for (Entry = DriverExtension->NotifyList.Flink;
+             Entry != &DriverExtension->NotifyList;
+             Entry = Entry->Flink)
+        {
+            PmNotify = CONTAINING_RECORD(Entry, PM_NOTIFICATION_DATA, Link);
+
+            DPRINT("PmVolumeManagerNotification: SymbolicLinkName '%wZ'\n", InterfaceChange->SymbolicLinkName);
+            DPRINT("PmVolumeManagerNotification: ObjectName '%wZ'\n", &PmNotify->ObjectName);
+
+            if (RtlEqualUnicodeString(InterfaceChange->SymbolicLinkName, &PmNotify->ObjectName, FALSE))
+            {
+                /* SymbolicLinkName strings are equal */
+                goto Exit;
+            }
+        }
+
+        PmNotify = ExAllocatePoolWithTag(NonPagedPool, sizeof(*PmNotify), 'VRcS');
+        if (!PmNotify)
+        {
+            DPRINT1("PmVolumeManagerNotification: Allocate failed\n");
+            goto Exit;
+        }
+
+        Size = InterfaceChange->SymbolicLinkName->Length;
+
+        PmNotify->ObjectName.Length = Size;
+        PmNotify->ObjectName.MaximumLength = (Size + sizeof(WCHAR));
+
+        PmNotify->ObjectName.Buffer = ExAllocatePoolWithTag(PagedPool, (Size + sizeof(WCHAR)), 'VRcS');
+        if (!PmNotify->ObjectName.Buffer)
+        {
+            DPRINT1("PmVolumeManagerNotification: Allocate failed\n");
+            ExFreePoolWithTag(PmNotify, 'VRcS');
+            goto Exit;
+        }
+
+        RtlCopyMemory(PmNotify->ObjectName.Buffer, InterfaceChange->SymbolicLinkName->Buffer, PmNotify->ObjectName.Length);
+
+        PmNotify->ObjectName.Buffer[PmNotify->ObjectName.Length / sizeof(WCHAR)] = 0;
+
+        PmNotify->Counter = 0;
+
+        PmNotify->DeviceObject = NULL;
+        PmNotify->FileObject = NULL;
+
+        InsertTailList(&DriverExtension->NotifyList, &PmNotify->Link);
+
+        for (Entry = DriverExtension->ExtensionList.Flink;
+             Entry != &DriverExtension->ExtensionList;
+             Entry = Entry->Flink)
+        {
+            DPRINT1("PmVolumeManagerNotification: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else if (IsEqualGUID(&InterfaceChange->Event, &GUID_DEVICE_INTERFACE_REMOVAL))
+    {
+        DPRINT1("PmVolumeManagerNotification: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+Exit:
+
+    KeReleaseMutex(Mutex, FALSE);
+    return STATUS_SUCCESS;
 }
 
 /* AVL TABLE ROUTINES *******************************************************/
@@ -508,11 +587,11 @@ PmPnp(
         }
         case IRP_MN_QUERY_DEVICE_RELATIONS:
         {
-            if (IoStack->Parameters.QueryDeviceRelations.Type == 0)
+            if (IoStack->Parameters.QueryDeviceRelations.Type == BusRelations)
             {
                 Status = PmQueryDeviceRelations(Extension, Irp);
             }
-            else if (IoStack->Parameters.QueryDeviceRelations.Type == 3)
+            else if (IoStack->Parameters.QueryDeviceRelations.Type == RemovalRelations)
             {
                 DPRINT1("PmPnp: FIXME\n");
                 ASSERT(FALSE);
@@ -522,6 +601,7 @@ PmPnp(
                 IoSkipCurrentIrpStackLocation(Irp);
                 return IoCallDriver(Extension->AttachedToDevice, Irp);
             }
+
             break;
         }
         default:

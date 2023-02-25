@@ -9,6 +9,7 @@
 #define _PARTMGR_H_
 
 #include <ntifs.h>
+#include <wdmguid.h>
 
 typedef struct _PM_DRIVER_EXTENSION
 {
@@ -46,6 +47,15 @@ typedef struct _PM_SIGNATURE
     PPM_DEVICE_EXTENSION DeviceExtension;
     ULONG Value;
 } PM_SIGNATURE, *PPM_SIGNATURE;
+
+typedef struct _PM_NOTIFICATION_DATA
+{
+    LIST_ENTRY Link;
+    UNICODE_STRING ObjectName;
+    LONG Counter;
+    PDEVICE_OBJECT DeviceObject;
+    PFILE_OBJECT FileObject;
+} PM_NOTIFICATION_DATA, *PPM_NOTIFICATION_DATA;
 
 NTSTATUS
 NTAPI
