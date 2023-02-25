@@ -30,6 +30,7 @@
   #pragma alloc_text(PAGE, PmDetermineDeviceNameAndNumber)
   #pragma alloc_text(PAGE, PmReadPartitionTableEx)
   #pragma alloc_text(PAGE, LockDriverWithTimeout)
+  #pragma alloc_text(PAGE, PmQueryDeviceId)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -417,6 +418,105 @@ LockDriverWithTimeout(
     Timeout.QuadPart = (-6000 * 10000ull);
     Status = KeWaitForSingleObject(&DriverExtension->Mutex, Executive, KernelMode, FALSE, &Timeout);
     return (Status != STATUS_TIMEOUT);
+}
+
+NTSTATUS
+NTAPI
+PmQueryDeviceId(
+    _In_ PPM_DEVICE_EXTENSION Extension,
+    _In_ PSTORAGE_PROPERTY_QUERY *OutDeviceId)
+{
+    STORAGE_PROPERTY_QUERY InputBuffer;
+    PSTORAGE_PROPERTY_QUERY DeviceId;
+    STORAGE_DESCRIPTOR_HEADER OutputBuffer;
+    IO_STATUS_BLOCK IoStatusBlock;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    DPRINT("PmQueryDeviceId: Extension %p\n", Extension);
+
+    *OutDeviceId = NULL;
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    InputBuffer.PropertyId = StorageDeviceIdProperty;
+    InputBuffer.QueryType = PropertyStandardQuery;
+
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_STORAGE_QUERY_PROPERTY,
+                                        Extension->AttachedToDevice,
+                                        &InputBuffer,
+                                        sizeof(InputBuffer),
+                                        &OutputBuffer,
+                                        sizeof(OutputBuffer),
+                                        FALSE,
+                                        &Event,
+                                        &IoStatusBlock);
+    if (Irp)
+    {
+        Status = IoCallDriver(Extension->AttachedToDevice, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatusBlock.Status;
+        }
+    }
+    else
+    {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PmQueryDeviceId: Status %p\n", Status);
+        return Status;
+    }
+
+    DeviceId = ExAllocatePoolWithTag(NonPagedPool, OutputBuffer.Size, 'iRcS');
+    if (!DeviceId)
+    {
+        DPRINT1("PmQueryDeviceId: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    InputBuffer.PropertyId = StorageDeviceIdProperty;
+    InputBuffer.QueryType = PropertyStandardQuery;
+
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_STORAGE_QUERY_PROPERTY,
+                                        Extension->AttachedToDevice,
+                                        &InputBuffer,
+                                        sizeof(InputBuffer),
+                                        DeviceId,
+                                        OutputBuffer.Size,
+                                        FALSE,
+                                        &Event,
+                                        &IoStatusBlock);
+    if (Irp)
+    {
+        Status = IoCallDriver(Extension->AttachedToDevice, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatusBlock.Status;
+        }
+    }
+    else
+    {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PmQueryDeviceId: Status %p\n", Status);
+        ExFreePoolWithTag(DeviceId, 'iRcS');
+        return Status;
+    }
+
+    *OutDeviceId = DeviceId;
+
+    return Status;
 }
 
 /* AVL TABLE ROUTINES *******************************************************/
