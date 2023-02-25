@@ -178,6 +178,13 @@ PmQueryDeviceId(
     _In_ PSTORAGE_PROPERTY_QUERY *OutDeviceId
 );
 
+VOID
+NTAPI
+PmAddSignatures(
+    _In_ PPM_DEVICE_EXTENSION Extension,
+    _In_ PDRIVE_LAYOUT_INFORMATION_EX DriveLayout
+);
+
 #endif /* _PARTMGR_H_ */
 
 /* EOF */

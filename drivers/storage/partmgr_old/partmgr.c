@@ -31,6 +31,7 @@
   #pragma alloc_text(PAGE, PmReadPartitionTableEx)
   #pragma alloc_text(PAGE, LockDriverWithTimeout)
   #pragma alloc_text(PAGE, PmQueryDeviceId)
+  #pragma alloc_text(PAGE, PmAddSignatures)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -517,6 +518,113 @@ PmQueryDeviceId(
     *OutDeviceId = DeviceId;
 
     return Status;
+}
+
+VOID
+NTAPI
+PmAddSignatures(
+    _In_ PPM_DEVICE_EXTENSION Extension,
+    _In_ PDRIVE_LAYOUT_INFORMATION_EX DriveLayout)
+{
+    PPM_DRIVER_EXTENSION DriverExtension;
+    TABLE_SEARCH_RESULT ResultSignatures;
+    PSTORAGE_PROPERTY_QUERY DeviceId;
+    PPM_SIGNATURE RetSignature;
+    PM_SIGNATURE Signature;
+    PVOID SignatureNode;
+    PLIST_ENTRY Entry;
+    NTSTATUS Status;
+
+    DPRINT("PmAddSignatures: Extension %p, DriveLayout %p\n", Extension, DriveLayout);
+
+    DriverExtension = Extension->DriverExtension;
+
+    while (!IsListEmpty(&Extension->ListOfSignatures))
+    {
+        Entry = RemoveHeadList(&Extension->ListOfSignatures);
+        RetSignature = CONTAINING_RECORD(Entry, PM_SIGNATURE, Link);
+        RtlDeleteElementGenericTableAvl(&DriverExtension->TableSignature, RetSignature);
+    }
+
+    while (!IsListEmpty(&Extension->ListOfGuids))
+    {
+        DPRINT1("PmAddSignatures: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (!DriveLayout)
+        return;
+
+    if (Extension->Reserved00)
+        return;
+
+    if (DriveLayout->PartitionStyle == 0) // PARTITION_STYLE_MBR
+    {
+        if (!DriveLayout->PartitionCount && !DriveLayout->Mbr.Signature)
+            return;
+
+        if (DriveLayout->PartitionCount &&
+            DriveLayout->PartitionEntry[0].PartitionLength.QuadPart > 0 &&
+            DriveLayout->PartitionEntry[0].StartingOffset.QuadPart == 0)
+        {
+            return;
+        }
+
+        if (!Extension->IsDeviceIdRequested)
+        {
+            DeviceId = NULL;
+
+            Status = PmQueryDeviceId(Extension, &DeviceId);
+            if (NT_SUCCESS(Status))
+            {
+                DPRINT1("PmAddSignatures: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            Extension->IsDeviceIdRequested = TRUE;
+        }
+
+        Signature.Value = DriveLayout->Mbr.Signature;
+
+        RetSignature = RtlLookupElementGenericTableFullAvl(&DriverExtension->TableSignature,
+                                                           &Signature,
+                                                           &SignatureNode,
+                                                           &ResultSignatures);
+        if (!RetSignature && Signature.Value)
+        {
+            goto FinishMbrStyle;
+        }
+
+        DPRINT1("PmAddSignatures: FIXME\n");
+        ASSERT(FALSE);
+
+FinishMbrStyle:
+
+        RetSignature = RtlInsertElementGenericTableFullAvl(&DriverExtension->TableSignature,
+                                                           &Signature,
+                                                           sizeof(PM_SIGNATURE),
+                                                           0,
+                                                           SignatureNode,
+                                                           ResultSignatures);
+        if (RetSignature)
+        {
+            InsertTailList(&Extension->ListOfSignatures, &RetSignature->Link);
+            RetSignature->DeviceExtension = Extension;
+        }
+
+        return;
+    }
+
+    if (DriveLayout->PartitionStyle != PARTITION_STYLE_GPT)
+    {
+        DPRINT1("PmAddSignatures: ? PARTITION_STYLE ? (%p, %p, %X)\n", Extension, DriveLayout, DriveLayout->PartitionStyle);
+        ASSERT("Layout->PartitionStyle == PARTITION_STYLE_GPT");
+        return;
+    }
+
+    DPRINT1("PmAddSignatures: PARTITION_STYLE_GPT. FIXME\n");
+    ASSERT(FALSE);
+
 }
 
 /* AVL TABLE ROUTINES *******************************************************/
