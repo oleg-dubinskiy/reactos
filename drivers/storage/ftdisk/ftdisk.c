@@ -76,8 +76,14 @@ FtDiskCreate(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("FtDiskCreate: %p, %p\n", DeviceObject, Irp);
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    Irp->IoStatus.Information = 0;
+
+    IoCompleteRequest(Irp, 0);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
