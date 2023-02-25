@@ -158,6 +158,13 @@ PmDetermineDeviceNameAndNumber(
     _In_ ULONG* OutPartitionData
 );
 
+NTSTATUS
+NTAPI
+PmReadPartitionTableEx(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PDRIVE_LAYOUT_INFORMATION_EX* OutDriveLayout
+);
+
 #endif /* _PARTMGR_H_ */
 
 /* EOF */

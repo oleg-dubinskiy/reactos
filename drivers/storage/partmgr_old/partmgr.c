@@ -28,6 +28,7 @@
   #pragma alloc_text(PAGE, PmVolumeManagerNotification)
   #pragma alloc_text(PAGE, PmQueryDeviceRelations)
   #pragma alloc_text(PAGE, PmDetermineDeviceNameAndNumber)
+  #pragma alloc_text(PAGE, PmReadPartitionTableEx)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -308,6 +309,100 @@ PmDetermineDeviceNameAndNumber(
     *OutPartitionData = PartitionData;
 
     return Status;
+}
+
+NTSTATUS
+NTAPI
+PmReadPartitionTableEx(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PDRIVE_LAYOUT_INFORMATION_EX* OutDriveLayout)
+{
+    IO_STATUS_BLOCK IoStatusBlock;
+    PVOID IoCtlBuffer;
+    KEVENT Event;
+    PIRP Irp;
+    ULONG IoCtlBufferSize;
+    ULONG ix;
+    NTSTATUS Status;
+
+    DPRINT("PmReadPartitionTableEx: DeviceObject %p\n", DeviceObject);
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    IoCtlBuffer = ExAllocatePoolWithTag(0, PAGE_SIZE, 'iRcS');
+    if (!IoCtlBuffer)
+    {
+        DPRINT1("PmReadPartitionTableEx: Allocate failed\n");
+        return IoReadPartitionTableEx(DeviceObject, OutDriveLayout);
+    }
+
+    IoCtlBufferSize = PAGE_SIZE;
+
+    for (ix = 0; ix <= 0x20; ix++)
+    {
+        KeClearEvent(&Event);
+
+        Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
+                                            DeviceObject,
+                                            NULL,
+                                            0,
+                                            IoCtlBuffer,
+                                            IoCtlBufferSize,
+                                            FALSE,
+                                            &Event,
+                                            &IoStatusBlock);
+        if (!Irp)
+        {
+            DPRINT1("PmReadPartitionTableEx: STATUS_INSUFFICIENT_RESOURCES\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto ErrorExit;
+        }
+
+        Status = IoCallDriver(DeviceObject, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatusBlock.Status;
+        }
+
+        if (NT_SUCCESS(Status))
+        {
+            ASSERT(IoCtlBuffer && IoCtlBufferSize);
+            *OutDriveLayout = IoCtlBuffer;
+            return STATUS_SUCCESS;
+        }
+
+        if (Status != STATUS_BUFFER_TOO_SMALL)
+        {
+            DPRINT1("PmReadPartitionTableEx: Status %X\n", Status);
+            goto ErrorExit;
+        }
+
+        ASSERT(IoCtlBuffer && IoCtlBufferSize);
+        ExFreePoolWithTag(IoCtlBuffer, 'iRcS');
+
+        IoCtlBufferSize *= 2;
+
+        IoCtlBuffer = ExAllocatePoolWithTag(NonPagedPool, IoCtlBufferSize, 'iRcS');
+        if (!IoCtlBuffer)
+        {
+            DPRINT1("PmReadPartitionTableEx: Allocate failed\n");
+            return IoReadPartitionTableEx(DeviceObject, OutDriveLayout);
+        }
+    }
+
+    Status = STATUS_UNSUCCESSFUL;
+    DPRINT1("PmReadPartitionTableEx: STATUS_UNSUCCESSFUL\n");
+
+ErrorExit:
+
+    if (IoCtlBuffer)
+    {
+        ASSERT(IoCtlBufferSize);
+        ExFreePoolWithTag(IoCtlBuffer, 'iRcS');
+    }
+
+    return IoReadPartitionTableEx(DeviceObject, OutDriveLayout);
 }
 
 /* AVL TABLE ROUTINES *******************************************************/
