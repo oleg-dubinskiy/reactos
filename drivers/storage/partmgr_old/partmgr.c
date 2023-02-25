@@ -725,8 +725,37 @@ NTAPI
 PmStartPartition(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_STACK_LOCATION IoStack;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    DPRINT("PmStartPartition: %p\n", DeviceObject);
+
+    Irp = IoAllocateIrp(DeviceObject->StackSize, 0);
+    if (!Irp)
+    {
+        DPRINT1("PmStartPartition: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    IoStack = IoGetNextIrpStackLocation(Irp);
+    IoStack->MajorFunction = IRP_MJ_PNP;
+    IoStack->MinorFunction = IRP_MN_START_DEVICE;
+
+    Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
+    IoSetCompletionRoutine(Irp, PmSignalCompletion, &Event, TRUE, TRUE, TRUE);
+
+    IoCallDriver(DeviceObject, Irp);
+
+    KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+    Status = Irp->IoStatus.Status;
+    IoFreeIrp(Irp);
+
+    return Status;
 }
 
 NTSTATUS
