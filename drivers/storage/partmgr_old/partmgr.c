@@ -765,8 +765,81 @@ PmGivePartition(
     _In_ PDEVICE_OBJECT PartitionPdo,
     _In_ PDEVICE_OBJECT WholeDiskPdo)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    IO_STATUS_BLOCK IoStatusBlock;
+    PDEVICE_OBJECT InputBuffer[2];
+    PFILE_OBJECT FileObject;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    DPRINT("PmGivePartition: %p, %X, %X\n", NotifyData, PartitionPdo, WholeDiskPdo);
+
+    if (!NotifyData->Counter)
+    {
+        Status = IoGetDeviceObjectPointer(&NotifyData->ObjectName,
+                                          FILE_READ_DATA,
+                                          &NotifyData->FileObject,
+                                          &NotifyData->DeviceObject);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("PmGivePartition: Status %X\n", Status);
+            return Status;
+        }
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    InputBuffer[0] = PartitionPdo;
+    InputBuffer[1] = WholeDiskPdo;
+
+    Irp = IoBuildDeviceIoControlRequest(0x760000,
+                                        NotifyData->DeviceObject,
+                                        InputBuffer,
+                                        sizeof(InputBuffer),
+                                        NULL,
+                                        0,
+                                        TRUE,
+                                        &Event,
+                                        &IoStatusBlock);
+    if (!Irp)
+    {
+        DPRINT1("PmGivePartition: Build Irp failed\n");
+
+        if (!NotifyData->Counter)
+        {
+            FileObject = NotifyData->FileObject;
+            NotifyData->DeviceObject = NULL;
+            ObDereferenceObject(FileObject);
+            NotifyData->FileObject = NULL;
+        }
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = IoCallDriver(NotifyData->DeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatusBlock.Status;
+    }
+
+    if (NT_SUCCESS(Status))
+    {
+        NotifyData->Counter++;
+        return Status;
+    }
+
+    DPRINT1("PmGivePartition: Status %X\n", Status);
+
+    if (!NotifyData->Counter)
+    {
+        FileObject = NotifyData->FileObject;
+        NotifyData->DeviceObject = NULL;
+        ObDereferenceObject(FileObject);
+        NotifyData->FileObject = NULL;
+    }
+
+    return Status;
 }
 
 NTSTATUS
