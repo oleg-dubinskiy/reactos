@@ -811,8 +811,85 @@ PmDeviceControl(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PPM_DEVICE_EXTENSION Extension;
+    PIO_STACK_LOCATION IoStack;
+    NTSTATUS Status;
+
+    Extension = DeviceObject->DeviceExtension;
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    DPRINT("PmDeviceControl: DeviceObject %p, Irp %p, Code %X\n", DeviceObject, Irp, IoStack->Parameters.DeviceIoControl.IoControlCode);
+
+    if (Extension->AttachedToDevice->Characteristics & FILE_REMOVABLE_MEDIA)
+    {
+        IoSkipCurrentIrpStackLocation(Irp);
+        return IoCallDriver(Extension->AttachedToDevice, Irp);
+    }
+
+    switch (IoStack->Parameters.DeviceIoControl.IoControlCode)
+    {
+        case IOCTL_DISK_GET_DRIVE_GEOMETRY:
+            DPRINT1("PmDeviceControl: FIXME\n");
+            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
+            break;
+
+        case IOCTL_DISK_PERFORMANCE:
+            DPRINT1("PmDeviceControl: FIXME\n");
+            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
+            break;
+
+        case IOCTL_DISK_GET_DRIVE_LAYOUT_EX:
+        case IOCTL_DISK_GET_DRIVE_LAYOUT:
+        case 0x704008:
+            DPRINT1("PmDeviceControl: FIXME\n");
+            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
+            break;
+
+        case IOCTL_DISK_PERFORMANCE_OFF:
+            DPRINT1("PmDeviceControl: FIXME\n");
+            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
+            break;
+
+        case IOCTL_DISK_UPDATE_PROPERTIES:
+        case IOCTL_DISK_SET_DRIVE_LAYOUT:
+        case IOCTL_DISK_CREATE_DISK:
+        case IOCTL_DISK_DELETE_DRIVE_LAYOUT:
+        case IOCTL_DISK_SET_DRIVE_LAYOUT_EX:
+            DPRINT1("PmDeviceControl: FIXME\n");
+            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
+            break;
+
+        case IOCTL_DISK_GROW_PARTITION:
+            DPRINT1("PmDeviceControl: FIXME\n");
+            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
+            break;
+
+        case 0x70400C:
+            DPRINT1("PmDeviceControl: FIXME\n");
+            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
+            break;
+
+        case 0x70C000:
+            DPRINT1("PmDeviceControl: FIXME\n");
+            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
+            break;
+
+        case 0x70C004:
+            DPRINT1("PmDeviceControl: FIXME\n");
+            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
+            break;
+
+        default:
+            IoSkipCurrentIrpStackLocation(Irp);
+            return IoCallDriver(Extension->AttachedToDevice, Irp);
+    }
+
+    DPRINT("PmDeviceControl: Code %X, Status %X\n", IoStack->Parameters.DeviceIoControl.IoControlCode, Status);
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS
