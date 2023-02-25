@@ -113,6 +113,20 @@ FtpQueryRootId(
     _In_ PIRP Irp
 );
 
+NTSTATUS
+NTAPI
+FtpPartitionArrived(
+    _In_ PROOT_EXTENSION RootExtension,
+    _In_ PIRP Irp
+);
+
+NTSTATUS
+NTAPI
+FtpPartitionArrivedHelper(
+    _In_ PROOT_EXTENSION RootExtension,
+    _In_ PDEVICE_OBJECT PartitionPdo,
+    _In_ PDEVICE_OBJECT WholeDiskPdo
+);
 
 #endif /* _FTDISK_H_ */
 

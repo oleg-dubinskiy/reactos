@@ -23,6 +23,8 @@
   #pragma alloc_text(PAGE, IoRegisterBootDriverReinitialization)
   #pragma alloc_text(PAGE, IoRegisterDriverReinitialization)
   #pragma alloc_text(PAGE, FtpQueryRootId)
+  #pragma alloc_text(PAGE, FtpPartitionArrived)
+  #pragma alloc_text(PAGE, FtpPartitionArrivedHelper)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -83,6 +85,27 @@ FtpCancelRoutine(
     IoCompleteRequest(Irp, 0);
 }
 
+NTSTATUS
+NTAPI
+FtpPartitionArrivedHelper(
+    _In_ PROOT_EXTENSION RootExtension,
+    _In_ PDEVICE_OBJECT PartitionPdo,
+    _In_ PDEVICE_OBJECT WholeDiskPdo)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+FtpPartitionArrived(
+    _In_ PROOT_EXTENSION RootExtension,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* DRIVER DISPATCH ROUTINES *************************************************/
 
 NTSTATUS
@@ -127,8 +150,98 @@ FtDiskInternalDeviceControl(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PVOLUME_EXTENSION Extension;
+    PROOT_EXTENSION RootExtension;
+    PIO_STACK_LOCATION IoStack;
+    ULONG ControlCode;
+    NTSTATUS Status;
+
+    DPRINT("FtDiskInternalDeviceControl: %p, %p\n", DeviceObject, Irp);
+
+    Extension = DeviceObject->DeviceExtension;
+    RootExtension = Extension->RootExtension;
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    Irp->IoStatus.Information = 0;
+
+    FtpAcquire(RootExtension);
+
+    if (Extension->DeviceExtensionType != 0)
+    {
+        DPRINT1("FtDiskInternalDeviceControl: STATUS_INVALID_PARAMETER\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto Exit;
+    }
+
+    ControlCode = IoStack->Parameters.DeviceIoControl.IoControlCode;
+
+    switch (ControlCode)
+    {
+        case 0x760000:
+            Status = FtpPartitionArrived(RootExtension, Irp);
+            break;
+
+        case 0x760004:
+            DPRINT1("FtDiskInternalDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+            ASSERT(FALSE);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+
+        case 0x760008:
+            DPRINT1("FtDiskInternalDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+            ASSERT(FALSE);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+
+        case 0x76000C:
+            DPRINT1("FtDiskInternalDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+            ASSERT(FALSE);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+
+        case 0x760018:
+            DPRINT1("FtDiskInternalDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+            ASSERT(FALSE);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+
+        case 0x76001C:
+            DPRINT1("FtDiskInternalDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+            ASSERT(FALSE);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+
+        case 0x760020:
+            DPRINT1("FtDiskInternalDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+            ASSERT(FALSE);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+
+        case 0x760024:
+            ASSERT(FALSE);
+            Status = 0;//FtpPmWmiCounterLibContext(RootExtension, Irp);
+            break;
+
+        case 0x760028:
+            DPRINT1("FtDiskInternalDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+            ASSERT(FALSE);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+
+        default:
+            DPRINT1("FtDiskInternalDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+            ASSERT(FALSE);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+    }
+
+Exit:
+
+    FtpRelease(RootExtension);
+    Irp->IoStatus.Status = Status;
+
+    IoCompleteRequest(Irp, 0);
+    return Status;
 }
 
 NTSTATUS
