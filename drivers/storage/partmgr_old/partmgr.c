@@ -33,6 +33,7 @@
   #pragma alloc_text(PAGE, PmQueryDeviceId)
   #pragma alloc_text(PAGE, PmAddSignatures)
   #pragma alloc_text(PAGE, PmCheckAndUpdateSignature)
+  #pragma alloc_text(PAGE, PmRegisterDevice)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -687,6 +688,32 @@ PmCheckAndUpdateSignature(
     KeReleaseMutex(&Extension->DriverExtension->Mutex, FALSE);
 
     DPRINT("PmCheckAndUpdateSignature: FIXME PmSigCheckCompleteNotificationIrps()\n");
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+PmRegisterDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG PartitionData)
+{
+    PPM_DEVICE_EXTENSION Extension;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    PAGED_CODE();
+    DPRINT("PmRegisterDevice: DeviceObject %p, PartitionData %X\n", DeviceObject, PartitionData);
+
+    Extension = DeviceObject->DeviceExtension;
+
+    if (Extension->NameString.Length)
+    {
+        Status = IoWMIRegistrationControl(DeviceObject, (PartitionData | 1));
+        if (NT_SUCCESS(Status))
+        {
+            DPRINT1("PmRegisterDevice: FIXME PmWmiCounter...\n");
+        }
+    }
 
     return Status;
 }

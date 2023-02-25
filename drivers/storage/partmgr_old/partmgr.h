@@ -195,6 +195,13 @@ PmCheckAndUpdateSignature(
     _In_ BOOLEAN Param3
 );
 
+NTSTATUS
+NTAPI
+PmRegisterDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG PartitionData
+);
+
 #endif /* _PARTMGR_H_ */
 
 /* EOF */
