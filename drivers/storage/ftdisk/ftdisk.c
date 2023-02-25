@@ -147,8 +147,68 @@ FtDiskCleanup(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PROOT_EXTENSION RootExtension;
+    PVOLUME_EXTENSION VolumeExtension;
+    PIO_STACK_LOCATION IoStack;
+    PIO_STACK_LOCATION CancelIrpStack;
+    ULONG DeviceExtensionType;
+    PLIST_ENTRY Entry;
+    PIRP CancelIrp;
+    KIRQL OldIrql;
+
+    DPRINT("FtDiskCleanup: %p, %p\n", DeviceObject, Irp);
+
+    RootExtension = DeviceObject->DeviceExtension;
+    VolumeExtension = DeviceObject->DeviceExtension;
+    DeviceExtensionType = VolumeExtension->DeviceExtensionType;
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    Irp->IoStatus.Information = 0;
+
+    if (DeviceExtensionType == 1) // DEVICE_EXTENSION_VOLUME
+    {
+        IoCompleteRequest(Irp, 0);
+        return STATUS_SUCCESS;
+    }
+
+    ASSERT(RootExtension->DeviceExtensionType == 0);
+
+    IoAcquireCancelSpinLock(&OldIrql);
+
+    while (TRUE)
+    {
+        for (Entry = RootExtension->ChangeNotifyIrpList.Flink;
+             Entry != &RootExtension->ChangeNotifyIrpList;
+             Entry = Entry->Flink)
+        {
+            CancelIrp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+            CancelIrpStack = IoGetCurrentIrpStackLocation(CancelIrp);
+
+            if (CancelIrpStack->FileObject == IoStack->FileObject)
+                break;
+        }
+
+        if (Entry == &RootExtension->ChangeNotifyIrpList)
+            break;
+
+        CancelIrp->Cancel = TRUE;
+        CancelIrp->CancelIrql = OldIrql;
+        CancelIrp->CancelRoutine = NULL;
+
+        FtpCancelRoutine(DeviceObject, CancelIrp);
+        IoAcquireCancelSpinLock(&OldIrql);
+    }
+
+    IoReleaseCancelSpinLock(OldIrql);
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    Irp->IoStatus.Information = 0;
+
+    IoCompleteRequest(Irp, 0);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
