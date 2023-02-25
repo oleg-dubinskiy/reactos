@@ -10,6 +10,22 @@
 
 #include <ntifs.h>
 
+/* NT compatible */
+#define IsRecognizedPartition_(PartitionType) ( \
+    (((PartitionType) & PARTITION_NTFT) && (((PartitionType) & ~0xC0) == PARTITION_FAT_12)) || \
+    (((PartitionType) & PARTITION_NTFT) && (((PartitionType) & ~0xC0) == PARTITION_HUGE)) || \
+    (((PartitionType) & PARTITION_NTFT) && (((PartitionType) & ~0xC0) == PARTITION_IFS)) || \
+    (((PartitionType) & PARTITION_NTFT) && (((PartitionType) & ~0xC0) == PARTITION_FAT32)) || \
+    (((PartitionType) & PARTITION_NTFT) && (((PartitionType) & ~0xC0) == PARTITION_FAT32_XINT13)) || \
+    (((PartitionType) & PARTITION_NTFT) && (((PartitionType) & ~0xC0) == PARTITION_XINT13)) || \
+    ((PartitionType) == PARTITION_FAT_12) || \
+    ((PartitionType) == PARTITION_FAT_16) || \
+    ((PartitionType) == PARTITION_HUGE) || \
+    ((PartitionType) == PARTITION_IFS) || \
+    ((PartitionType) == PARTITION_FAT32) || \
+    ((PartitionType) == PARTITION_FAT32_XINT13) || \
+    ((PartitionType) == PARTITION_XINT13))
+
 typedef struct _FT_LOGICAL_DISK_INFORMATION_SET
 {
     ULONG DiskInfoCount;
