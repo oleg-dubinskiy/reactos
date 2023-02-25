@@ -29,6 +29,7 @@
   #pragma alloc_text(PAGE, PmQueryDeviceRelations)
   #pragma alloc_text(PAGE, PmDetermineDeviceNameAndNumber)
   #pragma alloc_text(PAGE, PmReadPartitionTableEx)
+  #pragma alloc_text(PAGE, LockDriverWithTimeout)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -403,6 +404,19 @@ ErrorExit:
     }
 
     return IoReadPartitionTableEx(DeviceObject, OutDriveLayout);
+}
+
+BOOLEAN
+NTAPI
+LockDriverWithTimeout(
+    _In_ PPM_DRIVER_EXTENSION DriverExtension)
+{
+    LARGE_INTEGER Timeout;
+    NTSTATUS Status;
+
+    Timeout.QuadPart = (-6000 * 10000ull);
+    Status = KeWaitForSingleObject(&DriverExtension->Mutex, Executive, KernelMode, FALSE, &Timeout);
+    return (Status != STATUS_TIMEOUT);
 }
 
 /* AVL TABLE ROUTINES *******************************************************/

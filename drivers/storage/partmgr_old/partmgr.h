@@ -165,6 +165,12 @@ PmReadPartitionTableEx(
     _In_ PDRIVE_LAYOUT_INFORMATION_EX* OutDriveLayout
 );
 
+BOOLEAN
+NTAPI
+LockDriverWithTimeout(
+    _In_ PPM_DRIVER_EXTENSION DriverExtension
+);
+
 #endif /* _PARTMGR_H_ */
 
 /* EOF */
