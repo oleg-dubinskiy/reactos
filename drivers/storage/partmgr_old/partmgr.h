@@ -66,6 +66,14 @@ typedef struct _PM_NOTIFICATION_DATA
     PFILE_OBJECT FileObject;
 } PM_NOTIFICATION_DATA, *PPM_NOTIFICATION_DATA;
 
+typedef struct _PM_PARTITION_DATA
+{
+    LIST_ENTRY Link;
+    PDEVICE_OBJECT PartitionPdo;
+    PDEVICE_OBJECT WholeDiskPdo;
+    PPM_NOTIFICATION_DATA NotifyData;
+} PM_PARTITION_DATA, *PPM_PARTITION_DATA;
+
 NTSTATUS
 NTAPI
 DriverEntry(
@@ -200,6 +208,20 @@ NTAPI
 PmRegisterDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ ULONG PartitionData
+);
+
+NTSTATUS
+NTAPI
+PmStartPartition(
+    _In_ PDEVICE_OBJECT DeviceObject
+);
+
+NTSTATUS
+NTAPI
+PmGivePartition(
+    _In_ PPM_NOTIFICATION_DATA NotifyData,
+    _In_ PDEVICE_OBJECT PartitionPdo,
+    _In_ PDEVICE_OBJECT WholeDiskPdo
 );
 
 #endif /* _PARTMGR_H_ */

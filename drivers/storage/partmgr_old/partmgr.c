@@ -34,6 +34,8 @@
   #pragma alloc_text(PAGE, PmAddSignatures)
   #pragma alloc_text(PAGE, PmCheckAndUpdateSignature)
   #pragma alloc_text(PAGE, PmRegisterDevice)
+  #pragma alloc_text(PAGE, PmStartPartition)
+  #pragma alloc_text(PAGE, PmGivePartition)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -718,6 +720,149 @@ PmRegisterDevice(
     return Status;
 }
 
+NTSTATUS
+NTAPI
+PmStartPartition(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PmGivePartition(
+    _In_ PPM_NOTIFICATION_DATA NotifyData,
+    _In_ PDEVICE_OBJECT PartitionPdo,
+    _In_ PDEVICE_OBJECT WholeDiskPdo)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PmQueryDeviceRelations(
+    _In_ PPM_DEVICE_EXTENSION Extension,
+    _In_ PIRP Irp)
+{
+    PPM_PARTITION_DATA PartitionData;
+    PPM_NOTIFICATION_DATA NotifyData;
+    PDEVICE_RELATIONS DeviceRelation;
+    PLIST_ENTRY Entry;
+    KEVENT Event;
+    ULONG ix;
+    NTSTATUS Status;
+
+    DPRINT("PmQueryDeviceRelations: Extension %p, Irp %p\n", Extension, Irp);
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    IoCopyCurrentIrpStackLocationToNext(Irp);
+    IoSetCompletionRoutine(Irp, PmSignalCompletion, &Event, TRUE, TRUE, TRUE);
+
+    IoCallDriver(Extension->AttachedToDevice, Irp);
+    KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+    Status = Irp->IoStatus.Status;
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PmQueryDeviceRelations: Status %X\n", Status);
+        return Status;
+    }
+
+    DeviceRelation = (PDEVICE_RELATIONS)Irp->IoStatus.Information;
+
+    PmCheckAndUpdateSignature(Extension, TRUE, TRUE);
+
+    KeWaitForSingleObject(&Extension->DriverExtension->Mutex, Executive, KernelMode, FALSE, NULL);
+
+    for (Entry = Extension->PartitionList.Flink;
+         Entry != &Extension->PartitionList;
+         Entry = Entry->Flink)
+    {
+        PartitionData = CONTAINING_RECORD(Entry, PM_PARTITION_DATA, Link);
+
+        for (ix = 0; ix < DeviceRelation->Count; ix++)
+        {
+            if (PartitionData->PartitionPdo == DeviceRelation->Objects[ix])
+                break;
+        }
+
+        if (ix < DeviceRelation->Count)
+            continue;
+
+        DPRINT1("PmQueryDeviceRelations: FIXME\n");
+        ASSERT(FALSE);
+
+    }
+
+    DPRINT("PmQueryDeviceRelations: DeviceRelation->Count %X\n", DeviceRelation->Count);
+
+    for (ix = 0; ix < DeviceRelation->Count; ix++)
+    {
+        for (Entry = Extension->PartitionList.Flink;
+             Entry != &Extension->PartitionList;
+             Entry = Entry->Flink)
+        {
+            PartitionData = CONTAINING_RECORD(Entry, PM_PARTITION_DATA, Link);
+
+            if (DeviceRelation->Objects[ix] == PartitionData->PartitionPdo)
+                break;
+        }
+
+        if (Entry != &Extension->PartitionList)
+        {
+            ObDereferenceObject(DeviceRelation->Objects[ix]);
+            PmStartPartition(DeviceRelation->Objects[ix]);
+            continue;
+        }
+
+        if (Extension->DriverExtension->IsReinitialized)
+            DeviceRelation->Objects[ix]->Flags |= DO_DEVICE_INITIALIZING;
+
+        Status = PmStartPartition(DeviceRelation->Objects[ix]);
+        if (!NT_SUCCESS(Status))
+        {
+            continue;
+        }
+
+        PartitionData = ExAllocatePoolWithTag(NonPagedPool, sizeof(*PartitionData), 'pRcS');
+        if (!PartitionData)
+        {
+            continue;
+        }
+
+        PartitionData->PartitionPdo = DeviceRelation->Objects[ix];
+        PartitionData->WholeDiskPdo = Extension->WholeDiskPdo;
+        PartitionData->NotifyData = NULL;
+
+        InsertHeadList(&Extension->PartitionList, &PartitionData->Link);
+
+        if (Extension->Reserved02)
+            continue;
+
+        for (Entry = Extension->DriverExtension->NotifyList.Flink;
+             Entry != &Extension->DriverExtension->NotifyList;
+             Entry = Entry->Flink)
+        {
+            NotifyData = CONTAINING_RECORD(Entry, PM_NOTIFICATION_DATA, Link);
+
+            Status = PmGivePartition(NotifyData, PartitionData->PartitionPdo, PartitionData->WholeDiskPdo);
+            if (NT_SUCCESS(Status))
+            {
+                PartitionData->NotifyData = NotifyData;
+                break;
+            }
+        }
+    }
+
+    KeReleaseMutex(&Extension->DriverExtension->Mutex, FALSE);
+
+    DeviceRelation->Count = 0;
+    return Irp->IoStatus.Status;
+}
+
 /* AVL TABLE ROUTINES *******************************************************/
 
 RTL_GENERIC_COMPARE_RESULTS
@@ -781,16 +926,6 @@ PmTableFreeRoutine(
     _In_ PVOID Buffer)
 {
     ExFreePoolWithTag(Buffer, 'tRcS');
-}
-
-NTSTATUS
-NTAPI
-PmQueryDeviceRelations(
-    _In_ PPM_DEVICE_EXTENSION Extension,
-    _In_ PIRP Irp)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
 }
 
 /* DRIVER DISPATCH ROUTINES *************************************************/
