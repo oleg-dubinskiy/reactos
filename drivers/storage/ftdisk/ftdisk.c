@@ -835,6 +835,78 @@ FtpQueryId(
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+FtpZeroRefCallback(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ VOID (NTAPI* ZeroRefCallback)(PVOLUME_EXTENSION),
+    _In_ PVOID ZeroRefContext)
+{
+    KIRQL OldIrql;
+    BOOLEAN IsIrpListNotEmpty;
+
+    DPRINT("FtpZeroRefCallback: %p, %p\n", VolumeExtension, ZeroRefContext);
+
+    KeWaitForSingleObject(&VolumeExtension->ZeroRefSemaphore, Executive, KernelMode, FALSE, NULL);
+
+    KeAcquireSpinLock(&VolumeExtension->SpinLock, &OldIrql);
+    InterlockedExchange(&VolumeExtension->Lock, 0);
+
+    ASSERT(!VolumeExtension->ZeroRefCallback);
+
+    VolumeExtension->ZeroRefCallback = ZeroRefCallback;
+    VolumeExtension->ZeroRefContext = ZeroRefContext;
+
+    KeReleaseSpinLock(&VolumeExtension->SpinLock, OldIrql);
+
+    if (VolumeExtension->FtVolume)
+    {
+        DPRINT1("FtpZeroRefCallback: FIXME (%p, %p)\n", VolumeExtension, VolumeExtension->FtVolume);
+        ASSERT(FALSE);
+    }
+
+    ExWaitForRundownProtectionReleaseCacheAware(VolumeExtension->RundownCache);
+
+    KeAcquireSpinLock(&VolumeExtension->SpinLock, &OldIrql);
+    if (!VolumeExtension->ZeroRefCallback)
+    {
+        KeReleaseSpinLock(&VolumeExtension->SpinLock, OldIrql);
+        return;
+    }
+
+    VolumeExtension->ZeroRefCallback(VolumeExtension);
+    VolumeExtension->ZeroRefCallback = NULL;
+
+    ExReInitializeRundownProtectionCacheAware(VolumeExtension->RundownCache);
+
+    if (VolumeExtension->FtVolume)
+    {
+        DPRINT1("FtpZeroRefCallback: FIXME (%p, %p)\n", VolumeExtension, VolumeExtension->FtVolume);
+        ASSERT(FALSE);
+    }
+
+    if (IsListEmpty(&VolumeExtension->IrpList))
+    {
+        IsIrpListNotEmpty = FALSE;
+    }
+    else
+    {
+        IsIrpListNotEmpty = TRUE;
+
+        DPRINT1("FtpZeroRefCallback: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseSpinLock(&VolumeExtension->SpinLock, OldIrql);
+    KeReleaseSemaphore(&VolumeExtension->ZeroRefSemaphore, 0, 1, FALSE);
+
+    if (!IsIrpListNotEmpty)
+        return;
+
+    ASSERT(FALSE);
+
+}
+
 /* DRIVER DISPATCH ROUTINES *************************************************/
 
 NTSTATUS

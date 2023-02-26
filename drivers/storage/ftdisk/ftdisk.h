@@ -57,6 +57,9 @@ typedef struct _ROOT_EXTENSION
     ULONG EmptyDeviceCount;
 } ROOT_EXTENSION, *PROOT_EXTENSION;
 
+typedef struct _VOLUME_EXTENSION *PVOLUME_EXTENSION;
+typedef VOID (NTAPI* PFT_ZERO_REF_CALLBACK)(_In_ PVOLUME_EXTENSION VolumeExtension);
+
 typedef struct _VOLUME_EXTENSION
 {
     PDEVICE_OBJECT SelfDeviceObject; // Volume PDO
@@ -66,6 +69,8 @@ typedef struct _VOLUME_EXTENSION
     PDEVICE_OBJECT PartitionPdo;
     PVOID FtVolume;
     PVOID RundownCache;
+    PFT_ZERO_REF_CALLBACK ZeroRefCallback;
+    PVOID ZeroRefContext;
     LIST_ENTRY IrpList;
     BOOLEAN IsStartCallback;
     BOOLEAN IsVolumeOffline;
@@ -74,6 +79,7 @@ typedef struct _VOLUME_EXTENSION
     BOOLEAN IsHidenPartition;
     BOOLEAN IsReadOnlyPartition;
     BOOLEAN IsSystemPartition;
+    LONG Lock;
     LIST_ENTRY Link;
     ULONG VolumeNumber;
     LIST_ENTRY UniqueIdNotifyList;
