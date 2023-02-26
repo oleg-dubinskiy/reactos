@@ -27,6 +27,7 @@
   #pragma alloc_text(PAGE, FtpPartitionArrivedHelper)
   #pragma alloc_text(PAGE, FtpQueryPartitionInformation)
   #pragma alloc_text(PAGE, FtpCreateNewDevice)
+  #pragma alloc_text(PAGE, FtpQueryDiskSignature)
   #pragma alloc_text(PAGE, FtpQueryDiskSignatureCache)
   #pragma alloc_text(PAGE, FtpCreateOldNameLinks)
 #endif
@@ -95,11 +96,76 @@ FtpCancelRoutine(
 
 ULONG
 NTAPI
+FtpQueryDiskSignature(
+    _In_ PDEVICE_OBJECT WholeDiskPdo)
+{
+    PDEVICE_OBJECT TopDeviceObject;
+    PIRP Irp;
+    NTSTATUS Status;
+    KEVENT Event;
+    IO_STATUS_BLOCK IoStatusBlock;
+    ULONG DiskSignature;
+
+    DPRINT("FtpQueryDiskSignature: WholeDiskPdo %p\n", WholeDiskPdo);
+
+    TopDeviceObject = IoGetAttachedDeviceReference(WholeDiskPdo);
+    if (!TopDeviceObject)
+    {
+        ASSERT(FALSE);
+        return 0;
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    Irp = IoBuildDeviceIoControlRequest(0x704008,
+                                        TopDeviceObject,
+                                        NULL,
+                                        0,
+                                        &DiskSignature,
+                                        sizeof(DiskSignature),
+                                        FALSE,
+                                        &Event,
+                                        &IoStatusBlock);
+    if (!Irp)
+    {
+        DPRINT1("FtpQueryDiskSignature: Build irp failed\n");
+        ObDereferenceObject(TopDeviceObject);
+        return 0;
+    }
+
+    Status = IoCallDriver(TopDeviceObject, Irp);
+
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatusBlock.Status;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("FtpQueryDiskSignature: Status %X\n", Status);
+        ObDereferenceObject(TopDeviceObject);
+        return 0;
+    }
+
+    ObDereferenceObject(TopDeviceObject);
+
+    DPRINT("FtpQueryDiskSignature: DiskSignature %X\n", DiskSignature);
+
+    return DiskSignature;
+}
+
+ULONG
+NTAPI
 FtpQueryDiskSignatureCache(
     _In_ PVOLUME_EXTENSION VolumeExtension)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    if (!VolumeExtension->DiskSignature)
+    {
+        VolumeExtension->DiskSignature = FtpQueryDiskSignature(VolumeExtension->WholeDiskPdo);
+    }
+
+    return VolumeExtension->DiskSignature;
 }
 
 VOID

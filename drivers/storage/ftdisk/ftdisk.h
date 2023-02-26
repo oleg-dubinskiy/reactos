@@ -82,6 +82,7 @@ typedef struct _VOLUME_EXTENSION
     PDEVICE_OBJECT WholeDiskDevice;
     ULONGLONG StartingOffset;
     ULONGLONG PartitionLength;
+    ULONG DiskSignature;
     KSEMAPHORE ZeroRefSemaphore;
     KSEMAPHORE Semaphore;
     GUID GptPartitionId;
@@ -210,6 +211,12 @@ FtpCreateNewDevice(
     _In_ BOOLEAN IsReadOnlyPartition,
     _In_ BOOLEAN IsSystemPartition,
     _In_ ULONGLONG GptAttributes
+);
+
+ULONG
+NTAPI
+FtpQueryDiskSignature(
+    _In_ PDEVICE_OBJECT WholeDiskPdo
 );
 
 ULONG
