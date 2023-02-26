@@ -918,6 +918,27 @@ FtpStartCallback(
     KeSetEvent(Event, 0, FALSE);
 }
 
+VOID
+NTAPI
+FtpVolumeOfflineCallback(
+    _In_ PVOLUME_EXTENSION VolumeExtension)
+{
+    PRKEVENT Event = VolumeExtension->ZeroRefContext;
+
+    if (!VolumeExtension->IsVolumeOffline)
+    {
+        VolumeExtension->IsVolumeOffline = TRUE;
+
+        if (VolumeExtension->FtVolume)
+        {
+            DPRINT1("FtpVolumeOfflineCallback: FIXME (%p)\n", VolumeExtension);
+            ASSERT(FALSE);
+        }
+    }
+
+    KeSetEvent(Event, 0, FALSE);
+}
+
 /* DRIVER DISPATCH ROUTINES *************************************************/
 
 NTSTATUS
