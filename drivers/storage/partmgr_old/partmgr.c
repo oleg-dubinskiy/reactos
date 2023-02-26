@@ -965,6 +965,72 @@ PmQueryDeviceRelations(
     return Irp->IoStatus.Status;
 }
 
+NTSTATUS
+NTAPI
+PmQueryDiskSignature(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    PDRIVE_LAYOUT_INFORMATION_EX DriveLayout;
+    PPM_DEVICE_EXTENSION Extension;
+    PIO_STACK_LOCATION IoStack;
+    PULONG OutDiskSignature;
+    NTSTATUS Status;
+
+    DPRINT("PmQueryDiskSignature: %p, %p\n", DeviceObject, Irp);
+
+    Extension = DeviceObject->DeviceExtension;
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+    OutDiskSignature = Irp->AssociatedIrp.SystemBuffer;
+
+    if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < 4)
+    {
+        DPRINT1("PmQueryDiskSignature: OutputBufferLength %X\n", IoStack->Parameters.DeviceIoControl.OutputBufferLength);
+        ASSERT(FALSE);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Irp->IoStatus.Information = 4;
+
+    if (Extension->MbrSignature)
+    {
+        *OutDiskSignature = Extension->MbrSignature;
+        DPRINT("PmQueryDiskSignature: *OutDiskSignature - %X\n", *OutDiskSignature);
+        return STATUS_SUCCESS;
+    }
+
+    Status = PmReadPartitionTableEx(Extension->AttachedToDevice, &DriveLayout);
+    if (!NT_SUCCESS(Status))
+    {
+        Irp->IoStatus.Information = 0;
+        return Status;
+    }
+
+    if (DriveLayout->PartitionStyle != 0) // not Mbr
+    {
+        DPRINT1("PmQueryDiskSignature: PartitionStyle %X\n", DriveLayout->PartitionStyle);
+        ExFreePool(DriveLayout);
+        Irp->IoStatus.Information = 0;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    *OutDiskSignature = DriveLayout->Mbr.Signature;
+    DPRINT("PmQueryDiskSignature: DiskSignature %X\n", *OutDiskSignature);
+
+    ExFreePool(DriveLayout);
+
+    if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < 0xA)
+    {
+        DPRINT("PmQueryDiskSignature: OutputBufferLength %X\n", IoStack->Parameters.DeviceIoControl.OutputBufferLength);
+        return Status;
+    }
+
+    DPRINT1("PmQueryDiskSignature: FIXME\n");
+    ASSERT(FALSE);
+
+    return Status;
+}
+
 /* AVL TABLE ROUTINES *******************************************************/
 
 RTL_GENERIC_COMPARE_RESULTS
@@ -1078,10 +1144,18 @@ PmDeviceControl(
         case IOCTL_DISK_GET_DRIVE_LAYOUT_EX:
         case IOCTL_DISK_GET_DRIVE_LAYOUT:
         case 0x704008:
-            DPRINT1("PmDeviceControl: FIXME\n");
-            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
-            break;
+        {
+            Status = PmCheckAndUpdateSignature(Extension, TRUE, FALSE);
 
+            if (!NT_SUCCESS(Status) || IoStack->Parameters.DeviceIoControl.IoControlCode != 0x704008)
+            {
+                IoSkipCurrentIrpStackLocation(Irp);
+                return IoCallDriver(Extension->AttachedToDevice, Irp);
+            }
+
+            Status = PmQueryDiskSignature(DeviceObject, Irp);
+            break;
+        }
         case IOCTL_DISK_PERFORMANCE_OFF:
             DPRINT1("PmDeviceControl: FIXME\n");
             ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
