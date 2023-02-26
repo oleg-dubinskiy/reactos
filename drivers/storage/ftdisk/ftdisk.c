@@ -26,6 +26,7 @@
   #pragma alloc_text(PAGE, FtpPartitionArrived)
   #pragma alloc_text(PAGE, FtpPartitionArrivedHelper)
   #pragma alloc_text(PAGE, FtpQueryPartitionInformation)
+  #pragma alloc_text(PAGE, FtpCreateNewDevice)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -340,6 +341,24 @@ FtpReadPartitionTableEx(
     return Status;
 }
 
+BOOLEAN
+NTAPI
+FtpCreateNewDevice(
+    _In_ PROOT_EXTENSION RootExtension,
+    _In_ PDEVICE_OBJECT PartitionPdo,
+    _In_ PVOID FtVolume, // FT_VOLUME*
+    _In_ PDEVICE_OBJECT WholeDiskPdo,
+    _In_ ULONG Alignment,
+    _In_ BOOLEAN IsEmptyDevice,
+    _In_ BOOLEAN IsHidenPartition,
+    _In_ BOOLEAN IsReadOnlyPartition,
+    _In_ BOOLEAN IsSystemPartition,
+    _In_ ULONGLONG GptAttributes)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
 NTSTATUS
 NTAPI
 FtpPartitionArrivedHelper(
@@ -347,8 +366,79 @@ FtpPartitionArrivedHelper(
     _In_ PDEVICE_OBJECT PartitionPdo,
     _In_ PDEVICE_OBJECT WholeDiskPdo)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    GUID GptPartitionId;
+    GUID GptPartitionType;
+    ULONGLONG GptAttributes;
+    ULONGLONG StartingOffset;
+    ULONG DeviceNumber;
+    UCHAR PartitionType;
+    BOOLEAN IsSystemPartition;
+    BOOLEAN IsReadOnlyPartition;
+    BOOLEAN IsHidenPartition;
+    BOOLEAN IsGptPartition;
+    BOOLEAN Result;
+    NTSTATUS Status;
+
+    DPRINT("FtpPartitionArrivedHelper: %p, %p, %p\n", RootExtension, PartitionPdo, WholeDiskPdo);
+
+    Status = FtpQueryPartitionInformation(RootExtension,
+                                          PartitionPdo,
+                                          &DeviceNumber,
+                                          &StartingOffset,
+                                          NULL,
+                                          &PartitionType,
+                                          NULL,
+                                          &GptPartitionType,
+                                          &GptPartitionId,
+                                          &IsGptPartition,
+                                          &GptAttributes);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("FtpPartitionArrivedHelper: Status %X\n", Status);
+        return Status;
+    }
+
+    IsHidenPartition = FALSE;
+    IsReadOnlyPartition = FALSE;
+
+    if (IsGptPartition)
+    {
+        DPRINT1("FtpPartitionArrivedHelper: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        if (PartitionType == PARTITION_LDM)
+        {
+            DPRINT1("FtpPartitionArrivedHelper: STATUS_INVALID_PARAMETER\n");
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        if (!IsRecognizedPartition_(PartitionType))
+            IsHidenPartition = TRUE;
+
+        IsSystemPartition = FALSE;
+    }
+
+    Result = FtpCreateNewDevice(RootExtension,
+                                PartitionPdo,
+                                NULL,
+                                WholeDiskPdo,
+                                PartitionPdo->AlignmentRequirement,
+                                FALSE,
+                                IsHidenPartition,
+                                IsReadOnlyPartition,
+                                IsSystemPartition,
+                                GptAttributes);
+    if (!Result)
+    {
+        DPRINT1("FtpPartitionArrivedHelper: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    IoInvalidateDeviceRelations(RootExtension->VolControlRootPdo, BusRelations);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
