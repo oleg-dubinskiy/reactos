@@ -1279,22 +1279,18 @@ FtpPnpFdo(
             }
 
             DeviceRelation->Count = ix;
+            ix = 0;
 
-            if (Entry != &RootExtension->VolumeList)
+            for (Entry = RootExtension->VolumeList.Flink;
+                 Entry != &RootExtension->VolumeList;
+                 Entry = Entry->Flink)
             {
-                ix = 0;
+                VolumeExtension = CONTAINING_RECORD(Entry, VOLUME_EXTENSION, Link);
 
-                for (Entry = RootExtension->VolumeList.Flink;
-                     Entry != &RootExtension->VolumeList;
-                     Entry = Entry->Flink)
-                {
-                    VolumeExtension = CONTAINING_RECORD(Entry, VOLUME_EXTENSION, Link);
+                DeviceRelation->Objects[ix] = VolumeExtension->SelfDeviceObject;
+                ObReferenceObject(DeviceRelation->Objects[ix]);
 
-                    DeviceRelation->Objects[ix] = VolumeExtension->SelfDeviceObject;
-                    ObReferenceObject(DeviceRelation->Objects[ix]);
-
-                    ix++;
-                }
+                ix++;
             }
 
             while (!IsListEmpty(&RootExtension->EmptyVolumesList))
