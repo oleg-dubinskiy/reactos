@@ -907,6 +907,17 @@ FtpZeroRefCallback(
 
 }
 
+VOID
+NTAPI
+FtpStartCallback(
+    _In_ PVOLUME_EXTENSION VolumeExtension)
+{
+    PRKEVENT Event = VolumeExtension->ZeroRefContext;
+
+    VolumeExtension->IsStartCallback = TRUE;
+    KeSetEvent(Event, 0, FALSE);
+}
+
 /* DRIVER DISPATCH ROUTINES *************************************************/
 
 NTSTATUS
