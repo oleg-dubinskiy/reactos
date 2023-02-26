@@ -9,6 +9,7 @@
 #define _FTDISK_H_
 
 #include <ntifs.h>
+#include <ntdddisk.h>
 
 /* NT compatible */
 #define IsRecognizedPartition_(PartitionType) ( \
@@ -148,6 +149,22 @@ FtpPartitionArrivedHelper(
     _In_ PROOT_EXTENSION RootExtension,
     _In_ PDEVICE_OBJECT PartitionPdo,
     _In_ PDEVICE_OBJECT WholeDiskPdo
+);
+
+NTSTATUS
+NTAPI
+FtpQueryPartitionInformation(
+    _In_ PROOT_EXTENSION RootExtension,
+    _In_ PDEVICE_OBJECT PartitionPdo,
+    _Out_ ULONG* OutDeviceNumber,
+    _Out_ ULONGLONG* OutStartingOffset,
+    _Out_ ULONG* OutPartitionNumber,
+    _Out_ UCHAR* OutMbrPartitionType,
+    _Out_ LONGLONG* OutPartitionLength,
+    _Out_ GUID* OutGptPartitionType,
+    _Out_ GUID* OutGptPartitionId,
+    _Out_ UCHAR* OutIsGptPartition,
+    _Out_ ULONGLONG* OutGptAttributes
 );
 
 #endif /* _FTDISK_H_ */

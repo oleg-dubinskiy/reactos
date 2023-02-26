@@ -25,6 +25,7 @@
   #pragma alloc_text(PAGE, FtpQueryRootId)
   #pragma alloc_text(PAGE, FtpPartitionArrived)
   #pragma alloc_text(PAGE, FtpPartitionArrivedHelper)
+  #pragma alloc_text(PAGE, FtpQueryPartitionInformation)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -83,6 +84,139 @@ FtpCancelRoutine(
     Irp->IoStatus.Status = STATUS_CANCELLED;
 
     IoCompleteRequest(Irp, 0);
+}
+
+NTSTATUS
+NTAPI
+FtpQueryPartitionInformation(
+    _In_ PROOT_EXTENSION RootExtension,
+    _In_ PDEVICE_OBJECT PartitionPdo,
+    _Out_ ULONG* OutDeviceNumber,
+    _Out_ ULONGLONG* OutStartingOffset,
+    _Out_ ULONG* OutPartitionNumber,
+    _Out_ UCHAR* OutMbrPartitionType,
+    _Out_ LONGLONG* OutPartitionLength,
+    _Out_ GUID* OutGptPartitionType,
+    _Out_ GUID* OutGptPartitionId,
+    _Out_ UCHAR* OutIsGptPartition,
+    _Out_ ULONGLONG* OutGptAttributes)
+{
+    PARTITION_INFORMATION_EX PartitionInfoEx;
+    STORAGE_DEVICE_NUMBER OutputBuffer;
+    IO_STATUS_BLOCK IoStatusBlock;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    DPRINT("FtpQueryPartitionInformation: %p, %p\n", RootExtension, PartitionPdo);
+
+    if (OutDeviceNumber || OutPartitionNumber)
+    {
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+        Irp = IoBuildDeviceIoControlRequest(IOCTL_STORAGE_GET_DEVICE_NUMBER,
+                                            PartitionPdo,
+                                            NULL,
+                                            0,
+                                            &OutputBuffer,
+                                            sizeof(OutputBuffer),
+                                            FALSE,
+                                            &Event,
+                                            &IoStatusBlock);
+        if (!Irp)
+        {
+            DPRINT1("FtpQueryPartitionInformation: Build irp failed\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        Status = IoCallDriver(PartitionPdo, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatusBlock.Status;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("FtpQueryPartitionInformation: Status %X\n", Status);
+            return Status;
+        }
+
+        if (OutDeviceNumber)
+            *OutDeviceNumber = OutputBuffer.DeviceNumber;
+
+        if (OutPartitionNumber)
+            *OutPartitionNumber = OutputBuffer.PartitionNumber;
+    }
+
+    if (!OutStartingOffset &&
+        !OutMbrPartitionType &&
+        !OutPartitionLength &&
+        !OutGptPartitionType &&
+        !OutGptPartitionId &&
+        !OutIsGptPartition &&
+        !OutGptAttributes)
+    {
+        return STATUS_SUCCESS;
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_PARTITION_INFO_EX,
+                                        PartitionPdo,
+                                        NULL,
+                                        0,
+                                        &PartitionInfoEx,
+                                        sizeof(PartitionInfoEx),
+                                        FALSE,
+                                        &Event,
+                                        &IoStatusBlock);
+    if (!Irp)
+    {
+        DPRINT1("FtpQueryPartitionInformation: Build irp failed\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = IoCallDriver(PartitionPdo, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatusBlock.Status;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("FtpQueryPartitionInformation: Status %X\n", Status);
+        return Status;
+    }
+
+    if (OutStartingOffset)
+        *OutStartingOffset = PartitionInfoEx.StartingOffset.QuadPart;
+
+    if (OutMbrPartitionType)
+        *OutMbrPartitionType = ((PartitionInfoEx.PartitionStyle != 0) ? 0 : PartitionInfoEx.Mbr.PartitionType);
+
+    if (OutPartitionLength)
+        *OutPartitionLength = PartitionInfoEx.PartitionLength.QuadPart;
+
+    if (OutGptPartitionType && PartitionInfoEx.PartitionStyle == 1)
+        *OutGptPartitionType = PartitionInfoEx.Gpt.PartitionType;
+
+    if (OutGptPartitionId && PartitionInfoEx.PartitionStyle == 1)
+        *OutGptPartitionId = PartitionInfoEx.Gpt.PartitionId;
+
+    if (OutIsGptPartition)
+        *OutIsGptPartition = (PartitionInfoEx.PartitionStyle == 1);
+
+    if (!OutGptAttributes)
+        return STATUS_SUCCESS;
+
+    if (PartitionInfoEx.PartitionStyle == 1)
+        *OutGptAttributes = PartitionInfoEx.Gpt.Attributes;
+    else
+        *OutGptAttributes = 0;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
