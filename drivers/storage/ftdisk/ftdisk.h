@@ -10,6 +10,7 @@
 
 #include <ntifs.h>
 #include <ntdddisk.h>
+#include <stdio.h>
 
 /* NT compatible */
 #define IsRecognizedPartition_(PartitionType) ( \
@@ -53,6 +54,7 @@ typedef struct _ROOT_EXTENSION
     KSEMAPHORE RootSemaphore;
     UNICODE_STRING SymbolicLinkName;
     UNICODE_STRING RegistryPath;
+    ULONG EmptyDeviceCount;
 } ROOT_EXTENSION, *PROOT_EXTENSION;
 
 typedef struct _VOLUME_EXTENSION
@@ -61,8 +63,29 @@ typedef struct _VOLUME_EXTENSION
     struct _ROOT_EXTENSION* RootExtension;
     ULONG DeviceExtensionType;
     KSPIN_LOCK SpinLock;
+    PDEVICE_OBJECT PartitionPdo;
+    PVOID FtVolume;
+    PVOID RundownCache;
+    LIST_ENTRY IrpList;
+    BOOLEAN IsStartCallback;
+    BOOLEAN IsVolumeOffline;
+    BOOLEAN IsEmptyVolume;
+    BOOLEAN IsGptPartition;
+    BOOLEAN IsHidenPartition;
+    BOOLEAN IsReadOnlyPartition;
+    BOOLEAN IsSystemPartition;
     LIST_ENTRY Link;
     ULONG VolumeNumber;
+    LIST_ENTRY UniqueIdNotifyList;
+    UNICODE_STRING DevnodeName;
+    PDEVICE_OBJECT WholeDiskPdo;
+    PDEVICE_OBJECT WholeDiskDevice;
+    ULONGLONG StartingOffset;
+    ULONGLONG PartitionLength;
+    KSEMAPHORE ZeroRefSemaphore;
+    KSEMAPHORE Semaphore;
+    GUID GptPartitionId;
+    ULONGLONG GptAttributes;
 } VOLUME_EXTENSION, *PVOLUME_EXTENSION;
 
 typedef struct _FT_PARTITION_ARRIVED
@@ -172,6 +195,33 @@ NTAPI
 FtpReadPartitionTableEx(
     _In_ PDEVICE_OBJECT DeviceObject,
     _Out_ PDRIVE_LAYOUT_INFORMATION_EX* OutDriveLayout
+);
+
+BOOLEAN
+NTAPI
+FtpCreateNewDevice(
+    _In_ PROOT_EXTENSION RootExtension,
+    _In_ PDEVICE_OBJECT PartitionPdo,
+    _In_ PVOID FtVolume, // FT_VOLUME*
+    _In_ PDEVICE_OBJECT WholeDiskPdo,
+    _In_ ULONG Alignment,
+    _In_ BOOLEAN IsEmptyDevice,
+    _In_ BOOLEAN IsHidenPartition,
+    _In_ BOOLEAN IsReadOnlyPartition,
+    _In_ BOOLEAN IsSystemPartition,
+    _In_ ULONGLONG GptAttributes
+);
+
+ULONG
+NTAPI
+FtpQueryDiskSignatureCache(
+    _In_ PVOLUME_EXTENSION VolumeExtension
+);
+
+VOID
+NTAPI
+FtpCreateOldNameLinks(
+    _In_ PVOLUME_EXTENSION VolumeExtension
 );
 
 #endif /* _FTDISK_H_ */

@@ -27,6 +27,8 @@
   #pragma alloc_text(PAGE, FtpPartitionArrivedHelper)
   #pragma alloc_text(PAGE, FtpQueryPartitionInformation)
   #pragma alloc_text(PAGE, FtpCreateNewDevice)
+  #pragma alloc_text(PAGE, FtpQueryDiskSignatureCache)
+  #pragma alloc_text(PAGE, FtpCreateOldNameLinks)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -89,6 +91,23 @@ FtpCancelRoutine(
     Irp->IoStatus.Status = STATUS_CANCELLED;
 
     IoCompleteRequest(Irp, 0);
+}
+
+ULONG
+NTAPI
+FtpQueryDiskSignatureCache(
+    _In_ PVOLUME_EXTENSION VolumeExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+VOID
+NTAPI
+FtpCreateOldNameLinks(
+    _In_ PVOLUME_EXTENSION VolumeExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
 }
 
 NTSTATUS
@@ -355,7 +374,233 @@ FtpCreateNewDevice(
     _In_ BOOLEAN IsSystemPartition,
     _In_ ULONGLONG GptAttributes)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PARTITION_INFORMATION_EX PartitionInfo;
+    PVOLUME_EXTENSION VolumeExtension;
+    PVOLUME_EXTENSION CurrentExtension;
+    PDEVICE_OBJECT NewDeviceObject;
+    IO_STATUS_BLOCK IoStatusBlock;
+    UNICODE_STRING VolumeName;
+    GUID GptPartitionId;
+    WCHAR SourceString[0x1E]; // 30
+    PLIST_ENTRY Entry;
+    PWSTR NameBuffer;
+    KEVENT Event;
+    PIRP Irp;
+    ULONG SizeOfRundownCache;
+    ULONG Signature;
+    LONG IsDifferentVolumes;
+    BOOLEAN IsGptPartition;
+    NTSTATUS Status;
+
+    DPRINT("FtpCreateNewDevice: %p, %p, %p, %p, %X, %X, %X, %X, %X\n",
+           RootExtension, PartitionPdo, FtVolume, WholeDiskPdo, Alignment, IsEmptyDevice, IsHidenPartition, IsReadOnlyPartition, IsSystemPartition);
+
+    ASSERT(!(PartitionPdo && FtVolume));
+    ASSERT(!PartitionPdo || WholeDiskPdo);
+    ASSERT(PartitionPdo || FtVolume);
+
+    swprintf(SourceString, L"\\Device\\HarddiskVolume%d", RootExtension->VolumeCounter);
+    RtlInitUnicodeString(&VolumeName, SourceString);
+
+    SizeOfRundownCache = ExSizeOfRundownProtectionCacheAware();
+
+    Status = IoCreateDevice(RootExtension->DriverObject,
+                            (sizeof(*VolumeExtension) + SizeOfRundownCache),
+                            &VolumeName,
+                            FILE_DEVICE_DISK,
+                            0,
+                            FALSE,
+                            &NewDeviceObject);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("FtpCreateNewDevice: Status %X\n", Status);
+        return FALSE;
+    }
+
+    VolumeExtension = NewDeviceObject->DeviceExtension;
+    RtlZeroMemory(NewDeviceObject->DeviceExtension, sizeof(*VolumeExtension));
+
+    VolumeExtension->DeviceExtensionType = 1;
+    VolumeExtension->RootExtension = RootExtension;
+
+    VolumeExtension->SelfDeviceObject = NewDeviceObject;
+    VolumeExtension->PartitionPdo = PartitionPdo;
+    VolumeExtension->FtVolume = FtVolume;
+
+    KeInitializeSpinLock(&VolumeExtension->SpinLock);
+
+    VolumeExtension->RundownCache = &VolumeExtension[1];
+    ExInitializeRundownProtectionCacheAware(VolumeExtension->RundownCache, SizeOfRundownCache);
+
+    InitializeListHead(&VolumeExtension->IrpList);
+    InitializeListHead(&VolumeExtension->UniqueIdNotifyList);
+
+    VolumeExtension->IsStartCallback = FALSE;
+    VolumeExtension->IsVolumeOffline = TRUE;
+
+    VolumeExtension->IsHidenPartition = IsHidenPartition;
+    VolumeExtension->IsReadOnlyPartition = IsReadOnlyPartition;
+    VolumeExtension->IsSystemPartition = IsSystemPartition;
+
+    VolumeExtension->VolumeNumber = RootExtension->VolumeCounter++;
+    VolumeExtension->GptAttributes = GptAttributes;
+
+    //DPRINT("FtpCreateNewDevice: FIXME TRANSFER_PACKET_new\n");
+
+    NameBuffer = ExAllocatePoolWithTag(PagedPool, 0xA0, 'tFcS'); // (160 = 80 * 2)
+    if (!NameBuffer)
+    {
+        DPRINT1("FtpCreateNewDevice: Allocate failed\n");
+        goto ExitError;
+    }
+
+    if (PartitionPdo)
+    {
+        VolumeExtension->WholeDiskPdo = WholeDiskPdo;
+
+        VolumeExtension->WholeDiskDevice = IoGetAttachedDeviceReference(WholeDiskPdo);
+        ObDereferenceObject(VolumeExtension->WholeDiskDevice);
+
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+        Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_PARTITION_INFO_EX,
+                                            PartitionPdo,
+                                            NULL,
+                                            0,
+                                            &PartitionInfo,
+                                            sizeof(PartitionInfo),
+                                            FALSE,
+                                            &Event,
+                                            &IoStatusBlock);
+        if (!Irp)
+        {
+            DPRINT1("FtpCreateNewDevice: Build irp failed\n");
+            goto ExitError;
+        }
+
+        Status = IoCallDriver(PartitionPdo, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatusBlock.Status;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("FtpCreateNewDevice: Status %X\n", Status);
+            goto ExitError;
+        }
+
+        if (PartitionInfo.PartitionStyle == 1)
+        {
+            GptPartitionId = PartitionInfo.Gpt.PartitionId;
+            IsGptPartition = TRUE;
+        }
+        else
+        {
+            IsGptPartition = FALSE;
+        }
+
+        VolumeExtension->StartingOffset = PartitionInfo.StartingOffset.QuadPart;
+        VolumeExtension->PartitionLength = PartitionInfo.PartitionLength.QuadPart;
+
+        if (IsGptPartition)
+        {
+            VolumeExtension->IsGptPartition = TRUE;
+            VolumeExtension->GptPartitionId = GptPartitionId;
+
+            DPRINT1("FtpCreateNewDevice: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else
+        {
+            if (VolumeExtension->StartingOffset)
+            {
+                Signature = FtpQueryDiskSignatureCache(VolumeExtension);
+                if (!Signature)
+                {
+                    DPRINT1("FtpCreateNewDevice: Signature is 0!\n");
+                    goto ExitError;
+                }
+
+                swprintf(NameBuffer, L"Signature%XOffset%I64XLength%I64X", Signature, VolumeExtension->StartingOffset, VolumeExtension->PartitionLength);
+            }
+            else
+            {
+                DPRINT1("FtpCreateNewDevice: FIXME\n");
+                ASSERT(FALSE);
+            }
+        }
+    }
+    else
+    {
+        DPRINT1("FtpCreateNewDevice: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    RtlInitUnicodeString(&VolumeExtension->DevnodeName, NameBuffer);
+
+    KeInitializeSemaphore(&VolumeExtension->ZeroRefSemaphore, 1, 1);
+    KeInitializeSemaphore(&VolumeExtension->Semaphore, 1, 1);
+
+    InsertTailList(&RootExtension->VolumeList, &VolumeExtension->Link);
+
+    NewDeviceObject->Flags |= DO_DIRECT_IO;
+    NewDeviceObject->AlignmentRequirement = Alignment;
+
+    if (FtVolume)
+    {
+        DPRINT1("FtpCreateNewDevice: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        NewDeviceObject->StackSize = (PartitionPdo->StackSize + 1);
+    }
+
+    if (IsEmptyDevice)
+    {
+        DPRINT1("FtpCreateNewDevice: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        FtpCreateOldNameLinks(VolumeExtension);
+    }
+
+    if (!IsEmptyDevice && RootExtension->EmptyDeviceCount)
+    {
+        IsDifferentVolumes = 1;
+
+        for (Entry = RootExtension->VolumeList.Flink;
+             Entry != &RootExtension->VolumeList;
+             Entry = Entry->Flink)
+        {
+            CurrentExtension = CONTAINING_RECORD(Entry, VOLUME_EXTENSION, Link);
+
+            if (CurrentExtension != VolumeExtension && !CurrentExtension->IsEmptyVolume)
+            {
+                IsDifferentVolumes = RtlCompareUnicodeString(&CurrentExtension->DevnodeName, &VolumeExtension->DevnodeName, TRUE);
+                if (!IsDifferentVolumes)
+                    break;
+            }
+        }
+
+        if (!IsDifferentVolumes)
+        {
+            DPRINT1("FtpCreateNewDevice: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    NewDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
+    return TRUE;
+
+ExitError:
+
+    DPRINT1("FtpCreateNewDevice: FIXME\n");
+    ASSERT(FALSE);
+    IoDeleteDevice(NewDeviceObject);
     return FALSE;
 }
 
