@@ -167,6 +167,13 @@ FtpQueryPartitionInformation(
     _Out_ ULONGLONG* OutGptAttributes
 );
 
+NTSTATUS
+NTAPI
+FtpReadPartitionTableEx(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Out_ PDRIVE_LAYOUT_INFORMATION_EX* OutDriveLayout
+);
+
 #endif /* _FTDISK_H_ */
 
 /* EOF */

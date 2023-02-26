@@ -28,6 +28,10 @@
   #pragma alloc_text(PAGE, FtpQueryPartitionInformation)
 #endif
 
+#ifdef ALLOC_PRAGMA
+  #pragma alloc_text(PAGELK, FtpReadPartitionTableEx)
+#endif
+
 /* GLOBALS *******************************************************************/
 
 GUID VOLMGR_VOLUME_MANAGER_GUID = {0x53F5630E, 0xB6BF, 0x11D0, {0X94, 0XF2, 0X00, 0XA0, 0XC9, 0X1E, 0XFB, 0X8B}};
@@ -217,6 +221,123 @@ FtpQueryPartitionInformation(
         *OutGptAttributes = 0;
 
     return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+FtpReadPartitionTableEx(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Out_ PDRIVE_LAYOUT_INFORMATION_EX* OutDriveLayout)
+{
+    IO_STATUS_BLOCK IoStatusBlock;
+    PVOID DriveLayoutBuffer;
+    KEVENT Event;
+    PIRP Irp;
+    SIZE_T IoCtlBufferSize;
+    SIZE_T NumberOfBytes;
+    ULONG ix = 0;
+    NTSTATUS Status;
+
+    DPRINT("FtpReadPartitionTableEx: %p\n", DeviceObject);
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    DriveLayoutBuffer = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, 'iFcS');
+    if (!DriveLayoutBuffer)
+    {
+        ASSERT(FALSE);
+        return IoReadPartitionTableEx(DeviceObject, OutDriveLayout);
+    }
+
+    IoCtlBufferSize = PAGE_SIZE;
+    KeClearEvent(&Event);
+
+    for (Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
+                                              DeviceObject,
+                                              NULL,
+                                              0,
+                                              DriveLayoutBuffer,
+                                              PAGE_SIZE,
+                                              0,
+                                              &Event,
+                                              &IoStatusBlock);
+          ;
+          Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
+                                              DeviceObject,
+                                              NULL,
+                                              0,
+                                              DriveLayoutBuffer,
+                                              NumberOfBytes,
+                                              0,
+                                              &Event,
+                                              &IoStatusBlock))
+    {
+        if (!Irp)
+        {
+            DPRINT1("FtpReadPartitionTableEx: Ipr not created!\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break;
+        }
+
+        Status = IoCallDriver(DeviceObject, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatusBlock.Status;
+        }
+
+        if (NT_SUCCESS(Status))
+        {
+            ASSERT(DriveLayoutBuffer && IoCtlBufferSize);
+            *OutDriveLayout = DriveLayoutBuffer;
+            return STATUS_SUCCESS;
+        }
+
+        if (Status != STATUS_BUFFER_TOO_SMALL)
+        {
+            DPRINT1("FtpReadPartitionTableEx: Status %X\n", Status);
+            break;
+        }
+
+        ASSERT(DriveLayoutBuffer && IoCtlBufferSize);
+        ExFreePoolWithTag(DriveLayoutBuffer, 'iFcS');
+
+        NumberOfBytes = (2 * IoCtlBufferSize);
+        ASSERT(NumberOfBytes != 0);
+
+        DriveLayoutBuffer = ExAllocatePoolWithTag(NonPagedPool, NumberOfBytes, 'iFcS');
+        if (!DriveLayoutBuffer)
+        {
+            DPRINT1("FtpReadPartitionTableEx: DriveLayoutBuffer not created!\n");
+            return IoReadPartitionTableEx(DeviceObject, OutDriveLayout);
+        }
+
+        IoCtlBufferSize = NumberOfBytes;
+
+        ix++;
+        if (ix > 0x20)
+        {
+            DPRINT1("FtpReadPartitionTableEx: ix %X\n", ix);
+            Status = STATUS_UNSUCCESSFUL;
+            break;
+        }
+
+        KeClearEvent(&Event);
+    }
+
+    if (DriveLayoutBuffer)
+    {
+        ASSERT(IoCtlBufferSize);
+        ExFreePoolWithTag(DriveLayoutBuffer, 'iFcS');
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("FtpReadPartitionTableEx: Status %X\n", Status);
+        return IoReadPartitionTableEx(DeviceObject, OutDriveLayout);
+    }
+
+    return Status;
 }
 
 NTSTATUS
