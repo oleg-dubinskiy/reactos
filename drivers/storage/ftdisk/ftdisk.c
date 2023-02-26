@@ -30,6 +30,7 @@
   #pragma alloc_text(PAGE, FtpQueryDiskSignature)
   #pragma alloc_text(PAGE, FtpQueryDiskSignatureCache)
   #pragma alloc_text(PAGE, FtpCreateOldNameLinks)
+  #pragma alloc_text(PAGE, FtpQueryId)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -781,6 +782,57 @@ FtpPartitionArrived(
     DPRINT("FtpPartitionArrived: Status %X\n", Status);
 
     return Status;
+}
+
+NTSTATUS
+NTAPI
+FtpQueryId(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp)
+{
+    PIO_STACK_LOCATION IoStack;
+    UNICODE_STRING IdString;
+    PWSTR IdBuffer;
+    ULONG IdType;
+
+    DPRINT("FtpQueryId: %p, %p\n", VolumeExtension, Irp);
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+    IdType = IoStack->Parameters.QueryId.IdType;
+
+    if (IdType == 0)
+    {
+        RtlInitUnicodeString(&IdString, L"STORAGE\\Volume");
+    }
+    else if (IdType == 1)
+    {
+        RtlInitUnicodeString(&IdString, L"STORAGE\\Volume");
+    }
+    else if (IdType == 3)
+    {
+        IdString = VolumeExtension->DevnodeName;
+    }
+    else
+    {
+        DPRINT1("FtpQueryId: not vaild IdType %X for (%p, %p)\n", IdType, VolumeExtension, Irp);
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    IdBuffer = ExAllocatePoolWithTag(PagedPool, (IdString.Length + (2 * sizeof(WCHAR))), 'tFcS');
+    if (!IdBuffer)
+    {
+        DPRINT1("FtpQueryId: Allocate failed\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(IdBuffer, IdString.Buffer, IdString.Length);
+
+    IdBuffer[IdString.Length / sizeof(WCHAR)] = 0;
+    IdBuffer[IdString.Length / sizeof(WCHAR) + 1] = 0;
+
+    Irp->IoStatus.Information = (ULONG)IdBuffer;
+
+    return STATUS_SUCCESS;
 }
 
 /* DRIVER DISPATCH ROUTINES *************************************************/
