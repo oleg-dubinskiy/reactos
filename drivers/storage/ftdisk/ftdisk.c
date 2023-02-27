@@ -32,6 +32,7 @@
   #pragma alloc_text(PAGE, FtpCreateOldNameLinks)
   #pragma alloc_text(PAGE, FtpQueryId)
   #pragma alloc_text(PAGE, FtpQueryDeviceName)
+  #pragma alloc_text(PAGE, FtpQueryUniqueIdBuffer)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -515,6 +516,102 @@ FtpQueryDeviceName(
     RtlCopyMemory(MountDevName->Name, DestinationString.Buffer, MountDevName->NameLength);
 
     return STATUS_SUCCESS;
+}
+
+BOOLEAN
+NTAPI
+FtpQueryUniqueIdBuffer(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _Out_ UCHAR* OutDiskId,
+    _Out_ USHORT* OutLength)
+{
+    PARTITION_INFORMATION_EX PartitionInfoEx;
+    IO_STATUS_BLOCK IoStatusBlock;
+    KEVENT Event;
+    PIRP Irp;
+    ULONG Signature;
+    NTSTATUS Status;
+
+    DPRINT("FtpQueryUniqueIdBuffer: %p\n", VolumeExtension);
+
+    if (VolumeExtension->IsGptPartition)
+    {
+        *OutLength = 0x18;
+    }
+    else if (VolumeExtension->PartitionPdo)
+    {
+        *OutLength = 0xC;
+    }
+    else if (VolumeExtension->FtVolume)
+    {
+        *OutLength = 8;
+    }
+    else
+    {
+        DPRINT1("FtpQueryUniqueIdBuffer: return FALSE\n");
+        return FALSE;
+    }
+
+    if (!OutDiskId)
+        return TRUE;
+
+    if (VolumeExtension->IsGptPartition)
+    {
+        RtlCopyMemory(OutDiskId, "DMIO:ID:", 8);
+        RtlCopyMemory((OutDiskId + 8), &VolumeExtension->GptPartitionId, sizeof(GUID));
+        return TRUE;
+    }
+
+    if (!VolumeExtension->PartitionPdo)
+    {
+        DPRINT1("FtpQueryUniqueIdBuffer:  FIXME\n");
+        ASSERT(FALSE);
+        return TRUE;
+    }
+
+    ASSERT(VolumeExtension->WholeDiskPdo);
+
+    Signature = FtpQueryDiskSignatureCache(VolumeExtension);
+    if (!Signature)
+    {
+        DPRINT1("FtpQueryUniqueIdBuffer: return FALSE\n");
+        return FALSE;
+    }
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_PARTITION_INFO_EX,
+                                        VolumeExtension->PartitionPdo,
+                                        NULL,
+                                        0,
+                                        &PartitionInfoEx,
+                                        sizeof(PartitionInfoEx),
+                                        FALSE,
+                                        &Event,
+                                        &IoStatusBlock);
+    if (!Irp)
+    {
+        DPRINT1("FtpQueryUniqueIdBuffer: Build irp failed\n");
+        return FALSE;
+    }
+
+    Status = IoCallDriver(VolumeExtension->PartitionPdo, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatusBlock.Status;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("FtpQueryUniqueIdBuffer: Status %X\n", Status);
+        return FALSE;
+    }
+
+    *(ULONG *)OutDiskId = Signature;
+    *(ULONGLONG *)((PULONG)OutDiskId + 1) = PartitionInfoEx.StartingOffset.QuadPart;
+
+    return TRUE;
 }
 
 NTSTATUS

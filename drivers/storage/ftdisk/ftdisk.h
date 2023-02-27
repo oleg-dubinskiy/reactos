@@ -258,6 +258,14 @@ FtpQueryDeviceName(
     _In_ PIRP Irp
 );
 
+BOOLEAN
+NTAPI
+FtpQueryUniqueIdBuffer(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _Out_ UCHAR* OutDiskId,
+    _Out_ USHORT* OutLength
+);
+
 #endif /* _FTDISK_H_ */
 
 /* EOF */
