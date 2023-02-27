@@ -33,6 +33,7 @@
   #pragma alloc_text(PAGE, FtpQueryId)
   #pragma alloc_text(PAGE, FtpQueryDeviceName)
   #pragma alloc_text(PAGE, FtpQueryUniqueIdBuffer)
+  #pragma alloc_text(PAGE, FtpQueryUniqueId)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -612,6 +613,64 @@ FtpQueryUniqueIdBuffer(
     *(ULONGLONG *)((PULONG)OutDiskId + 1) = PartitionInfoEx.StartingOffset.QuadPart;
 
     return TRUE;
+}
+
+NTSTATUS
+NTAPI
+FtpQueryUniqueId(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp)
+{
+    PMOUNTDEV_UNIQUE_ID MountDevId;
+    PIO_STACK_LOCATION IoStack;
+    ULONG Size;
+
+    DPRINT("FtpQueryUniqueId: %p, %p\n", VolumeExtension, Irp);
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    if (IoStack->Parameters.Read.Length < sizeof(*MountDevId))
+    {
+        DPRINT1("FtpQueryUniqueId: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    MountDevId = Irp->AssociatedIrp.SystemBuffer;
+
+    if (VolumeExtension->IsSuperFloppy)
+    {
+        MountDevId->UniqueIdLength = VolumeExtension->DevnodeName.Length;
+    }
+    else if (!FtpQueryUniqueIdBuffer(VolumeExtension, NULL, Irp->AssociatedIrp.SystemBuffer))
+    {
+        DPRINT1("FtpQueryUniqueId: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Size = (MountDevId->UniqueIdLength + sizeof(WCHAR));
+    Irp->IoStatus.Information = Size;
+
+    if (IoStack->Parameters.Read.Length < Size)
+    {
+        DPRINT1("FtpQueryUniqueId: STATUS_BUFFER_OVERFLOW\n");
+        Irp->IoStatus.Information = sizeof(*MountDevId);
+        return STATUS_BUFFER_OVERFLOW;
+    }
+
+    if (VolumeExtension->IsSuperFloppy)
+    {
+        RtlCopyMemory(MountDevId->UniqueId, VolumeExtension->DevnodeName.Buffer, MountDevId->UniqueIdLength);
+        return STATUS_SUCCESS;
+    }
+
+    if (!FtpQueryUniqueIdBuffer(VolumeExtension, MountDevId->UniqueId, (USHORT *)MountDevId))
+    {
+        DPRINT1("FtpQueryUniqueId: STATUS_INVALID_DEVICE_REQUEST\n");
+        Irp->IoStatus.Information = 0;
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS

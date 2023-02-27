@@ -11,6 +11,7 @@
 #include <ntifs.h>
 #include <initguid.h>
 #include <mountmgr.h>
+#include <mountdev.h>
 #include <ntdddisk.h>
 #include <stdio.h>
 
@@ -83,6 +84,7 @@ typedef struct _VOLUME_EXTENSION
     BOOLEAN IsEmptyVolume;
     BOOLEAN IsGptPartition;
     BOOLEAN IsHidenPartition;
+    BOOLEAN IsSuperFloppy;
     BOOLEAN IsReadOnlyPartition;
     BOOLEAN IsSystemPartition;
     LONG Lock;
@@ -264,6 +266,13 @@ FtpQueryUniqueIdBuffer(
     _In_ PVOLUME_EXTENSION VolumeExtension,
     _Out_ UCHAR* OutDiskId,
     _Out_ USHORT* OutLength
+);
+
+NTSTATUS
+NTAPI
+FtpQueryUniqueId(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp
 );
 
 #endif /* _FTDISK_H_ */
