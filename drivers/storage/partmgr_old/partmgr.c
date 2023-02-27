@@ -1522,7 +1522,72 @@ PmDriverReinit(
     _In_ PVOID Context,
     _In_ ULONG Count)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PPM_DRIVER_EXTENSION DriverExtension = Context;
+    PDRIVE_LAYOUT_INFORMATION_EX DriveLayout;
+    PPM_PARTITION_DATA PartitionData;
+    PPM_DEVICE_EXTENSION Extension;
+    PLIST_ENTRY PartitionEntry;
+    PLIST_ENTRY Entry;
+    NTSTATUS Status;
+
+    DPRINT("PmDriverReinit: %p, %p, %X\n", DriverObject, Context, Count);
+
+    KeWaitForSingleObject(&DriverExtension->Mutex, Executive, KernelMode, FALSE, NULL);
+
+    InterlockedExchange(&DriverExtension->IsReinitialized, 1);
+
+    Entry = DriverExtension->ExtensionList.Flink;
+    while (Entry != &DriverExtension->ExtensionList)
+    {
+        Extension = CONTAINING_RECORD(Entry, PM_DEVICE_EXTENSION, Link);
+
+        if (Extension->AttachedToDevice->Characteristics & FILE_REMOVABLE_MEDIA)
+        {
+            goto Next;
+        }
+
+        if (!Extension->IsDeviceRunning)
+        {
+            goto Next;
+        }
+
+        for (PartitionEntry = Extension->PartitionList.Flink;
+             PartitionEntry != &Extension->PartitionList;
+             PartitionEntry = PartitionEntry->Flink)
+        {
+            PartitionData = CONTAINING_RECORD(PartitionEntry, PM_PARTITION_DATA, Link);
+            PartitionData->PartitionPdo->Flags |= DO_DEVICE_INITIALIZING;
+        }
+
+        Status = PmReadPartitionTableEx(Extension->AttachedToDevice, &DriveLayout);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("PmDriverReinit: Status %X\n", Status);
+            goto Next;
+        }
+
+        if (Extension->MbrSignature)
+        {
+            if (!DriveLayout->PartitionStyle)
+            {
+                DriveLayout->Mbr.Signature = Extension->MbrSignature;
+
+                DPRINT1("PmDriverReinit: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            Extension->MbrSignature = 0;
+        }
+
+        if (DriveLayout->PartitionStyle == 1)
+            PmAddSignatures(Extension, DriveLayout);
+
+        ExFreePool(DriveLayout);
+Next:
+        Entry = Entry->Flink;
+    }
+
+    KeReleaseMutex(&DriverExtension->Mutex, FALSE);
 }
 
 VOID
