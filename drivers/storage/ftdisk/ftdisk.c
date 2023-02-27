@@ -1834,7 +1834,7 @@ FtDiskReadWrite(
     ULONG Length;
     NTSTATUS Status;
 
-    DPRINT("FtDiskReadWrite: %p, %p\n", DeviceObject, Irp);
+    //DPRINT("FtDiskReadWrite: %p, %p\n", DeviceObject, Irp);
 
     Extension = DeviceObject->DeviceExtension;
     if (Extension->DeviceExtensionType != 1)

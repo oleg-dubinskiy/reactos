@@ -1106,7 +1106,7 @@ PmReadWrite(
 {
     PPM_DEVICE_EXTENSION Extension;
 
-    DPRINT("PmReadWrite: %p, %p\n", DeviceObject, Irp);
+    //DPRINT("PmReadWrite: %p, %p\n", DeviceObject, Irp);
 
     Extension = DeviceObject->DeviceExtension;
 
