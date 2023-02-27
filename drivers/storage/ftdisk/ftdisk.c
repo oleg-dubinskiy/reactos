@@ -2398,8 +2398,124 @@ FtDiskShutdownFlush(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PROOT_EXTENSION RootExtension;
+    PVOLUME_EXTENSION Extension;
+    PVOLUME_EXTENSION* VolumeArray;
+    PIO_STACK_LOCATION IoStack;
+    PLIST_ENTRY Head;
+    PLIST_ENTRY Entry;
+    ULONG Count = 0;
+    ULONG Size;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("FtDiskShutdownFlush: %p, %p\n", DeviceObject, Irp);
+
+    Extension = DeviceObject->DeviceExtension;
+
+    if (Extension->DeviceExtensionType)
+    {
+        Status = FtpAllSystemsGo(Extension, Irp, FALSE, TRUE, TRUE);
+        if (Status == STATUS_PENDING)
+            return STATUS_PENDING;
+
+        if (!NT_SUCCESS(Status))
+        {
+            Irp->IoStatus.Information = 0;
+            Irp->IoStatus.Status = Status;
+            IoCompleteRequest(Irp, 0);
+            return Status;
+        }
+
+        if (!Extension->PartitionPdo)
+        {
+            ASSERT(Extension->FtVolume);
+
+            IoMarkIrpPending(Irp);
+
+            IoStack = IoGetCurrentIrpStackLocation(Irp);
+            IoStack->DeviceObject = DeviceObject;
+
+            DPRINT1("FtDiskShutdownFlush: FIXME\n");
+            ASSERT(FALSE);
+
+            return STATUS_PENDING;
+        }
+
+        IoCopyCurrentIrpStackLocationToNext(Irp);
+        IoSetCompletionRoutine(Irp, FtpRefCountCompletionRoutine, Extension, TRUE, TRUE, TRUE);
+        IoMarkIrpPending(Irp);
+
+        IoCallDriver(Extension->PartitionPdo, Irp);
+
+        return STATUS_PENDING;
+    }
+
+    RootExtension = DeviceObject->DeviceExtension;
+
+    FtpAcquire(RootExtension);
+
+    Size = (RootExtension->VolumeCounter * sizeof(PVOLUME_EXTENSION));
+
+    VolumeArray = ExAllocatePoolWithTag(PagedPool, Size, 'tFcS');
+    if (!VolumeArray)
+    {
+        Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+        IoCompleteRequest(Irp, 0);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Head = &RootExtension->VolumeList;
+    Entry = Head->Flink;
+
+    if (Entry != Head)
+    {
+        while (TRUE)
+        {
+            Extension = CONTAINING_RECORD(Entry, VOLUME_EXTENSION, Link);
+
+            KeWaitForSingleObject(&Extension->Semaphore, Executive, KernelMode, FALSE, NULL);
+            KeWaitForSingleObject(&Extension->ZeroRefSemaphore, Executive, KernelMode, FALSE, NULL);
+
+            Status = FtpAllSystemsGo(Extension, NULL, FALSE, TRUE, TRUE);
+
+            KeReleaseSemaphore(&Extension->ZeroRefSemaphore, 0, 1, FALSE);
+            KeReleaseSemaphore(&Extension->Semaphore, 0, 1, FALSE);
+
+            if (NT_SUCCESS(Status))
+            {
+                if (Extension->FtVolume)
+                {
+                    VolumeArray[Count++] = Extension;
+                }
+                else
+                {
+                    ExReleaseRundownProtectionCacheAware(Extension->RundownCache);
+                }
+            }
+
+            Entry = Entry->Flink;
+
+            if (Entry == Head)
+                break;
+        }
+    }
+
+    FtpRelease(RootExtension);
+
+    if (!Count)
+    {
+        ExFreePoolWithTag(VolumeArray, 'tFcS');
+
+        Irp->IoStatus.Status = STATUS_SUCCESS;
+        IoCompleteRequest(Irp, 0);
+
+        return STATUS_SUCCESS;
+    }
+
+    DPRINT1("FtDiskShutdownFlush: FIXME\n");
+    ASSERT(FALSE);
+
+    return STATUS_PENDING;
 }
 
 NTSTATUS

@@ -14,6 +14,7 @@
 #include <mountdev.h>
 #include <ntddvol.h>
 #include <ntdddisk.h>
+#include <ntddft.h>
 #include <stdio.h>
 
 /* NT compatible */
