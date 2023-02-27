@@ -1239,8 +1239,350 @@ FtpPnpPdo(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PVOLUME_EXTENSION VolumeExtension = DeviceObject->DeviceExtension;
+    PDEVICE_CAPABILITIES Capabilities;
+    PIO_STACK_LOCATION IoStack;
+    PDEVICE_RELATIONS DeviceRelation;
+    KEVENT Event;
+    BOOLEAN IsStarted;
+    NTSTATUS Status;
+
+    DPRINT("FtpPnpPdo: %p, %p\n", DeviceObject, Irp);
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+  #if DBG
+    switch (IoStack->MinorFunction)
+    {
+        case IRP_MN_START_DEVICE:
+            DPRINT("IRP_MN_START_DEVICE\n");
+            break;
+
+        case IRP_MN_QUERY_REMOVE_DEVICE:
+            DPRINT("IRP_MN_QUERY_REMOVE_DEVICE\n");
+            break;
+
+        case IRP_MN_REMOVE_DEVICE:
+            DPRINT("USBPORT_FdoPnP: IRP_MN_REMOVE_DEVICE\n");
+            break;
+
+        case IRP_MN_CANCEL_REMOVE_DEVICE:
+            DPRINT("IRP_MN_CANCEL_REMOVE_DEVICE\n");
+            break;
+
+        case IRP_MN_STOP_DEVICE:
+            DPRINT("IRP_MN_STOP_DEVICE\n");
+            break;
+
+        case IRP_MN_QUERY_STOP_DEVICE:
+            DPRINT("IRP_MN_QUERY_STOP_DEVICE\n");
+            break;
+
+        case IRP_MN_CANCEL_STOP_DEVICE:
+            DPRINT("IRP_MN_CANCEL_STOP_DEVICE\n");
+            break;
+
+        case IRP_MN_QUERY_DEVICE_RELATIONS:
+            DPRINT("IRP_MN_QUERY_DEVICE_RELATIONS\n");
+            break;
+
+        case IRP_MN_QUERY_INTERFACE:
+            DPRINT("IRP_MN_QUERY_INTERFACE\n");
+            break;
+
+        case IRP_MN_QUERY_CAPABILITIES:
+            DPRINT("IRP_MN_QUERY_CAPABILITIES\n");
+            break;
+
+        case IRP_MN_QUERY_RESOURCES:
+            DPRINT("IRP_MN_QUERY_RESOURCES\n");
+            break;
+
+        case IRP_MN_QUERY_RESOURCE_REQUIREMENTS:
+            DPRINT("IRP_MN_QUERY_RESOURCE_REQUIREMENTS\n");
+            break;
+
+        case IRP_MN_QUERY_DEVICE_TEXT:
+            DPRINT("IRP_MN_QUERY_DEVICE_TEXT\n");
+            break;
+
+        case IRP_MN_FILTER_RESOURCE_REQUIREMENTS:
+            DPRINT("IRP_MN_FILTER_RESOURCE_REQUIREMENTS\n");
+            break;
+
+        case IRP_MN_READ_CONFIG:
+            DPRINT("IRP_MN_READ_CONFIG\n");
+            break;
+
+        case IRP_MN_WRITE_CONFIG:
+            DPRINT("IRP_MN_WRITE_CONFIG\n");
+            break;
+
+        case IRP_MN_EJECT:
+            DPRINT("IRP_MN_EJECT\n");
+            break;
+
+        case IRP_MN_SET_LOCK:
+            DPRINT("IRP_MN_SET_LOCK\n");
+            break;
+
+        case IRP_MN_QUERY_ID:
+            DPRINT("IRP_MN_QUERY_ID\n");
+            break;
+
+        case IRP_MN_QUERY_PNP_DEVICE_STATE:
+            DPRINT("IRP_MN_QUERY_PNP_DEVICE_STATE\n");
+            break;
+
+        case IRP_MN_QUERY_BUS_INFORMATION:
+            DPRINT("IRP_MN_QUERY_BUS_INFORMATION\n");
+            break;
+
+        case IRP_MN_DEVICE_USAGE_NOTIFICATION:
+            DPRINT("IRP_MN_DEVICE_USAGE_NOTIFICATION\n");
+            break;
+
+        case IRP_MN_SURPRISE_REMOVAL:
+            DPRINT1("IRP_MN_SURPRISE_REMOVAL\n");
+            break;
+
+        case IRP_MN_QUERY_LEGACY_BUS_INFORMATION:
+            DPRINT("IRP_MN_QUERY_LEGACY_BUS_INFORMATION\n");
+            break;
+
+        default:
+            DPRINT1("FtpPnpPdo: Unknown PNP IRP_MN_ (%X)\n", IoStack->MinorFunction);
+            break;
+    }
+  #endif
+
+    switch (IoStack->MinorFunction)
+    {
+        case IRP_MN_START_DEVICE:
+        {
+            FtpAcquire(VolumeExtension->RootExtension);
+
+            KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+            FtpZeroRefCallback(VolumeExtension, FtpStartCallback, &Event);
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+            IsStarted = FALSE;
+
+            if (VolumeExtension->RootExtension->IsBootReinitialized)
+            {
+                DPRINT1("FtpPnpPdo: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                if (!VolumeExtension->IsEmptyVolume && !VolumeExtension->IsHidenPartition)
+                {
+                    Status = IoRegisterDeviceInterface(VolumeExtension->SelfDeviceObject,
+                                                       &MOUNTDEV_MOUNTED_DEVICE_GUID,
+                                                       NULL,
+                                                       &VolumeExtension->SymbolicLinkName);
+                }
+                else
+                {
+                    IsStarted = TRUE;
+                    Status = STATUS_UNSUCCESSFUL;
+                }
+            }
+
+            if (NT_SUCCESS(Status))
+            {
+                KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+                FtpZeroRefCallback(VolumeExtension, FtpVolumeOfflineCallback, &Event);
+                KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+                Status = IoSetDeviceInterfaceState(&VolumeExtension->SymbolicLinkName, TRUE);
+            }
+
+            if (!NT_SUCCESS(Status))
+            {
+                if (VolumeExtension->SymbolicLinkName.Buffer)
+                {
+                    ExFreePool(VolumeExtension->SymbolicLinkName.Buffer);
+                    VolumeExtension->SymbolicLinkName.Buffer = NULL;
+                }
+
+                KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+                DPRINT1("FtpPnpPdo: FIXME\n");
+                ASSERT(FALSE);
+
+                //FtpZeroRefCallback(VolumeExtension, FtpVolumeOnlineCallback, &Event);
+                KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            }
+
+            if (!VolumeExtension->IsHidenPartition)
+            {
+                DPRINT1("FtpPnpPdo: FIXME FtRegisterDevice()\n");
+                //ASSERT(FALSE);
+                //FtRegisterDevice(DeviceObject);
+            }
+
+            FtpRelease(VolumeExtension->RootExtension);
+
+            if (IsStarted)
+                Status = STATUS_SUCCESS;
+
+            break;
+        }
+        case IRP_MN_QUERY_REMOVE_DEVICE:
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_REMOVE_DEVICE:
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_CANCEL_REMOVE_DEVICE:
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_STOP_DEVICE:
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_QUERY_STOP_DEVICE: 
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_CANCEL_STOP_DEVICE:
+        case IRP_MN_QUERY_RESOURCES:
+        case IRP_MN_QUERY_RESOURCE_REQUIREMENTS:
+            Status = STATUS_SUCCESS;
+            break;
+
+        case IRP_MN_QUERY_DEVICE_RELATIONS:
+        {
+            if (IoStack->Parameters.QueryDeviceRelations.Type == TargetDeviceRelation)
+            {
+                DeviceRelation = ExAllocatePoolWithTag(PagedPool, sizeof(DEVICE_RELATIONS), 'tFcS');
+
+                if (!DeviceRelation)
+                {
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                }
+                else
+                {
+                    ObReferenceObject(DeviceObject);
+
+                    DeviceRelation->Count = 1;
+                    DeviceRelation->Objects[0] = DeviceObject;
+
+                    Irp->IoStatus.Information = (ULONG_PTR)DeviceRelation;
+                    Status = STATUS_SUCCESS;
+                }
+            }
+            else
+            {
+                Status = STATUS_NOT_SUPPORTED;
+            }
+
+            break;
+        }
+        case IRP_MN_QUERY_INTERFACE:
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_QUERY_CAPABILITIES:
+        {
+            Capabilities = IoStack->Parameters.DeviceCapabilities.Capabilities;
+
+            Capabilities->SilentInstall = 1;
+            Capabilities->RawDeviceOK = 1;
+            Capabilities->SurpriseRemovalOK = 1;
+
+            Capabilities->Address = VolumeExtension->VolumeNumber;
+
+            Status = STATUS_SUCCESS;
+            break;
+        }
+        case IRP_MN_QUERY_DEVICE_TEXT:
+            Status = STATUS_NOT_SUPPORTED;
+            break;
+
+        case IRP_MN_FILTER_RESOURCE_REQUIREMENTS:
+            Status = STATUS_NOT_SUPPORTED;
+            break;
+
+        case IRP_MN_READ_CONFIG:
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_WRITE_CONFIG:
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_EJECT:
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_SET_LOCK:
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_QUERY_ID:
+            Status = FtpQueryId(VolumeExtension, Irp);
+            break;
+
+        case IRP_MN_QUERY_PNP_DEVICE_STATE:
+        {
+            Irp->IoStatus.Information = PNP_DEVICE_DONT_DISPLAY_IN_UI;
+
+            if (VolumeExtension->SelfDeviceObject->Flags & DO_SYSTEM_BOOT_PARTITION)
+            {
+                Irp->IoStatus.Information |= PNP_DEVICE_NOT_DISABLEABLE;
+            }
+
+            Status = STATUS_SUCCESS;
+            break;
+        }
+        case IRP_MN_QUERY_BUS_INFORMATION:
+            Status = STATUS_NOT_SUPPORTED;
+            break;
+
+        case IRP_MN_DEVICE_USAGE_NOTIFICATION:
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_SURPRISE_REMOVAL:
+            DPRINT1("FtpPnpPdo: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case IRP_MN_QUERY_LEGACY_BUS_INFORMATION:
+            Status = STATUS_NOT_SUPPORTED;
+            break;
+
+        default:
+            DPRINT1("FtDiskPdoPnp: Unknown PNP IRP_MN - %X\n", IoStack->MinorFunction);
+            ASSERT(FALSE);
+            break;
+    }
+
+    if (Status != STATUS_NOT_SUPPORTED)
+        Irp->IoStatus.Status = Status;
+    else
+        Status = Irp->IoStatus.Status;
+
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    return Status;
 }
 
 NTSTATUS

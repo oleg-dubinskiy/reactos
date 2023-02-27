@@ -9,6 +9,8 @@
 #define _FTDISK_H_
 
 #include <ntifs.h>
+#include <initguid.h>
+#include <mountmgr.h>
 #include <ntdddisk.h>
 #include <stdio.h>
 
@@ -53,6 +55,7 @@ typedef struct _ROOT_EXTENSION
     LIST_ENTRY ChangeNotifyIrpList;
     KSEMAPHORE RootSemaphore;
     UNICODE_STRING SymbolicLinkName;
+    BOOLEAN IsBootReinitialized;
     UNICODE_STRING RegistryPath;
     ULONG EmptyDeviceCount;
 } ROOT_EXTENSION, *PROOT_EXTENSION;
@@ -89,6 +92,7 @@ typedef struct _VOLUME_EXTENSION
     ULONGLONG StartingOffset;
     ULONGLONG PartitionLength;
     ULONG DiskSignature;
+    UNICODE_STRING SymbolicLinkName;
     KSEMAPHORE ZeroRefSemaphore;
     KSEMAPHORE Semaphore;
     GUID GptPartitionId;
