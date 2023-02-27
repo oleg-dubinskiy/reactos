@@ -76,6 +76,9 @@ typedef struct _VOLUME_EXTENSION
     PVOID ZeroRefContext;
     LIST_ENTRY IrpList;
     BOOLEAN IsStartCallback;
+    BOOLEAN IsUnknown00;
+    BOOLEAN IsUnknown01;
+    BOOLEAN IsUnknown02;
     BOOLEAN IsVolumeOffline;
     BOOLEAN IsEmptyVolume;
     BOOLEAN IsGptPartition;

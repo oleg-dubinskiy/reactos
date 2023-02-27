@@ -85,6 +85,103 @@ FtpRelease(
     KeReleaseSemaphore(&RootExtension->RootSemaphore, 0, 1, FALSE);
 }
 
+NTSTATUS
+NTAPI
+FtpAllSystemsGo(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp,
+    _In_ BOOLEAN Param3,
+    _In_ BOOLEAN Param4,
+    _In_ BOOLEAN Param5)
+{
+    KIRQL OldIrql;
+
+    DPRINT("FtpAllSystemsGo: %p, %p, %X, %X, %X\n", VolumeExtension, Irp, Param3, Param4, Param5);
+
+    if (Param3)
+    {
+        Param4 = TRUE;
+        Param5 = TRUE;
+    }
+
+     KeAcquireSpinLock(&VolumeExtension->SpinLock, &OldIrql);
+
+    if ((Param4 && !VolumeExtension->PartitionPdo && !VolumeExtension->FtVolume) ||
+        !VolumeExtension->IsStartCallback)
+    {
+        DPRINT1("FtpAllSystemsGo: STATUS_NO_SUCH_DEVICE\n");
+        KeReleaseSpinLock(&VolumeExtension->SpinLock, OldIrql);
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    if (Param5 && VolumeExtension->IsVolumeOffline)
+    {
+        if (!(VolumeExtension->SelfDeviceObject->Flags & DO_SYSTEM_BOOT_PARTITION))
+        {
+            DPRINT1("FtpAllSystemsGo: STATUS_DEVICE_OFF_LINE\n");
+            KeReleaseSpinLock(&VolumeExtension->SpinLock, OldIrql);
+
+            if (Irp)
+                Irp->IoStatus.Information = 0;
+
+            return STATUS_DEVICE_OFF_LINE;
+        }
+
+        VolumeExtension->IsVolumeOffline = FALSE;
+    }
+
+    if (VolumeExtension->ZeroRefCallback || VolumeExtension->IsUnknown02)
+    {
+        DPRINT("FtpAllSystemsGo: STATUS_PENDING\n");
+        ASSERT(Irp);
+
+        IoMarkIrpPending(Irp);
+        InsertTailList(&VolumeExtension->IrpList, &Irp->Tail.Overlay.ListEntry);
+
+        KeReleaseSpinLock(&VolumeExtension->SpinLock, OldIrql);
+        return STATUS_PENDING;
+    }
+
+    if (VolumeExtension->PartitionPdo)
+    {
+        if (!ExAcquireRundownProtectionCacheAware(VolumeExtension->RundownCache))
+        {
+            DPRINT1("FtpAllSystemsGo: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!VolumeExtension->IsVolumeOffline)
+            InterlockedExchange(&VolumeExtension->Lock, 1);
+
+        KeReleaseSpinLock(&VolumeExtension->SpinLock, OldIrql);
+        return STATUS_SUCCESS;
+    }
+
+    if (!Param3 || VolumeExtension->IsUnknown00)
+    {
+        if (!ExAcquireRundownProtectionCacheAware(VolumeExtension->RundownCache))
+        {
+            DPRINT1("FtpAllSystemsGo: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (VolumeExtension->IsUnknown00 && Param4)
+        {
+            if (!VolumeExtension->IsVolumeOffline)
+                InterlockedExchange(&VolumeExtension->Lock, 1);
+        }
+
+        KeReleaseSpinLock(&VolumeExtension->SpinLock, OldIrql);
+        return STATUS_SUCCESS;
+    }
+
+    DPRINT1("FtpAllSystemsGo: FIXME\n");
+    ASSERT(FALSE);
+
+    DPRINT1("FtpAllSystemsGo: STATUS_NO_SUCH_DEVICE\n");
+    return STATUS_NO_SUCH_DEVICE;
+}
+
 VOID
 NTAPI
 FtDiskUnload(
