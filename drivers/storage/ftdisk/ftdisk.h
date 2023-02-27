@@ -31,6 +31,56 @@
     ((PartitionType) == PARTITION_FAT32_XINT13) || \
     ((PartitionType) == PARTITION_XINT13))
 
+typedef struct _DISK_CONFIG_HEADER
+{
+    ULONG Version;
+    ULONG CheckSum;
+    BOOLEAN DirtyShutdown;
+    UCHAR Reserved[3];
+    ULONG DiskInformationOffset;
+    ULONG DiskInformationSize;
+    ULONG FtInformationOffset;
+    ULONG FtInformationSize;
+    ULONG FtStripeWidth;
+    ULONG FtPoolSize;
+    ULONG NameOffset;
+    ULONG NameSize;
+} DISK_CONFIG_HEADER, *PDISK_CONFIG_HEADER;
+
+typedef enum _FT_TYPE {
+    Mirror           = 0,
+    Stripe           = 1,
+    StripeWithParity = 2,
+    VolumeSet        = 3,
+    NotAnFtMember    = 4,
+    WholeDisk        = 5
+} FT_TYPE, *PFT_TYPE;
+
+typedef enum _FT_PARTITION_STATE {
+    Healthy           = 0,
+    Orphaned          = 1,
+    Regenerating      = 2,
+    Initializing      = 3,
+    SyncRedundantCopy = 4
+} FT_PARTITION_STATE, *PFT_PARTITION_STATE;
+
+typedef struct _DISK_PARTITION
+{
+    FT_TYPE FtType;
+    FT_PARTITION_STATE FtState;
+    LARGE_INTEGER StartingOffset;
+    LARGE_INTEGER Length;
+    LARGE_INTEGER FtLength;
+    ULONG ReservedTwoLongs[2];
+    UCHAR DriveLetter;
+    UCHAR AssignDriveLetter;
+    USHORT LogicalNumber;
+    USHORT FtGroup;
+    USHORT FtMember;
+    UCHAR Modified;
+    UCHAR ReservedChars[3];
+} DISK_PARTITION, *PDISK_PARTITION;
+
 typedef struct _FT_LOGICAL_DISK_INFORMATION_SET
 {
     ULONG DiskInfoCount;
@@ -280,6 +330,13 @@ NTAPI
 FtpQueryStableGuid(
     _In_ PVOLUME_EXTENSION VolumeExtension,
     _In_ PIRP Irp
+);
+
+UCHAR
+NTAPI
+FtpQueryDriveLetterFromRegistry(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ BOOLEAN Param2
 );
 
 #endif /* _FTDISK_H_ */

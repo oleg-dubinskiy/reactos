@@ -35,6 +35,7 @@
   #pragma alloc_text(PAGE, FtpQueryUniqueIdBuffer)
   #pragma alloc_text(PAGE, FtpQueryUniqueId)
   #pragma alloc_text(PAGE, FtpQueryStableGuid)
+  #pragma alloc_text(PAGE, FtpQueryDriveLetterFromRegistry)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -207,6 +208,20 @@ FtpCancelRoutine(
     Irp->IoStatus.Status = STATUS_CANCELLED;
 
     IoCompleteRequest(Irp, 0);
+}
+
+NTSTATUS
+NTAPI
+FtpDiskRegistryQueryRoutine(
+    _In_ PWSTR ValueName,
+    _In_ ULONG ValueType,
+    _In_ PVOID ValueData,
+    _In_ ULONG ValueLength,
+    _In_opt_ PVOID Context,
+    _In_opt_ PVOID EntryContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_SUCCESS;
 }
 
 ULONG
@@ -705,6 +720,144 @@ FtpQueryStableGuid(
     Irp->IoStatus.Information = sizeof(MOUNTDEV_STABLE_GUID);
 
     return STATUS_SUCCESS;
+}
+
+static
+UCHAR
+NTAPI
+QueryDriveLetterFromRegistry(
+    _In_ PROOT_EXTENSION RootExtension,
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PDEVICE_OBJECT PartitionPdo,
+    _In_ PDEVICE_OBJECT WholeDiskPdo,
+    _In_ BOOLEAN Param5)
+{
+    PARTITION_INFORMATION_EX PartitionInfoEx;
+    RTL_QUERY_REGISTRY_TABLE QueryTable[2];
+    //PDISK_PARTITION DiskPartition;
+    IO_STATUS_BLOCK IoStatusBlock;
+    ULONGLONG StartingOffset = 0;
+    PDISK_CONFIG_HEADER Context;
+    UCHAR DriveLetter;
+    ULONG ValueLength;
+    ULONG Signature;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    DPRINT("QueryDriveLetterFromRegistry: %p, %X\n", VolumeExtension, Param5);
+
+    RtlZeroMemory(QueryTable, sizeof(QueryTable));
+
+    QueryTable[0].EntryContext = &ValueLength;
+    QueryTable[0].QueryRoutine = FtpDiskRegistryQueryRoutine;
+    QueryTable[0].Flags = 4;
+    QueryTable[0].Name = L"Information";
+
+    Status = RtlQueryRegistryValues(RTL_REGISTRY_ABSOLUTE, L"\\Registry\\Machine\\System\\DISK", QueryTable, &Context, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("QueryDriveLetterFromRegistry: Status %X\n", Status);
+        return 0;
+    }
+
+    ObReferenceObject(PartitionPdo);
+    ObReferenceObject(WholeDiskPdo);
+
+    FtpRelease(RootExtension);
+
+    Signature = FtpQueryDiskSignatureCache(VolumeExtension);
+
+    if (!Signature)
+    {
+        Status = STATUS_UNSUCCESSFUL;
+    }
+    else
+    {
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+        Irp = IoBuildDeviceIoControlRequest(IOCTL_DISK_GET_PARTITION_INFO_EX,
+                                            PartitionPdo,
+                                            NULL,
+                                            0,
+                                            &PartitionInfoEx,
+                                            sizeof(PartitionInfoEx),
+                                            FALSE,
+                                            &Event,
+                                            &IoStatusBlock);
+        if (!Irp)
+        {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+        }
+        else
+        {
+            Status = IoCallDriver(PartitionPdo, Irp);
+            if (Status == STATUS_PENDING)
+            {
+                KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+                Status = IoStatusBlock.Status;
+            }
+
+            if (NT_SUCCESS(Status))
+            {
+                StartingOffset = PartitionInfoEx.StartingOffset.QuadPart;
+                Status = STATUS_SUCCESS;
+            }
+        }
+    }
+
+    FtpAcquire(RootExtension);
+
+    ObDereferenceObject(WholeDiskPdo);
+    ObDereferenceObject(PartitionPdo);
+
+    ExFreePoolWithTag(Context, 0);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("QueryDriveLetterFromRegistry: Status %X\n", Status);
+        return 0;
+    }
+
+    RtlZeroMemory(QueryTable, sizeof(QueryTable));
+
+    QueryTable[0].EntryContext = &ValueLength;
+    QueryTable[0].QueryRoutine = FtpDiskRegistryQueryRoutine;
+    QueryTable[0].Flags = 4;
+    QueryTable[0].Name = L"Information";
+
+    Status = RtlQueryRegistryValues(RTL_REGISTRY_ABSOLUTE, L"\\Registry\\Machine\\System\\DISK", QueryTable, &Context, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("QueryDriveLetterFromRegistry: Status %X\n", Status);
+        return 0;
+    }
+
+    DPRINT1("QueryDriveLetterFromRegistry: FIXME\n");
+    ASSERT(FALSE);if(StartingOffset){;}
+
+    return DriveLetter;
+}
+
+UCHAR
+NTAPI
+FtpQueryDriveLetterFromRegistry(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ BOOLEAN Param2)
+{
+    UCHAR DriveLetter;
+
+    DPRINT("FtpQueryDriveLetterFromRegistry: %p, %X\n", VolumeExtension, Param2);
+
+    if (!VolumeExtension->PartitionPdo)
+        return 0;
+
+    DriveLetter = QueryDriveLetterFromRegistry(VolumeExtension->RootExtension,
+                                               VolumeExtension,
+                                               VolumeExtension->PartitionPdo,
+                                               VolumeExtension->WholeDiskPdo,
+                                               Param2);
+    return DriveLetter;
 }
 
 NTSTATUS
