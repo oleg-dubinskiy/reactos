@@ -34,6 +34,7 @@
   #pragma alloc_text(PAGE, FtpQueryDeviceName)
   #pragma alloc_text(PAGE, FtpQueryUniqueIdBuffer)
   #pragma alloc_text(PAGE, FtpQueryUniqueId)
+  #pragma alloc_text(PAGE, FtpQueryStableGuid)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -669,6 +670,39 @@ FtpQueryUniqueId(
         Irp->IoStatus.Information = 0;
         return STATUS_INVALID_DEVICE_REQUEST;
     }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+FtpQueryStableGuid(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp)
+{
+    PMOUNTDEV_STABLE_GUID MountDevGuid;
+    PIO_STACK_LOCATION IoStack;
+
+    DPRINT("FtpQueryStableGuid: %p, %p\n", VolumeExtension, Irp);
+
+    if (!VolumeExtension->IsGptPartition)
+    {
+        DPRINT1("FtpQueryStableGuid: STATUS_UNSUCCESSFUL\n");
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_STABLE_GUID))
+    {
+        DPRINT1("FtpQueryStableGuid: STATUS_UNSUCCESSFUL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    MountDevGuid = Irp->AssociatedIrp.SystemBuffer;
+    MountDevGuid->StableGuid = VolumeExtension->GptPartitionId;
+
+    Irp->IoStatus.Information = sizeof(MOUNTDEV_STABLE_GUID);
 
     return STATUS_SUCCESS;
 }
