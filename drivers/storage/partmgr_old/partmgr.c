@@ -1532,7 +1532,8 @@ PmBootDriverReinit(
     _In_ PVOID Context,
     _In_ ULONG Count)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    DPRINT("PmBootDriverReinit: %p, %p, %X\n", DriverObject, Context, Count);
+    IoRegisterDriverReinitialization(DriverObject, PmDriverReinit, Context);
 }
 
 /* INIT DRIVER ROUTINES *****************************************************/
