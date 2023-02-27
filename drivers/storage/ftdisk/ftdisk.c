@@ -1059,6 +1059,8 @@ FtpGetGptAttributes(
     UCHAR PartitionType;
     NTSTATUS Status;
 
+    DPRINT("FtpGetGptAttributes: %p, %p\n", VolumeExtension, Irp);
+
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     GptAttributesInfo = Irp->AssociatedIrp.SystemBuffer;
     Irp->IoStatus.Information = sizeof(VOLUME_GET_GPT_ATTRIBUTES_INFORMATION);
@@ -1110,7 +1112,7 @@ FtpGetGptAttributes(
         return STATUS_INVALID_PARAMETER;
     }
 
-    //HACK!!! FIXME for GPT partition
+    DPRINT1("FtpGetGptAttributes: HACK!!! FIXME for GPT partitions\n");
 
     //LogicalDiskInfo = FindLogicalDiskInformation(...);
     //if (!LogicalDiskInfo)
