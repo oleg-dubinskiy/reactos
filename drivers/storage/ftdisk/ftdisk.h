@@ -346,6 +346,13 @@ FtpQuerySuggestedLinkName(
     _In_ PIRP Irp
 );
 
+NTSTATUS
+NTAPI
+FtpLinkCreated(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp
+);
+
 #endif /* _FTDISK_H_ */
 
 /* EOF */

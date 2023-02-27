@@ -37,6 +37,7 @@
   #pragma alloc_text(PAGE, FtpQueryStableGuid)
   #pragma alloc_text(PAGE, FtpQueryDriveLetterFromRegistry)
   #pragma alloc_text(PAGE, FtpQuerySuggestedLinkName)
+  #pragma alloc_text(PAGE, FtpLinkCreated)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -918,6 +919,24 @@ FtpQuerySuggestedLinkName(
     }
 
     RtlCopyMemory(MountDevLinkName->Name, Name.Buffer, MountDevLinkName->NameLength);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+FtpLinkCreated(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp)
+{
+    DPRINT("FtpLinkCreated: %p, %p\n", VolumeExtension, Irp);
+
+    if (!VolumeExtension->FtVolume)
+        return STATUS_SUCCESS;
+
+    DPRINT1("FtpLinkCreated: FIXME\n");
+    ASSERT(FALSE);
+
 
     return STATUS_SUCCESS;
 }
