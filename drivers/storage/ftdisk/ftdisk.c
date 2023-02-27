@@ -941,6 +941,29 @@ FtpLinkCreated(
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+FtpCancelChangeNotify(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    PVOLUME_EXTENSION VolumeExtension;
+
+    DPRINT("FtpCancelChangeNotify: %p, %p\n", DeviceObject, Irp);
+
+    IoReleaseCancelSpinLock(Irp->CancelIrql);
+
+    VolumeExtension = Irp->Tail.Overlay.DriverContext[0];
+
+    FtpAcquire(VolumeExtension->RootExtension);
+    RemoveEntryList(&Irp->Tail.Overlay.ListEntry);
+    FtpRelease(VolumeExtension->RootExtension);
+
+    Irp->IoStatus.Status = STATUS_CANCELLED;
+
+    IoCompleteRequest(Irp, 0);
+}
+
 NTSTATUS
 NTAPI
 FtpReadPartitionTableEx(
