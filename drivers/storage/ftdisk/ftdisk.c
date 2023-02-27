@@ -82,6 +82,21 @@ FtpRefCountCompletionRoutine(
 
 VOID
 NTAPI
+FtpVolumeOnlineCallback(PVOLUME_EXTENSION VolumeExtension)
+{
+    PKEVENT Event = VolumeExtension->ZeroRefContext;
+
+    if (VolumeExtension->IsVolumeOffline)
+    {
+        VolumeExtension->IsVolumeOffline = FALSE;
+        VolumeExtension->IsUnknown00 = FALSE;
+    }
+
+    KeSetEvent(Event, 0, FALSE);
+}
+
+VOID
+NTAPI
 FtpAcquire(
     _In_ PROOT_EXTENSION RootExtension)
 {
