@@ -108,6 +108,7 @@ typedef struct _ROOT_EXTENSION
     KSEMAPHORE RootSemaphore;
     UNICODE_STRING SymbolicLinkName;
     BOOLEAN IsBootReinitialized;
+    BOOLEAN IsReinitialized;
     UNICODE_STRING RegistryPath;
     ULONG EmptyDeviceCount;
 } ROOT_EXTENSION, *PROOT_EXTENSION;
@@ -379,6 +380,14 @@ FtpCheckOfflineOwner(
 VOID
 NTAPI
 FtpBootDriverReinitialization(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PVOID Context,
+    _In_ ULONG Count
+);
+
+VOID
+NTAPI
+FtpDriverReinitialization(
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PVOID Context,
     _In_ ULONG Count

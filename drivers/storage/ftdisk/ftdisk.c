@@ -42,6 +42,7 @@
   #pragma alloc_text(PAGE, FtpGetGptAttributes)
   #pragma alloc_text(PAGE, FtpCheckOfflineOwner)
   #pragma alloc_text(PAGE, FtpBootDriverReinitialization)
+  #pragma alloc_text(PAGE, FtpDriverReinitialization)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -2803,7 +2804,56 @@ FtpDriverReinitialization(
     _In_ PVOID Context,
     _In_ ULONG Count)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PROOT_EXTENSION RootExtension = Context;
+    PVOLUME_EXTENSION VolumeExtension;
+    RTL_QUERY_REGISTRY_TABLE QueryTable[2];
+    UNICODE_STRING SystemPartition;
+    UNICODE_STRING Name;
+    WCHAR bufferString[0x64]; // 100
+    PLIST_ENTRY Entry;
+
+    DPRINT("FtpDriverReinitialization: %p, %p, %X\n", DriverObject, Context, Count);
+
+    RtlZeroMemory(QueryTable, sizeof(QueryTable));
+
+    QueryTable[0].QueryRoutine = FtpQuerySystemVolumeNameQueryRoutine;
+    QueryTable[0].Flags = 4;
+    QueryTable[0].Name = L"SystemPartition";
+
+    SystemPartition.Buffer = NULL;
+    RtlQueryRegistryValues(RTL_REGISTRY_ABSOLUTE, L"\\Registry\\Machine\\System\\Setup", QueryTable, &SystemPartition, NULL);
+
+    FtpAcquire(RootExtension);
+
+    Entry = RootExtension->VolumeList.Flink;
+
+    while (Entry != &RootExtension->VolumeList)
+    {
+        VolumeExtension = CONTAINING_RECORD(Entry, VOLUME_EXTENSION, Link);
+
+        if (VolumeExtension->IsSystemPartition)
+        {
+            swprintf(bufferString, L"\\Device\\HarddiskVolume%d", VolumeExtension->VolumeNumber);
+            RtlInitUnicodeString(&Name, bufferString);
+
+            if (SystemPartition.Buffer && RtlEqualUnicodeString(&Name, &SystemPartition, TRUE))
+            {
+                DPRINT1("FtpDriverReinitialization: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            DPRINT1("FtpDriverReinitialization: FIXME FtpApplyESPProtection()\n");
+        }
+
+        Entry = Entry->Flink;
+    }
+
+    RootExtension->IsReinitialized = TRUE;
+
+    FtpRelease(RootExtension);
+
+    if (SystemPartition.Buffer)
+        ExFreePool(SystemPartition.Buffer);
 }
 
 VOID
