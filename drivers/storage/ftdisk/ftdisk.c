@@ -2797,6 +2797,40 @@ FtDiskPnp(
 
 /* REINITIALIZE DRIVER ROUTINES *********************************************/
 
+NTSTATUS
+NTAPI
+FtpQuerySystemVolumeNameQueryRoutine(
+    _In_ PWSTR ValueName,
+    _In_ ULONG ValueType,
+    _In_ PVOID ValueData,
+    _In_ ULONG ValueLength,
+    _In_ PVOID Context,
+    _In_ PVOID EntryContext)
+{
+    PUNICODE_STRING SystemPartition = Context;
+    UNICODE_STRING string;
+    USHORT Size;
+
+    if (ValueType != REG_SZ)
+        return STATUS_SUCCESS;
+
+    RtlInitUnicodeString(&string, ValueData);
+    Size = string.Length;
+
+    SystemPartition->Length = Size;
+    SystemPartition->MaximumLength = (Size + sizeof(WCHAR));
+
+    SystemPartition->Buffer = ExAllocatePoolWithTag(PagedPool, SystemPartition->MaximumLength, 'tFcS');
+    if (!SystemPartition->Buffer)
+        return STATUS_SUCCESS;
+
+    RtlCopyMemory(SystemPartition->Buffer, ValueData, SystemPartition->Length);
+
+    SystemPartition->Buffer[SystemPartition->Length / sizeof(WCHAR)] = 0;
+
+    return STATUS_SUCCESS;
+}
+
 VOID
 NTAPI
 FtpDriverReinitialization(

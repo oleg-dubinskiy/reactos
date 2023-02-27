@@ -393,6 +393,17 @@ FtpDriverReinitialization(
     _In_ ULONG Count
 );
 
+NTSTATUS
+NTAPI
+FtpQuerySystemVolumeNameQueryRoutine(
+    _In_ PWSTR ValueName,
+    _In_ ULONG ValueType,
+    _In_ PVOID ValueData,
+    _In_ ULONG ValueLength,
+    _In_ PVOID Context,
+    _In_ PVOID EntryContext
+);
+
 #endif /* _FTDISK_H_ */
 
 /* EOF */
