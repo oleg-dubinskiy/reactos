@@ -1104,8 +1104,22 @@ PmReadWrite(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PPM_DEVICE_EXTENSION Extension;
+
+    DPRINT("PmReadWrite: %p, %p\n", DeviceObject, Irp);
+
+    Extension = DeviceObject->DeviceExtension;
+
+    if (!Extension->Reserved01)
+    {
+        IoSkipCurrentIrpStackLocation(Irp);
+        return IoCallDriver(Extension->AttachedToDevice, Irp);
+    }
+
+    DPRINT1("PmReadWrite: FIXME\n");
+    ASSERT(FALSE);
+
+    return STATUS_PENDING;
 }
 
 NTSTATUS
