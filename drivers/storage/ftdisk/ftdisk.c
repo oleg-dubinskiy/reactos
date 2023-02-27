@@ -31,6 +31,7 @@
   #pragma alloc_text(PAGE, FtpQueryDiskSignatureCache)
   #pragma alloc_text(PAGE, FtpCreateOldNameLinks)
   #pragma alloc_text(PAGE, FtpQueryId)
+  #pragma alloc_text(PAGE, FtpQueryDeviceName)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -471,6 +472,49 @@ FtpCreateOldNameLinks(
         if (NT_SUCCESS(Status))
             break;
     }
+}
+
+NTSTATUS
+NTAPI
+FtpQueryDeviceName(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp)
+{
+    UNICODE_STRING DestinationString;
+    PMOUNTDEV_NAME MountDevName;
+    PIO_STACK_LOCATION IoStack;
+    WCHAR SourceString[0x64]; // 100
+    ULONG Size;
+
+    DPRINT("FtpQueryDeviceName: %p, %p\n", VolumeExtension, Irp);
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < sizeof(*MountDevName))
+    {
+        DPRINT1("FtpQueryDeviceName: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    swprintf(SourceString, L"\\Device\\HarddiskVolume%d", VolumeExtension->VolumeNumber);
+    RtlInitUnicodeString(&DestinationString, SourceString);
+
+    MountDevName = Irp->AssociatedIrp.SystemBuffer;
+    MountDevName->NameLength = DestinationString.Length;
+
+    Size = (DestinationString.Length + sizeof(WCHAR));
+    Irp->IoStatus.Information = Size;
+
+    if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < Size)
+    {
+        DPRINT1("FtpQueryDeviceName: STATUS_BUFFER_OVERFLOW\n");
+        Irp->IoStatus.Information = sizeof(*MountDevName);
+        return STATUS_BUFFER_OVERFLOW;
+    }
+
+    RtlCopyMemory(MountDevName->Name, DestinationString.Buffer, MountDevName->NameLength);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
