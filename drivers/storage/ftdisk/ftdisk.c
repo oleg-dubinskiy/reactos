@@ -169,14 +169,6 @@ FtpQueryDiskSignatureCache(
     return VolumeExtension->DiskSignature;
 }
 
-VOID
-NTAPI
-FtpCreateOldNameLinks(
-    _In_ PVOLUME_EXTENSION VolumeExtension)
-{
-    UNIMPLEMENTED_DBGBREAK();
-}
-
 NTSTATUS
 NTAPI
 FtpQueryPartitionInformation(
@@ -308,6 +300,67 @@ FtpQueryPartitionInformation(
         *OutGptAttributes = 0;
 
     return STATUS_SUCCESS;
+}
+
+VOID
+NTAPI
+FtpCreateOldNameLinks(
+    _In_ PVOLUME_EXTENSION VolumeExtension)
+{
+    PDEVICE_OBJECT PartitionPdo;
+    UNICODE_STRING DeviceName;
+    UNICODE_STRING SymbolicLinkName;
+    WCHAR LinkBuffer[0x50]; // 80
+    WCHAR DeviceBuffer[0x40]; // 64
+    ULONG PartitionNumber;
+    ULONG DeviceNumber;
+    ULONG ix;
+    NTSTATUS Status;
+
+    DPRINT("FtpCreateOldNameLinks: VolumeExtension %p\n", VolumeExtension);
+
+    swprintf(DeviceBuffer, L"\\Device\\HarddiskVolume%d", VolumeExtension->VolumeNumber);
+    RtlInitUnicodeString(&DeviceName, DeviceBuffer);
+
+    DPRINT("FtpCreateOldNameLinks: DeviceName '%wZ'\n", &DeviceName);
+
+    PartitionPdo = VolumeExtension->PartitionPdo;
+    if (!PartitionPdo)
+    {
+        DPRINT1("FtpCreateOldNameLinks: PartitionPdo is NULL\n");
+        return;
+    }
+
+    Status = FtpQueryPartitionInformation(VolumeExtension->RootExtension,
+                                          PartitionPdo,
+                                          &DeviceNumber,
+                                          NULL,
+                                          &PartitionNumber,
+                                          NULL,
+                                          NULL,
+                                          NULL,
+                                          NULL,
+                                          NULL,
+                                          NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("FtpCreateOldNameLinks: Status %p\n", Status);
+        return;
+    }
+
+    swprintf(LinkBuffer, L"\\Device\\Harddisk%d\\Partition%d", DeviceNumber, PartitionNumber);
+    RtlInitUnicodeString(&SymbolicLinkName, LinkBuffer);
+
+    DPRINT("FtpCreateOldNameLinks: SymbolicLinkName '%wZ'\n", &SymbolicLinkName);
+
+    IoDeleteSymbolicLink(&SymbolicLinkName);
+
+    for (ix = 0; ix < 0x3E8; ix++) // 1000
+    {
+        Status = IoCreateSymbolicLink(&SymbolicLinkName, &DeviceName);
+        if (NT_SUCCESS(Status))
+            break;
+    }
 }
 
 NTSTATUS
