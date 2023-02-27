@@ -56,6 +56,19 @@ FtpSignalCompletion(
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
+NTSTATUS
+NTAPI
+FtpRefCountCompletionRoutine(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PVOID Context)
+{
+    PVOLUME_EXTENSION VolumeExtension = Context;
+
+    ExReleaseRundownProtectionCacheAware(VolumeExtension->RundownCache);
+    return STATUS_SUCCESS;
+}
+
 VOID
 NTAPI
 FtpAcquire(
