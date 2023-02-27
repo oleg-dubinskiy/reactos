@@ -1130,15 +1130,16 @@ PmDeviceControl(
 {
     PPM_DEVICE_EXTENSION Extension;
     PIO_STACK_LOCATION IoStack;
+    KEVENT Event;
+    BOOLEAN Param2;
     NTSTATUS Status;
 
     Extension = DeviceObject->DeviceExtension;
     IoStack = Irp->Tail.Overlay.CurrentStackLocation;
 
-    DPRINT("PmDeviceControl: DeviceObject %p, Irp %p, Code %X\n", DeviceObject, Irp, IoStack->Parameters.DeviceIoControl.IoControlCode);
-
     if (Extension->AttachedToDevice->Characteristics & FILE_REMOVABLE_MEDIA)
     {
+        DPRINT("PmDeviceControl: DeviceObject %p, Irp %p, Code %X\n", DeviceObject, Irp, IoStack->Parameters.DeviceIoControl.IoControlCode);
         IoSkipCurrentIrpStackLocation(Irp);
         return IoCallDriver(Extension->AttachedToDevice, Irp);
     }
@@ -1147,6 +1148,7 @@ PmDeviceControl(
     {
         case IOCTL_DISK_GET_DRIVE_GEOMETRY:
         {
+            DPRINT("PmDeviceControl: DeviceObject %p, Irp %p, Code %X\n", DeviceObject, Irp, IoStack->Parameters.DeviceIoControl.IoControlCode);
             if (!Extension->Reserved02 || Extension->DriverExtension->IsReinitialized)
             {
                 IoSkipCurrentIrpStackLocation(Irp);
@@ -1164,6 +1166,8 @@ PmDeviceControl(
         case IOCTL_DISK_GET_DRIVE_LAYOUT:
         case 0x704008:
         {
+            DPRINT("PmDeviceControl: DeviceObject %p, Irp %p, Code %X\n", DeviceObject, Irp, IoStack->Parameters.DeviceIoControl.IoControlCode);
+
             Status = PmCheckAndUpdateSignature(Extension, TRUE, FALSE);
 
             if (!NT_SUCCESS(Status) || IoStack->Parameters.DeviceIoControl.IoControlCode != 0x704008)
@@ -1185,9 +1189,42 @@ PmDeviceControl(
         case IOCTL_DISK_CREATE_DISK:
         case IOCTL_DISK_DELETE_DRIVE_LAYOUT:
         case IOCTL_DISK_SET_DRIVE_LAYOUT_EX:
-            DPRINT1("PmDeviceControl: FIXME\n");
-            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
+        {
+            DPRINT("PmDeviceControl: DeviceObject %p, Irp %p, Code %X\n", DeviceObject, Irp, IoStack->Parameters.DeviceIoControl.IoControlCode);
+
+            KeWaitForSingleObject(&Extension->DriverExtension->Mutex, Executive, KernelMode, FALSE, NULL);
+
+            if (!Extension->IsPartitionNotFound ||
+                IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_DISK_UPDATE_PROPERTIES)
+            {
+                Param2 = TRUE;
+            }
+            else
+            {
+                Param2 = FALSE;
+            }
+
+            Extension->IsPartitionNotFound = TRUE;
+
+            KeReleaseMutex(&Extension->DriverExtension->Mutex, FALSE);
+            KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+            IoCopyCurrentIrpStackLocationToNext(Irp);
+            IoSetCompletionRoutine(Irp, PmSignalCompletion, &Event, TRUE, TRUE, TRUE);
+
+            IoCallDriver(Extension->AttachedToDevice, Irp);
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+            Status = Irp->IoStatus.Status;
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("PmDeviceControl: Status %X\n", Status);
+                break;
+            }
+
+            Status = PmCheckAndUpdateSignature(Extension, Param2, TRUE);
             break;
+        }
 
         case IOCTL_DISK_GROW_PARTITION:
             DPRINT1("PmDeviceControl: FIXME\n");
@@ -1210,6 +1247,7 @@ PmDeviceControl(
             break;
 
         default:
+            DPRINT1("PmDeviceControl: DeviceObject %p, Irp %p, Code %X\n", DeviceObject, Irp, IoStack->Parameters.DeviceIoControl.IoControlCode);
             IoSkipCurrentIrpStackLocation(Irp);
             return IoCallDriver(Extension->AttachedToDevice, Irp);
     }
