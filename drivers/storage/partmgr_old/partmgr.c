@@ -1146,10 +1146,15 @@ PmDeviceControl(
     switch (IoStack->Parameters.DeviceIoControl.IoControlCode)
     {
         case IOCTL_DISK_GET_DRIVE_GEOMETRY:
-            DPRINT1("PmDeviceControl: FIXME\n");
-            ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
+        {
+            if (!Extension->Reserved02 || Extension->DriverExtension->IsReinitialized)
+            {
+                IoSkipCurrentIrpStackLocation(Irp);
+                return IoCallDriver(Extension->AttachedToDevice, Irp);
+            }
+            Status = STATUS_NO_SUCH_DEVICE;
             break;
-
+        }
         case IOCTL_DISK_PERFORMANCE:
             DPRINT1("PmDeviceControl: FIXME\n");
             ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
