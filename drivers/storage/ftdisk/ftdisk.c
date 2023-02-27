@@ -43,6 +43,7 @@
   #pragma alloc_text(PAGE, FtpCheckOfflineOwner)
   #pragma alloc_text(PAGE, FtpBootDriverReinitialization)
   #pragma alloc_text(PAGE, FtpDriverReinitialization)
+  #pragma alloc_text(PAGE, FtpQuerySystemVolumeNameQueryRoutine)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -1827,8 +1828,104 @@ FtDiskReadWrite(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PVOLUME_EXTENSION Extension;
+    PIO_STACK_LOCATION IoStack;
+    LONGLONG ByteOffset;
+    ULONG Length;
+    NTSTATUS Status;
+
+    DPRINT("FtDiskReadWrite: %p, %p\n", DeviceObject, Irp);
+
+    Extension = DeviceObject->DeviceExtension;
+    if (Extension->DeviceExtensionType != 1)
+    {
+        Irp->IoStatus.Information = 0;
+        Irp->IoStatus.Status = STATUS_NO_SUCH_DEVICE;
+        IoCompleteRequest(Irp, 0);
+
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    if (ExAcquireRundownProtectionCacheAware(Extension->RundownCache))
+    {
+        if (!Extension->Lock)
+            ExReleaseRundownProtectionCacheAware(Extension->RundownCache);
+    }
+
+    if (!Extension->Lock)
+    {
+        Status = FtpAllSystemsGo(Extension, Irp, TRUE, TRUE, TRUE);
+        if (Status == STATUS_PENDING)
+            return STATUS_PENDING;
+
+        if (!NT_SUCCESS(Status))
+        {
+            Irp->IoStatus.Information = 0;
+            Irp->IoStatus.Status = Status;
+            IoCompleteRequest(Irp, 0);
+
+            return Status;
+        }
+    }
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    if (Extension->IsReadOnlyPartition && IoStack->MajorFunction == IRP_MJ_WRITE)
+    {
+        ExReleaseRundownProtectionCacheAware(Extension->RundownCache);
+
+        Irp->IoStatus.Information = 0;
+        Irp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
+        IoCompleteRequest(Irp, 0);
+
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    if (!Extension->PartitionPdo)
+    {
+        DPRINT1("FtDiskReadWrite: FIXME\n");
+        ASSERT(Extension->FtVolume);
+        ASSERT(FALSE);
+
+        return STATUS_PENDING;
+    }
+
+    IoCopyCurrentIrpStackLocationToNext(Irp);
+
+    if (!Extension->WholeDiskDevice)
+    {
+        IoSetCompletionRoutine(Irp, FtpRefCountCompletionRoutine, Extension, TRUE, TRUE, TRUE);
+        IoMarkIrpPending(Irp);
+
+        IoCallDriver(Extension->PartitionPdo, Irp);
+
+        return STATUS_PENDING;
+    }
+
+    IoStack = IoGetNextIrpStackLocation(Irp);
+
+    ByteOffset = IoStack->Parameters.Read.ByteOffset.QuadPart;
+    Length = IoStack->Parameters.Read.Length;
+
+    if (ByteOffset < 0 || (ByteOffset + Length) > Extension->PartitionLength)
+    {
+        ExReleaseRundownProtectionCacheAware(Extension->RundownCache);
+
+        Irp->IoStatus.Information = 0;
+        Irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
+        IoCompleteRequest(Irp, 0);
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    IoStack->Parameters.Read.ByteOffset.QuadPart += Extension->StartingOffset;
+
+    IoSetCompletionRoutine(Irp, FtpRefCountCompletionRoutine, Extension, TRUE, TRUE, TRUE);
+    IoMarkIrpPending(Irp);
+
+    IoCallDriver(Extension->WholeDiskDevice, Irp);
+
+    return STATUS_PENDING;
 }
 
 NTSTATUS
@@ -1837,8 +1934,362 @@ FtDiskDeviceControl(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PVOLUME_EXTENSION Extension;
+    PIO_STACK_LOCATION IoStack;
+    ULONG ControlCode;
+    KEVENT Event;
+    BOOLEAN IsRootExt;
+    NTSTATUS Status;
+
+    Extension = DeviceObject->DeviceExtension;
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+    ControlCode = IoStack->Parameters.DeviceIoControl.IoControlCode;
+
+    Irp->IoStatus.Information = 0;
+
+    IsRootExt = (Extension->DeviceExtensionType == 0);
+    if (IsRootExt)
+    {
+        DPRINT("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+
+        switch (ControlCode)
+        {
+            case 0x760000:
+                DPRINT1("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+                ASSERT(FALSE);
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+                break;
+
+            case 0x760004:
+                DPRINT1("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+                ASSERT(FALSE);
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+                break;
+
+            case 0x760008:
+                DPRINT1("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+                ASSERT(FALSE);
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+                break;
+
+            case 0x76000C:
+                DPRINT1("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+                ASSERT(FALSE);
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+                break;
+
+            case 0x760018:
+                DPRINT1("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+                ASSERT(FALSE);
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+                break;
+
+            case 0x76001C:
+                DPRINT1("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+                ASSERT(FALSE);
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+                break;
+
+            case 0x760020:
+                DPRINT1("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+                ASSERT(FALSE);
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+                break;
+
+            case 0x760024:
+                DPRINT1("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+                ASSERT(FALSE);
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+                break;
+
+            case 0x760028:
+                DPRINT1("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+                ASSERT(FALSE);
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+                break;
+
+            default:
+                DPRINT1("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+                ASSERT(FALSE);
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+                break;
+        }
+    }
+
+    switch (ControlCode)
+    {
+        case IOCTL_DISK_GET_DRIVE_GEOMETRY:
+            DPRINT("FtDiskDeviceControl: IOCTL_DISK_GET_DRIVE_GEOMETRY\n");
+            Status = FtpAllSystemsGo(Extension, Irp, TRUE, TRUE, TRUE);
+            break;
+
+        case IOCTL_DISK_IS_WRITABLE:
+            DPRINT("FtDiskDeviceControl: IOCTL_DISK_IS_WRITABLE\n");
+            if (Extension->IsReadOnlyPartition)
+                Status = STATUS_MEDIA_WRITE_PROTECTED;
+            else
+                Status = FtpAllSystemsGo(Extension, Irp, TRUE, TRUE, TRUE);
+            break;
+
+        case IOCTL_DISK_GET_PARTITION_INFO_EX:
+            DPRINT("FtDiskDeviceControl: IOCTL_DISK_GET_PARTITION_INFO_EX\n");
+            Status = FtpAllSystemsGo(Extension, Irp, FALSE, TRUE, FALSE);
+            break;
+
+        case IOCTL_DISK_GET_PARTITION_INFO:
+            DPRINT("FtDiskDeviceControl: IOCTL_DISK_GET_PARTITION_INFO\n");
+            Status = FtpAllSystemsGo(Extension, Irp, FALSE, TRUE, FALSE);
+            break;
+
+        case IOCTL_DISK_GET_LENGTH_INFO:
+            DPRINT("FtDiskDeviceControl: IOCTL_DISK_GET_LENGTH_INFO\n");
+            Status = FtpAllSystemsGo(Extension, Irp, TRUE, TRUE, TRUE);
+            break;
+
+        case IOCTL_DISK_CHECK_VERIFY:
+            DPRINT("FtDiskDeviceControl: IOCTL_DISK_CHECK_VERIFY\n");
+            Status = FtpAllSystemsGo(Extension, Irp, TRUE, TRUE, TRUE);
+            break;
+
+        case IOCTL_STORAGE_GET_HOTPLUG_INFO:
+            DPRINT("FtDiskDeviceControl: IOCTL_STORAGE_GET_HOTPLUG_INFO\n");
+            Status = FtpAllSystemsGo(Extension, Irp, TRUE, TRUE, TRUE);
+            break;
+
+        case IOCTL_STORAGE_QUERY_PROPERTY:
+            DPRINT("FtDiskDeviceControl: IOCTL_STORAGE_QUERY_PROPERTY\n");
+            Status = FtpAllSystemsGo(Extension, Irp, TRUE, TRUE, TRUE);
+            break;
+
+        case IOCTL_MOUNTDEV_QUERY_UNIQUE_ID:
+        {
+            DPRINT("FtDiskDeviceControl: IOCTL_MOUNTDEV_QUERY_UNIQUE_ID\n");
+
+            Status = FtpAllSystemsGo(Extension, Irp, FALSE, TRUE, FALSE);
+            if (Status == STATUS_PENDING)
+                return Status;
+
+            if (NT_SUCCESS(Status))
+            {
+                Status = FtpQueryUniqueId(Extension, Irp);
+                ExReleaseRundownProtectionCacheAware(Extension->RundownCache);
+            }
+
+            Irp->IoStatus.Status = Status;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+            return Status;
+        }
+        case IOCTL_MOUNTDEV_QUERY_DEVICE_NAME:
+        {
+            DPRINT("FtDiskDeviceControl: IOCTL_MOUNTDEV_QUERY_DEVICE_NAME\n");
+
+            Status = FtpAllSystemsGo(Extension, Irp, FALSE, FALSE, FALSE);
+            if (Status == STATUS_PENDING)
+                return Status;
+
+            if (NT_SUCCESS(Status))
+            {
+                Status = FtpQueryDeviceName(Extension, Irp);
+                ExReleaseRundownProtectionCacheAware(Extension->RundownCache);
+            }
+
+            Irp->IoStatus.Status = Status;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+            return Status;
+        }
+        case IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME:
+        {
+            DPRINT("FtDiskDeviceControl: IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME\n");
+
+            FtpAcquire(Extension->RootExtension);
+            Status = FtpQuerySuggestedLinkName(Extension, Irp);
+            FtpRelease(Extension->RootExtension);
+
+            Irp->IoStatus.Status = Status;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+            return Status;
+        }
+        case 0x4DC010: // IOCTL_MOUNTDEV_LINK_CREATED
+        {
+            DPRINT("FtDiskDeviceControl: IOCTL_MOUNTDEV_LINK_CREATED\n");
+            Status = FtpAllSystemsGo(Extension, Irp, FALSE, TRUE, TRUE);
+            if (Status == STATUS_PENDING)
+                return Status;
+
+            if (NT_SUCCESS(Status))
+            {
+                Status = FtpLinkCreated(Extension, Irp);
+                ExReleaseRundownProtectionCacheAware(Extension->RundownCache);
+            }
+
+            Irp->IoStatus.Status = Status;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+            return Status;
+        }
+        case 0x4D0010: // ?? IOCTL_MOUNTDEV_LINK_CREATED -- ??
+            DPRINT("FtDiskDeviceControl: 0x4D0010\n");
+            Status = FtpAllSystemsGo(Extension, Irp, TRUE, TRUE, TRUE);
+            break;
+
+        case IOCTL_MOUNTDEV_QUERY_STABLE_GUID:
+        {
+            DPRINT("FtDiskDeviceControl: IOCTL_MOUNTDEV_QUERY_STABLE_GUID\n");
+
+            Status = FtpAllSystemsGo(Extension, Irp, FALSE, TRUE, FALSE);
+            if (Status == STATUS_PENDING)
+                return Status;
+
+            if (NT_SUCCESS(Status))
+            {
+                Status = FtpQueryStableGuid(Extension, Irp);
+                ExReleaseRundownProtectionCacheAware(Extension->RundownCache);
+            }
+
+            Irp->IoStatus.Status = Status;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+            return Status;
+        }
+        case 0x4DC004: // ? error ? IOCTL_MOUNTDEV_UNIQUE_ID_CHANGE_NOTIFY 
+        {
+            FtpAcquire(Extension->RootExtension);
+            Status = FtpUniqueIdChangeNotify(Extension, Irp);
+            FtpRelease(Extension->RootExtension);
+
+            if (Status != STATUS_PENDING)
+            {
+                Irp->IoStatus.Status = Status;
+                IoCompleteRequest(Irp, IO_NO_INCREMENT);
+            }
+
+            return Status;
+        }
+        case IOCTL_VOLUME_GET_GPT_ATTRIBUTES:
+        {
+            DPRINT("FtDiskDeviceControl: IOCTL_VOLUME_GET_GPT_ATTRIBUTES\n");
+
+            KeEnterCriticalRegion();
+            FtpAcquire(Extension->RootExtension);
+
+            Status = FtpGetGptAttributes(Extension, Irp);
+
+            FtpRelease(Extension->RootExtension);
+            KeLeaveCriticalRegion();
+
+            Irp->IoStatus.Status = Status;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+            return Status;
+        }
+        case IOCTL_VOLUME_ONLINE:
+        {
+            DPRINT("FtDiskDeviceControl: IOCTL_VOLUME_ONLINE\n");
+
+            FtpAcquire(Extension->RootExtension);
+
+            Status = FtpAllSystemsGo(Extension, Irp, FALSE, TRUE, FALSE);
+            if (Status == STATUS_PENDING)
+            {
+                FtpRelease(Extension->RootExtension);
+                return STATUS_PENDING;
+            }
+
+            if (!NT_SUCCESS(Status))
+            {
+                FtpRelease(Extension->RootExtension);
+                Irp->IoStatus.Status = Status;
+                IoCompleteRequest(Irp, IO_NO_INCREMENT);
+                return Status;
+            }
+
+            Status = FtpCheckOfflineOwner(Extension, Irp);
+            if (!NT_SUCCESS(Status))
+            {
+                ExReleaseRundownProtectionCacheAware(Extension->RundownCache);
+                FtpRelease(Extension->RootExtension);
+                Irp->IoStatus.Status = Status;
+                IoCompleteRequest(Irp, IO_NO_INCREMENT);
+                return Status;
+            }
+
+            if (Extension->FtVolume)
+            {
+                DPRINT1("FtDiskDeviceControl: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            KeInitializeEvent(&Event, NotificationEvent, FALSE);
+            ExReleaseRundownProtectionCacheAware(Extension->RundownCache);
+
+            FtpZeroRefCallback(Extension, FtpVolumeOnlineCallback, &Event);
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+            FtpRelease(Extension->RootExtension);
+
+            Irp->IoStatus.Status = STATUS_SUCCESS;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+            return STATUS_SUCCESS;
+        }
+        case FT_BALANCED_READ_MODE:
+            DPRINT("FtDiskDeviceControl: FT_BALANCED_READ_MODE\n");
+            Status = FtpAllSystemsGo(Extension, Irp, TRUE, TRUE, TRUE);
+            break;
+
+        default:
+            DPRINT1("FtDiskDeviceControl: %p, %p, %X\n", DeviceObject, Irp, ControlCode);
+            ASSERT(FALSE);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+    }
+
+    if (Status == STATUS_PENDING)
+        return Status;
+
+    if (!NT_SUCCESS(Status))
+    {
+        Irp->IoStatus.Status = Status;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        return Status;
+    }
+
+    if (Extension->PartitionPdo)
+    {
+        if (ControlCode == 0x67C194)
+        {
+            DPRINT("FtDiskDeviceControl: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (ControlCode == IOCTL_DISK_UPDATE_PROPERTIES ||
+            ControlCode == IOCTL_DISK_GROW_PARTITION)
+        {
+            DPRINT("FtDiskDeviceControl: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        IoCopyCurrentIrpStackLocationToNext(Irp);
+        IoSetCompletionRoutine(Irp, FtpRefCountCompletionRoutine, Extension, TRUE, TRUE, TRUE);
+        IoMarkIrpPending(Irp);
+
+        IoCallDriver(Extension->PartitionPdo, Irp);
+
+        return STATUS_PENDING;
+    }
+
+    DPRINT("FtDiskDeviceControl: FIXME\n");
+    ASSERT(Extension->FtVolume);
+    ASSERT(FALSE);
+
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS
