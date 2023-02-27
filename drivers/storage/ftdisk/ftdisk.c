@@ -40,6 +40,7 @@
   #pragma alloc_text(PAGE, FtpLinkCreated)
   #pragma alloc_text(PAGE, FtpUniqueIdChangeNotify)
   #pragma alloc_text(PAGE, FtpGetGptAttributes)
+  #pragma alloc_text(PAGE, FtpCheckOfflineOwner)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -1120,6 +1121,36 @@ FtpGetGptAttributes(
     }
 
     //GptAttributesInfo->GptAttributes = GetGptAttributes(LogicalDiskInfo);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+FtpCheckOfflineOwner(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp)
+{
+    PIO_STACK_LOCATION IoStack;
+
+    DPRINT("FtpCheckOfflineOwner: %p, %p\n", VolumeExtension, Irp);
+
+    if (!VolumeExtension->OfflineOwner)
+        return STATUS_SUCCESS;
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    if (IoStack->Parameters.DeviceIoControl.InputBufferLength < sizeof(GUID))
+    {
+        DPRINT1("FtpCheckOfflineOwner: STATUS_FILE_LOCK_CONFLICT\n");
+        return STATUS_FILE_LOCK_CONFLICT;
+    }
+
+    if (!IsEqualGUID((PGUID)Irp->AssociatedIrp.SystemBuffer, (PGUID)VolumeExtension->OfflineOwner))
+    {
+        DPRINT1("FtpCheckOfflineOwner: STATUS_FILE_LOCK_CONFLICT\n");
+        return STATUS_FILE_LOCK_CONFLICT;
+    }
 
     return STATUS_SUCCESS;
 }

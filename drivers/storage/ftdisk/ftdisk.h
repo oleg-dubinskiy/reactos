@@ -139,6 +139,7 @@ typedef struct _VOLUME_EXTENSION
     BOOLEAN IsReadOnlyPartition;
     BOOLEAN IsSystemPartition;
     LONG Lock;
+    PVOID OfflineOwner;
     LIST_ENTRY Link;
     ULONG VolumeNumber;
     LIST_ENTRY UniqueIdNotifyList;
@@ -364,6 +365,13 @@ FtpUniqueIdChangeNotify(
 NTSTATUS
 NTAPI
 FtpGetGptAttributes(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp
+);
+
+NTSTATUS
+NTAPI
+FtpCheckOfflineOwner(
     _In_ PVOLUME_EXTENSION VolumeExtension,
     _In_ PIRP Irp
 );
