@@ -41,6 +41,7 @@
   #pragma alloc_text(PAGE, FtpUniqueIdChangeNotify)
   #pragma alloc_text(PAGE, FtpGetGptAttributes)
   #pragma alloc_text(PAGE, FtpCheckOfflineOwner)
+  #pragma alloc_text(PAGE, FtpBootDriverReinitialization)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -2812,7 +2813,65 @@ FtpBootDriverReinitialization(
     _In_ PVOID Context,
     _In_ ULONG Count)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PROOT_EXTENSION RootExtension = Context;
+    PVOLUME_EXTENSION VolumeExtension;
+    PLIST_ENTRY Entry;
+    BOOTDISK_INFORMATION BootDiskInfo;
+    BOOLEAN IsBootAndSystem = TRUE;
+    BOOLEAN IsNoBootInfo = FALSE;
+    BOOLEAN IsNoSystemInfo = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("FtpBootDriverReinitialization: %p, %p, %X\n", DriverObject, Context, Count);
+
+    Status = IoGetBootDiskInformation(&BootDiskInfo, sizeof(BootDiskInfo));
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("FtpBootDriverReinitialization: Status %X\n", Status);
+        return;
+    }
+
+    if (BootDiskInfo.BootDeviceSignature != BootDiskInfo.SystemDeviceSignature)
+    {
+        IsBootAndSystem = FALSE;
+    }
+
+    if (BootDiskInfo.BootPartitionOffset != BootDiskInfo.SystemPartitionOffset)
+    {
+        IsBootAndSystem = FALSE;
+    }
+
+    if (!BootDiskInfo.BootDeviceSignature || !BootDiskInfo.BootPartitionOffset)
+    {
+        IsNoSystemInfo = TRUE;
+    }
+
+    if (!BootDiskInfo.SystemDeviceSignature || !BootDiskInfo.SystemPartitionOffset)
+    {
+        IsNoBootInfo = TRUE;
+    }
+
+    if (IsNoSystemInfo && IsNoBootInfo)
+        return;
+
+    FtpAcquire(RootExtension);
+    Entry = RootExtension->VolumeList.Flink;
+
+    while (Entry != &RootExtension->VolumeList)
+    {
+        VolumeExtension = CONTAINING_RECORD(Entry, VOLUME_EXTENSION, Link);
+
+        if (VolumeExtension->FtVolume)
+        {
+            DPRINT1("FtpBootDriverReinitialization: FIXME\n");
+            ASSERT(FALSE);if(IsBootAndSystem){;}
+        }
+
+        Entry = Entry->Flink;
+    }
+
+    RootExtension->IsBootReinitialized = TRUE;
+    FtpRelease(RootExtension);
 }
 
 /* INIT DRIVER ROUTINES *****************************************************/

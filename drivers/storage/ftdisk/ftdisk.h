@@ -376,6 +376,14 @@ FtpCheckOfflineOwner(
     _In_ PIRP Irp
 );
 
+VOID
+NTAPI
+FtpBootDriverReinitialization(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PVOID Context,
+    _In_ ULONG Count
+);
+
 #endif /* _FTDISK_H_ */
 
 /* EOF */
