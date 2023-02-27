@@ -12,6 +12,7 @@
 #include <initguid.h>
 #include <mountmgr.h>
 #include <mountdev.h>
+#include <ntddvol.h>
 #include <ntdddisk.h>
 #include <stdio.h>
 
@@ -356,6 +357,13 @@ FtpLinkCreated(
 NTSTATUS
 NTAPI
 FtpUniqueIdChangeNotify(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp
+);
+
+NTSTATUS
+NTAPI
+FtpGetGptAttributes(
     _In_ PVOLUME_EXTENSION VolumeExtension,
     _In_ PIRP Irp
 );

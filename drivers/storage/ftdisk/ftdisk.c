@@ -39,6 +39,7 @@
   #pragma alloc_text(PAGE, FtpQuerySuggestedLinkName)
   #pragma alloc_text(PAGE, FtpLinkCreated)
   #pragma alloc_text(PAGE, FtpUniqueIdChangeNotify)
+  #pragma alloc_text(PAGE, FtpGetGptAttributes)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -48,6 +49,7 @@
 /* GLOBALS *******************************************************************/
 
 GUID VOLMGR_VOLUME_MANAGER_GUID = {0x53F5630E, 0xB6BF, 0x11D0, {0X94, 0XF2, 0X00, 0XA0, 0XC9, 0X1E, 0XFB, 0X8B}};
+GUID PARTITION_BASIC_DATA_GUID  = {0xEBD0A0A2, 0xB9E5, 0x4433, {0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7}};
 
 /* FUNCTIONS ****************************************************************/
 
@@ -1041,6 +1043,85 @@ FtpUniqueIdChangeNotify(
     }
 
     return STATUS_PENDING;
+}
+
+NTSTATUS
+NTAPI
+FtpGetGptAttributes(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp)
+{
+    PVOLUME_GET_GPT_ATTRIBUTES_INFORMATION  GptAttributesInfo;
+    PIO_STACK_LOCATION IoStack;
+    ULONGLONG GptAttributes;
+    GUID Guid;
+    UCHAR PartitionType;
+    NTSTATUS Status;
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+    GptAttributesInfo = Irp->AssociatedIrp.SystemBuffer;
+    Irp->IoStatus.Information = sizeof(VOLUME_GET_GPT_ATTRIBUTES_INFORMATION);
+
+    if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < Irp->IoStatus.Information)
+    {
+        Irp->IoStatus.Information = 0;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!VolumeExtension->PartitionPdo)
+    {
+        Irp->IoStatus.Information = 0;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = FtpQueryPartitionInformation(VolumeExtension->RootExtension,
+                                          VolumeExtension->PartitionPdo,
+                                          NULL,
+                                          NULL,
+                                          NULL,
+                                          &PartitionType,
+                                          NULL,
+                                          &Guid,
+                                          NULL,
+                                          NULL,
+                                          &GptAttributes);
+    if (!NT_SUCCESS(Status))
+    {
+        Irp->IoStatus.Information = 0;
+        return Status;
+    }
+
+    if (VolumeExtension->IsGptPartition)
+    {
+        if (!IsEqualGUID(&Guid, &PARTITION_BASIC_DATA_GUID))
+        {
+            Irp->IoStatus.Information = 0;
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        GptAttributesInfo->GptAttributes = GptAttributes;
+        return STATUS_SUCCESS;
+    }
+
+    if (!IsRecognizedPartition_(PartitionType))
+    {
+        Irp->IoStatus.Information = 0;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    //HACK!!! FIXME for GPT partition
+
+    //LogicalDiskInfo = FindLogicalDiskInformation(...);
+    //if (!LogicalDiskInfo)
+    if (TRUE)
+    {
+        Irp->IoStatus.Information = 0;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    //GptAttributesInfo->GptAttributes = GetGptAttributes(LogicalDiskInfo);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
