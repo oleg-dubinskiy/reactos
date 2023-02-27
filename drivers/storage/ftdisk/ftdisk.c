@@ -38,6 +38,7 @@
   #pragma alloc_text(PAGE, FtpQueryDriveLetterFromRegistry)
   #pragma alloc_text(PAGE, FtpQuerySuggestedLinkName)
   #pragma alloc_text(PAGE, FtpLinkCreated)
+  #pragma alloc_text(PAGE, FtpUniqueIdChangeNotify)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -962,6 +963,84 @@ FtpCancelChangeNotify(
     Irp->IoStatus.Status = STATUS_CANCELLED;
 
     IoCompleteRequest(Irp, 0);
+}
+
+NTSTATUS
+NTAPI
+FtpUniqueIdChangeNotify(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp)
+{
+    PMOUNTDEV_UNIQUE_ID MountDevId;
+    PIO_STACK_LOCATION IoStack;
+    UCHAR IdBuffer[0x34]; // 52
+    ULONG Size;
+
+    DPRINT("FtpUniqueIdChangeNotify: %p, %p\n", VolumeExtension, Irp);
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+    Size = IoStack->Parameters.DeviceIoControl.InputBufferLength;
+
+    if (Size < sizeof(*MountDevId))
+    {
+        DPRINT1("FtpUniqueIdChangeNotify: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!VolumeExtension->PartitionPdo && !VolumeExtension->FtVolume)
+    {
+        DPRINT1("FtpUniqueIdChangeNotify: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (VolumeExtension->IsSuperFloppy)
+    {
+        DPRINT1("FtpUniqueIdChangeNotify: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    MountDevId = Irp->AssociatedIrp.SystemBuffer;
+
+    if (Size < (MountDevId->UniqueIdLength + sizeof(WCHAR)))
+    {
+        DPRINT1("FtpUniqueIdChangeNotify: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!IsListEmpty(&VolumeExtension->UniqueIdNotifyList))
+    {
+        DPRINT1("FtpUniqueIdChangeNotify: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!FtpQueryUniqueIdBuffer(VolumeExtension, &IdBuffer[2], (PUSHORT)IdBuffer))
+    {
+        DPRINT1("FtpUniqueIdChangeNotify: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Irp->Tail.Overlay.DriverContext[0] = VolumeExtension;
+
+    IoSetCancelRoutine(Irp, FtpCancelChangeNotify);
+
+    if (Irp->Cancel && !IoSetCancelRoutine(Irp, NULL))
+    {
+        DPRINT1("FtpUniqueIdChangeNotify: STATUS_CANCELLED\n");
+        return STATUS_CANCELLED;
+    }
+
+    IoMarkIrpPending(Irp);
+
+    InsertTailList(&VolumeExtension->UniqueIdNotifyList, &Irp->Tail.Overlay.ListEntry);
+
+    if (MountDevId->UniqueIdLength != *(PUSHORT)IdBuffer ||
+        RtlCompareMemory(MountDevId->UniqueId, &IdBuffer[2], MountDevId->UniqueIdLength) != MountDevId->UniqueIdLength)
+    {
+        DPRINT1("FtpUniqueIdChangeNotify: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    return STATUS_PENDING;
 }
 
 NTSTATUS
