@@ -36,6 +36,7 @@
   #pragma alloc_text(PAGE, FtpQueryUniqueId)
   #pragma alloc_text(PAGE, FtpQueryStableGuid)
   #pragma alloc_text(PAGE, FtpQueryDriveLetterFromRegistry)
+  #pragma alloc_text(PAGE, FtpQuerySuggestedLinkName)
 #endif
 
 #ifdef ALLOC_PRAGMA
@@ -858,6 +859,67 @@ FtpQueryDriveLetterFromRegistry(
                                                VolumeExtension->WholeDiskPdo,
                                                Param2);
     return DriveLetter;
+}
+
+NTSTATUS
+NTAPI
+FtpQuerySuggestedLinkName(
+    _In_ PVOLUME_EXTENSION VolumeExtension,
+    _In_ PIRP Irp)
+{
+    PMOUNTDEV_SUGGESTED_LINK_NAME MountDevLinkName;
+    PIO_STACK_LOCATION IoStack;
+    UNICODE_STRING Name;
+    WCHAR LinkString[0x1E]; // 30
+    ULONG BufferLength;
+    ULONG Size;
+    UCHAR DriveLetter;
+
+    DPRINT("FtpQuerySuggestedLinkName: %p, %p\n", VolumeExtension, Irp);
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    BufferLength = IoStack->Parameters.DeviceIoControl.OutputBufferLength;
+    if (BufferLength < 6)
+    {
+        DPRINT1("FtpQuerySuggestedLinkName: STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    DriveLetter = FtpQueryDriveLetterFromRegistry(VolumeExtension, (BufferLength >= 0x20));
+
+    if (VolumeExtension->FtVolume)
+    {
+        DPRINT1("FtpQuerySuggestedLinkName: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (!DriveLetter)
+    {
+        DPRINT1("FtpQuerySuggestedLinkName: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    swprintf(LinkString, L"\\DosDevices\\%c:", DriveLetter);
+    RtlInitUnicodeString(&Name, LinkString);
+
+    MountDevLinkName = Irp->AssociatedIrp.SystemBuffer;
+    MountDevLinkName->UseOnlyIfThereAreNoOtherLinks = TRUE;
+    MountDevLinkName->NameLength = Name.Length;
+
+    Size = (Name.Length + (2 * sizeof(WCHAR)));
+    Irp->IoStatus.Information = Size;
+
+    if (IoStack->Parameters.Read.Length < Size)
+    {
+        DPRINT1("FtpQuerySuggestedLinkName: STATUS_BUFFER_OVERFLOW\n");
+        Irp->IoStatus.Information = 6;
+        return STATUS_BUFFER_OVERFLOW;
+    }
+
+    RtlCopyMemory(MountDevLinkName->Name, Name.Buffer, MountDevLinkName->NameLength);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
