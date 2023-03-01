@@ -7,7 +7,7 @@
 
 #include "ftdisk.h"
 
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 #ifdef ALLOC_PRAGMA
@@ -147,7 +147,7 @@ FtpAllSystemsGo(
     {
         if (!(VolumeExtension->SelfDeviceObject->Flags & DO_SYSTEM_BOOT_PARTITION))
         {
-            DPRINT1("FtpAllSystemsGo: STATUS_DEVICE_OFF_LINE\n");
+            DPRINT("FtpAllSystemsGo: STATUS_DEVICE_OFF_LINE\n");
             KeReleaseSpinLock(&VolumeExtension->SpinLock, OldIrql);
 
             if (Irp)
@@ -549,7 +549,7 @@ FtpQueryDeviceName(
 
     if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < Size)
     {
-        DPRINT1("FtpQueryDeviceName: STATUS_BUFFER_OVERFLOW\n");
+        DPRINT("FtpQueryDeviceName: STATUS_BUFFER_OVERFLOW\n");
         Irp->IoStatus.Information = sizeof(*MountDevName);
         return STATUS_BUFFER_OVERFLOW;
     }
@@ -692,7 +692,7 @@ FtpQueryUniqueId(
 
     if (IoStack->Parameters.Read.Length < Size)
     {
-        DPRINT1("FtpQueryUniqueId: STATUS_BUFFER_OVERFLOW\n");
+        DPRINT("FtpQueryUniqueId: STATUS_BUFFER_OVERFLOW\n");
         Irp->IoStatus.Information = sizeof(*MountDevId);
         return STATUS_BUFFER_OVERFLOW;
     }
@@ -726,7 +726,7 @@ FtpQueryStableGuid(
 
     if (!VolumeExtension->IsGptPartition)
     {
-        DPRINT1("FtpQueryStableGuid: STATUS_UNSUCCESSFUL\n");
+        DPRINT("FtpQueryStableGuid: STATUS_UNSUCCESSFUL\n");
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -858,7 +858,7 @@ QueryDriveLetterFromRegistry(
     }
 
     DPRINT1("QueryDriveLetterFromRegistry: FIXME\n");
-    ASSERT(FALSE);if(StartingOffset){;}
+    ASSERT(FALSE);DriveLetter=0;if(StartingOffset){;}
 
     return DriveLetter;
 }
@@ -919,7 +919,7 @@ FtpQuerySuggestedLinkName(
 
     if (!DriveLetter)
     {
-        DPRINT1("FtpQuerySuggestedLinkName: STATUS_NOT_FOUND\n");
+        DPRINT("FtpQuerySuggestedLinkName: STATUS_NOT_FOUND\n");
         return STATUS_NOT_FOUND;
     }
 
@@ -935,7 +935,7 @@ FtpQuerySuggestedLinkName(
 
     if (IoStack->Parameters.Read.Length < Size)
     {
-        DPRINT1("FtpQuerySuggestedLinkName: STATUS_BUFFER_OVERFLOW\n");
+        DPRINT("FtpQuerySuggestedLinkName: STATUS_BUFFER_OVERFLOW\n");
         Irp->IoStatus.Information = 6;
         return STATUS_BUFFER_OVERFLOW;
     }
@@ -1679,7 +1679,7 @@ FtpQueryId(
     }
     else
     {
-        DPRINT1("FtpQueryId: not vaild IdType %X for (%p, %p)\n", IdType, VolumeExtension, Irp);
+        DPRINT("FtpQueryId: not supported IdType %X for (%p, %p)\n", IdType, VolumeExtension, Irp);
         return STATUS_NOT_SUPPORTED;
     }
 
@@ -2797,7 +2797,7 @@ FtpPnpPdo(
 
             if (!VolumeExtension->IsHidenPartition)
             {
-                DPRINT1("FtpPnpPdo: FIXME FtRegisterDevice()\n");
+                DPRINT("FtpPnpPdo: FIXME FtRegisterDevice()\n");
                 //ASSERT(FALSE);
                 //FtRegisterDevice(DeviceObject);
             }
@@ -2993,7 +2993,7 @@ FtpQueryRootId(
     }
     else
     {
-        DPRINT1("FtpQueryRootId: STATUS_NOT_SUPPORTED\n");
+        DPRINT("FtpQueryRootId: STATUS_NOT_SUPPORTED\n");
         return STATUS_NOT_SUPPORTED;
     }
 
@@ -3266,7 +3266,7 @@ FtpPnpFdo(
                 IoSkipCurrentIrpStackLocation(Irp);
 
                 Status = IoCallDriver(AttachedToDevice, Irp);
-                DPRINT1("FtpPnpFdo: Status (%X)\n", Status);
+                DPRINT("FtpPnpFdo: Status (%X)\n", Status);
                 return Status;
             }
 
@@ -3274,7 +3274,7 @@ FtpPnpFdo(
             {
                 IoSkipCurrentIrpStackLocation(Irp);
                 Status = IoCallDriver(AttachedToDevice, Irp);
-                DPRINT1("FtpPnpFdo: Status (%X)\n", Status);
+                DPRINT("FtpPnpFdo: Status (%X)\n", Status);
                 return Status;
             }
 
@@ -3647,7 +3647,7 @@ FtDiskAddDevice(
 
     RootFdo->Flags &= ~DO_DEVICE_INITIALIZING;
 
-    DPRINT1("FtDiskAddDevice: return STATUS_SUCCESS\n");
+    DPRINT("FtDiskAddDevice: return STATUS_SUCCESS\n");
     return STATUS_SUCCESS;
 }
 
