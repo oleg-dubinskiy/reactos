@@ -1,6 +1,8 @@
 add_subdirectory(class)
 add_subdirectory(floppy)
+add_subdirectory(ftdisk)
 add_subdirectory(ide)
 add_subdirectory(mountmgr)
 #add_subdirectory(partmgr)
+add_subdirectory(partmgr_old)
 add_subdirectory(port)
