@@ -7,7 +7,7 @@
 
 #include "partmgr.h"
 
-//#define NDEBUG
+#define NDEBUG
 #include <debug.h>
 
 #ifdef ALLOC_PRAGMA
@@ -19,7 +19,7 @@
   #pragma alloc_text(PAGE, PmDeviceControl)
   #pragma alloc_text(PAGE, PmPower)
   #pragma alloc_text(PAGE, PmWmi)
-  #pragma alloc_text(PAGE, PmkPnp)
+  #pragma alloc_text(PAGE, PmPnp)
   #pragma alloc_text(PAGE, PmDriverReinit)
   #pragma alloc_text(PAGE, PmTableSignatureCompareRoutine)
   #pragma alloc_text(PAGE, PmTableGuidCompareRoutine)
@@ -713,7 +713,7 @@ PmRegisterDevice(
         Status = IoWMIRegistrationControl(DeviceObject, (PartitionData | 1));
         if (NT_SUCCESS(Status))
         {
-            DPRINT1("PmRegisterDevice: FIXME PmWmiCounter...\n");
+            DPRINT("PmRegisterDevice: FIXME PmWmiCounter...\n");
         }
     }
 
@@ -1225,7 +1225,6 @@ PmDeviceControl(
             Status = PmCheckAndUpdateSignature(Extension, Param2, TRUE);
             break;
         }
-
         case IOCTL_DISK_GROW_PARTITION:
             DPRINT1("PmDeviceControl: FIXME\n");
             ASSERT(FALSE);Status=STATUS_NOT_IMPLEMENTED;
@@ -1247,7 +1246,7 @@ PmDeviceControl(
             break;
 
         default:
-            DPRINT1("PmDeviceControl: DeviceObject %p, Irp %p, Code %X\n", DeviceObject, Irp, IoStack->Parameters.DeviceIoControl.IoControlCode);
+            DPRINT("PmDeviceControl: DeviceObject %p, Irp %p, Code %X\n", DeviceObject, Irp, IoStack->Parameters.DeviceIoControl.IoControlCode);
             IoSkipCurrentIrpStackLocation(Irp);
             return IoCallDriver(Extension->AttachedToDevice, Irp);
     }
@@ -1538,7 +1537,7 @@ PmPnp(
         }
         default:
         {
-            DPRINT1("FtpPnpFdo: Unknown PNP IRP_MN_ (%X)\n", IoStack->MinorFunction);
+            DPRINT("FtpPnpFdo: Unknown PNP IRP_MN_ (%X)\n", IoStack->MinorFunction);
             IoSkipCurrentIrpStackLocation(Irp);
             return IoCallDriver(Extension->AttachedToDevice, Irp);
         }
@@ -1547,7 +1546,7 @@ PmPnp(
     Irp->IoStatus.Status = Status;
     IoCompleteRequest(Irp, 0);
 
-    DPRINT1("PmPnp: Status (%X)\n", Status);
+    DPRINT("PmPnp: Status (%X)\n", Status);
     return Status;
 }
 

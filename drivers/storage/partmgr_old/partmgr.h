@@ -224,6 +224,13 @@ PmGivePartition(
     _In_ PDEVICE_OBJECT WholeDiskPdo
 );
 
+NTSTATUS
+NTAPI
+PmVolumeManagerNotification(
+    _In_ PVOID NotificationStructure,
+    _In_ PVOID Context
+);
+
 #endif /* _PARTMGR_H_ */
 
 /* EOF */
