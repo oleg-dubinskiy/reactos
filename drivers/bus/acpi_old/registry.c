@@ -13,6 +13,7 @@
 #ifdef ALLOC_PRAGMA
   #pragma alloc_text(PAGE, OSCloseHandle)
   #pragma alloc_text(PAGE, OSOpenUnicodeHandle)
+  #pragma alloc_text(PAGE, OSOpenHandle)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -54,6 +55,36 @@ OSOpenUnicodeHandle(
     {
         DPRINT1("OSOpenUnicodeHandle: Status %X\n", Status);
     }
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+OSOpenHandle(
+    _In_ PSZ NameString,
+    _In_ HANDLE ParentKeyHandle,
+    _In_ PHANDLE KeyHandle)
+{
+    UNICODE_STRING Name;
+    ANSI_STRING AnsiName;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("OSOpenHandle: '%s'\n", NameString);
+
+    RtlInitAnsiString(&AnsiName, NameString);
+
+    Status = RtlAnsiStringToUnicodeString(&Name, &AnsiName, TRUE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("OSOpenHandle: Status %X\n", Status);
+        return Status;
+    }
+
+    Status = OSOpenUnicodeHandle(&Name, ParentKeyHandle, KeyHandle);
+
+    RtlFreeUnicodeString(&Name);
 
     return Status;
 }

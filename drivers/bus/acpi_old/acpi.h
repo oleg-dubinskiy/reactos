@@ -67,6 +67,14 @@ OSOpenUnicodeHandle(
     _In_ PHANDLE KeyHandle
 );
 
+NTSTATUS
+NTAPI
+OSOpenHandle(
+    _In_ PSZ NameString,
+    _In_ HANDLE ParentKeyHandle,
+    _In_ PHANDLE KeyHandle
+);
+
 #endif /* _ACPI_H_ */
 
 /* EOF */
