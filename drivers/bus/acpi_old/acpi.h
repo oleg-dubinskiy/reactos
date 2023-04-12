@@ -53,6 +53,11 @@ ACPIInitReadRegistryKeys(
     VOID
 );
 
+NTSTATUS
+NTAPI
+OSCloseHandle(
+    _In_ HANDLE Handle
+);
 
 #endif /* _ACPI_H_ */
 

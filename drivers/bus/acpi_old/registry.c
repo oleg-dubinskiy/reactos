@@ -10,10 +10,24 @@
 //#define NDEBUG
 #include <debug.h>
 
+#ifdef ALLOC_PRAGMA
+  #pragma alloc_text(PAGE, OSCloseHandle)
+#endif
+
 /* GLOBALS *******************************************************************/
 
 
 /* FUNCTIONS *****************************************************************/
+
+NTSTATUS
+NTAPI
+OSCloseHandle(
+    _In_ HANDLE Handle)
+{
+    PAGED_CODE();
+    DPRINT("OSCloseHandle: %p\n", Handle);
+    return ZwClose(Handle);
+}
 
 VOID
 NTAPI
