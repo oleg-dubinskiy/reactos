@@ -11,12 +11,27 @@
 #include <ntddk.h>
 #include <stdio.h>
 
+/* STRUCTURES ***************************************************************/
+
+
+/* ACPI DRIVER **************************************************************/
+
+typedef struct _ACPI_HAL_DISPATCH_TABLE
+{
+    ULONG Signature;
+    ULONG Version;
+    PVOID Function1;
+    PVOID Function2;
+    PVOID Function3;
+} ACPI_HAL_DISPATCH_TABLE, *PACPI_HAL_DISPATCH_TABLE;
+
 typedef struct _DEVICE_EXTENSION
 {
     ULONG Signature;
 
 } DEVICE_EXTENSION, *PDEVICE_EXTENSION;
 
+/* FUNCTIONS ****************************************************************/
 
 /* acpiinit.c */
 NTSTATUS

@@ -16,6 +16,8 @@
 
 /* GLOBALS *******************************************************************/
 
+ACPI_HAL_DISPATCH_TABLE AcpiHalDispatchTable;
+PPM_DISPATCH_TABLE PmHalDispatchTable;
 
 /* FUNCTIOS *****************************************************************/
 
@@ -38,11 +40,42 @@ ACPIFilterFastIoDetachCallback(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+/* HAL FUNCTIOS *************************************************************/
+
+VOID
+NTAPI
+ACPIGpeHalEnableDisableEvents(
+    _In_ BOOLEAN IsEnable)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+ACPIEnableInitializeACPI(
+    _In_ BOOLEAN Param1)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+ACPIWakeEnableWakeEvents(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 VOID
 NTAPI
 ACPIInitHalDispatchTable(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    AcpiHalDispatchTable.Signature = 'ACPI';
+    AcpiHalDispatchTable.Version = 1;
+    AcpiHalDispatchTable.Function1 = ACPIGpeHalEnableDisableEvents;
+    AcpiHalDispatchTable.Function2 = ACPIEnableInitializeACPI;
+    AcpiHalDispatchTable.Function3 = ACPIWakeEnableWakeEvents;
+
+    HalInitPowerManagement((PPM_DISPATCH_TABLE)&AcpiHalDispatchTable, &PmHalDispatchTable);
 }
 
 /* EOF */
