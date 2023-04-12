@@ -25,10 +25,53 @@ typedef struct _ACPI_HAL_DISPATCH_TABLE
     PVOID Function3;
 } ACPI_HAL_DISPATCH_TABLE, *PACPI_HAL_DISPATCH_TABLE;
 
+typedef struct _ACPI_DEVICE_POWER_NODE
+{
+    struct _ACPI_DEVICE_POWER_NODE* Next;
+    struct _DEVICE_EXTENSION* DeviceExtension;
+    LIST_ENTRY DevicePowerListEntry;
+} ACPI_DEVICE_POWER_NODE, *PACPI_DEVICE_POWER_NODE;
+
+typedef struct _ACPI_POWER_INFO
+{
+    DEVICE_POWER_STATE DevicePowerMatrix[7];
+    SYSTEM_POWER_STATE SystemWakeLevel;
+    DEVICE_POWER_STATE DeviceWakeLevel;
+    LIST_ENTRY PowerRequestListEntry;
+} ACPI_POWER_INFO, *PACPI_POWER_INFO;
+
+typedef struct _IRP_DISPATCH_TABLE
+{
+    PDRIVER_DISPATCH CreateClose;
+    PDRIVER_DISPATCH DeviceControl;
+    PDRIVER_DISPATCH PnpStartDevice;
+    PDRIVER_DISPATCH* Pnp;
+    PDRIVER_DISPATCH* Power;
+    PDRIVER_DISPATCH SystemControl;
+    PDRIVER_DISPATCH Other;
+    VOID (NTAPI* Worker)(struct _DEVICE_EXTENSION*, ULONG);
+} IRP_DISPATCH_TABLE, *PIRP_DISPATCH_TABLE;
+
 typedef struct _DEVICE_EXTENSION
 {
     ULONG Signature;
-
+    PIRP_DISPATCH_TABLE DispatchTable;
+    ACPI_POWER_INFO PowerInfo;
+    union
+    {
+        PCHAR DeviceID;
+        PCHAR Address;
+    };
+    PCHAR InstanceID;
+    LONG OutstandingIrpCount;
+    LONG ReferenceCount;
+    PDEVICE_OBJECT DeviceObject;
+    PDEVICE_OBJECT TargetDeviceObject;
+    PDEVICE_OBJECT PhysicalDeviceObject;
+    LIST_ENTRY ChildDeviceList;
+    LIST_ENTRY SiblingDeviceList;
+    LIST_ENTRY EjectDeviceHead;
+    LIST_ENTRY EjectDeviceList;
 } DEVICE_EXTENSION, *PDEVICE_EXTENSION;
 
 /* FUNCTIONS ****************************************************************/
@@ -61,6 +104,35 @@ NTAPI
 ACPIInitHalDispatchTable(
      VOID
 );
+
+NTSTATUS NTAPI ACPIIrpDispatchDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIDispatchForwardIrp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIDispatchIrpSuccess(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIDispatchWmiLog(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
+NTSTATUS NTAPI ACPIRootIrpStartDevice(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIRootIrpQueryRemoveOrStopDevice(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIRootIrpRemoveDevice(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIRootIrpCancelRemoveOrStopDevice(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIRootIrpStopDevice(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIRootIrpQueryDeviceRelations(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIRootIrpQueryInterface(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIRootIrpQueryCapabilities(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpDeviceUsageNotification(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
+NTSTATUS NTAPI ACPIWakeWaitIrp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIDispatchForwardPowerIrp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIRootIrpSetPower(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS NTAPI ACPIRootIrpQueryPower(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
+ULONGLONG
+NTAPI
+ACPIInternalUpdateFlags(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ ULONGLONG InputFlags,
+    _In_ BOOLEAN IsResetFlags
+);
+
 
 /* registry.c */
 VOID
