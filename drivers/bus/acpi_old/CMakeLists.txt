@@ -1,6 +1,8 @@
 
 list(APPEND ACPI_SOURCE
     acpiinit.c
+    dispatch.c
+    registry.c
     acpi.h)
 
 add_library(acpi MODULE ${ACPI_SOURCE} acpi.rc)
