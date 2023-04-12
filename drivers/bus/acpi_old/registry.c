@@ -12,6 +12,7 @@
 
 #ifdef ALLOC_PRAGMA
   #pragma alloc_text(PAGE, OSCloseHandle)
+  #pragma alloc_text(PAGE, OSOpenUnicodeHandle)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -27,6 +28,34 @@ OSCloseHandle(
     PAGED_CODE();
     DPRINT("OSCloseHandle: %p\n", Handle);
     return ZwClose(Handle);
+}
+
+NTSTATUS
+NTAPI
+OSOpenUnicodeHandle(
+    _In_ PUNICODE_STRING Name,
+    _In_ HANDLE ParentKeyHandle,
+    _In_ PHANDLE KeyHandle)
+{
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("OSOpenUnicodeHandle: '%wZ'\n", Name);
+
+    InitializeObjectAttributes(&ObjectAttributes,
+                               Name,
+                               (OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE),
+                               ParentKeyHandle,
+                               NULL);
+
+    Status = ZwOpenKey(KeyHandle, KEY_READ, &ObjectAttributes);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("OSOpenUnicodeHandle: Status %X\n", Status);
+    }
+
+    return Status;
 }
 
 VOID

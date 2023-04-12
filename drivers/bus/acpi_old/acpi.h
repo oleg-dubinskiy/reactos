@@ -59,6 +59,14 @@ OSCloseHandle(
     _In_ HANDLE Handle
 );
 
+NTSTATUS
+NTAPI
+OSOpenUnicodeHandle(
+    _In_ PUNICODE_STRING Name,
+    _In_ HANDLE ParentKeyHandle,
+    _In_ PHANDLE KeyHandle
+);
+
 #endif /* _ACPI_H_ */
 
 /* EOF */
