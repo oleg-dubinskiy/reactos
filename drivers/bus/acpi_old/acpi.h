@@ -75,6 +75,15 @@ OSOpenHandle(
     _In_ PHANDLE KeyHandle
 );
 
+NTSTATUS
+NTAPI
+OSReadRegValue(
+    _In_ PSZ SourceString,
+    _In_ HANDLE Handle,
+    _In_ PVOID ValueEntry,
+    _Out_ ULONG *OutMaximumLength
+);
+
 #endif /* _ACPI_H_ */
 
 /* EOF */
