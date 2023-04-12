@@ -324,8 +324,36 @@ ACPIInternalUpdateFlags(
     _In_ ULONGLONG InputFlags,
     _In_ BOOLEAN IsResetFlags)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    ULONGLONG ReturnFlags;
+    ULONGLONG ExChange;
+    ULONGLONG Comperand;
+
+    if (IsResetFlags)
+    {
+        ReturnFlags = DeviceExtension->Flags;
+        do
+        {
+            Comperand = ReturnFlags;
+            ExChange = Comperand & ~InputFlags;
+
+            ReturnFlags = ExInterlockedCompareExchange64((PLONGLONG)DeviceExtension, (PLONGLONG)&ExChange, (PLONGLONG)&Comperand, NULL);
+        }
+        while (Comperand != ReturnFlags);
+    }
+    else
+    {
+        ReturnFlags = DeviceExtension->Flags;
+        do
+        {
+            Comperand = ReturnFlags;
+            ExChange = Comperand | InputFlags;
+
+            ReturnFlags = ExInterlockedCompareExchange64((PLONGLONG)DeviceExtension, (PLONGLONG)&ExChange, (PLONGLONG)&Comperand, NULL);
+        }
+        while (Comperand != ReturnFlags);
+    }
+
+    return ReturnFlags;
 }
 
 

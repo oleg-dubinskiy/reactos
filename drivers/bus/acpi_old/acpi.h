@@ -54,6 +54,71 @@ typedef struct _IRP_DISPATCH_TABLE
 
 typedef struct _DEVICE_EXTENSION
 {
+    union
+    {
+        ULONGLONG Flags;
+        struct
+        {
+            ULONGLONG Type_Never_Present : 1;
+            ULONGLONG Type_Not_Present : 1;
+            ULONGLONG Type_Removed : 1;
+            ULONGLONG Type_Not_Found : 1;
+            ULONGLONG Type_Fdo : 1;
+            ULONGLONG Type_Pdo : 1;
+            ULONGLONG Type_Filter : 1;
+            ULONGLONG Type_Surprise_Removed : 1;
+            ULONGLONG Type_Not_Enumerated : 1;
+            ULONGLONG Reserved1 : 7;
+            ULONGLONG Cap_Wake : 1;
+            ULONGLONG Cap_Raw : 1;
+            ULONGLONG Cap_Button : 1;
+            ULONGLONG Cap_Always_PS0 : 1;
+            ULONGLONG Cap_No_Filter : 1;
+            ULONGLONG Cap_No_Stop : 1;
+            ULONGLONG Cap_No_Override : 1;
+            ULONGLONG Cap_ISA : 1;
+            ULONGLONG Cap_EIO : 1;
+            ULONGLONG Cap_PCI : 1;
+            ULONGLONG Cap_Serial : 1;
+            ULONGLONG Cap_Thermal_Zone : 1;
+            ULONGLONG Cap_LinkNode : 1;
+            ULONGLONG Cap_No_Show_in_UI : 1;
+            ULONGLONG Cap_Never_show_in_UI : 1;
+            ULONGLONG Cap_Start_in_D3 : 1;
+            ULONGLONG Cap_PCI_Device : 1;
+            ULONGLONG Cap_PIC_Device : 1;
+            ULONGLONG Cap_Unattached_Dock : 1;
+            ULONGLONG Cap_No_Disable_Wake : 1;
+            ULONGLONG Cap_Processor : 1;
+            ULONGLONG Cap_Container : 1;
+            ULONGLONG Cap_PCI_Bar_Target : 1;
+            ULONGLONG Cap_No_Remove_or_Eject : 1;
+            ULONGLONG Reserved2 : 1;
+            ULONGLONG Prop_Rebuild_Children : 1;
+            ULONGLONG Prop_Invalid_Relations : 1;
+            ULONGLONG Prop_Unloading : 1;
+            ULONGLONG Prop_Address : 1;
+            ULONGLONG Prop_HID : 1;
+            ULONGLONG Prop_UID : 1;
+            ULONGLONG Prop_Fixed_HID : 1;
+            ULONGLONG Prop_Fixed_UID : 1;
+            ULONGLONG Prop_Failed_Init : 1;
+            ULONGLONG Prop_Srs_Present : 1;
+            ULONGLONG Prop_No_Object : 1;
+            ULONGLONG Prop_Exclusive : 1;
+            ULONGLONG Prop_Ran_INI : 1;
+            ULONGLONG Prop_Device_Enabled : 1;
+            ULONGLONG Prop_Device_Failed : 1;
+            ULONGLONG Prop_Acpi_Power : 1;
+            ULONGLONG Prop_Dock : 1;
+            ULONGLONG Prop_Built_Power_Table : 1;
+            ULONGLONG Prop_Has_PME : 1;
+            ULONGLONG Prop_No_Lid_Action : 1;
+            ULONGLONG Prop_Fixed_Address : 1;
+            ULONGLONG Prop_Callback : 1;
+            ULONGLONG Prop_Fixed_CiD : 1;
+        } UFlags;
+    };
     ULONG Signature;
     PIRP_DISPATCH_TABLE DispatchTable;
     ACPI_POWER_INFO PowerInfo;
