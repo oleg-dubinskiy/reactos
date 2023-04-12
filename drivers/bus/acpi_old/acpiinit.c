@@ -20,6 +20,16 @@ PDRIVER_OBJECT AcpiDriverObject;
 UNICODE_STRING AcpiRegistryPath;
 FAST_IO_DISPATCH ACPIFastIoDispatch;
 
+KSPIN_LOCK ACPIWorkerSpinLock;
+
+WORK_QUEUE_ITEM ACPIWorkItem;
+
+KEVENT ACPIWorkToDoEvent;
+KEVENT ACPITerminateEvent;
+
+LIST_ENTRY ACPIDeviceWorkQueue;
+LIST_ENTRY ACPIWorkQueue;
+
 /* INIT DRIVER ROUTINES *****************************************************/
 
 NTSTATUS
@@ -42,9 +52,51 @@ ACPIUnload(
 
 VOID
 NTAPI
-ACPIInitializeWorker()
+ACPIWorkerThread(PVOID Context)
 {
     UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+ACPIWorker(PVOID StartContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+ACPIInitializeWorker()
+{
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    PVOID Object;
+    HANDLE ThreadHandle;
+
+    DPRINT("ACPIInitializeWorker()\n");
+
+    KeInitializeSpinLock(&ACPIWorkerSpinLock);
+
+    ExInitializeWorkItem(&ACPIWorkItem, ACPIWorkerThread, NULL);
+
+    KeInitializeEvent(&ACPIWorkToDoEvent, NotificationEvent, FALSE);
+    KeInitializeEvent(&ACPITerminateEvent, NotificationEvent, FALSE);
+
+    InitializeListHead(&ACPIDeviceWorkQueue);
+    InitializeListHead(&ACPIWorkQueue);
+
+    InitializeObjectAttributes(&ObjectAttributes, NULL, 0, NULL, NULL);
+
+    if (PsCreateSystemThread(&ThreadHandle, THREAD_ALL_ACCESS, &ObjectAttributes, 0, NULL, ACPIWorker, NULL))
+    {
+        DPRINT1("DriverEntry: PsCreateSystemThread() failed\n");
+        ASSERT(FALSE);
+    }
+
+    if (ObReferenceObjectByHandle(ThreadHandle, THREAD_ALL_ACCESS, NULL, KernelMode, &Object, NULL))
+    {
+        DPRINT1("DriverEntry: ObReferenceObjectByHandle() failed\n");
+        ASSERT(FALSE);
+    }
 }
 
 NTSTATUS
