@@ -9,6 +9,7 @@
 #define _ACPI_H_
 
 #include <ntddk.h>
+#include <stdio.h>
 
 typedef struct _DEVICE_EXTENSION
 {

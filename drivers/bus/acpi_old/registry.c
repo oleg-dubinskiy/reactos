@@ -21,6 +21,8 @@
 
 /* GLOBALS *******************************************************************/
 
+ANSI_STRING AcpiProcessorString;
+ULONG AcpiOverrideAttributes;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -394,7 +396,127 @@ VOID
 NTAPI
 ACPIInitReadRegistryKeys(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PCHAR VendorIdentifier = NULL;
+    PCHAR Identifier = NULL;
+    HANDLE KeyHandle = NULL;
+    PCHAR PtrToStepping;
+    PCHAR Buffer;
+    ULONG VendorIdentifierSize;
+    ULONG IdentifierSize;
+    ULONG MaximumLength;
+    ULONG Length;
+    ULONG Size;
+    NTSTATUS Status;
+
+    DPRINT("ACPIInitReadRegistryKeys()\n");
+
+    MaximumLength = sizeof(AcpiOverrideAttributes);
+
+    Status = OSReadRegValue("Attributes", NULL, &AcpiOverrideAttributes, &MaximumLength);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInitReadRegistryKeys: Status %X\n", Status);
+        AcpiOverrideAttributes = 0;
+    }
+
+    AcpiProcessorString.Length = 0;
+    AcpiProcessorString.MaximumLength = 0;
+    AcpiProcessorString.Buffer = NULL;
+
+    Status = OSOpenHandle("\\Registry\\Machine\\Hardware\\Description\\System\\CentralProcessor\\0", NULL, &KeyHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInitReadRegistryKeys: Status %X\n", Status);
+    }
+
+    IdentifierSize = 0x28;
+
+    while (TRUE)
+    {
+        if (Identifier)
+            ExFreePoolWithTag(Identifier, 'SpcA');
+
+        Identifier = ExAllocatePoolWithTag(PagedPool, IdentifierSize, 'SpcA');
+        if (!Identifier)
+            break;
+
+        RtlZeroMemory(Identifier, IdentifierSize);
+
+        MaximumLength = IdentifierSize;
+        IdentifierSize += 0xA;
+
+        Status = OSReadRegValue("Identifier", KeyHandle, Identifier, &MaximumLength);
+        if (Status == STATUS_BUFFER_OVERFLOW)
+            continue;
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIInitReadRegistryKeys: Status %X\n", Status);
+            break;
+        }
+
+        PtrToStepping = strstr(Identifier, "Stepping");
+        if (PtrToStepping)
+            *(PtrToStepping - 1) = 0;
+
+        Size = strlen(Identifier);
+        VendorIdentifierSize = 0xA;
+
+        while (TRUE)
+        {
+            if (VendorIdentifier)
+                ExFreePoolWithTag(VendorIdentifier, 'SpcA');
+
+            VendorIdentifier = ExAllocatePoolWithTag(PagedPool, VendorIdentifierSize, 'SpcA');
+            if (!VendorIdentifier)
+                break;
+
+            RtlZeroMemory(VendorIdentifier, VendorIdentifierSize);
+
+            MaximumLength = VendorIdentifierSize;
+            VendorIdentifierSize += 0xA;
+
+            Status = OSReadRegValue("VendorIdentifier", KeyHandle, VendorIdentifier, &MaximumLength);
+            if (Status == STATUS_BUFFER_OVERFLOW)
+                continue;
+
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("ACPIInitReadRegistryKeys: Status %X\n", Status);
+                goto Exit;
+            }
+
+            Length = (Size + MaximumLength + 3);
+
+            Buffer = ExAllocatePoolWithTag(0, Length, 'SpcA');
+            if (!Buffer)
+            {
+                DPRINT1("ACPIInitReadRegistryKeys: Allocate failed\n");
+                goto Exit;
+            }
+
+            sprintf(Buffer, "%s - %s", VendorIdentifier, Identifier);
+
+            AcpiProcessorString.Buffer = Buffer;
+            AcpiProcessorString.MaximumLength = Length;
+            AcpiProcessorString.Length = Length;
+
+            goto Exit;
+        }
+
+        break;
+    }
+
+Exit:
+
+    if (KeyHandle)
+        OSCloseHandle(KeyHandle);
+
+    if (VendorIdentifier)
+        ExFreePoolWithTag(VendorIdentifier, 'SpcA');
+
+    if (Identifier)
+        ExFreePoolWithTag(Identifier, 'SpcA');
 }
 
 /* EOF */
