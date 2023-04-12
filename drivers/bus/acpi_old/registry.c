@@ -213,7 +213,7 @@ OSReadRegValue(
             *OutMaximumLength = KeyValueInfo->DataLength;
 
             ExFreePool(KeyValueInfo);
-            STATUS_SUCCESS;
+            return STATUS_SUCCESS;
         }
 
         ExFreePool(KeyValueInfo);
@@ -240,7 +240,7 @@ OSReadRegValue(
         RtlCopyMemory(OutValue, AnsiName.Buffer, AnsiName.MaximumLength);
 
         RtlFreeAnsiString(&AnsiName);
-        STATUS_SUCCESS;
+        return STATUS_SUCCESS;
     }
 
     DPRINT1("OSReadRegValue: %X < %X\n", *OutMaximumLength, AnsiName.MaximumLength);
