@@ -86,6 +86,12 @@ OSReadRegValue(
 
 NTSTATUS
 NTAPI
+OSReadAcpiConfigurationData(
+    _Out_ PKEY_VALUE_PARTIAL_INFORMATION_ALIGN64* OutKeyInfo
+);
+
+NTSTATUS
+NTAPI
 OSGetRegistryValue(
     _In_ HANDLE KeyHandle,
     _In_ PWSTR NameString,

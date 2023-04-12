@@ -16,6 +16,7 @@
   #pragma alloc_text(PAGE, OSOpenHandle)
   #pragma alloc_text(PAGE, OSReadRegValue)
   #pragma alloc_text(PAGE, OSGetRegistryValue)
+  #pragma alloc_text(PAGE, OSReadAcpiConfigurationData)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -288,6 +289,105 @@ OSGetRegistryValue(
     *OutValue = Value;
 
     return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+OSReadAcpiConfigurationData(
+    _Out_ PKEY_VALUE_PARTIAL_INFORMATION_ALIGN64* OutKeyInfo)
+{
+    PKEY_VALUE_PARTIAL_INFORMATION_ALIGN64 KeyInfo;
+    UNICODE_STRING AcpiBiosName;
+    UNICODE_STRING CurrentName;
+    UNICODE_STRING KeyName;
+    WCHAR AcpiBiosStrBuffer[4];
+    HANDLE Handle;
+    HANDLE KeyHandle;
+    ULONG Value;
+    ULONG ix;
+    NTSTATUS Status;
+    BOOLEAN Result;
+
+    DPRINT("OSReadAcpiConfigurationData()\n");
+
+    if (!OutKeyInfo)
+    {
+        ASSERT(OutKeyInfo != NULL);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    *OutKeyInfo = NULL;
+
+    RtlInitUnicodeString(&KeyName, L"\\Registry\\Machine\\Hardware\\Description\\System\\MultiFunctionAdapter");
+
+    Status = OSOpenUnicodeHandle(&KeyName, NULL, &Handle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("OSReadAcpiConfigurationData: Cannot open MFA Handle = %08lx\n", Status);
+        DbgBreakPoint();
+        return Status;
+    }
+
+    RtlInitUnicodeString(&AcpiBiosName, L"ACPI BIOS");
+
+    KeyName.MaximumLength = 8;
+    KeyName.Buffer = AcpiBiosStrBuffer;
+
+    for (Value = 0; Value < 0x3E7; Value++) // 999
+    {
+        RtlIntegerToUnicodeString(Value, 0xA, &KeyName);
+
+        Status = OSOpenUnicodeHandle(&KeyName, Handle, &KeyHandle);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("OSReadAcpiConfigurationData: Cannot open MFA %ws = %08lx\n", KeyName.Buffer, Status);
+            DbgBreakPoint();
+            OSCloseHandle(Handle);
+            return Status;
+        }
+
+        Status = OSGetRegistryValue(KeyHandle, L"Identifier", (PVOID *)OutKeyInfo);
+        if (!NT_SUCCESS(Status))
+        {
+            OSCloseHandle(Handle);
+            continue;
+        }
+
+        KeyInfo = *OutKeyInfo;
+
+        CurrentName.Buffer = (PWSTR)KeyInfo->Data;
+        CurrentName.MaximumLength = (USHORT)KeyInfo->DataLength;
+
+        for (ix = (CurrentName.MaximumLength / sizeof(WCHAR)); ix; ix--)
+        {
+            if (CurrentName.Buffer[ix - 1])
+                break;
+        }
+
+        CurrentName.Length = (ix * sizeof(WCHAR));
+
+        Result = RtlEqualUnicodeString(&AcpiBiosName, &CurrentName, TRUE);
+        ExFreePool(*OutKeyInfo);
+
+        if (!Result)
+        {
+            OSCloseHandle(KeyHandle);
+            continue;
+        }
+
+        Status = OSGetRegistryValue(KeyHandle, L"Configuration Data", (PVOID *)OutKeyInfo);
+        OSCloseHandle(KeyHandle);
+
+        if (NT_SUCCESS(Status))
+        {
+            OSCloseHandle(Handle);
+            return STATUS_SUCCESS;
+        }
+    }
+
+    DPRINT1("OSReadAcpiConfigurationData - Could not find entry\n");
+    DbgBreakPoint();
+    return STATUS_OBJECT_NAME_NOT_FOUND;
 }
 
 VOID
