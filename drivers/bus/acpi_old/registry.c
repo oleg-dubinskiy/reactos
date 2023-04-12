@@ -15,6 +15,7 @@
   #pragma alloc_text(PAGE, OSOpenUnicodeHandle)
   #pragma alloc_text(PAGE, OSOpenHandle)
   #pragma alloc_text(PAGE, OSReadRegValue)
+  #pragma alloc_text(PAGE, OSGetRegistryValue)
 #endif
 
 /* GLOBALS *******************************************************************/
@@ -244,6 +245,49 @@ OSReadRegValue(
     RtlFreeAnsiString(&AnsiName);
 
     return STATUS_BUFFER_OVERFLOW;
+}
+
+NTSTATUS
+NTAPI
+OSGetRegistryValue(
+    _In_ HANDLE KeyHandle,
+    _In_ PWSTR NameString,
+    _In_ PVOID* OutValue)
+{
+    UNICODE_STRING Name;
+    ULONG ResultLength;
+    PVOID Value;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("OSGetRegistryValue: '%S', %p\n", NameString, KeyHandle);
+
+    RtlInitUnicodeString(&Name, NameString);
+
+    Status = ZwQueryValueKey(KeyHandle, &Name, KeyValuePartialInformationAlign64, NULL, 0, &ResultLength);
+
+    if (Status != STATUS_BUFFER_OVERFLOW && Status != STATUS_BUFFER_TOO_SMALL)
+    {
+        return Status;
+    }
+
+    Value = ExAllocatePoolWithTag(0, ResultLength, 'SpcA');
+    if (!Value)
+    {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        return Status;
+    }
+
+    Status = ZwQueryValueKey(KeyHandle, &Name, KeyValuePartialInformationAlign64, Value, ResultLength, &ResultLength);
+    if (!NT_SUCCESS(Status))
+    {
+        ExFreePoolWithTag(Value, 'SpcA');
+        return Status;
+    }
+
+    *OutValue = Value;
+
+    return STATUS_SUCCESS;
 }
 
 VOID

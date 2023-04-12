@@ -84,6 +84,14 @@ OSReadRegValue(
     _Out_ ULONG *OutMaximumLength
 );
 
+NTSTATUS
+NTAPI
+OSGetRegistryValue(
+    _In_ HANDLE KeyHandle,
+    _In_ PWSTR NameString,
+    _In_ PVOID* OutValue
+);
+
 #endif /* _ACPI_H_ */
 
 /* EOF */
