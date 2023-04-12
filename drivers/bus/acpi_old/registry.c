@@ -15,5 +15,11 @@
 
 /* FUNCTIONS *****************************************************************/
 
+VOID
+NTAPI
+ACPIInitReadRegistryKeys(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
 
 /* EOF */
