@@ -136,8 +136,14 @@ NTAPI
 ACPIInternalDecrementIrpReferenceCount(
     _In_ PDEVICE_EXTENSION DeviceExtension)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    LONG OldReferenceCount;
+
+    OldReferenceCount = InterlockedDecrement(&DeviceExtension->OutstandingIrpCount);
+
+    if (!OldReferenceCount)
+        OldReferenceCount = KeSetEvent(DeviceExtension->RemoveEvent, 0, FALSE);
+
+    return OldReferenceCount;
 }
 
 NTSTATUS
