@@ -20,20 +20,22 @@ PDRIVER_OBJECT AcpiDriverObject;
 UNICODE_STRING AcpiRegistryPath;
 FAST_IO_DISPATCH ACPIFastIoDispatch;
 PDEVICE_EXTENSION RootDeviceExtension;
+WORK_QUEUE_ITEM ACPIWorkItem;
+KDPC AcpiBuildDpc;
 
 NPAGED_LOOKASIDE_LIST DeviceExtensionLookAsideList;
-
+NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
 KSPIN_LOCK AcpiDeviceTreeLock;
+KSPIN_LOCK AcpiBuildQueueLock;
 KSPIN_LOCK ACPIWorkerSpinLock;
-
-WORK_QUEUE_ITEM ACPIWorkItem;
-
 KEVENT ACPIWorkToDoEvent;
 KEVENT ACPITerminateEvent;
-
 LIST_ENTRY ACPIDeviceWorkQueue;
 LIST_ENTRY ACPIWorkQueue;
 LIST_ENTRY AcpiBuildDeviceList;
+LIST_ENTRY AcpiBuildSynchronizationList;
+LIST_ENTRY AcpiBuildQueueList;
+BOOLEAN AcpiBuildDpcRunning;
 
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 
@@ -212,6 +214,7 @@ ACPIInitializeWorker()
 
     InitializeListHead(&ACPIDeviceWorkQueue);
     InitializeListHead(&ACPIWorkQueue);
+    InitializeListHead(&AcpiBuildQueueList);
 
     InitializeObjectAttributes(&ObjectAttributes, NULL, 0, NULL, NULL);
 
@@ -254,11 +257,16 @@ DriverEntry(
 
     ACPIInitReadRegistryKeys();
 
+    KeInitializeDpc(&AcpiBuildDpc, ACPIBuildDeviceDpc, NULL);
+
     KeInitializeSpinLock(&AcpiDeviceTreeLock);
+    KeInitializeSpinLock(&AcpiBuildQueueLock);
 
     InitializeListHead(&AcpiBuildDeviceList);
+    InitializeListHead(&AcpiBuildSynchronizationList);
 
     ExInitializeNPagedLookasideList(&DeviceExtensionLookAsideList, NULL, NULL, 0, sizeof(DEVICE_EXTENSION), 'DpcA', 0x40);
+    ExInitializeNPagedLookasideList(&BuildRequestLookAsideList, NULL, NULL, 0, sizeof(ACPI_BUILD_REQUEST), 'DpcA', 0x38);
 
     ACPIInitializeWorker();
 

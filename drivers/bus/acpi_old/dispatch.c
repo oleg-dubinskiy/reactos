@@ -82,8 +82,14 @@ IRP_DISPATCH_TABLE AcpiFdoIrpDispatch =
     NULL
 };
 
+extern NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
 extern KSPIN_LOCK AcpiDeviceTreeLock;
+extern KSPIN_LOCK AcpiBuildQueueLock;
 extern LIST_ENTRY AcpiBuildDeviceList;
+extern LIST_ENTRY AcpiBuildSynchronizationList;
+extern LIST_ENTRY AcpiBuildQueueList;
+extern KDPC AcpiBuildDpc;
+extern BOOLEAN AcpiBuildDpcRunning;
 
 /* FUNCTIOS *****************************************************************/
 
@@ -296,6 +302,17 @@ ACPIFilterFastIoDetachCallback(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+VOID
+NTAPI
+ACPIBuildDeviceDpc(
+    _In_ PKDPC Dpc,
+    _In_ PVOID DeferredContext,
+    _In_ PVOID SystemArgument1,
+    _In_ PVOID SystemArgument2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 /* HAL FUNCTIOS *************************************************************/
 
 VOID
@@ -367,8 +384,54 @@ ACPIBuildSynchronizationRequest(
     _In_ PLIST_ENTRY BuildDeviceList,
     _In_ BOOLEAN IsAddDpc)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_BUILD_REQUEST BuildRequest;
+    KIRQL BuildQueueIrql;
+    KIRQL DeviceTreeIrql;
+
+    DPRINT("ACPIBuildSynchronizationRequest: %p, %X\n", DeviceExtension, IsAddDpc);
+
+    BuildRequest = ExAllocateFromNPagedLookasideList(&BuildRequestLookAsideList);
+    if (!BuildRequest)
+    {
+        DPRINT1("ACPIBuildSynchronizationRequest: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &DeviceTreeIrql);
+
+    if (!DeviceExtension->ReferenceCount)
+    {
+        DPRINT1("ACPIBuildSynchronizationRequest: STATUS_DEVICE_REMOVED\n");
+        ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, BuildRequest);
+        return STATUS_DEVICE_REMOVED;
+    }
+
+    InterlockedIncrement(&DeviceExtension->ReferenceCount);
+
+    RtlZeroMemory(BuildRequest, sizeof(ACPI_BUILD_REQUEST));
+
+    BuildRequest->Signature = '_SGP';
+    BuildRequest->Flags = 0x100A;
+    BuildRequest->WorkDone = 3;
+    BuildRequest->BuildReserved1 = 0;
+    BuildRequest->DeviceExtension = DeviceExtension;
+    BuildRequest->Status = 0;
+    BuildRequest->CallBack = CallBack;
+    BuildRequest->CallBackContext = Event;
+    BuildRequest->ListHead1 = BuildDeviceList;
+    BuildRequest->ListHeadForInsert = &AcpiBuildSynchronizationList;
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, DeviceTreeIrql);
+    KeAcquireSpinLock(&AcpiBuildQueueLock, &BuildQueueIrql);
+
+    InsertHeadList(&AcpiBuildQueueList, &BuildRequest->Link);
+
+    if (IsAddDpc && !AcpiBuildDpcRunning)
+        KeInsertQueueDpc(&AcpiBuildDpc, NULL, NULL);
+
+    KeReleaseSpinLock(&AcpiBuildQueueLock, BuildQueueIrql);
+
+    return STATUS_PENDING;
 }
 
 NTSTATUS

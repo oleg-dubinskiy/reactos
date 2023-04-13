@@ -153,6 +153,21 @@ typedef struct _DEVICE_EXTENSION
     LIST_ENTRY EjectDeviceList;
 } DEVICE_EXTENSION, *PDEVICE_EXTENSION;
 
+typedef struct _ACPI_BUILD_REQUEST
+{
+    LIST_ENTRY Link;
+    ULONG Signature;
+    ULONG Flags;
+    LONG WorkDone;
+    ULONG BuildReserved1;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+    PVOID CallBack;
+    PVOID CallBackContext;
+    PLIST_ENTRY ListHead1;
+    PLIST_ENTRY ListHeadForInsert;
+} ACPI_BUILD_REQUEST, *PACPI_BUILD_REQUEST;
+
 /* FUNCTIONS ****************************************************************/
 
 /* acpiinit.c */
@@ -212,6 +227,14 @@ ACPIInternalUpdateFlags(
     _In_ BOOLEAN IsResetFlags
 );
 
+VOID
+NTAPI
+ACPIBuildDeviceDpc(
+    _In_ PKDPC Dpc,
+    _In_ PVOID DeferredContext,
+    _In_ PVOID SystemArgument1,
+    _In_ PVOID SystemArgument2
+);
 
 /* registry.c */
 VOID
