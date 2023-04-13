@@ -80,6 +80,8 @@ IRP_DISPATCH_TABLE AcpiFdoIrpDispatch =
     NULL
 };
 
+extern KSPIN_LOCK AcpiDeviceTreeLock;
+
 /* FUNCTIOS *****************************************************************/
 
 VOID
@@ -89,7 +91,21 @@ ACPIInternalGetDispatchTable(
     _Out_ PDEVICE_EXTENSION* OutDeviceExtension,
     _Out_ PIRP_DISPATCH_TABLE* OutIrpDispatch)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PDEVICE_EXTENSION DeviceExtension;
+    KIRQL OldIrql;
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &OldIrql);
+
+    DeviceExtension = DeviceObject->DeviceExtension;
+
+    *OutDeviceExtension = DeviceExtension;
+
+    if (DeviceExtension)
+        *OutIrpDispatch = DeviceExtension->DispatchTable;
+    else
+        *OutIrpDispatch = NULL;
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
 }
 
 LONG
