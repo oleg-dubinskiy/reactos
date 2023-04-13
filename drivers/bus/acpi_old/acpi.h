@@ -130,6 +130,7 @@ typedef struct _DEVICE_EXTENSION
     PCHAR InstanceID;
     LONG OutstandingIrpCount;
     LONG ReferenceCount;
+    PKEVENT RemoveEvent;
     PDEVICE_OBJECT DeviceObject;
     PDEVICE_OBJECT TargetDeviceObject;
     PDEVICE_OBJECT PhysicalDeviceObject;

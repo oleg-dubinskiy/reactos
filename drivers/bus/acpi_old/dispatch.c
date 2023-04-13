@@ -82,14 +82,161 @@ IRP_DISPATCH_TABLE AcpiFdoIrpDispatch =
 
 /* FUNCTIOS *****************************************************************/
 
+VOID
+NTAPI
+ACPIInternalGetDispatchTable(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Out_ PDEVICE_EXTENSION* OutDeviceExtension,
+    _Out_ PIRP_DISPATCH_TABLE* OutIrpDispatch)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+LONG
+NTAPI
+ACPIInternalDecrementIrpReferenceCount(
+    _In_ PDEVICE_EXTENSION DeviceExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
 NTSTATUS
 NTAPI
 ACPIDispatchIrp(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PDRIVER_DISPATCH DispatchEntry;
+    PIRP_DISPATCH_TABLE IrpDispatch;
+    PIO_STACK_LOCATION IoStack;
+    KEVENT Event;
+    LONG OldReferenceCount;
+    UCHAR MinorFunction;
+    UCHAR MajorFunction;
+    NTSTATUS Status;
+
+    DPRINT("ACPIDispatchIrp: Device %X, Irp %X\n", DeviceObject, Irp);
+
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    ACPIInternalGetDispatchTable(DeviceObject, &DeviceExtension, &IrpDispatch);
+
+    if (!DeviceExtension || (DeviceExtension->Flags & 4) || DeviceExtension->Signature != '_SGP')
+    {
+        DPRINT1("ACPIDispatchIrp: Deleted Device %p got Irp %p\n", DeviceObject, Irp);
+
+        if (IoStack->MajorFunction == IRP_MJ_POWER)
+        {
+            DPRINT1("ACPIDispatchIrp: FIXME\n");
+            ASSERT(FALSE);
+            Status = STATUS_NOT_IMPLEMENTED;
+        }
+        else
+        {
+            DPRINT1("ACPIDispatchIrp: FIXME\n");
+            ASSERT(FALSE);
+            Status = STATUS_NOT_IMPLEMENTED;
+        }
+
+        return Status;
+    }
+
+    ASSERT(DeviceExtension->RemoveEvent == NULL);
+
+    MajorFunction = IoStack->MajorFunction;
+    MinorFunction = IoStack->MinorFunction;
+
+    if (IoStack->MajorFunction == IRP_MJ_POWER)
+    {
+        if (MinorFunction >= 4)
+            DispatchEntry = IrpDispatch->Power[4];
+        else
+            DispatchEntry = IrpDispatch->Power[MinorFunction];
+
+        InterlockedIncrement(&DeviceExtension->OutstandingIrpCount);
+
+        Status = DispatchEntry(DeviceObject, Irp);
+
+        ACPIInternalDecrementIrpReferenceCount(DeviceExtension);
+
+        return Status;
+    }
+
+    if (MajorFunction != IRP_MJ_PNP)
+    {
+        if (MajorFunction == IRP_MJ_DEVICE_CONTROL)
+        {
+            DispatchEntry = IrpDispatch->DeviceControl;
+        }
+        else if (MajorFunction == IRP_MJ_CREATE || MinorFunction == IRP_MJ_CLOSE)
+        {
+            DispatchEntry = IrpDispatch->CreateClose;
+        }
+        else if (MajorFunction == IRP_MJ_SYSTEM_CONTROL)
+        {
+            DispatchEntry = IrpDispatch->SystemControl;
+        }
+        else
+        {
+            DispatchEntry = IrpDispatch->Other;
+        }
+
+        InterlockedIncrement(&DeviceExtension->OutstandingIrpCount);
+
+        Status = DispatchEntry(DeviceObject, Irp);
+
+        ACPIInternalDecrementIrpReferenceCount(DeviceExtension);
+
+        return Status;
+    }
+
+    /* IRP_MJ_PNP */
+
+    if (MinorFunction == IRP_MN_START_DEVICE)
+    {
+        DispatchEntry = (PDRIVER_DISPATCH)IrpDispatch->PnpStartDevice;
+        InterlockedIncrement(&DeviceExtension->OutstandingIrpCount);
+        Status = DispatchEntry(DeviceObject, Irp);
+        ACPIInternalDecrementIrpReferenceCount(DeviceExtension);
+        return Status;
+    }
+
+    if (MinorFunction >= IRP_MN_QUERY_LEGACY_BUS_INFORMATION)
+        DispatchEntry = IrpDispatch->Pnp[IRP_MN_QUERY_LEGACY_BUS_INFORMATION];
+    else
+        DispatchEntry = IrpDispatch->Pnp[MinorFunction];
+
+    if (MinorFunction == IRP_MN_REMOVE_DEVICE || MinorFunction == IRP_MN_SURPRISE_REMOVAL)
+    {
+        KeInitializeEvent(&Event, SynchronizationEvent, FALSE);
+        DeviceExtension->RemoveEvent = &Event;
+
+        DPRINT1("ACPIDispatchIrp: FIXME ACPIWakeEmptyRequestQueue()\n");
+        ASSERT(FALSE);
+
+        OldReferenceCount = InterlockedDecrement(&DeviceExtension->OutstandingIrpCount);
+        ASSERT(OldReferenceCount >= 0);
+
+        if (OldReferenceCount != 0)
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+        InterlockedIncrement(&DeviceExtension->OutstandingIrpCount);
+        DeviceExtension->RemoveEvent = NULL;
+
+        Status = DispatchEntry(DeviceObject, Irp);
+
+        return Status;
+    }
+
+    InterlockedIncrement(&DeviceExtension->OutstandingIrpCount);
+
+    Status = DispatchEntry(DeviceObject, Irp);
+
+    ACPIInternalDecrementIrpReferenceCount(DeviceExtension);
+
+    return Status;
 }
 
 VOID
