@@ -335,6 +335,18 @@ ACPIInitHalDispatchTable(VOID)
 
 NTSTATUS
 NTAPI
+ACPIRootIrpCompleteRoutine(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PVOID Context)
+{
+    PRKEVENT Event = Context;
+    KeSetEvent(Event, 0, FALSE);
+    return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+NTSTATUS
+NTAPI
 ACPIRootIrpQueryRemoveOrStopDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
