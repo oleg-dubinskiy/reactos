@@ -28,8 +28,12 @@
 
 /* GLOBALS *******************************************************************/
 
+ACPI_INTERFACE_STANDARD ACPIInterfaceTable;
 ACPI_HAL_DISPATCH_TABLE AcpiHalDispatchTable;
 PPM_DISPATCH_TABLE PmHalDispatchTable;
+PACPI_INFORMATION AcpiInformation;
+KSPIN_LOCK NotifyHandlerLock;
+KSPIN_LOCK GpeTableLock;
 BOOLEAN AcpiSystemInitialized;
 
 PDRIVER_DISPATCH ACPIDispatchFdoPnpTable[] =
@@ -351,6 +355,90 @@ ACPIInitHalDispatchTable(VOID)
     HalInitPowerManagement((PPM_DISPATCH_TABLE)&AcpiHalDispatchTable, &PmHalDispatchTable);
 }
 
+/* ACPI interface FUNCTIONS *************************************************/
+
+VOID
+NTAPI
+AcpiNullReference(
+    _In_ PVOID Context)
+{
+    ;
+}
+
+NTSTATUS
+NTAPI
+ACPIVectorConnect(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG GpeNumber,
+    _In_ KINTERRUPT_MODE Mode,
+    _In_ BOOLEAN Shareable,
+    _In_ PGPE_SERVICE_ROUTINE ServiceRoutine,
+    _In_ PVOID ServiceContext,
+    _In_ PVOID ObjectContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIVectorDisconnect(
+    _In_ PVOID ObjectContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIVectorEnable(
+    _In_ PDEVICE_OBJECT Context,
+    _In_ PVOID ObjectContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIVectorDisable(
+    _In_ PDEVICE_OBJECT Context,
+    _In_ PVOID ObjectContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIVectorClear(
+    _In_ PDEVICE_OBJECT Context,
+    _In_ PVOID ObjectContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIRegisterForDeviceNotifications(
+    _In_ PDEVICE_OBJECT Context,
+    _In_ PDEVICE_NOTIFY_CALLBACK NotificationHandler,
+    _In_ PVOID NotificationContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+ACPIUnregisterForDeviceNotifications(
+    _In_ PDEVICE_OBJECT Context,
+    _In_ PDEVICE_NOTIFY_CALLBACK NotificationHandler)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 /* FDO PNP FUNCTIOS *********************************************************/
 
 NTSTATUS
@@ -613,11 +701,111 @@ RtlDuplicateCmResourceList(
 
 BOOLEAN
 NTAPI
-ACPIInitialize(
+OSInterruptVector(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
     UNIMPLEMENTED_DBGBREAK();
     return FALSE;
+}
+
+NTSTATUS
+NTAPI
+ACPIInitializeDDBs(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+BOOLEAN
+NTAPI
+ACPIInitialize(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PRSDT RootSystemDescTable;
+    NTSTATUS Status;
+    BOOLEAN Result;
+
+    PAGED_CODE();
+
+    Status = ACPIInitializeAMLI();
+    if (!NT_SUCCESS(Status))
+    {
+        ASSERTMSG("ACPIInitialize: AMLI failed initialization\n", NT_SUCCESS(Status));
+        KeBugCheckEx(0xA5, 0x11, 0, 0, 0);
+    }
+
+    RootSystemDescTable = ACPILoadFindRSDT();
+    if (!RootSystemDescTable)
+    {
+        ASSERTMSG("ACPIInitialize: ACPI RSDT Not Found\n", RootSystemDescTable);
+        KeBugCheckEx(0xA5, 0x11, 1, 0, 0);
+    }
+
+    DPRINT("ACPIInitalize: ACPI RSDT found at %p \n", RootSystemDescTable);
+
+    ACPIInterfaceTable.Size = sizeof(ACPIInterfaceTable);
+    ACPIInterfaceTable.Version = 1;
+    ACPIInterfaceTable.Context = DeviceObject;
+
+    ACPIInterfaceTable.InterfaceReference = AcpiNullReference;
+    ACPIInterfaceTable.InterfaceDereference = AcpiNullReference;
+
+    ACPIInterfaceTable.GpeConnectVector = ACPIVectorConnect;
+    ACPIInterfaceTable.GpeDisconnectVector = ACPIVectorDisconnect;
+    ACPIInterfaceTable.GpeEnableEvent = ACPIVectorEnable;
+    ACPIInterfaceTable.GpeDisableEvent = ACPIVectorDisable;
+    ACPIInterfaceTable.GpeClearStatus = ACPIVectorClear;
+
+    ACPIInterfaceTable.RegisterForDeviceNotifications = ACPIRegisterForDeviceNotifications;
+    ACPIInterfaceTable.UnregisterForDeviceNotifications = ACPIUnregisterForDeviceNotifications;
+
+    KeInitializeSpinLock(&NotifyHandlerLock);
+    KeInitializeSpinLock(&GpeTableLock);
+
+    AcpiInformation = ExAllocatePoolWithTag(NonPagedPool, sizeof(*AcpiInformation), 'ipcA');
+    if (!AcpiInformation)
+    {
+        ASSERTMSG("ACPIInitialize: Could not allocate AcpiInformation\n", AcpiInformation);
+        KeBugCheckEx(0xA5, 0x11, 2, 0, 0);
+    }
+
+    RtlZeroMemory(AcpiInformation, sizeof(*AcpiInformation));
+
+    AcpiInformation->ACPIOnly = TRUE;
+    AcpiInformation->RootSystemDescTable = RootSystemDescTable;
+
+    KeInitializeSpinLock(&AcpiInformation->GlobalLockQueueLock);
+    InitializeListHead(&AcpiInformation->GlobalLockQueue);
+
+    AcpiInformation->GlobalLockOwnerContext = 0;
+    AcpiInformation->GlobalLockOwnerDepth = 0;
+
+    Status = ACPILoadProcessRSDT();
+    if (!NT_SUCCESS(Status))
+    {
+        ASSERTMSG("ACPIInitialize: ACPILoadProcessRSDT Failed\n", NT_SUCCESS(Status));
+        KeBugCheckEx(0xA5, 0x11, 3, 0, 0);
+    }
+
+    ACPIEnableInitializeACPI(0);
+
+    Status = ACPIInitializeDDBs();
+    if (!NT_SUCCESS(Status))
+    {
+        ASSERTMSG("ACPIInitialize: ACPIInitializeLoadDDBs Failed\n", NT_SUCCESS(Status));
+        KeBugCheckEx(0xA5, 0x11, 4, 0, 0);
+    }
+
+    Result = OSInterruptVector(DeviceObject);
+    if (!Result)
+    {
+        ASSERTMSG("ACPIInitialize: OSInterruptVector Failed!!\n", Result);
+        KeBugCheckEx(0xA5, 0x11, 5, 0, 0);
+    }
+
+    DPRINT("ACPIInitialize: FIXME ACPIInitializeKernelTableHandler()\n");
+
+    return TRUE;
 }
 
 NTSTATUS

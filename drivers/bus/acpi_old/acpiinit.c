@@ -39,6 +39,24 @@ BOOLEAN AcpiBuildDpcRunning;
 
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 
+/* ACPI TABLES FUNCTIONS ****************************************************/
+
+PRSDT
+NTAPI
+ACPILoadFindRSDT(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
+NTSTATUS
+NTAPI
+ACPILoadProcessRSDT(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* INIT DRIVER ROUTINES *****************************************************/
 
 NTSTATUS

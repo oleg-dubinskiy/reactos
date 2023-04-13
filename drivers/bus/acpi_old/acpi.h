@@ -9,10 +9,66 @@
 #define _ACPI_H_
 
 #include <ntddk.h>
+#include <drivers/acpi/acpi.h> //sdk/include/reactos/drivers/acpi/acpi.h
 #include <stdio.h>
+#include "amli.h"
 
 /* STRUCTURES ***************************************************************/
 
+/* ACPI TABLES **************************************************************/
+
+typedef struct _MAPIC
+{
+    DESCRIPTION_HEADER Header;
+    ULONG LocalAPICAddress;
+    ULONG Flags;
+    ULONG APICTables[1];
+} MAPIC, *PMAPIC;
+
+typedef struct _ACPIInformation
+{
+    PRSDT RootSystemDescTable;
+    PFADT FixedACPIDescTable;
+    PFACS FirmwareACPIControlStructure;
+    PDSDT DiffSystemDescTable;
+    PMAPIC MultipleApicTable;
+    PULONG GlobalLock;
+    LIST_ENTRY GlobalLockQueue;
+    KSPIN_LOCK GlobalLockQueueLock;
+    PVOID GlobalLockOwnerContext;
+    ULONG GlobalLockOwnerDepth;
+    BOOLEAN ACPIOnly;
+    UCHAR Pad0[3];
+    ULONG PM1a_BLK;
+    ULONG PM1b_BLK;
+    ULONG PM1a_CTRL_BLK;
+    ULONG PM1b_CTRL_BLK;
+    ULONG PM2_CTRL_BLK;
+    ULONG PM_TMR;
+    ULONG GP0_BLK;
+    ULONG GP0_ENABLE;
+    UCHAR GP0_LEN;
+    UCHAR Pad1;
+    USHORT Gpe0Size;
+    ULONG GP1_BLK;
+    ULONG GP1_ENABLE;
+    UCHAR GP1_LEN;
+    UCHAR Pad2;
+    USHORT Gpe1Size;
+    USHORT GP1_Base_Index;
+    USHORT GpeSize;
+    ULONG SMI_CMD;
+    USHORT pm1_en_bits;
+    USHORT pm1_wake_mask;
+    USHORT pm1_wake_status;
+    USHORT c2_latency;
+    USHORT c3_latency;
+    UCHAR Pad3[2];
+    ULONG ACPI_Flags;
+    ULONG ACPI_Capabilities;
+    BOOLEAN Dockable;
+    UCHAR Pad4[3];
+} ACPI_INFORMATION, *PACPI_INFORMATION;
 
 /* ACPI DRIVER **************************************************************/
 
@@ -176,6 +232,18 @@ NTAPI
 DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath
+);
+
+PRSDT
+NTAPI
+ACPILoadFindRSDT(
+    VOID
+);
+
+NTSTATUS
+NTAPI
+ACPILoadProcessRSDT(
+    VOID
 );
 
 /* dispatch.c */
