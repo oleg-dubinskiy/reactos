@@ -16,6 +16,16 @@
 
 /* ACPI DRIVER **************************************************************/
 
+typedef enum
+{
+    Stopped = 0x0,
+    Inactive = 0x1,
+    Started = 0x2,
+    Removed = 0x3,
+    SurpriseRemoved = 0x4,
+    Invalid = 0x5,
+} ACPI_DEVICE_STATE;
+
 typedef struct _ACPI_HAL_DISPATCH_TABLE
 {
     ULONG Signature;
@@ -121,6 +131,8 @@ typedef struct _DEVICE_EXTENSION
     };
     ULONG Signature;
     PIRP_DISPATCH_TABLE DispatchTable;
+    ACPI_DEVICE_STATE DeviceState;
+    ACPI_DEVICE_STATE PreviousState;
     ACPI_POWER_INFO PowerInfo;
     union
     {
@@ -128,6 +140,7 @@ typedef struct _DEVICE_EXTENSION
         PCHAR Address;
     };
     PCHAR InstanceID;
+    PCM_RESOURCE_LIST ResourceList;
     LONG OutstandingIrpCount;
     LONG ReferenceCount;
     PKEVENT RemoveEvent;

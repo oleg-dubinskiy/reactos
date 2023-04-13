@@ -524,12 +524,67 @@ RtlDuplicateCmResourceList(
 
 NTSTATUS
 NTAPI
+ACPIInitStartACPI(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPIRootIrpStartDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PCM_RESOURCE_LIST CmTranslated;
+    PIO_STACK_LOCATION IoStack;
+    KEVENT Event;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIRootIrpStartDevice: %p, %p\n", DeviceObject, Irp);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    KeInitializeEvent(&Event, SynchronizationEvent, FALSE);
+
+    IoCopyCurrentIrpStackLocationToNext(Irp);
+    IoSetCompletionRoutine(Irp, ACPIRootIrpCompleteRoutine, &Event, TRUE, TRUE, TRUE);
+
+    Status = IoCallDriver(DeviceExtension->TargetDeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = Irp->IoStatus.Status;
+    }
+
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    if (NT_SUCCESS(Status))
+    {
+        CmTranslated = IoStack->Parameters.StartDevice.AllocatedResourcesTranslated;
+        if (CmTranslated)
+            CmTranslated = RtlDuplicateCmResourceList(NonPagedPool, CmTranslated, 'RpcA');
+
+        DeviceExtension->ResourceList = CmTranslated;
+        if (!DeviceExtension->ResourceList)
+        {
+            DPRINT1("ACPIRootIrpStartDevice: Did not find a resource list! KeBugCheckEx()\n");
+            ASSERT(FALSE);
+            KeBugCheckEx(0xA5, 1, (ULONG_PTR)DeviceExtension, 0, 0);
+        }
+
+        Status = ACPIInitStartACPI(DeviceObject);
+        if (NT_SUCCESS(Status))
+            DeviceExtension->DeviceState = Started;
+    }
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS
