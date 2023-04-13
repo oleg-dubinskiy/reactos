@@ -84,6 +84,29 @@ extern KSPIN_LOCK AcpiDeviceTreeLock;
 
 /* FUNCTIOS *****************************************************************/
 
+PDEVICE_EXTENSION
+NTAPI
+ACPIInternalGetDeviceExtension(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    KIRQL OldIrql;
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &OldIrql);
+
+    DeviceExtension = DeviceObject->DeviceExtension;
+
+    if (DeviceExtension && DeviceExtension->Signature != '_SGP')
+    {
+        DPRINT1("ACPIInternalGetDeviceExtension: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
+
+    return DeviceExtension;
+}
+
 VOID
 NTAPI
 ACPIInternalGetDispatchTable(
