@@ -457,6 +457,59 @@ ACPIRootIrpQueryPower(
 
 /* IRP dispatch FUNCTIOS ****************************************************/
 
+ULONG
+NTAPI
+RtlSizeOfCmResourceList(
+    _In_ PCM_RESOURCE_LIST CmResource)
+{
+    PCM_FULL_RESOURCE_DESCRIPTOR FullList;
+    ULONG FinalSize;
+    ULONG ix;
+    ULONG jx;
+
+    PAGED_CODE();
+
+    FinalSize = sizeof(CM_RESOURCE_LIST);
+
+    for (ix = 0; ix < CmResource->Count; ix++)
+    {
+        FullList = &CmResource->List[ix];
+
+        if (ix != 0)
+            FinalSize += sizeof(CM_FULL_RESOURCE_DESCRIPTOR);
+
+        for (jx = 0; jx < FullList->PartialResourceList.Count; jx++)
+        {
+            if (jx != 0)
+                FinalSize += sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR);
+        }
+    }
+
+    return FinalSize;
+}
+
+PCM_RESOURCE_LIST
+NTAPI
+RtlDuplicateCmResourceList(
+    _In_ POOL_TYPE PoolType,
+    _In_ PCM_RESOURCE_LIST CmResource,
+    _In_ ULONG Tag)
+{
+    PCM_RESOURCE_LIST OutCmResource;
+    ULONG Size;
+
+    PAGED_CODE();
+    DPRINT("RtlDuplicateCmResourceList: %X, %p, %X\n", PoolType, CmResource, Tag);
+
+    Size = RtlSizeOfCmResourceList(CmResource);
+
+    OutCmResource = ExAllocatePoolWithTag(PoolType, Size, Tag);
+    if (OutCmResource)
+        RtlCopyMemory(OutCmResource, CmResource, Size);
+
+    return OutCmResource;
+}
+
 NTSTATUS
 NTAPI
 ACPIRootIrpStartDevice(
