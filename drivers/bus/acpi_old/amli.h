@@ -10,5 +10,11 @@
 
 /* FUNCTIONS ****************************************************************/
 
+NTSTATUS
+NTAPI
+ACPIInitializeAMLI(
+    VOID
+);
+
 
 /* EOF */
