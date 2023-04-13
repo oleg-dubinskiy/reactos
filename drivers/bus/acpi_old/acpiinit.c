@@ -33,6 +33,7 @@ KEVENT ACPITerminateEvent;
 
 LIST_ENTRY ACPIDeviceWorkQueue;
 LIST_ENTRY ACPIWorkQueue;
+LIST_ENTRY AcpiBuildDeviceList;
 
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 
@@ -254,6 +255,8 @@ DriverEntry(
     ACPIInitReadRegistryKeys();
 
     KeInitializeSpinLock(&AcpiDeviceTreeLock);
+
+    InitializeListHead(&AcpiBuildDeviceList);
 
     ExInitializeNPagedLookasideList(&DeviceExtensionLookAsideList, NULL, NULL, 0, sizeof(DEVICE_EXTENSION), 'DpcA', 0x40);
 

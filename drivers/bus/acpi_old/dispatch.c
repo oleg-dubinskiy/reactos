@@ -23,12 +23,14 @@
   #pragma alloc_text(PAGE, ACPIRootIrpQueryInterface)
   #pragma alloc_text(PAGE, ACPIRootIrpQueryCapabilities)
   #pragma alloc_text(PAGE, ACPIFilterIrpDeviceUsageNotification)
+  #pragma alloc_text(PAGE, ACPIInitialize)
 #endif
 
 /* GLOBALS *******************************************************************/
 
 ACPI_HAL_DISPATCH_TABLE AcpiHalDispatchTable;
 PPM_DISPATCH_TABLE PmHalDispatchTable;
+BOOLEAN AcpiSystemInitialized;
 
 PDRIVER_DISPATCH ACPIDispatchFdoPnpTable[] =
 {
@@ -81,6 +83,7 @@ IRP_DISPATCH_TABLE AcpiFdoIrpDispatch =
 };
 
 extern KSPIN_LOCK AcpiDeviceTreeLock;
+extern LIST_ENTRY AcpiBuildDeviceList;
 
 /* FUNCTIOS *****************************************************************/
 
@@ -345,6 +348,29 @@ ACPIRootIrpCompleteRoutine(
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
+VOID
+NTAPI
+ACPIDevicePowerNotifyEvent(
+    _In_ PVOID Param1,
+    _In_ PVOID Context,
+    _In_ ULONG Param3)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildSynchronizationRequest(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PVOID CallBack,
+    _In_ PKEVENT Event,
+    _In_ PLIST_ENTRY BuildDeviceList,
+    _In_ BOOLEAN IsAddDpc)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 NTAPI
 ACPIRootIrpQueryRemoveOrStopDevice(
@@ -522,13 +548,60 @@ RtlDuplicateCmResourceList(
     return OutCmResource;
 }
 
+BOOLEAN
+NTAPI
+ACPIInitialize(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
 NTSTATUS
 NTAPI
 ACPIInitStartACPI(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    KEVENT Event;
+    KIRQL DeviceTreeIrql;
+    NTSTATUS Status;
+
+    DPRINT("ACPIInitStartACPI: DeviceObject %p\n", DeviceObject);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &DeviceTreeIrql);
+    AcpiSystemInitialized = FALSE;
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, DeviceTreeIrql);
+
+    KeInitializeEvent(&Event, SynchronizationEvent, FALSE);
+
+    Status = ACPIBuildSynchronizationRequest(DeviceExtension, ACPIDevicePowerNotifyEvent, &Event, &AcpiBuildDeviceList, FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("ACPIInitStartACPI: Status %X\n", Status);
+        return Status;
+    }
+
+    if (!ACPIInitialize(DeviceObject))
+    {
+        DPRINT1("ACPIInitStartACPI: STATUS_DEVICE_DOES_NOT_EXIST\n");
+        return STATUS_DEVICE_DOES_NOT_EXIST;
+    }
+
+    DPRINT("ACPIInitStartACPI: Status %X\n", Status);
+
+    if (Status == STATUS_PENDING)
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+
+    DPRINT("ACPIInitStartACPI: Status %X\n", Status);
+
+    DPRINT1("ACPIInitStartACPI: FIXME\n");
+    ASSERT(FALSE);
+
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
