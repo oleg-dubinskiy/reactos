@@ -1,6 +1,7 @@
 
 list(APPEND ACPI_SOURCE
     acpiinit.c
+    amli.c
     dispatch.c
     registry.c
     acpi.h)
