@@ -477,8 +477,35 @@ ACPIDispatchForwardIrp(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_OBJECT TargetDeviceObject;
+    PIO_STACK_LOCATION IoStack;
+    UCHAR MajorFunction;
+    NTSTATUS Status;
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+    MajorFunction = IoStack->MajorFunction;
+
+    DPRINT("ACPIDispatchForwardIrp: %p, %p, (%X:%X)\n", DeviceObject, Irp, MajorFunction, IoStack->MinorFunction);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    TargetDeviceObject = DeviceExtension->TargetDeviceObject;
+    if (TargetDeviceObject)
+    {
+        IoSkipCurrentIrpStackLocation(Irp);
+        Status = IoCallDriver(TargetDeviceObject, Irp);
+        return Status;
+    }
+
+    ASSERT(MajorFunction == IRP_MJ_PNP ||
+           MajorFunction == IRP_MJ_DEVICE_CONTROL ||
+           MajorFunction == IRP_MJ_SYSTEM_CONTROL);
+
+    Status = Irp->IoStatus.Status;
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS
