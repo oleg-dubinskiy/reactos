@@ -916,17 +916,98 @@ AMLIRegEventHandler(
 }
 
 NTSTATUS
+__cdecl
+InternalOpRegionHandler(
+    _In_ ULONG AccType,
+    _In_ PAMLI_NAME_SPACE_OBJECT BaseObj,
+    _In_ PVOID Addr,
+    _In_ ULONG AccSize,
+    _In_ ULONG* OutValue,
+    _In_ PAMLI_REGION_HANDLER Handler,
+    _In_ PVOID Callback,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+InternalRawAccessOpRegionHandler(
+    _In_ ULONG AccType,
+    _In_ PAMLI_FIELD_UNIT_OBJECT FieldUnitObj,
+    _In_ PAMLI_OBJECT_DATA ObjData,
+    _In_ PAMLI_REGION_HANDLER Handler,
+    _In_ PVOID Callback,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
 NTAPI
 RegisterOperationRegionHandler(
-    _In_ PVOID Param1,
+    _In_ PAMLI_NAME_SPACE_OBJECT ScopeObject,
     _In_ ULONG EventType,
     _In_ ULONG EventData,
     _In_ PVOID CallBack,
     _In_ PVOID CallBackContext,
-    _In_ PVOID *OutRegionData)
+    _In_ PVOID* OutRegionData)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_REGION_HANDLER RegionData;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("RegisterOperationRegionHandler: EventType %X\n", EventType);
+
+    *OutRegionData = 0;
+
+    RegionData = ExAllocatePoolWithTag(NonPagedPool, sizeof(*RegionData), 'ScpA');
+    if (!RegionData)
+    {
+        DPRINT1("RegisterOperationRegionHandler: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RegionData->EventType = EventType;
+    RegionData->EventData = EventData;
+
+    RegionData->CallBack = CallBack;
+    RegionData->CallBackContext = CallBackContext;
+
+    if (EventType == 6)
+    {
+        Status = AMLIRegEventHandler(6, EventData, InternalOpRegionHandler, RegionData);
+    }
+    else
+    {
+        if (EventType != 7)
+        {
+            DPRINT1("RegisterOperationRegionHandler: STATUS_INVALID_PARAMETER\n");
+            ExFreePoolWithTag(RegionData, 'ScpA');
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        Status = AMLIRegEventHandler(7, EventData, InternalRawAccessOpRegionHandler, RegionData);
+    }
+
+    if (Status)
+    {
+        DPRINT1("RegisterOperationRegionHandler: Status %X\n", Status);
+        ExFreePoolWithTag(RegionData, 'ScpA');
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    *OutRegionData = RegionData;
+
+    if (!ScopeObject)
+        return STATUS_SUCCESS;
+
+    DPRINT1("RegisterOperationRegionHandler: ScopeObject %p\n", ScopeObject);
+    ASSERT(FALSE);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS

@@ -7,6 +7,45 @@
 
 /* STRUCTURES ***************************************************************/
 
+typedef struct _AMLI_LIST
+{
+    struct _AMLI_LIST* Prev;
+    struct _AMLI_LIST* Next;
+} AMLI_LIST, *PAMLI_LIST;
+
+typedef struct _AMLI_OBJECT_DATA
+{
+    USHORT Flags;
+    USHORT DataType;
+    union
+    {
+        ULONG RefCount;
+        struct _AMLI_OBJECT_DATA* DataBase;
+    };
+    union
+    {
+        PVOID DataValue;
+        struct _AMLI_NAME_SPACE_OBJECT* Alias;
+        struct _AMLI_OBJECT_DATA* DataAlias;
+        PVOID Owner;
+    };
+    ULONG DataLen;
+    PVOID DataBuff;
+} AMLI_OBJECT_DATA, *PAMLI_OBJECT_DATA;
+
+typedef struct _AMLI_NAME_SPACE_OBJECT
+{
+    AMLI_LIST List;
+    struct _AMLI_NAME_SPACE_OBJECT* Parent;
+    struct _AMLI_NAME_SPACE_OBJECT* FirstChild;
+    ULONG NameSeg;
+    PVOID Owner;
+    struct _AMLI_NAME_SPACE_OBJECT* OwnedNext;
+    AMLI_OBJECT_DATA ObjData;
+    PVOID Context;
+    ULONG RefCount;
+} AMLI_NAME_SPACE_OBJECT, *PAMLI_NAME_SPACE_OBJECT;
+
 struct _AMLI_CONTEXT;
 typedef NTSTATUS (__cdecl* PAMLI_FN_PARSE)(struct _AMLI_CONTEXT* AmliContext, PVOID Context, NTSTATUS InStatus);
 
@@ -56,6 +95,28 @@ typedef struct _AMLI_TERM_CONTEXT
     AMLI_FRAME_HEADER FrameHeader;
 
 } AMLI_TERM_CONTEXT, *PAMLI_TERM_CONTEXT;
+
+typedef struct _AMLI_FIELD_DESCRIPTOR
+{
+    ULONG ByteOffset;
+    ULONG StartBitPos;
+    ULONG NumBits;
+    ULONG FieldFlags;
+} AMLI_FIELD_DESCRIPTOR, *PAMLI_FIELD_DESCRIPTOR;
+
+typedef struct _AMLI_FIELD_UNIT_OBJECT
+{
+    AMLI_FIELD_DESCRIPTOR FieldDesc;
+    PAMLI_NAME_SPACE_OBJECT NsFieldParent;
+} AMLI_FIELD_UNIT_OBJECT, *PAMLI_FIELD_UNIT_OBJECT;
+
+typedef struct _AMLI_REGION_HANDLER
+{
+    PVOID CallBack;
+    PVOID CallBackContext;
+    ULONG EventType;
+    ULONG EventData;
+} AMLI_REGION_HANDLER, *PAMLI_REGION_HANDLER;
 
 /* FUNCTIONS ****************************************************************/
 
