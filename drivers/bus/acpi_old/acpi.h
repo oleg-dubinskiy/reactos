@@ -246,6 +246,62 @@ ACPILoadProcessRSDT(
     VOID
 );
 
+NTSTATUS
+__cdecl
+ACPICallBackLoad(
+    _In_ int Param1,
+    _In_ int Param2
+);
+
+NTSTATUS
+__cdecl
+ACPICallBackUnload(
+    _In_ int Param1,
+    _In_ int Param2
+);
+
+NTSTATUS
+__cdecl
+ACPITableNotifyFreeObject(
+    _In_ int Param1,
+    _In_ int Param2,
+    _In_ int Param3
+);
+
+NTSTATUS
+__cdecl
+NotifyHandler(
+    _In_ int Param1,
+    _In_ int Param2,
+    _In_ int Param3
+);
+
+NTSTATUS
+__cdecl
+GlobalLockEventHandler(
+    _In_ int Param1,
+    _In_ int Param2,
+    _In_ int Param3,
+    _In_ int Param4,
+    _In_ int Param5
+);
+
+NTSTATUS
+__cdecl
+OSNotifyCreate(
+    _In_ int Param1,
+    _In_ int Param2
+);
+
+NTSTATUS
+__cdecl
+OSNotifyFatalError(
+    _In_ int Param1,
+    _In_ int Param2,
+    _In_ int Param3,
+    _In_ int Param4
+);
+
 /* dispatch.c */
 NTSTATUS
 NTAPI

@@ -57,6 +57,85 @@ ACPILoadProcessRSDT(VOID)
     return STATUS_NOT_IMPLEMENTED;
 }
 
+/* ACPI CALLBACKS ***********************************************************/
+
+NTSTATUS
+__cdecl
+ACPICallBackLoad(
+    _In_ int Param1,
+    _In_ int Param2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ACPICallBackUnload(
+    _In_ int Param1,
+    _In_ int Param2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ACPITableNotifyFreeObject(
+    _In_ int Param1,
+    _In_ int Param2,
+    _In_ int Param3)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+NotifyHandler(
+    _In_ int Param1,
+    _In_ int Param2,
+    _In_ int Param3)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+GlobalLockEventHandler(
+    _In_ int Param1,
+    _In_ int Param2,
+    _In_ int Param3,
+    _In_ int Param4,
+    _In_ int Param5)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+OSNotifyCreate(
+    _In_ int Param1,
+    _In_ int Param2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+OSNotifyFatalError(
+    _In_ int Param1,
+    _In_ int Param2,
+    _In_ int Param3,
+    _In_ int Param4)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* INIT DRIVER ROUTINES *****************************************************/
 
 NTSTATUS
