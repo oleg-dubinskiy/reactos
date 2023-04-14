@@ -55,6 +55,333 @@ ULONG gdwcBFObjs;
 ULONG gdwcRSObjs;
 BOOLEAN g_AmliHookEnabled;
 
+#if 1
+AMLI_TERM atAlias        = { "Alias",            0x06,       "NN",     1, 0,    NULL, NULL, Alias };
+AMLI_TERM atName         = { "Name",             0x08,       "NO",     1, 0,    NULL, NULL, Name };
+AMLI_TERM atScope        = { "Scope",            0x10,       "N",      1, 1,    NULL, NULL, Scope };
+AMLI_TERM atBankField    = { "BankField",        0x875B,     "NNCB",   2, 1,    NULL, NULL, BankField };
+AMLI_TERM atBitField     = { "CreateBitField",   0x8D,       "CCN",    2, 0,    NULL, NULL, CreateBitField };
+AMLI_TERM atByteField    = { "CreateByteField",  0x8C,       "CCN",    2, 0,    NULL, NULL, CreateByteField };
+AMLI_TERM atDWordField   = { "CreateDWordField", 0x8A,       "CCN",    2, 0,    NULL, NULL, CreateDWordField };
+AMLI_TERM atCreateField  = { "CreateField",      0x135B,     "CCCN",   2, 0,    NULL, NULL, CreateField };
+AMLI_TERM atWordField    = { "CreateWordField",  0x8B,       "CCN",    2, 0,    NULL, NULL, CreateWordField };
+AMLI_TERM atDevice       = { "Device",           0x825B,     "N",      2, 1,    NULL, NULL, Device };
+AMLI_TERM atEvent        = { "Event",            0x025B,     "N",      2, 0,    NULL, NULL, Event };
+AMLI_TERM atField        = { "Field",            0x815B,     "NB",     2, 1,    NULL, NULL, Field };
+AMLI_TERM atIndexField   = { "IndexField",       0x865B,     "NNB",    2, 1,    NULL, NULL, IndexField };
+AMLI_TERM atMethod       = { "Method",           0x14,       "NB",     2, 1,    NULL, NULL, Method };
+AMLI_TERM atMutex        = { "Mutex",            0x015B,     "NB",     2, 0,    NULL, NULL, Mutex };
+AMLI_TERM atOpRegion     = { "OperationRegion",  0x805B,     "NBCC",   2, 0,    NULL, NULL, OpRegion };
+AMLI_TERM atPowerRes     = { "PowerResource"  ,  0x845B,     "NBW",    2, 1,    NULL, NULL, PowerRes };
+AMLI_TERM atProcessor    = { "Processor",        0x835B,     "NBDB",   2, 1,    NULL, NULL, Processor };
+AMLI_TERM atThermalZone  = { "ThermalZone",      0x855B,     "N",      2, 1,    NULL, NULL, ThermalZone };
+AMLI_TERM atBreak        = { "Break",            0xA5,       NULL,     3, 0,    NULL, NULL, Break };
+AMLI_TERM atBreakPoint   = { "BreakPoint",       0xCC,       NULL,     3, 0,    NULL, NULL, BreakPoint };
+AMLI_TERM atElse         = { "Else",             0xA1,       NULL,     3, 1,    NULL, NULL, IfElse };
+AMLI_TERM atFatal        = { "Fatal",            0x325B,     "BDC",    3, 0,    NULL, NULL, Fatal };
+AMLI_TERM atIf           = { "If",               0xA0,       "C",      3, 1,    NULL, NULL, IfElse };
+AMLI_TERM atLoad         = { "Load",             0x205B,     "NS",     3, 0,    NULL, NULL, Load };
+AMLI_TERM atNOP          = { "NoOp",             0xA3,       NULL,     3, 0,    NULL, NULL, NULL };
+AMLI_TERM atNotify       = { "Notify",           0x86,       "SC",     3, 0,    NULL, NULL, Notify };
+AMLI_TERM atRelease      = { "Release",          0x275B,     "S",      3, 0,    NULL, NULL, ReleaseResetSignalUnload };
+AMLI_TERM atReset        = { "Reset",            0x265B,     "S",      3, 0,    NULL, NULL, ReleaseResetSignalUnload };
+AMLI_TERM atReturn       = { "Return",           0xA4,       "C",      3, 0,    NULL, NULL, Return };
+AMLI_TERM atSignal       = { "Signal",           0x245B,     "S",      3, 0,    NULL, NULL, ReleaseResetSignalUnload };
+AMLI_TERM atSleep        = { "Sleep",            0x225B,     "C",      3, 0,    NULL, NULL, SleepStall };
+AMLI_TERM atStall        = { "Stall",            0x215B,     "C",      3, 0,    NULL, NULL, SleepStall };
+AMLI_TERM atUnload       = { "Unload",           0x2A5B,     "S",      3, 0,    NULL, NULL, ReleaseResetSignalUnload };
+AMLI_TERM atWhile        = { "While",            0xA2,       "C",      3, 1,    NULL, NULL, While };
+AMLI_TERM atAcquire      = { "Acquire",          0x235B,     "SW",     4, 0,    NULL, NULL, Acquire };
+AMLI_TERM atAdd          = { "Add",              0x72,       "CCS",    4, 0,    NULL, NULL, ExprOp2 };
+AMLI_TERM atAnd          = { "And",              0x7B,       "CCS",    4, 0,    NULL, NULL, ExprOp2 };
+AMLI_TERM atBuffer       = { "Buffer",           0x11,       "C",      4, 1,    NULL, NULL, Buffer };
+AMLI_TERM atConcat       = { "Concatenate",      0x73,       "CCS",    4, 0,    NULL, NULL, Concat };
+AMLI_TERM atCondRefOf    = { "CondRefOf",        0x125B,     "sS",     3, 0,    NULL, NULL, CondRefOf };
+AMLI_TERM atDecrement    = { "Decrement",        0x76,       "S",      4, 0,    NULL, NULL, IncDec };
+AMLI_TERM atDerefOf      = { "DerefOf",          0x83,       "C",      4, 0,    NULL, NULL, DerefOf };
+AMLI_TERM atDivide       = { "Divide",           0x78,       "CCSS",   4, 0,    NULL, NULL, Divide };
+AMLI_TERM atFindSetLBit  = { "FindSetLeftBit",   0x81,       "CS",     4, 0,    NULL, NULL, ExprOp1 };
+AMLI_TERM atFindSetRBit  = { "FindSetRigtBit",   0x82,       "CS",     4, 0,    NULL, NULL, ExprOp1 };
+AMLI_TERM atFromBCD      = { "FromBCD",          0x285B,     "CS",     4, 0,    NULL, NULL, ExprOp1 };
+AMLI_TERM atIncrement    = { "Increment",        0x75,       "S",      4, 0,    NULL, NULL, IncDec };
+AMLI_TERM atIndex        = { "Index",            0x88,       "CCS",    4, 0x80, NULL, NULL, Index };
+AMLI_TERM atLAnd         = { "Land",             0x90,       "CC",     4, 0,    NULL, NULL, LogOp2 };
+AMLI_TERM atLEq          = { "LEqual",           0x93,       "CC",     4, 0,    NULL, NULL, LogOp2 };
+AMLI_TERM atLG           = { "LGreater",         0x94,       "CC",     4, 0,    NULL, NULL, LogOp2 };
+AMLI_TERM atLL           = { "LLess",            0x95,       "CC",     4, 0,    NULL, NULL, LogOp2 };
+AMLI_TERM atLNot         = { "LNot",             0x92,       "C",      4, 0,    NULL, NULL, LNot };
+AMLI_TERM atLOr          = { "LOr",              0x91,       "CC",     4, 0,    NULL, NULL, LogOp2 };
+AMLI_TERM atMatch        = { "Match",            0x89,       "CBCBCC", 4, 0,    NULL, NULL, Match };
+AMLI_TERM atMultiply     = { "Multiply",         0x77,       "CCS",    4, 0,    NULL, NULL, ExprOp2 };
+AMLI_TERM atNAnd         = { "NAnd",             0x7C,       "CCS",    4, 0,    NULL, NULL, ExprOp2 };
+AMLI_TERM atNOr          = { "NOr",              0x7E,       "CCS",    4, 0,    NULL, NULL, ExprOp2 };
+AMLI_TERM atNot          = { "Not",              0x80,       "CS",     4, 0,    NULL, NULL, ExprOp1 };
+AMLI_TERM atObjType      = { "ObjectType",       0x8E,       "S",      4, 0,    NULL, NULL, ObjTypeSizeOf };
+AMLI_TERM atOr           = { "Or",               0x7D,       "CCS",    4, 0,    NULL, NULL, ExprOp2 };
+AMLI_TERM atOSI          = { "OSI",              0xCA,       "S",      4, 0,    NULL, NULL, OSInterface };
+AMLI_TERM atPackage      = { "Package",          0x12,       "B",      4, 1,    NULL, NULL, Package };
+AMLI_TERM atRefOf        = { "RefOf",            0x71,       "S",      4, 0,    NULL, NULL, RefOf };
+AMLI_TERM atShiftLeft    = { "ShiftLeft",        0x79,       "CCS",    4, 0,    NULL, NULL, ExprOp2 };
+AMLI_TERM atShiftRight   = { "ShiftRight",       0x7A,       "CCS",    4, 0,    NULL, NULL, ExprOp2 };
+AMLI_TERM atSizeOf       = { "SizeOf",           0x87,       "S",      4, 0,    NULL, NULL, ObjTypeSizeOf };
+AMLI_TERM atStore        = { "Store",            0x70,       "CS",     4, 0,    NULL, NULL, Store };
+AMLI_TERM atSubtract     = { "Subtract",         0x74,       "CCS",    4, 0,    NULL, NULL, ExprOp2 };
+AMLI_TERM atToBCD        = { "ToBCD",            0x295B,     "CS",     4, 0,    NULL, NULL, ExprOp1 };
+AMLI_TERM atWait         = { "Wait",             0x255B,     "SC",     4, 0,    NULL, NULL, Wait };
+AMLI_TERM atXOr          = { "XOr",              0x7F,       "CCS",    4, 0,    NULL, NULL, ExprOp2 };
+AMLI_TERM atNameObj      = { NULL,               0xFFFFFFFF, NULL,     5, 0x20, NULL, NULL, NULL };
+AMLI_TERM atDataObj      = { NULL,               0xFFFFFFFF, NULL,     5, 8,    NULL, NULL, NULL };
+AMLI_TERM atString       = { NULL,               0x0D,       NULL,     5, 0x10, NULL, NULL, NULL };
+AMLI_TERM atArgObj       = { NULL,               0xFFFFFFFF, NULL,     5, 2,    NULL, NULL, NULL };
+AMLI_TERM atLocalObj     = { NULL,               0xFFFFFFFF, NULL,     5, 4,    NULL, NULL, NULL };
+AMLI_TERM atDebugObj     = { "Debug",            0x315B,     NULL,     5, 0x40, NULL, NULL, NULL };
+#endif
+
+/* TERM HANDLERS ************************************************************/
+
+#if 1
+NTSTATUS __cdecl Acquire(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Alias(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl BankField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Break(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl BreakPoint(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Buffer(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Concat(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl CondRefOf(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl CreateBitField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl CreateByteField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl CreateDWordField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl CreateField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl CreateWordField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl DerefOf(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Device(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Divide(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Event(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl ExprOp1(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl ExprOp2(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Fatal(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Field(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl IfElse(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl IncDec(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Index(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl IndexField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl LNot(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Load(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl LogOp2(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Match(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Method(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Mutex(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Name(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Notify(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl ObjTypeSizeOf(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl OpRegion(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl OSInterface(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Package(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl PowerRes(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Processor(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl RefOf(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl ReleaseResetSignalUnload(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Return(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Scope(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl SleepStall(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Store(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl ThermalZone(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl Wait(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS __cdecl While(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+#endif
+
 /* PCI HANDLER FUNCTIONS ****************************************************/
 
 NTSTATUS
