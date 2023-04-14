@@ -734,8 +734,47 @@ RegOpcodeHandler(
     _In_ PVOID Context,
     _In_ ULONG FlagsOpcode)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_TERM Term;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("RegOpcodeHandler: %X, %X, %X, %X\n", Opcode, Handler, Context, FlagsOpcode);
+
+    giIndent++;
+
+    if ((UCHAR)Opcode == 0x5B) // (91)
+    {
+        Term = FindOpcodeTerm((Opcode >> 8), ExOpcodeTable);
+    }
+    else
+    {
+        Term = OpcodeTable[Opcode];
+    }
+
+    if (Term)
+    {
+        if (Term->CallBack && Handler)
+        {
+            DPRINT1("AMLIRegEventHandler: opcode or opcode class already has a handler\n");
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_HANDLER_COLLISION;
+        }
+        else
+        {
+            Term->Context = Context;
+            Term->Flags2 |= FlagsOpcode;
+            Term->CallBack = Handler;
+        }
+    }
+    else
+    {
+        DPRINT1("AMLIRegEventHandler: either invalid opcode or opcode does not allow callback\n");
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_REG_HANDLER_FAILED;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
