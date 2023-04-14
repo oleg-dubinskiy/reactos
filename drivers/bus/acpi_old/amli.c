@@ -1075,8 +1075,30 @@ NewHeap(
     _In_ SIZE_T NumberOfBytes,
     _In_ PAMLI_HEAP* OutHeap)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("NewHeap: NumberOfBytes %X\n", NumberOfBytes);
+
+    giIndent++;
+
+    gdwcHPObjs++;
+    gdwcMemObjs++;
+
+    *OutHeap = ExAllocatePoolWithTag(NonPagedPool, NumberOfBytes, 'HlmA');
+    if (*OutHeap)
+    {
+        InitHeap(*OutHeap, NumberOfBytes);
+    }
+    else
+    {
+        DPRINT1("NewHeap: failed to allocate new heap block\n");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
