@@ -46,6 +46,13 @@ typedef struct _AMLI_NAME_SPACE_OBJECT
     ULONG RefCount;
 } AMLI_NAME_SPACE_OBJECT, *PAMLI_NAME_SPACE_OBJECT;
 
+typedef struct _AMLI_OBJECT_OWNER
+{
+    AMLI_LIST List;
+    ULONG Signature;
+    PAMLI_NAME_SPACE_OBJECT ObjList;
+} AMLI_OBJECT_OWNER, *PAMLI_OBJECT_OWNER;
+
 struct _AMLI_CONTEXT;
 typedef NTSTATUS (__cdecl* PAMLI_FN_PARSE)(struct _AMLI_CONTEXT* AmliContext, PVOID Context, NTSTATUS InStatus);
 
@@ -56,6 +63,25 @@ typedef struct _AMLI_FRAME_HEADER
     ULONG Flags;
     PAMLI_FN_PARSE ParseFunction;
 } AMLI_FRAME_HEADER, *PAMLI_FRAME_HEADER;
+
+typedef struct _AMLI_HEAP_HEADER
+{
+    ULONG Signature;
+    ULONG Length;
+    struct _AMLI_HEAP* Heap;
+    AMLI_LIST List;
+} AMLI_HEAP_HEADER, *PAMLI_HEAP_HEADER;
+
+typedef struct _AMLI_HEAP
+{
+    ULONG Signature;
+    PVOID HeapEnd;
+    struct _AMLI_HEAP* HeapHead;
+    struct _AMLI_HEAP* HeapNext;
+    PVOID HeapTop;
+    PAMLI_LIST ListFreeHeap;
+    AMLI_HEAP_HEADER Heap;
+} AMLI_HEAP, *PAMLI_HEAP;
 
 typedef struct _AMLI_CONTEXT
 {
@@ -89,6 +115,52 @@ typedef struct _AMLI_EVHANDLE
     PVOID Handler;
     PVOID Context;
 } AMLI_EVHANDLE, *PAMLI_EVHANDLE;
+
+typedef struct _AMLI_MUTEX_OBJECT
+{
+    ULONG SyncLevel;
+    ULONG OwnedCounter;
+    PVOID Owner;
+    PAMLI_LIST ListWaiters;
+} AMLI_MUTEX_OBJECT, *PAMLI_MUTEX_OBJECT;
+
+C_ASSERT(sizeof(AMLI_MUTEX_OBJECT) == 0x10);
+
+typedef struct _AMLI_METHOD_OBJECT
+{
+    AMLI_MUTEX_OBJECT Mutex;
+    UCHAR MethodFlags;
+    UCHAR CodeBuff[1];
+    UCHAR Pad[2];
+} AMLI_METHOD_OBJECT, *PAMLI_METHOD_OBJECT;
+
+typedef struct _AMLI_MUTEX
+{
+    KSPIN_LOCK SpinLock;
+    KIRQL OldIrql;
+    UCHAR Pad[3];
+} AMLI_MUTEX, *PAMLI_MUTEX;
+
+typedef VOID (__cdecl* PAMLI_FN_PAUSE_CALLBACK)(PVOID Context);
+
+typedef struct _AMLI_CONTEXT_QUEUE
+{
+    ULONG Flags;
+    PKTHREAD Thread;
+    PAMLI_CONTEXT CurrentContext;
+    PAMLI_LIST List;
+    ULONG TimeSliceLength;
+    ULONG TimeSliceInterval;
+    PAMLI_FN_PAUSE_CALLBACK PauseCallback;
+    PVOID CallbackContext;
+    AMLI_MUTEX Mutex;
+    KTIMER Timer;
+    KDPC DpcStartTimeSlice;
+    KDPC DpcExpireTimeSlice;
+    WORK_QUEUE_ITEM WorkItem;
+} AMLI_CONTEXT_QUEUE, *PAMLI_CONTEXT_QUEUE;
+
+C_ASSERT(sizeof(AMLI_CONTEXT_QUEUE) == 0xA0);
 
 typedef struct _AMLI_TERM_CONTEXT
 {

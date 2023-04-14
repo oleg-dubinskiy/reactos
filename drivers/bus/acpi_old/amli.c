@@ -12,7 +12,9 @@
 
 /* GLOBALS *******************************************************************/
 
+PAMLI_NAME_SPACE_OBJECT gpnsNameSpaceRoot;
 PAMLI_RS_ACCESS_HANDLER gpRSAccessHead;
+PAMLI_HEAP gpheapGlobal;
 
 AMLI_EVHANDLE ghNotify;
 AMLI_EVHANDLE ghFatal;
@@ -20,6 +22,14 @@ AMLI_EVHANDLE ghValidateTable;
 AMLI_EVHANDLE ghGlobalLock;
 AMLI_EVHANDLE ghCreate;
 AMLI_EVHANDLE ghDestroyObj;
+KSPIN_LOCK gdwGHeapSpinLock;
+KSPIN_LOCK gdwGContextSpinLock;
+NPAGED_LOOKASIDE_LIST AMLIContextLookAsideList;
+AMLI_CONTEXT_QUEUE gReadyQueue;
+AMLI_MUTEX gmutCtxtList;
+AMLI_MUTEX gmutOwnerList;
+AMLI_MUTEX gmutHeap;
+AMLI_MUTEX gmutSleep;
 
 LONG giIndent;
 LONG gdwcCTObjs;
@@ -433,6 +443,40 @@ AMLI_TERM_EX ExOpcodeTable[] =
     { 0x00, NULL           }
 };
 #endif
+
+UCHAR OSIAML[] = { 0xA4, 0xCA, 0x68 };
+PCHAR gpszOSName = "Microsoft Windows NT";
+
+/* 5.3.1 Predefined (under) Root Namespaces (Table 5-40) */
+PCHAR ObjTags[5] = {
+    "_GPE", // General purpose events (GP_STS)
+    "_PR",  // Processor Tree
+    "_SB",  // System bus tree
+    "_SI",  // System Indicators
+    "_TZ"   // Thermal Zone
+};
+
+/* STRING FUNCTIONS *********************************************************/
+
+ULONG
+__cdecl
+StrLen(
+    _In_ PCHAR psz,
+    _In_ ULONG nx)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+/* FUNCTIONS ****************************************************************/
+
+VOID
+__cdecl
+InitializeMutex(
+    _In_ PAMLI_MUTEX AmliSpinLock)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
 
 /* CALLBACKS TERM HANDLERS **************************************************/
 
@@ -1008,6 +1052,16 @@ AMLIRegEventHandler(
 
 NTSTATUS
 __cdecl
+NewHeap(
+    _In_ SIZE_T NumberOfBytes,
+    _In_ PAMLI_HEAP* OutHeap)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 InternalOpRegionHandler(
     _In_ ULONG AccType,
     _In_ PAMLI_NAME_SPACE_OBJECT BaseObj,
@@ -1162,6 +1216,50 @@ OSInitializeCallbacks(VOID)
     return RegisterOperationRegionHandler(NULL, 6, 2, PciConfigSpaceHandler, 0, &RegionData);
 }
 
+PVOID
+__cdecl
+HeapAlloc(
+    _In_ PAMLI_HEAP InHeap,
+    _In_ ULONG NameSeg,
+    _In_ ULONG Length)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
+NTSTATUS
+__cdecl
+CreateNameSpaceObject(
+    _In_ PAMLI_HEAP Heap,
+    _In_ PCHAR Name,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsScope,
+    _In_ PAMLI_OBJECT_OWNER Owner,
+    _In_ PAMLI_NAME_SPACE_OBJECT* OutObject,
+    _In_ ULONG Flags)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+InitMutex(
+    _In_ PAMLI_HEAP Heap,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ ULONG Level)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+StartTimeSlicePassive(
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 __cdecl
 AMLIInitialize(
@@ -1172,8 +1270,197 @@ AMLIInitialize(
     _In_ ULONG TimeSliceInterval,
     _In_ ULONG MaxContextsDepth)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PAMLI_METHOD_OBJECT MethodObject;
+    ULONG ix;
+    NTSTATUS Status;
+
+    DPRINT("AMLIInitialize: %X, %X, %X, %X, %X\n", InitFlags, CtxtBlkSize, GlobalHeapBlkSize, TimeSliceLen, TimeSliceInterval);
+
+    giIndent++;
+
+    if (gpnsNameSpaceRoot)
+    {
+        DPRINT1("AMLIInitialize: interpreter already initialized\n");
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_ALREADY_INITIALIZED;
+        goto Exit;
+    }
+
+    if (!CtxtBlkSize)
+        gdwCtxtBlkSize = 0x2000;
+    else
+        gdwCtxtBlkSize = CtxtBlkSize;
+
+    if (!GlobalHeapBlkSize)
+        gdwGlobalHeapBlkSize = 0x10000;
+    else
+        gdwGlobalHeapBlkSize = GlobalHeapBlkSize;
+
+    gdwfAMLIInit = InitFlags;
+
+    DPRINT("AMLIInitialize: FIXME GetHackFlags()\n");
+
+    if (MaxContextsDepth <= 0x10)
+        gdwcCTObjsMax = 0x10;
+    else if (MaxContextsDepth > 0x400)
+        gdwcCTObjsMax = 0x400;
+    else
+        gdwcCTObjsMax = MaxContextsDepth;
+
+    KeInitializeSpinLock(&gdwGHeapSpinLock);
+    KeInitializeSpinLock(&gdwGContextSpinLock);
+
+    ExInitializeNPagedLookasideList(&AMLIContextLookAsideList, NULL, NULL, 0, gdwCtxtBlkSize, 'ClmA', gdwcCTObjsMax);
+
+    Status = NewHeap(gdwGlobalHeapBlkSize, &gpheapGlobal);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("AMLIInitialize: Status %X\n", Status);
+        goto Exit1;
+    }
+
+    gpheapGlobal->HeapHead = gpheapGlobal;
+
+    InitializeMutex(&gmutHeap);
+
+    /* The root of the namespace */
+    Status = CreateNameSpaceObject(gpheapGlobal, "\\", NULL, NULL, NULL, 0);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("AMLIInitialize: Status %X\n", Status);
+        goto Exit1;
+    }
+
+    ix = 0;
+
+    while (TRUE)
+    {
+        Status = CreateNameSpaceObject(gpheapGlobal, ObjTags[ix], NULL, NULL, NULL, 0);
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("AMLIInitialize: Status %X\n", Status);
+            break;
+        }
+
+        ix++;
+        if (ix < 5)
+            continue;
+
+        /* Revision of the ACPI specification that OSPM implements */
+        Status = CreateNameSpaceObject(gpheapGlobal, "_REV", NULL, NULL, &NsObject, 0);
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("AMLIInitialize: Status %X\n", Status);
+            break;
+        }
+
+        NsObject->ObjData.DataType = 1;
+        NsObject->ObjData.DataValue = ULongToPtr(1);
+
+        /* Name of the operating system */
+        Status = CreateNameSpaceObject(gpheapGlobal, "_OS", NULL, NULL, &NsObject, 0);
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("AMLIInitialize: Status %X\n", Status);
+            break;
+        }
+
+        NsObject->ObjData.DataType = 2;
+        NsObject->ObjData.DataLen = StrLen(gpszOSName, 0xFFFFFFFF) + 1;
+
+        gdwcSDObjs++;
+
+        NsObject->ObjData.DataBuff = HeapAlloc(gpheapGlobal, 'RTSH', NsObject->ObjData.DataLen);
+        if (!NsObject->ObjData.DataBuff)
+        {
+            DPRINT1("AMLIInitialize: failed to allocate \\_OS name object\n");
+            ASSERT(FALSE);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto Exit;
+        }
+
+        RtlCopyMemory(NsObject->ObjData.DataBuff, gpszOSName, NsObject->ObjData.DataLen);
+
+        /* Operating System Interface support */
+        Status = CreateNameSpaceObject(gpheapGlobal, "_OSI", NULL, NULL, &NsObject, 0);
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("AMLIInitialize: Status %X\n", Status);
+            break;
+        }
+
+        NsObject->ObjData.DataType = 8;
+        NsObject->ObjData.DataLen = 0x16;
+
+        gdwcSDObjs++;
+
+        NsObject->ObjData.DataBuff = MethodObject = HeapAlloc(gpheapGlobal, 'RTSH', NsObject->ObjData.DataLen);
+        if (!MethodObject)
+        {
+            DPRINT1("AMLIInitialize: failed to allocate \\_OSI name object\n");
+            ASSERT(FALSE);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto Exit;
+        }
+
+        RtlZeroMemory(MethodObject, NsObject->ObjData.DataLen);
+
+        MethodObject->MethodFlags = 1;
+        RtlCopyMemory(MethodObject->CodeBuff, OSIAML, sizeof(OSIAML));
+
+        /* Global Lock */
+        Status = CreateNameSpaceObject(gpheapGlobal, "_GL", NULL, NULL, &NsObject, 0);
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("AMLIInitialize: Status %X\n", Status);
+            break;
+        }
+
+        NsObject->ObjData.Flags = 2;
+
+        Status = InitMutex(gpheapGlobal, NsObject, 0);
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("AMLIInitialize: Status %X\n", Status);
+            break;
+        }
+
+        gReadyQueue.TimeSliceLength = TimeSliceLen;
+        if (!TimeSliceLen)
+            gReadyQueue.TimeSliceLength = 100;
+
+        gReadyQueue.TimeSliceInterval = TimeSliceInterval;
+        if (!TimeSliceInterval)
+            gReadyQueue.TimeSliceInterval = 100;
+
+        KeInitializeTimer(&gReadyQueue.Timer);
+        InitializeMutex(&gReadyQueue.Mutex);
+
+        gReadyQueue.WorkItem.WorkerRoutine = StartTimeSlicePassive;
+        gReadyQueue.WorkItem.Parameter = &gReadyQueue;
+        gReadyQueue.WorkItem.List.Flink = 0;
+
+        InitializeMutex(&gmutCtxtList);
+        InitializeMutex(&gmutOwnerList);
+        InitializeMutex(&gmutSleep);
+
+        DPRINT("AMLIInitialize: FIXME\n");
+        ASSERT(FALSE);
+
+        break;
+    }
+
+Exit1:
+
+    if (Status == 0x8004)
+        Status = STATUS_PENDING;
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
