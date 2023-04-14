@@ -226,6 +226,10 @@ typedef struct _ACPI_BUILD_REQUEST
 
 /* FUNCTIONS ****************************************************************/
 
+#ifndef Add2Ptr
+  #define Add2Ptr(P,I) ((PVOID)((PUCHAR)(P) + (I)))
+#endif
+
 /* acpiinit.c */
 NTSTATUS
 NTAPI

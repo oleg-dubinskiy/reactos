@@ -1050,6 +1050,25 @@ AMLIRegEventHandler(
    return Status;
 }
 
+VOID
+__cdecl
+InitHeap(
+    _In_ PAMLI_HEAP Heap,
+    _In_ ULONG NumberOfBytes)
+{
+    DPRINT("InitHeap: %X, %X\n", Heap, NumberOfBytes);
+
+    giIndent++;
+
+    RtlZeroMemory(Heap, NumberOfBytes);
+
+    Heap->Signature = 'PAEH';
+    Heap->HeapTop = &Heap->Heap;
+    Heap->HeapEnd = Add2Ptr(Heap, NumberOfBytes);
+
+    giIndent--;
+}
+
 NTSTATUS
 __cdecl
 NewHeap(
