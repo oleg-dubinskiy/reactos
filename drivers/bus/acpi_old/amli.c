@@ -784,8 +784,27 @@ RegEventHandler(
     _In_ PVOID Handler,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("RegEventHandler: %X, %X, %X\n", EventHandler, Handler, Context);
+
+    giIndent++;
+
+    if (EventHandler->Handler && Handler)
+    {
+        DPRINT1("RegEventHandler: RegEventHandler: event handler already exist");
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_HANDLER_COLLISION;
+    }
+    else
+    {
+        EventHandler->Handler = Handler;
+        EventHandler->Context = Context;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
