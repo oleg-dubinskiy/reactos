@@ -110,6 +110,16 @@ typedef struct _AMLI_FIELD_UNIT_OBJECT
     PAMLI_NAME_SPACE_OBJECT NsFieldParent;
 } AMLI_FIELD_UNIT_OBJECT, *PAMLI_FIELD_UNIT_OBJECT;
 
+typedef struct _AMLI_RS_ACCESS_HANDLER
+{
+    struct _AMLI_RS_ACCESS_HANDLER* Next;
+    ULONG RegionSpace;
+    PVOID CookAccessHandler;
+    PVOID CookAccessParam;
+    PVOID RawAccessHandler;
+    PVOID RawAccessParam;
+} AMLI_RS_ACCESS_HANDLER, *PAMLI_RS_ACCESS_HANDLER;
+
 typedef struct _AMLI_REGION_HANDLER
 {
     PVOID CallBack;

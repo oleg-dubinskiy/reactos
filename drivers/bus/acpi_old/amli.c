@@ -12,6 +12,8 @@
 
 /* GLOBALS *******************************************************************/
 
+PAMLI_RS_ACCESS_HANDLER gpRSAccessHead;
+
 AMLI_EVHANDLE ghNotify;
 AMLI_EVHANDLE ghFatal;
 AMLI_EVHANDLE ghValidateTable;
@@ -432,6 +434,29 @@ AMLI_TERM_EX ExOpcodeTable[] =
 };
 #endif
 
+/* CALLBACKS TERM HANDLERS **************************************************/
+
+PAMLI_RS_ACCESS_HANDLER
+__cdecl
+FindRSAccess(
+    _In_ ULONG RegionSpace)
+{
+    PAMLI_RS_ACCESS_HANDLER RsAccess;
+
+    giIndent++;
+
+    for (RsAccess = gpRSAccessHead;
+         RsAccess && RsAccess->RegionSpace != RegionSpace;
+         RsAccess = RsAccess->Next)
+    {
+        ;
+    }
+
+    giIndent--;
+
+    return RsAccess;
+}
+
 /* TERM HANDLERS ************************************************************/
 
 #if 1
@@ -815,8 +840,74 @@ RegRSAccess(
     _In_ PVOID Param,
     _In_ BOOLEAN IsRaw)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_RS_ACCESS_HANDLER RsAccess;
+    NTSTATUS Status = 0;
+
+    DPRINT("RegRSAccess: %X, %X, %X, %X\n", RegionSpace, FnHandler, Param, IsRaw);
+
+    giIndent++;
+
+    if (RegionSpace == 0 || RegionSpace == 1)
+    {
+        DPRINT1("RegRSAccess: illegal region space %X\n", RegionSpace);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_REGION;
+        goto Exit;
+    }
+
+    RsAccess = FindRSAccess(RegionSpace);
+    if (!RsAccess)
+    {
+        gdwcRSObjs++;
+        gdwcMemObjs++;
+
+        RsAccess = ExAllocatePoolWithTag(NonPagedPool, sizeof(*RsAccess), 'RlmA');
+        if (!RsAccess)
+        {
+            DPRINT1("RegRSAccess: failed to allocate handler structure\n");
+            ASSERT(FALSE);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto Exit;
+        }
+
+        RtlZeroMemory(RsAccess, sizeof(*RsAccess));
+
+        RsAccess->RegionSpace = RegionSpace;
+        RsAccess->Next = gpRSAccessHead;
+        gpRSAccessHead = RsAccess;
+    }
+
+    if (IsRaw)
+    {
+        if (RsAccess->RawAccessHandler && FnHandler)
+        {
+            DPRINT1("RegRSAccess: RawAccess for RegionSpace %X already have a handler\n", RegionSpace);
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_HANDLER_COLLISION;
+        }
+        else
+        {
+            RsAccess->RawAccessHandler = FnHandler;
+            RsAccess->RawAccessParam = Param;
+        }
+    }
+    else if (RsAccess->CookAccessHandler && FnHandler)
+    {
+        DPRINT1("RegRSAccess: CookAccess for RegionSpace %x already have a handler\n", RegionSpace);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_HANDLER_COLLISION;
+    }
+    else
+    {
+        RsAccess->CookAccessHandler = FnHandler;
+        RsAccess->CookAccessParam = Param;
+    }
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
