@@ -464,8 +464,31 @@ StrLen(
     _In_ PCHAR psz,
     _In_ ULONG nx)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    ULONG ix;
+
+    //DPRINT("StrLen: str '%s', nx %X)\n", psz, nx);
+
+    giIndent++;
+
+    ASSERT(psz != NULL);
+
+    ix = 0;
+    if (nx)
+    {
+        do
+        {
+            if (!*psz)
+                break;
+
+            ix++;
+            psz++;
+        }
+        while (ix < nx);
+    }
+
+    giIndent--;
+
+    return ix;
 }
 
 int
