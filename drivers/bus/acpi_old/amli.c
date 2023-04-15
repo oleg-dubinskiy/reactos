@@ -629,6 +629,41 @@ StrCpy(
     return Dst;
 }
 
+PCHAR
+__cdecl
+StrCat(
+    _In_ PCHAR Dst,
+    _In_ PCHAR Src,
+    _In_ ULONG nx)
+{
+    ULONG Len;
+    ULONG SrcLen;
+    PCHAR DstEnd;
+
+    //DPRINT("StrCat: Dst '%s', Src '%s', nx %X\n", Dst, Src, nx);
+
+    giIndent++;
+
+    ASSERT(Dst != NULL);
+    ASSERT(Src != NULL);
+
+    SrcLen = StrLen(Src, nx);
+
+    if (nx == -1 || nx > SrcLen)
+        Len = SrcLen;
+    else
+        Len = nx;
+
+    DstEnd = &Dst[StrLen(Dst, 0xFFFFFFFF)];
+
+    RtlCopyMemory(DstEnd, Src, Len);
+    DstEnd[Len] = 0;
+
+    giIndent--;
+
+    return Dst;
+}
+
 /* LIST FUNCTIONS ***********************************************************/
 
 VOID
