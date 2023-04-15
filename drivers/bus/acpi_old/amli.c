@@ -468,14 +468,52 @@ StrLen(
     return 0;
 }
 
+int
+__cdecl
+StrCmp(
+    _In_ PCHAR psz1,
+    _In_ PCHAR psz2,
+    _In_ ULONG nx,
+    _In_ BOOLEAN fMatchCase)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+PCHAR
+__cdecl
+StrRChr(
+    _In_ PCHAR pszStr,
+    _In_ CHAR Char)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
+/* LIST FUNCTIONS ***********************************************************/
+
+VOID
+__cdecl
+ListInsertTail(
+    _In_ PAMLI_LIST ListEntry,
+    _Out_ PAMLI_LIST* OutListHead)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 /* FUNCTIONS ****************************************************************/
 
 VOID
 __cdecl
 InitializeMutex(
-    _In_ PAMLI_MUTEX AmliSpinLock)
+    _In_ PAMLI_MUTEX AmliMutex)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    giIndent++;
+
+    KeInitializeSpinLock(&AmliMutex->SpinLock);
+    AmliMutex->OldIrql = 0;
+
+    giIndent--;
 }
 
 /* CALLBACKS TERM HANDLERS **************************************************/
@@ -1268,6 +1306,27 @@ HeapAlloc(
     return NULL;
 }
 
+VOID
+__cdecl
+InsertOwnerObjList(
+    _In_ PAMLI_OBJECT_OWNER Owner,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+__cdecl
+GetNameSpaceObject(
+    _In_ PCHAR ObjPath,
+    _In_ PAMLI_NAME_SPACE_OBJECT ScopeObject,
+    _In_ PAMLI_NAME_SPACE_OBJECT* OutObject,
+    _In_ ULONG Flags)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 __cdecl
 CreateNameSpaceObject(
@@ -1278,8 +1337,196 @@ CreateNameSpaceObject(
     _In_ PAMLI_NAME_SPACE_OBJECT* OutObject,
     _In_ ULONG Flags)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT NsObject = NULL;
+    PAMLI_NAME_SPACE_OBJECT ParentObject;
+    ULONG nameSegSize;
+    PCHAR nameSeg;
+    PCHAR name;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    if (!Name)
+        name = "<null>";
+    else
+        name = Name;
+
+    DPRINT("CreateNameSpaceObject: %X, '%s', %X, %X, %X, %X\n", Heap, name, NsScope, Owner, OutObject, Flags);
+
+    giIndent++;
+
+    if (!NsScope)
+        NsScope = gpnsNameSpaceRoot;
+
+    if (!Name)
+    {
+        gdwcNSObjs++;
+
+        NsObject = HeapAlloc(Heap, 'OSNH', sizeof(AMLI_NAME_SPACE_OBJECT));
+        if (!NsObject)
+        {
+            DPRINT1("CreateNameSpaceObject: fail to allocate name space object");
+            ASSERT(FALSE);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto Exit;
+        }
+
+        ASSERT(gpnsNameSpaceRoot != NULL);
+
+        RtlZeroMemory(NsObject, sizeof(AMLI_NAME_SPACE_OBJECT));
+
+        NsObject->Parent = NsScope;
+        InsertOwnerObjList(Owner, NsObject);
+
+        ListInsertTail(&NsObject->List, &NsScope->FirstChild->List.Prev);
+
+        if (OutObject)
+            *OutObject = NsObject;
+
+        goto Exit;
+    }
+
+    if (*Name)
+    {
+        Status = GetNameSpaceObject(Name, NsScope, &NsObject, 1);
+        if (Status == STATUS_SUCCESS)
+        {
+            if (!(Flags & 0x10000))
+            {
+                DPRINT1("CreateNameSpaceObject: object already exist - %s", Name);
+                ASSERT(FALSE);
+                Status = STATUS_OBJECT_NAME_COLLISION;
+            }
+
+            if (OutObject)
+                *OutObject = NsObject;
+
+            goto Exit;
+        }
+
+        if (Status != STATUS_OBJECT_NAME_NOT_FOUND)
+            goto Exit;
+    }
+
+    Status = STATUS_SUCCESS;
+
+    if (!StrCmp(Name, "\\", 0xFFFFFFFF, TRUE))
+    {
+        ASSERT(gpnsNameSpaceRoot == NULL);
+        ASSERT(Owner == NULL);
+
+        gdwcNSObjs++;
+
+        NsObject = HeapAlloc(Heap, 'OSNH', sizeof(AMLI_NAME_SPACE_OBJECT));
+        if (!NsObject)
+        {
+            DPRINT1("CreateNameSpaceObject: fail to allocate name space object");
+            ASSERT(FALSE);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto Exit;
+        }
+
+        RtlZeroMemory(NsObject, sizeof(AMLI_NAME_SPACE_OBJECT));
+
+        NsObject->NameSeg = '___\\';
+        gpnsNameSpaceRoot = NsObject;
+
+        DPRINT("CreateNameSpaceObject: gpnsNameSpaceRoot %X, NameSeg %X\n", gpnsNameSpaceRoot, gpnsNameSpaceRoot->NameSeg);
+
+        InsertOwnerObjList(Owner, NsObject);
+
+        if (OutObject)
+            *OutObject = NsObject;
+
+        goto Exit;
+    }
+
+    nameSeg = StrRChr(Name, '.');
+
+    if (nameSeg)
+    {
+        *nameSeg = 0;
+        nameSeg = (nameSeg + 1);
+
+        Status = GetNameSpaceObject(Name, NsScope, &ParentObject, 0x80000001);
+        if (Status)
+            goto Exit;
+    }
+    else if (*Name == '\\')
+    {
+        nameSeg = (Name + 1);
+
+        ASSERT(gpnsNameSpaceRoot != NULL);
+        ParentObject = gpnsNameSpaceRoot;
+    }
+    else if (*Name == '^')
+    {
+        nameSeg = Name;
+        ParentObject = NsScope;
+
+        while (ParentObject)
+        {
+            ParentObject = ParentObject->Parent;
+
+            nameSeg++;
+            if (*nameSeg != '^')
+                break;
+        }
+    }
+    else
+    {
+        ASSERT(NsScope != NULL);
+        ParentObject = NsScope;
+
+        nameSeg = Name;
+        if (Status)
+            goto Exit;
+    }
+
+    nameSegSize = StrLen(nameSeg, 0xFFFFFFFF);
+
+    if (*nameSeg != 0 && nameSegSize > 4)
+    {
+        DPRINT1("CreateNameSpaceObject: invalid name - %s", nameSeg);
+        ASSERT(FALSE);
+        Status = STATUS_OBJECT_NAME_INVALID;
+        goto Exit;
+    }
+
+    gdwcNSObjs++;
+
+    NsObject = HeapAlloc(Heap, 'OSNH', sizeof(AMLI_NAME_SPACE_OBJECT));
+    if (!NsObject)
+    {
+        DPRINT1("CreateNameSpaceObject: fail to allocate name space object");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    RtlZeroMemory(NsObject, sizeof(AMLI_NAME_SPACE_OBJECT));
+
+    if (*Name)
+    {
+        NsObject->NameSeg = '____';
+        RtlCopyMemory(&NsObject->NameSeg, nameSeg, nameSegSize);
+    }
+    else
+    {
+        NsObject->NameSeg = 0;
+    }
+
+    NsObject->Parent = ParentObject;
+    InsertOwnerObjList(Owner, NsObject);
+
+    ListInsertTail(&NsObject->List, (PAMLI_LIST *)&ParentObject->FirstChild);
+
+    if (Status == STATUS_SUCCESS && OutObject)
+        *OutObject = NsObject;
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
