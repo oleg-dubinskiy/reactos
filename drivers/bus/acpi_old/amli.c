@@ -499,8 +499,94 @@ StrCmp(
     _In_ ULONG nx,
     _In_ BOOLEAN fMatchCase)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    ULONG ix;
+    ULONG jx;
+    PCHAR pChar2;
+    char char1;
+    char char2;
+    ULONG Len1;
+    ULONG Len2;
+
+    //DPRINT("StrCmp: psz1 '%s', psz2 '%s', nx %X, MatchCase %X\n", psz1, psz2, nx, MatchCase);
+
+    giIndent++;
+
+    ASSERT(psz1 != NULL);
+    ASSERT(psz2 != NULL);
+
+    Len1 = StrLen(psz1, nx);
+    Len2 = StrLen(psz2, nx);
+
+    if (nx == 0xFFFFFFFF)
+    {
+        nx = Len1;
+
+        if (Len1 <= Len2)
+            nx = Len2;
+    }
+
+    ix = 0;
+    jx = 0;
+
+    if (fMatchCase)
+    {
+        do
+        {
+            if (ix >= nx)
+                break;
+
+            if (ix >= Len1)
+                break;
+
+            if (ix >= Len2)
+                break;
+
+            jx = (LONG)(psz1[ix] - psz2[ix]);
+
+            ix++;
+        }
+        while (!jx);
+    }
+    else
+    {
+        pChar2 = psz2;
+        do
+        {
+            if (ix >= nx || ix >= Len1 || ix >= Len2)
+                break;
+
+            char1 = pChar2[psz1 - psz2];
+            if (char1 >= 'a' && char1 <= 'z')
+                char1 &= ~0x20; // to capital letter
+
+            char2 = *pChar2;
+            if (*pChar2 >= 'a' && char2 <= 'z')
+                char2 &= ~0x20; // to capital letter
+
+            jx = (char1 - char2);
+
+            ix++;
+            pChar2++;
+        }
+        while (char1 == char2);
+    }
+
+    if (!jx && ix < nx)
+    {
+        if (ix >= Len1)
+        {
+            if (ix < Len2)
+                jx = -psz2[ix];
+        }
+        else
+        {
+            jx = psz1[ix];
+        }
+    }
+
+    giIndent--;
+
+    return jx;
 }
 
 PCHAR
