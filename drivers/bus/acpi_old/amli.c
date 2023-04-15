@@ -599,6 +599,36 @@ StrRChr(
     return NULL;
 }
 
+PCHAR
+__cdecl
+StrCpy(
+    _In_ PCHAR Dst,
+    _In_ PCHAR Src,
+    _In_ ULONG Len)
+{
+    ULONG SrcLen;
+
+    giIndent++;
+
+    ASSERT(Dst != NULL);
+    ASSERT(Src != NULL);
+
+    if (Len == 0xFFFFFFFF)
+    {
+        SrcLen = StrLen(Src, 0xFFFFFFFF);
+
+        if (SrcLen < 0xFFFFFFFF)
+            Len = SrcLen;
+    }
+
+    RtlCopyMemory(Dst, Src, Len);
+    Dst[Len] = 0;
+
+    giIndent--;
+
+    return Dst;
+}
+
 /* LIST FUNCTIONS ***********************************************************/
 
 VOID
