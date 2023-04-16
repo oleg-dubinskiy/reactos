@@ -364,6 +364,12 @@ ACPIBuildDeviceDpc(
     _In_ PVOID SystemArgument2
 );
 
+BOOLEAN
+NTAPI
+ACPIInitialize(
+    _In_ PDEVICE_OBJECT DeviceObject
+);
+
 /* registry.c */
 VOID
 NTAPI

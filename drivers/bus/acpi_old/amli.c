@@ -591,6 +591,16 @@ StrCmp(
 
 PCHAR
 __cdecl
+StrChr(
+    _In_ PCHAR pszStr,
+    _In_ CHAR Char)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
+PCHAR
+__cdecl
 StrRChr(
     _In_ PCHAR pszStr,
     _In_ CHAR Char)
@@ -1681,7 +1691,6 @@ Exit:
 
     return Status;
 }
-
 
 NTSTATUS
 __cdecl
