@@ -1544,9 +1544,144 @@ GetNameSpaceObject(
     _In_ PAMLI_NAME_SPACE_OBJECT* OutObject,
     _In_ ULONG Flags)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT scopeObject;
+    PAMLI_NAME_SPACE_OBJECT object;
+    PCHAR EndString;
+    PCHAR StartString;
+    int NameSeg;
+    ULONG NameSegSize;
+    BOOLEAN IsTrueBoolean; // FIXME
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("GetNameSpaceObject: '%s', '%s', %X, %X\n", ObjPath, GetObjectPath(ScopeObject), OutObject, Flags);
+
+    giIndent++;
+
+    if (!ScopeObject)
+        scopeObject = gpnsNameSpaceRoot;
+    else
+        scopeObject = ScopeObject;
+
+    if (*ObjPath == '\\')
+    {
+        StartString = (ObjPath + 1);
+        scopeObject = gpnsNameSpaceRoot;
+    }
+    else
+    {
+        StartString = ObjPath;
+
+        while (*StartString == '^')
+        {
+            if (!scopeObject)
+                break;
+
+            StartString++;
+
+            scopeObject = scopeObject->Parent;
+        }
+    }
+  
+    *OutObject = scopeObject;
+
+    if (!scopeObject)
+    {
+        DPRINT1("GetNameSpaceObject: STATUS_OBJECT_NAME_NOT_FOUND\n");
+        Status = STATUS_OBJECT_NAME_NOT_FOUND;
+        goto Exit;
+    }
+
+    if (*StartString == 0)
+    {
+        goto Exit;
+    }
+
+    if ((Flags & 1) || *ObjPath == '\\' || *ObjPath == '^' || StrLen(ObjPath, 0xFFFFFFFF) > 4)
+        IsTrueBoolean = FALSE;
+    else
+        IsTrueBoolean = TRUE;
+
+    while (TRUE)
+    {
+        while (scopeObject->FirstChild)
+        {
+            EndString = StrChr(StartString, '.');
+
+            NameSegSize = EndString ? EndString - StartString : StrLen(StartString, 0xFFFFFFFF);
+            if (NameSegSize > 4)
+            {
+                DPRINT1("GetNameSpaceObject: invalid name '%s' (%X)\n", ObjPath, NameSegSize);
+                ASSERT(FALSE);
+                Status = STATUS_OBJECT_NAME_INVALID;
+                goto Exit;
+            }
+
+            NameSeg = '____';
+            RtlCopyMemory(&NameSeg, StartString, NameSegSize);
+
+            object = scopeObject->FirstChild;
+
+            while (TRUE)
+            {
+                if (object->NameSeg == NameSeg)
+                {
+                    StartString += NameSegSize;
+                    scopeObject = object;
+
+                    if (*StartString == '.')
+                    {
+                        StartString++;
+                    }
+                    else if (*StartString == 0)
+                    {
+                        *OutObject = object;
+                        goto Exit;
+                    }
+
+                    break;
+                }
+
+                object = (PAMLI_NAME_SPACE_OBJECT)object->List.Next;
+                if (object == object->Parent->FirstChild)
+                {
+                    goto GetParent;
+                }
+            }
+        }
+
+GetParent:
+
+        if (!IsTrueBoolean || !scopeObject || !scopeObject->Parent)
+        {
+            Status = STATUS_OBJECT_NAME_NOT_FOUND;
+            goto Exit;
+        }
+        else
+        {
+            scopeObject = scopeObject->Parent;
+            Status = 0;
+        }
+    }
+
+Exit:
+
+    if ((Flags & 0x80000000) && Status == STATUS_OBJECT_NAME_NOT_FOUND)
+    {
+        DPRINT1("GetNameSpaceObject: '%s' not found. Flags %X, Status %X\n", ObjPath, Flags, Status);
+        ASSERT(FALSE);
+    }
+
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("GetNameSpaceObject: Status %X\n", Status);
+        *OutObject = NULL;
+    }
+
+    giIndent--;
+
+    return Status;
 }
+
 
 NTSTATUS
 __cdecl
