@@ -690,6 +690,53 @@ InitializeMutex(
     giIndent--;
 }
 
+PCHAR
+__cdecl
+GetObjectPath(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
+{
+    static CHAR TmpPath[0x100] = {0};
+    int ix;
+
+    giIndent++;
+
+    if (!NsObject)
+    {
+        TmpPath[0] = 0;
+        goto Exit;
+    }
+
+    if (NsObject->Parent)
+    {
+        GetObjectPath(NsObject->Parent);
+
+        if (NsObject->Parent->Parent)
+            StrCat(TmpPath, ".", 0xFFFFFFFF);
+
+        StrCat(TmpPath, (PCHAR)&NsObject->NameSeg, 4);
+    }
+    else
+    {
+        StrCpy(TmpPath, "\\", 0xFFFFFFFF);
+    }
+
+    for (ix = StrLen(TmpPath, 0xFFFFFFFF); ; TmpPath[ix] = 0)
+    {
+        ix--;
+        if (ix < 0)
+            break;
+
+        if (TmpPath[ix] != '_')
+            break;
+    }
+
+Exit:
+
+    giIndent--;
+
+    return TmpPath;
+}
+
 /* CALLBACKS TERM HANDLERS **************************************************/
 
 PAMLI_RS_ACCESS_HANDLER
