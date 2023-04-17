@@ -608,5 +608,30 @@ OSCreateHandle(
     return Status;
 }
 
+PCHAR
+NTAPI
+ACPIRegLocalCopyString(
+    _In_ PCHAR DestString,
+    _In_ PCHAR SourceStr,
+    _In_ ULONG Length)
+{
+    ULONG ix;
+
+    for (ix = 0; ix < Length; ix++)
+    {
+        if (!SourceStr[ix])
+            break;
+
+        if (SourceStr[ix] == ' ')
+            DestString[ix] = '_';
+        else
+            DestString[ix] = SourceStr[ix];
+    }
+
+    DestString[ix] = 0;
+
+    return &DestString[ix];
+}
+
 
 /* EOF */
