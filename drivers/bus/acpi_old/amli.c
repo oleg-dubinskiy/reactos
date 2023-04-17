@@ -718,7 +718,29 @@ ListInsertTail(
     _In_ PAMLI_LIST ListEntry,
     _Out_ PAMLI_LIST* OutListHead)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ASSERT(OutListHead != NULL);
+
+    giIndent++;
+
+    ASSERT(ListEntry != NULL);
+
+    if (*OutListHead)
+    {
+        ListEntry->Next = *OutListHead;
+        ListEntry->Prev = (*OutListHead)->Prev;
+
+        (*OutListHead)->Prev->Next = ListEntry;
+        (*OutListHead)->Prev = ListEntry;
+    }
+    else
+    {
+        *OutListHead = ListEntry;
+
+        ListEntry->Next = ListEntry;
+        ListEntry->Prev = ListEntry;
+    }
+
+    giIndent--;
 }
 
 VOID
