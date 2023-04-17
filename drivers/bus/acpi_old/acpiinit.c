@@ -400,6 +400,73 @@ ACPILoadProcessFACS(
     return STATUS_SUCCESS;
 }
 
+ULONG
+NTAPI
+GetFadtTablePointerEntry(
+    _In_ PFADT Fadt,
+    _In_ PULONG IoPort,
+    _In_ PGEN_ADDR GenAddr,
+    _In_ SIZE_T NumberOfBytes)
+{
+    ULONG RetValue;
+
+  #if !defined(_M_AMD64)
+    ASSERT(GenAddr->Address.HighPart == 0);
+  #endif
+
+    //DPRINT("GetFadtTablePointerEntry: %p, %p, %p, %X, %X\n", Fadt, IoPort, GenAddr, NumberOfBytes, Fadt->Header.Revision);
+
+    if (Fadt->Header.Revision >= 3)
+    {
+        //DPRINT("GetFadtTablePointerEntry: AddressSpaceID %X\n", GenAddr->AddressSpaceID);
+        if (GenAddr->AddressSpaceID)
+        {
+            if (GenAddr->AddressSpaceID != 1)
+            {
+                DPRINT1("GetFadtTablePointerEntry: AddressSpaceID %X\n", GenAddr->AddressSpaceID);
+                ASSERT(FALSE);
+            }
+        }
+        else
+        {
+            //DPRINT("GetFadtTablePointerEntry: Address.QuadPart %I64X\n", GenAddr->Address.QuadPart);
+            if (GenAddr->Address.QuadPart)
+            {
+                if (MmMapIoSpace(GenAddr->Address, NumberOfBytes, MmNonCached))
+                {
+                    DPRINT("GetFadtTablePointerEntry: %p, %p, %p, %p\n", AcpiReadRegisterRoutine, DefPortReadAcpiRegister, AcpiWriteRegisterRoutine, DefPortWriteAcpiRegister);
+
+                    if (AcpiReadRegisterRoutine == DefPortReadAcpiRegister &&
+                        AcpiWriteRegisterRoutine == DefPortWriteAcpiRegister)
+                    {
+                        AcpiReadRegisterRoutine = DefRegisterReadAcpiRegister;
+                        AcpiWriteRegisterRoutine = DefRegisterWriteAcpiRegister;
+                    }
+                }
+                else
+                {
+                    DPRINT1("GetFadtTablePointerEntry: Address.QuadPart %I64X\n", GenAddr->Address.QuadPart);
+                    ASSERT(FALSE);
+                }
+            }
+        }
+    }
+
+    //DPRINT("GetFadtTablePointerEntry: IoPort %X\n", IoPort);
+    RetValue = *IoPort;
+
+    if (AcpiReadRegisterRoutine == DefRegisterReadAcpiRegister &&
+        AcpiWriteRegisterRoutine == DefRegisterWriteAcpiRegister)
+    {
+        AcpiReadRegisterRoutine = DefPortReadAcpiRegister;
+        AcpiWriteRegisterRoutine = DefPortWriteAcpiRegister;
+    }
+
+    DPRINT("GetFadtTablePointerEntry: RetValue %X\n", RetValue);
+
+    return RetValue;
+}
+
 VOID
 NTAPI
 ACPIGpeClearRegisters(VOID)
