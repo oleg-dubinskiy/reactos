@@ -741,6 +741,32 @@ InitializeMutex(
     giIndent--;
 }
 
+VOID
+__cdecl
+AcquireMutex(
+    _In_ PAMLI_MUTEX AmliMutex)
+{
+    giIndent++;
+
+    ASSERT(KeGetCurrentIrql() <= DISPATCH_LEVEL);
+    KeAcquireSpinLock(&AmliMutex->SpinLock, &AmliMutex->OldIrql);
+
+    giIndent--;
+}
+
+VOID
+__cdecl
+ReleaseMutex(
+    _In_ PAMLI_MUTEX AmliMutex)
+{
+    giIndent++;
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    KeReleaseSpinLock(&AmliMutex->SpinLock, AmliMutex->OldIrql);
+
+    giIndent--;
+}
+
 PCHAR
 __cdecl
 GetObjectPath(
