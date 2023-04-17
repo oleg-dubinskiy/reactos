@@ -510,6 +510,71 @@ ACPIGpeEnableDisableEvents(
 
 NTSTATUS
 NTAPI
+ACPILoadProcessDSDT(
+    _In_ PHYSICAL_ADDRESS PhysicalAddress)
+{
+    PDSDT Dsdt;
+    ULONG numElements;
+    ULONG Length;
+
+    DPRINT("ACPILoadProcessDSDT: PhysicalAddress %I64X\n", PhysicalAddress.QuadPart);
+
+  #if !defined(_M_AMD64)
+    ASSERT(PhysicalAddress.HighPart == 0);
+  #endif
+
+    Dsdt = MmMapIoSpace(PhysicalAddress, sizeof(DESCRIPTION_HEADER), MmNonCached);
+    if (!Dsdt)
+    {
+        DPRINT1("ACPILoadProcessDSDT: not mapped Dsdt\n");
+        ASSERT(Dsdt != NULL);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if ( Dsdt->Header.Signature != 'TDSD')
+    {
+        DPRINT1("ACPILoadProcessDSDT: %X does not have DSDT signature\n", Dsdt);
+        return STATUS_ACPI_INVALID_TABLE;
+    }
+
+    Length = Dsdt->Header.Length;
+    MmUnmapIoSpace(Dsdt, sizeof(DESCRIPTION_HEADER));
+
+  #if !defined(_M_AMD64)
+    ASSERT(PhysicalAddress.HighPart == 0);
+  #endif
+
+    Dsdt = MmMapIoSpace(PhysicalAddress, Length, MmNonCached);
+    if (!Dsdt)
+    {
+        DPRINT1("ACPILoadProcessDSDT: not mapped Dsdt\n");
+        ASSERT(Dsdt != NULL);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (!RsdtInformation->NumElements)
+    {
+        return STATUS_ACPI_NOT_INITIALIZED;
+    }
+
+    numElements = (RsdtInformation->NumElements - 1);
+
+    if (ACPIRegReadAMLRegistryEntry((PDESCRIPTION_HEADER *)&Dsdt, TRUE))
+    {
+        DPRINT1("ACPILoadProcessDSDT: DSDT Overloaded from registry (%X)\n", Dsdt);
+        RsdtInformation->Tables[numElements].Flags |= 8;
+    }
+
+    AcpiInformation->DiffSystemDescTable = Dsdt;
+
+    RsdtInformation->Tables[numElements].Flags |= 5;
+    RsdtInformation->Tables[numElements].Address = Dsdt;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 ACPILoadProcessFADT(
     _In_ PFADT Fadt)
 {
