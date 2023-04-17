@@ -699,6 +699,33 @@ ListInsertTail(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+VOID
+__cdecl
+ListInsertHead(
+    _In_ PAMLI_LIST ListEntry,
+    _Inout_ PAMLI_LIST* OutListHead)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+__cdecl
+ListRemoveEntry(
+    _In_ PAMLI_LIST ListEntry,
+    _Inout_ PAMLI_LIST* OutListHead)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+PAMLI_LIST
+__cdecl
+ListRemoveHead(
+    _Inout_ PAMLI_LIST* OutListHead)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
 /* FUNCTIONS ****************************************************************/
 
 VOID
