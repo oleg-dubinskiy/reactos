@@ -1781,7 +1781,16 @@ InsertOwnerObjList(
     _In_ PAMLI_OBJECT_OWNER Owner,
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    giIndent++;
+
+    NsObject->Owner = Owner;
+    if (Owner)
+    {
+        NsObject->OwnedNext = Owner->ObjList;
+        Owner->ObjList = NsObject;
+    }
+
+    giIndent--;
 }
 
 NTSTATUS
