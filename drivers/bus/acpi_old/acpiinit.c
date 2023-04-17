@@ -159,6 +159,57 @@ DefPortWriteAcpiRegister(
     }
 }
 
+USHORT
+NTAPI
+DefRegisterReadAcpiRegister(
+    _In_ ULONG RegType,
+    _In_ ULONG Size)
+{
+    USHORT RetValue;
+
+    switch (RegType)
+    {
+        case 0:
+            return READ_REGISTER_USHORT((PUSHORT)(AcpiInformation->PM1a_BLK + 2));
+
+        case 1:
+            return READ_REGISTER_USHORT((PUSHORT)(AcpiInformation->PM1b_BLK + 2));
+
+        case 2:
+            return READ_REGISTER_USHORT((PUSHORT)AcpiInformation->PM1a_BLK);
+
+        case 3:
+            return READ_REGISTER_USHORT((PUSHORT)AcpiInformation->PM1b_BLK);
+
+        case 4:
+            return READ_REGISTER_USHORT((PUSHORT)AcpiInformation->PM1a_CTRL_BLK);
+
+        case 5:
+            return READ_REGISTER_USHORT((PUSHORT)AcpiInformation->PM1b_CTRL_BLK);
+
+        case 6:
+            if (Size < AcpiInformation->Gpe0Size)
+                RetValue = READ_REGISTER_UCHAR((PUCHAR)(AcpiInformation->GP0_BLK + Size));
+            else
+                RetValue = READ_REGISTER_UCHAR((PUCHAR)(AcpiInformation->GP1_BLK - AcpiInformation->Gpe0Size + Size));
+            return (RetValue & 0xFF);
+
+        case 7:
+            if (Size >= AcpiInformation->Gpe0Size)
+                RetValue = READ_REGISTER_UCHAR((PUCHAR)(AcpiInformation->GP1_ENABLE - AcpiInformation->Gpe0Size + Size));
+            else
+                RetValue = READ_REGISTER_UCHAR((PUCHAR)(AcpiInformation->GP0_ENABLE + Size));
+            return (RetValue & 0xFF);
+
+        case 8:
+            RetValue = READ_PORT_UCHAR((PUCHAR)AcpiInformation->SMI_CMD);
+            return (RetValue & 0xFF);
+
+        default:
+            return 0xFFFF;
+    }
+}
+
 PRSDT
 NTAPI
 ACPILoadFindRSDT(VOID)

@@ -243,6 +243,19 @@ typedef struct _ACPI_BUILD_REQUEST
   #define Add2Ptr(P,I) ((PVOID)((PUCHAR)(P) + (I)))
 #endif
 
+typedef USHORT
+(NTAPI* PACPI_READ_REGISTER)(
+    _In_ ULONG RegType,
+    _In_ ULONG Size
+);
+
+typedef VOID
+(NTAPI* PACPI_WRITE_REGISTER)(
+    _In_ ULONG RegType,
+    _In_ ULONG Size,
+    _In_ USHORT Value
+);
+
 /* acpiinit.c */
 NTSTATUS
 NTAPI
