@@ -519,4 +519,15 @@ Exit:
         ExFreePoolWithTag(Identifier, 'SpcA');
 }
 
+BOOLEAN
+NTAPI
+ACPIRegReadAMLRegistryEntry(
+    _In_ PDESCRIPTION_HEADER* OutTableHeader,
+    _In_ BOOLEAN IsNeedUnmap)
+{
+    //UNIMPLEMENTED_DBGBREAK();
+    UNIMPLEMENTED;
+    return FALSE;
+}
+
 /* EOF */
