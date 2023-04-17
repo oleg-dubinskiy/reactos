@@ -119,6 +119,54 @@ ACPILoadFindRSDT(VOID)
 
 NTSTATUS
 NTAPI
+ACPILoadProcessFACS(
+    _In_ ULONG_PTR FacsPointer)
+{
+    PHYSICAL_ADDRESS PhysicalAddress;
+    PFACS Facs;
+
+    DPRINT("ACPILoadProcessFACS: %IX\n", FacsPointer);
+
+    if (!FacsPointer)
+        return STATUS_SUCCESS;
+
+    PhysicalAddress.QuadPart = (ULONGLONG)FacsPointer;
+
+  #if !defined(_M_AMD64)
+    ASSERT(PhysicalAddress.HighPart == 0);
+  #endif
+
+    Facs = MmMapIoSpace(PhysicalAddress, sizeof(FACS), MmNonCached);
+    if (!Facs)
+    {
+        ASSERT(Facs != NULL);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (Facs->Signature != 'SCAF')
+    {
+        DPRINT1("ACPILoadProcessFACS: %X does not have FACS signature\n", Facs);
+        return STATUS_ACPI_INVALID_TABLE;
+    }
+
+    if (Facs->Length != sizeof(FACS))
+    {
+        DPRINT1("ACPILoadProcessFACS: %X does not have correct FACS length\n", Facs);
+        return STATUS_ACPI_INVALID_TABLE;
+    }
+
+    DPRINT("ACPILoadProcessFACS: FACS located at %X\n", Facs);
+
+    AcpiInformation->FirmwareACPIControlStructure = Facs;
+    AcpiInformation->GlobalLock = &Facs->GlobalLock;
+
+    DPRINT("ACPILoadProcessFACS: Initial GlobalLock state: %X\n", *AcpiInformation->GlobalLock);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 ACPILoadProcessFADT(
     _In_ PFADT Fadt)
 {
