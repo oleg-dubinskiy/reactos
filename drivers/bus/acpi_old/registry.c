@@ -23,6 +23,9 @@
 
 ANSI_STRING AcpiProcessorString;
 ULONG AcpiOverrideAttributes;
+UCHAR DoAcpiTableDump = 0xFF;
+
+extern PACPI_INFORMATION AcpiInformation;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -715,5 +718,38 @@ ACPIRegDumpAcpiTable(
     OSCloseHandle(KeyHandle);
 }
 
+VOID
+NTAPI
+ACPIRegDumpAcpiTables(VOID)
+{
+    PFADT Fadt;
+    PDSDT Dsdt;
+    PFACS Facs;
+    PRSDT Rsdt;
+
+    Fadt = AcpiInformation->FixedACPIDescTable;
+    Dsdt = AcpiInformation->DiffSystemDescTable;
+    Facs = AcpiInformation->FirmwareACPIControlStructure;
+    Rsdt = AcpiInformation->RootSystemDescTable;
+
+    if (!DoAcpiTableDump)
+    {
+        return;
+    }
+
+    DPRINT("DumpAcpiTables: Writing DSDT/FACS/FADT/RSDT to registry\n");
+
+    if (Dsdt)
+        ACPIRegDumpAcpiTable("DSDT", Dsdt, Dsdt->Header.Length, &Dsdt->Header);
+
+    if (Facs)
+        ACPIRegDumpAcpiTable("FACS", Facs, Facs->Length, NULL);
+
+    if (Fadt)
+        ACPIRegDumpAcpiTable("FADT", Fadt, Fadt->Header.Length, &Fadt->Header);
+
+    if (Rsdt)
+        ACPIRegDumpAcpiTable("RSDT", Rsdt, Rsdt->Header.Length, &Rsdt->Header);
+}
 
 /* EOF */
