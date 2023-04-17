@@ -14,12 +14,19 @@
   #pragma alloc_text(INIT, DriverEntry)
 #endif
 
+#ifdef ALLOC_PRAGMA
+  #pragma alloc_text(PAGE, ACPILoadProcessRSDT)
+  #pragma alloc_text(PAGE, ACPILoadProcessFADT)
+  #pragma alloc_text(PAGE, ACPILoadFindRSDT)
+#endif
+
 /* GLOBALS *******************************************************************/
 
 PDRIVER_OBJECT AcpiDriverObject;
 UNICODE_STRING AcpiRegistryPath;
 FAST_IO_DISPATCH ACPIFastIoDispatch;
 PDEVICE_EXTENSION RootDeviceExtension;
+PRSDTINFORMATION RsdtInformation;
 WORK_QUEUE_ITEM ACPIWorkItem;
 KDPC AcpiBuildDpc;
 
@@ -35,9 +42,11 @@ LIST_ENTRY ACPIWorkQueue;
 LIST_ENTRY AcpiBuildDeviceList;
 LIST_ENTRY AcpiBuildSynchronizationList;
 LIST_ENTRY AcpiBuildQueueList;
+BOOLEAN AcpiLoadSimulatorTable = TRUE;
 BOOLEAN AcpiBuildDpcRunning;
 
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
+extern PACPI_INFORMATION AcpiInformation;
 
 /* ACPI TABLES FUNCTIONS ****************************************************/
 
@@ -110,10 +119,202 @@ ACPILoadFindRSDT(VOID)
 
 NTSTATUS
 NTAPI
-ACPILoadProcessRSDT(VOID)
+ACPILoadProcessFADT(
+    _In_ PFADT Fadt)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPILoadProcessRSDT(VOID)
+{
+    PDESCRIPTION_HEADER MappedAddress;
+    PDESCRIPTION_HEADER SimulatorTable;
+    PHYSICAL_ADDRESS PhysicalAddress;
+    PRSDT Rsdt;
+    PXSDT Xsdt;
+    ULONG NumElements;
+    ULONG FullSize;
+    ULONG Offset;
+    ULONG Size;
+    ULONG ix;
+    BOOLEAN IsForceSuccesStatus = FALSE;
+    BOOLEAN IsXsdtTable = FALSE;
+    BOOLEAN Result = FALSE;
+
+    PAGED_CODE();
+    DPRINT("ACPILoadProcessRSDT()\n");
+
+    FullSize = AcpiInformation->RootSystemDescTable->Header.Length;
+    Offset = FIELD_OFFSET(RSDT, Tables);
+
+    if (AcpiInformation->RootSystemDescTable->Header.Signature == 'TDSX')
+    {
+        Xsdt = (PXSDT)AcpiInformation->RootSystemDescTable;
+
+        if (FullSize < Offset)
+            Offset = AcpiInformation->RootSystemDescTable->Header.Length;
+
+        NumElements = ((FullSize - Offset) / sizeof(PHYSICAL_ADDRESS));
+
+        IsXsdtTable = TRUE;
+    }
+    else
+    {
+        Rsdt = (PRSDT)AcpiInformation->RootSystemDescTable;
+
+        if (FullSize < Offset)
+            Offset = AcpiInformation->RootSystemDescTable->Header.Length;
+
+        NumElements = ((FullSize - Offset) / sizeof(ULONG));
+    }
+
+    DPRINT("ACPILoadProcessRSDT: RSDT contains %u tables\n", NumElements);
+
+    if (!NumElements)
+    {
+        DPRINT1("ACPILoadProcessRSDT: STATUS_ACPI_INVALID_TABLE\n");
+        return STATUS_ACPI_INVALID_TABLE;
+    }
+
+    Size = (sizeof(RSDTINFORMATION) + ((NumElements + 1) * sizeof(RSDTELEMENT)));
+
+    RsdtInformation = ExAllocatePoolWithTag(NonPagedPool, Size, 'tpcA');
+    if (!RsdtInformation)
+    {
+        DPRINT1("ACPILoadProcessRSDT: STATUS_ACPI_INVALID_TABLE\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(RsdtInformation, Size);
+
+    RsdtInformation->NumElements = (NumElements + 2);
+
+    for (ix = 0; ix < NumElements; ix++)
+    {
+        DPRINT("ACPILoadProcessRSDT: ix %X \n", ix);
+
+        if (IsXsdtTable)
+            PhysicalAddress.QuadPart = Xsdt->Tables[ix].QuadPart;
+        else
+            PhysicalAddress.QuadPart = Rsdt->Tables[ix];
+
+      #if !defined(_M_AMD64)
+        ASSERT(PhysicalAddress.HighPart == 0);
+      #endif
+
+        MappedAddress = MmMapIoSpace(PhysicalAddress, sizeof(DESCRIPTION_HEADER), MmNonCached);
+        if (!MappedAddress)
+        {
+            DPRINT1("ACPILoadProcessRSDT: STATUS_ACPI_INVALID_TABLE\n");
+            ASSERT(MappedAddress != NULL);
+            return STATUS_ACPI_INVALID_TABLE;
+        }
+
+        if (MappedAddress->Signature == 'TSBS')
+        {
+            DPRINT("ACPILoadProcessRSDT: SBST Found at %X\n", MappedAddress);
+            MmUnmapIoSpace(MappedAddress, sizeof(DESCRIPTION_HEADER));
+            continue;
+        }
+
+        if (MappedAddress->Signature != 'PCAF' &&
+            MappedAddress->Signature != 'TDSS' &&
+            MappedAddress->Signature != 'TDSP' &&
+            MappedAddress->Signature != 'CIPA')
+        {
+            DPRINT("ACPILoadProcessRSDT: Unrecognized table signature %X\n", MappedAddress->Signature);
+            MmUnmapIoSpace(MappedAddress, sizeof(DESCRIPTION_HEADER));
+            continue;
+        }
+
+        Size = MappedAddress->Length;
+        MmUnmapIoSpace(MappedAddress, sizeof(DESCRIPTION_HEADER));
+
+      #if !defined(_M_AMD64)
+        ASSERT(PhysicalAddress.HighPart == 0);
+      #endif
+
+        MappedAddress = MmMapIoSpace(PhysicalAddress, Size, MmNonCached);
+        if (!MappedAddress)
+        {
+            DPRINT1("ACPILoadProcesRSDT: Could not load table at %X\n", AcpiInformation->RootSystemDescTable->Tables[ix]);
+            return STATUS_ACPI_INVALID_TABLE;
+        }
+
+        Result = ACPIRegReadAMLRegistryEntry(&MappedAddress, TRUE);
+        if (Result)
+        {
+            DPRINT1("ACPILoadProcessRSDT: Table Overloaded from registry (%X)\n", MappedAddress);
+            RsdtInformation->Tables[ix].Flags |= 8;
+        }
+
+        RsdtInformation->Tables[ix].Flags |= 1;
+        RsdtInformation->Tables[ix].Address = MappedAddress;
+
+        if (MappedAddress->Signature == 'PCAF')
+        {
+            AcpiInformation->FixedACPIDescTable = (PFADT)MappedAddress;
+            IsForceSuccesStatus = TRUE;
+            ACPILoadProcessFADT(AcpiInformation->FixedACPIDescTable);
+        }
+        else if (MappedAddress->Signature == 'CIPA')
+        {
+            AcpiInformation->MultipleApicTable = (PMAPIC)MappedAddress;
+        }
+        else
+        {
+            RsdtInformation->Tables[ix].Flags |= 4;
+        }
+    }
+
+    Size = sizeof(*SimulatorTable);
+    DPRINT("ACPILoadProcessRSDT: Size %X \n", Size);
+
+    SimulatorTable = ExAllocatePoolWithTag(NonPagedPool, Size, 'tpcA');
+    if (SimulatorTable)
+    {
+        RtlZeroMemory(SimulatorTable, Size);
+
+        SimulatorTable->Signature = 'TDSS';
+        SimulatorTable->Length = Size;
+        SimulatorTable->Revision = 1;
+        SimulatorTable->Checksum = 0;
+        SimulatorTable->OEMRevision = 1;
+        SimulatorTable->CreatorRev = 1;
+
+        RtlCopyMemory(SimulatorTable->OEMID, "MSFT", 4 );
+        RtlCopyMemory(SimulatorTable->OEMTableID, "simulatr", 8);
+        RtlCopyMemory(SimulatorTable->CreatorID, "MSFT", 4);
+
+        if (AcpiLoadSimulatorTable)
+        {
+            Result = ACPIRegReadAMLRegistryEntry(&SimulatorTable, FALSE);
+        }
+
+        if (Result)
+        {
+            DPRINT("ACPILoadProcessRSDT: Simulator Table Overloaded from registry (%X)\n", MappedAddress);
+
+            RsdtInformation->Tables[NumElements].Flags |= (1 + 4 + 8);
+            RsdtInformation->Tables[NumElements].Address = SimulatorTable;
+        }
+        else
+        {
+            ExFreePoolWithTag(SimulatorTable, 'tpcA');
+        }
+    }
+
+    DPRINT("ACPILoadProcessRSDT: Size %X \n", Size);
+    ACPIRegDumpAcpiTables();
+
+    if (IsForceSuccesStatus)
+        return STATUS_SUCCESS;
+
+    DPRINT1("ACPILoadProcessRSDT: Did not find an FADT\n");
+    return STATUS_ACPI_INVALID_TABLE;
 }
 
 /* ACPI CALLBACKS ***********************************************************/

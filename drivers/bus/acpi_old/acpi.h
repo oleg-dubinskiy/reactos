@@ -70,6 +70,19 @@ typedef struct _ACPIInformation
     UCHAR Pad4[3];
 } ACPI_INFORMATION, *PACPI_INFORMATION;
 
+typedef struct _RSDTELEMENT
+{
+    ULONG Flags;
+    PVOID Handle;
+    PVOID Address;
+} RSDTELEMENT, *PRSDTELEMENT;
+
+typedef struct _RSDTINFORMATION
+{
+    ULONG NumElements;
+    RSDTELEMENT Tables[1];
+} RSDTINFORMATION, *PRSDTINFORMATION;
+
 /* ACPI DRIVER **************************************************************/
 
 typedef enum
@@ -251,6 +264,12 @@ ACPILoadProcessRSDT(
 );
 
 NTSTATUS
+NTAPI
+ACPILoadProcessFADT(
+    _In_ PFADT Fadt
+);
+
+NTSTATUS
 __cdecl
 ACPICallBackLoad(
     _In_ int Param1,
@@ -420,6 +439,19 @@ OSGetRegistryValue(
     _In_ HANDLE KeyHandle,
     _In_ PWSTR NameString,
     _In_ PVOID* OutValue
+);
+
+BOOLEAN
+NTAPI
+ACPIRegReadAMLRegistryEntry(
+    _In_ PDESCRIPTION_HEADER* OutTableHeader,
+    _In_ BOOLEAN IsNeedUnmap
+);
+
+VOID
+NTAPI
+ACPIRegDumpAcpiTables(
+    VOID
 );
 
 #endif /* _ACPI_H_ */
