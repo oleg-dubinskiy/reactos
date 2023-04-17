@@ -332,6 +332,14 @@ DefPortReadAcpiRegister(
     _In_ ULONG Size
 );
 
+VOID
+NTAPI
+DefPortWriteAcpiRegister(
+    _In_ ULONG RegType,
+    _In_ ULONG Size,
+    _In_ USHORT Value
+);
+
 /* dispatch.c */
 NTSTATUS
 NTAPI
