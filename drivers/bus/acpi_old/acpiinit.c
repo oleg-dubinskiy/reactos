@@ -45,8 +45,67 @@ PRSDT
 NTAPI
 ACPILoadFindRSDT(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PKEY_VALUE_PARTIAL_INFORMATION_ALIGN64 KeyInfo;
+    PCM_PARTIAL_RESOURCE_LIST PartialResourceList;
+    PACPI_BIOS_MULTI_NODE AcpiMultiNode;
+    PRSDT Rsdt;
+    PRSDT OutRsdt;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPILoadFindRSDT()\n");
+
+    Status = OSReadAcpiConfigurationData(&KeyInfo);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPILoadFindRSDT: Cannot open Configuration Data - %X\n", Status);
+        DbgBreakPoint();
+        return NULL;
+    }
+
+    PartialResourceList = (PCM_PARTIAL_RESOURCE_LIST)KeyInfo->Data;
+    AcpiMultiNode = (PACPI_BIOS_MULTI_NODE)((PUCHAR)&PartialResourceList->PartialDescriptors[0] + sizeof(CM_PARTIAL_RESOURCE_LIST));
+
+  #if !defined(_M_AMD64)
+    ASSERT(AcpiMultiNode->RsdtAddress.HighPart == 0);
+  #endif
+
+    Rsdt = MmMapIoSpace(AcpiMultiNode->RsdtAddress, sizeof(DESCRIPTION_HEADER), MmNonCached);
+    if (!Rsdt)
+    {
+        DPRINT1("ACPILoadFindRSDT: Cannot Map RSDT Pointer %X\n", AcpiMultiNode->RsdtAddress.LowPart);
+        DbgBreakPoint();
+        ExFreePool(KeyInfo);
+        return NULL;
+    }
+
+    if (Rsdt->Header.Signature == 'TDSR' || Rsdt->Header.Signature == 'TDSX')
+    {
+      #if !defined(_M_AMD64)
+        ASSERT(AcpiMultiNode->RsdtAddress.HighPart == 0);
+      #endif
+
+        OutRsdt = MmMapIoSpace(AcpiMultiNode->RsdtAddress, Rsdt->Header.Length, MmNonCached);
+        MmUnmapIoSpace(Rsdt, sizeof(DESCRIPTION_HEADER));
+
+        if (!OutRsdt)
+        {
+            DPRINT1("ACPILoadFindRSDT: Cannot Map RSDT Pointer %X\n", AcpiMultiNode->RsdtAddress.LowPart);
+            DbgBreakPoint();
+            ExFreePool(KeyInfo);
+            return NULL;
+        }
+    }
+    else
+    {
+        DPRINT1("ACPILoadFindRSDT: RSDT %X has invalid signature\n", Rsdt);
+        DbgBreakPoint();
+        MmUnmapIoSpace(Rsdt, sizeof(DESCRIPTION_HEADER));
+    }
+
+    ExFreePool(KeyInfo);
+
+    return OutRsdt;
 }
 
 NTSTATUS

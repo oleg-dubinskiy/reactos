@@ -2427,8 +2427,8 @@ AMLIInitialize(
         InitializeMutex(&gmutOwnerList);
         InitializeMutex(&gmutSleep);
 
-        DPRINT("AMLIInitialize: FIXME\n");
-        ASSERT(FALSE);
+        DPRINT("AMLIInitialize: FIXME - initialize DPC and timer\n");
+        //ASSERT(FALSE);
 
         break;
     }
