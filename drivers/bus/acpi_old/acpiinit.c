@@ -23,6 +23,7 @@
 /* GLOBALS *******************************************************************/
 
 PACPI_READ_REGISTER AcpiReadRegisterRoutine = DefPortReadAcpiRegister;
+PACPI_WRITE_REGISTER AcpiWriteRegisterRoutine = DefPortWriteAcpiRegister;
 
 PDRIVER_OBJECT AcpiDriverObject;
 UNICODE_STRING AcpiRegistryPath;
@@ -397,6 +398,22 @@ ACPILoadProcessFACS(
     DPRINT("ACPILoadProcessFACS: Initial GlobalLock state: %X\n", *AcpiInformation->GlobalLock);
 
     return STATUS_SUCCESS;
+}
+
+VOID
+NTAPI
+ACPIGpeClearRegisters(VOID)
+{
+    ULONG ix;
+    UCHAR Status;
+
+    DPRINT("ACPIGpeClearRegisters: GpeSize %X\n", AcpiInformation->GpeSize);
+
+    for (ix = 0; ix < AcpiInformation->GpeSize; ix++)
+    {
+        Status = ACPIReadGpeStatusRegister(ix);
+        ACPIWriteGpeStatusRegister(ix, (Status & (GpeEnable[ix] | GpeWakeEnable[ix])));
+    }
 }
 
 NTSTATUS
