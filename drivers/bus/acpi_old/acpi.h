@@ -325,6 +325,13 @@ OSNotifyFatalError(
     _In_ int Param4
 );
 
+USHORT
+NTAPI
+DefPortReadAcpiRegister(
+    _In_ ULONG RegType,
+    _In_ ULONG Size
+);
+
 /* dispatch.c */
 NTSTATUS
 NTAPI
