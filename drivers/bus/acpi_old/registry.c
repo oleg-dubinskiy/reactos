@@ -530,4 +530,40 @@ ACPIRegReadAMLRegistryEntry(
     return FALSE;
 }
 
+NTSTATUS
+NTAPI
+OSWriteRegValue(
+    _In_ PSZ NameString,
+    _In_ HANDLE KeyHandle,
+    _In_ PVOID Data,
+    _In_ ULONG DataSize)
+{
+    STRING AnsiName;
+    UNICODE_STRING ValueName;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("OSWriteRegValue: NameString '%s'\n", NameString);
+
+    RtlInitAnsiString(&AnsiName, NameString);
+
+    Status = RtlAnsiStringToUnicodeString(&ValueName, &AnsiName, TRUE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("OSWriteRegValue: Status %X\n", Status);
+        return Status;
+    }
+
+    Status = ZwSetValueKey(KeyHandle, &ValueName, 0, REG_BINARY, Data, DataSize);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("OSRegWriteValue: Status %X\n", Status);
+    }
+
+    RtlFreeUnicodeString(&ValueName);
+
+    return Status;
+}
+
+
 /* EOF */
