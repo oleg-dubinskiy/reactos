@@ -596,8 +596,21 @@ StrChr(
     _In_ PCHAR pszStr,
     _In_ CHAR Char)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    //DPRINT("StrChr: pszStr - '%s', Char -'%c'\n", pszStr, Char);
+
+    giIndent++;
+
+    ASSERT(pszStr != NULL);
+
+    while (*pszStr != Char && *pszStr)
+        pszStr++;
+
+    if (*pszStr != Char)
+        pszStr = NULL;
+
+    giIndent--;
+
+    return pszStr;
 }
 
 PCHAR
