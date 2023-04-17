@@ -1437,6 +1437,16 @@ NewHeap(
     return Status;
 }
 
+PAMLI_HEAP_HEADER
+__cdecl
+HeapFindFirstFit(
+    _In_ PAMLI_HEAP Heap,
+    _In_ ULONG Length)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
 NTSTATUS
 __cdecl
 InternalOpRegionHandler(
@@ -1593,6 +1603,15 @@ OSInitializeCallbacks(VOID)
     return RegisterOperationRegionHandler(NULL, 6, 2, PciConfigSpaceHandler, 0, &RegionData);
 }
 
+VOID
+__cdecl
+HeapInsertFreeList(
+    _In_ PAMLI_HEAP Heap,
+    _In_ PAMLI_HEAP_HEADER HeapHeader)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 PVOID
 __cdecl
 HeapAlloc(
@@ -1600,8 +1619,127 @@ HeapAlloc(
     _In_ ULONG NameSeg,
     _In_ ULONG Length)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PAMLI_HEAP_HEADER Header = NULL;
+    PAMLI_HEAP_HEADER NextHeader;
+    PAMLI_HEAP currentHeap;
+    PAMLI_HEAP HeapPrev = NULL;
+    PAMLI_HEAP heap = NULL;
+    PCHAR NameSegStr;
+    ULONG heapMax;
+    KIRQL OldIrql;
+
+    NameSegStr = NameSegString(NameSeg);
+
+    DPRINT("HeapAlloc: %X, '%s', %X\n", InHeap, NameSegStr, Length);
+
+    giIndent++;
+
+    ASSERT(InHeap != NULL);
+    ASSERT(InHeap->Signature == 'PAEH'); // SIG_HEAP
+    ASSERT(InHeap->HeapHead != NULL);
+    ASSERT(InHeap == InHeap->HeapHead);
+
+    Length += FIELD_OFFSET(AMLI_HEAP_HEADER, List);
+
+    if (Length < sizeof(AMLI_HEAP_HEADER))
+        Length = sizeof(AMLI_HEAP_HEADER);
+
+    Length = (Length + 3) & ~3;
+
+    AcquireMutex(&gmutHeap);
+
+    if (((ULONG_PTR)InHeap->HeapEnd - (ULONG_PTR)&InHeap->Heap) < Length)
+        goto Exit;
+
+    heap = InHeap;
+
+    while (heap)
+    {
+        Header = HeapFindFirstFit(heap, Length);
+        if (Header)
+        {
+            ASSERT(Header->Signature == 0);
+
+            ListRemoveEntry(&Header->List, &heap->ListFreeHeap);
+
+            if (Header->Length >= Length + sizeof(AMLI_HEAP_HEADER))
+            {
+                NextHeader = Add2Ptr(Header, Length);
+                NextHeader->Signature = 0;
+                NextHeader->Length = (Header->Length - Length);
+                NextHeader->Heap = heap;
+
+                Header->Length = Length;
+
+                HeapInsertFreeList(heap, NextHeader);
+            }
+
+            break;
+        }
+
+        if (Length <= ((ULONG_PTR)heap->HeapEnd - (ULONG_PTR)heap->HeapTop))
+        {
+            Header = (PAMLI_HEAP_HEADER)heap->HeapTop;
+            heap->HeapTop = Add2Ptr(Header, Length);
+            Header->Length = Length;
+
+            break;
+        }
+
+        HeapPrev = heap = heap->HeapNext;
+    }
+
+    if (!Header)
+    {
+        if (InHeap != gpheapGlobal || NewHeap(gdwGlobalHeapBlkSize, &heap))
+            goto Exit;
+
+        heap->HeapHead = InHeap;
+
+        ASSERT(HeapPrev != NULL);
+        HeapPrev->HeapNext = heap;
+
+        ASSERT(Length <= ((ULONG_PTR)heap->HeapEnd - (ULONG_PTR)&heap->Heap));
+
+        Header = (PAMLI_HEAP_HEADER)heap->HeapTop;
+        heap->HeapTop = Add2Ptr(Header, Length);
+        Header->Length = Length;
+    }
+
+    currentHeap = InHeap;
+
+    if (InHeap == gpheapGlobal)
+    {
+        KeAcquireSpinLock(&gdwGHeapSpinLock, &OldIrql);
+        gdwGlobalHeapSize += Header->Length;
+        KeReleaseSpinLock(&gdwGHeapSpinLock, OldIrql);
+    }
+    else
+    {
+        heapMax = 0;
+        do
+        {
+            heapMax += ((ULONG_PTR)currentHeap->HeapTop - (ULONG_PTR)&currentHeap->Heap);
+            currentHeap = currentHeap->HeapNext;
+        }
+        while (currentHeap);
+
+        if (heapMax > gdwLocalHeapMax)
+            gdwLocalHeapMax = heapMax;
+    }
+
+    Header->Signature = NameSeg;
+    Header->Heap = heap;
+
+    RtlZeroMemory(&Header->List, (Length - FIELD_OFFSET(AMLI_HEAP_HEADER, List)));
+
+Exit:
+
+    ReleaseMutex(&gmutHeap);
+
+    giIndent--;
+
+    return (PVOID)(Header ? &Header->List : NULL);
 }
 
 VOID
