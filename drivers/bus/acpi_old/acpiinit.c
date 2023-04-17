@@ -33,6 +33,20 @@ PRSDTINFORMATION RsdtInformation;
 WORK_QUEUE_ITEM ACPIWorkItem;
 KDPC AcpiBuildDpc;
 
+PUCHAR GpeEnable;
+PUCHAR GpeCurEnable;
+PUCHAR GpeIsLevel;
+PUCHAR GpeHandlerType;
+PUCHAR GpeWakeEnable;
+PUCHAR GpeWakeHandler;
+PUCHAR GpeSpecialHandler;
+PUCHAR GpePending;
+PUCHAR GpeRunMethod;
+PUCHAR GpeComplete;
+PUCHAR GpeSavedWakeMask;
+PUCHAR GpeSavedWakeStatus;
+PUCHAR GpeMap;
+
 NPAGED_LOOKASIDE_LIST DeviceExtensionLookAsideList;
 NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
 KSPIN_LOCK AcpiDeviceTreeLock;
@@ -578,8 +592,140 @@ NTAPI
 ACPILoadProcessFADT(
     _In_ PFADT Fadt)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PHYSICAL_ADDRESS PhysicalAddress;
+    PVOID GpeTables;
+    ULONG Size;
+    BOOLEAN IsEnableEvents = FALSE;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPILoadProcessFADT: Fadt %p\n", Fadt);
+
+    Status = ACPILoadProcessFACS(Fadt->facs);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPILoadProcessFADT: Status %X\n", Status);
+        return Status;
+    }
+
+    //DPRINT("ACPILoadProcessFADT: %I64X\n", Fadt->x_pm1a_evt_blk.Address.QuadPart);
+    AcpiInformation->PM1a_BLK = GetFadtTablePointerEntry(Fadt, &Fadt->pm1a_evt_blk_io_port, &Fadt->x_pm1a_evt_blk, 4);
+
+    //DPRINT("ACPILoadProcessFADT: %I64X\n", Fadt->x_pm1b_evt_blk.Address.QuadPart);
+    AcpiInformation->PM1b_BLK = GetFadtTablePointerEntry(Fadt, &Fadt->pm1b_evt_blk_io_port, &Fadt->x_pm1b_evt_blk, 4);
+
+    //DPRINT("ACPILoadProcessFADT: %I64X\n", Fadt->x_pm1a_ctrl_blk.Address.QuadPart);
+    AcpiInformation->PM1a_CTRL_BLK = GetFadtTablePointerEntry(Fadt, &Fadt->pm1a_ctrl_blk_io_port, &Fadt->x_pm1a_ctrl_blk, 4);
+
+    //DPRINT("ACPILoadProcessFADT: %I64X\n", Fadt->x_pm1b_ctrl_blk.Address.QuadPart);
+    AcpiInformation->PM1b_CTRL_BLK = GetFadtTablePointerEntry(Fadt, &Fadt->pm1b_ctrl_blk_io_port, &Fadt->x_pm1b_ctrl_blk, 4);
+
+    //DPRINT("ACPILoadProcessFADT: %I64X\n", Fadt->x_pm2_ctrl_blk.Address.QuadPart);
+    AcpiInformation->PM2_CTRL_BLK = GetFadtTablePointerEntry(Fadt, &Fadt->pm2_ctrl_blk_io_port, &Fadt->x_pm2_ctrl_blk, 4);
+
+    //DPRINT("ACPILoadProcessFADT: %I64X\n", Fadt->x_pm_tmr_blk.Address.QuadPart);
+    AcpiInformation->PM_TMR = GetFadtTablePointerEntry(Fadt, &Fadt->pm_tmr_blk_io_port, &Fadt->x_pm_tmr_blk, 4);
+
+    AcpiInformation->SMI_CMD = Fadt->smi_cmd_io_port;
+
+    DPRINT("ACPILoadProcessFADT: PM1a_BLK located at port %p\nACPILoadProcessFADT: PM1b_BLK located at port %p\n", AcpiInformation->PM1a_BLK, AcpiInformation->PM1b_BLK);
+    DPRINT("ACPILoadProcessFADT: PM1a_CTRL_BLK located at port %p\nACPILoadProcessFADT: PM1b_CTRL_BLK located at port %p\n", AcpiInformation->PM1a_CTRL_BLK, AcpiInformation->PM1b_CTRL_BLK);
+    DPRINT("ACPILoadProcessFADT: PM2_CTRL_BLK located at port %p\nACPILoadProcessFADT: PM_TMR located at port %p\n", AcpiInformation->PM2_CTRL_BLK, AcpiInformation->PM_TMR);
+
+    AcpiInformation->GP1_Base_Index = -1;
+
+    //DPRINT("ACPILoadProcessFADT: %I64X\n", Fadt->x_gp0_blk.Address.QuadPart);
+    AcpiInformation->GP0_BLK = GetFadtTablePointerEntry(Fadt, &Fadt->gp0_blk_io_port, &Fadt->x_gp0_blk, Fadt->gp0_blk_len);
+    if (AcpiInformation->GP0_BLK)
+    {
+        AcpiInformation->GP0_LEN = Fadt->gp0_blk_len;
+        //ACPIAssert(Fadt->gp0_blk_len != 0, 0x100B, 0, 0, 5);
+        ASSERT(Fadt->gp0_blk_len != 0);
+    }
+
+    //DPRINT("ACPILoadProcessFADT: %I64X\n", Fadt->x_gp1_blk.Address.QuadPart);
+    AcpiInformation->GP1_BLK = GetFadtTablePointerEntry(Fadt, &Fadt->gp1_blk_io_port, &Fadt->x_gp1_blk, Fadt->gp1_blk_len);
+    if (AcpiInformation->GP1_BLK)
+    {
+        AcpiInformation->GP1_LEN = Fadt->gp1_blk_len;
+        AcpiInformation->GP1_Base_Index = Fadt->gp1_base;
+        //ACPIAssert(Fadt->gp1_blk_len != 0, 0x100C, 0, 0, 5);
+        ASSERT(Fadt->gp1_blk_len != 0);
+    }
+
+    AcpiInformation->Gpe0Size = ((UCHAR)AcpiInformation->GP0_LEN >> 1);
+    AcpiInformation->Gpe1Size = ((UCHAR)AcpiInformation->GP1_LEN >> 1);
+
+    AcpiInformation->GpeSize = (AcpiInformation->Gpe0Size + AcpiInformation->Gpe1Size);
+
+    AcpiInformation->GP0_ENABLE = (AcpiInformation->GP0_BLK + AcpiInformation->Gpe0Size);
+    AcpiInformation->GP1_ENABLE = (AcpiInformation->GP1_BLK + AcpiInformation->Gpe1Size);
+
+    if (AcpiInformation->GpeSize)
+    {
+        Size = ((12 + 8) * AcpiInformation->GpeSize);
+
+        GpeTables = ExAllocatePoolWithTag(NonPagedPool, Size, 'gpcA');
+        if (!GpeTables)
+        {
+            DPRINT1("ACPILoadProcessFADT: Could not allocate GPE tables, size = %X\n", Size);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlZeroMemory(GpeTables, Size);
+
+        GpeEnable = GpeTables;
+        GpeCurEnable = Add2Ptr(GpeTables, AcpiInformation->GpeSize);
+        GpeIsLevel = Add2Ptr(GpeCurEnable, AcpiInformation->GpeSize);
+        GpeHandlerType = Add2Ptr(GpeIsLevel, AcpiInformation->GpeSize);
+        GpeWakeEnable = Add2Ptr(GpeHandlerType, AcpiInformation->GpeSize);
+        GpeWakeHandler = Add2Ptr(GpeWakeEnable, AcpiInformation->GpeSize);
+        GpeSpecialHandler = Add2Ptr(GpeWakeHandler, AcpiInformation->GpeSize);
+        GpePending = Add2Ptr(GpeSpecialHandler, AcpiInformation->GpeSize);
+        GpeRunMethod = Add2Ptr(GpePending, AcpiInformation->GpeSize);
+        GpeComplete = Add2Ptr(GpeRunMethod, AcpiInformation->GpeSize);
+        GpeSavedWakeMask = Add2Ptr(GpeComplete, AcpiInformation->GpeSize);
+        GpeSavedWakeStatus = Add2Ptr(GpeSavedWakeMask, AcpiInformation->GpeSize);
+        GpeMap = Add2Ptr(GpeSavedWakeStatus, AcpiInformation->GpeSize); // size of GpeMap = (8 * AcpiInformation->GpeSize)
+
+        IsEnableEvents = FALSE;
+    }
+
+    DPRINT("ACPILoadProcessFADT: GP0_BLK located at port %p length %X\nACPILoadProcessFADT: GP1_BLK located at port %p length %X\nACPILoadProcessFADT: GP1_Base_Index = %X\n",
+           AcpiInformation->GP0_BLK, AcpiInformation->GP0_LEN, AcpiInformation->GP1_BLK, AcpiInformation->GP1_LEN, AcpiInformation->GP1_Base_Index);
+
+    ACPIGpeClearRegisters();
+    ACPIGpeEnableDisableEvents(IsEnableEvents);
+
+    AcpiInformation->ACPI_Flags = 0;
+    AcpiInformation->ACPI_Capabilities = 0;
+    AcpiInformation->Dockable = ((Fadt->flags >> 9) & 1);
+    AcpiInformation->pm1_en_bits = 0x21;
+
+    if (Fadt->flags & 0x10)
+    {
+        DPRINT("ACPILoadProcessFADT: Power Button not fixed event or not present\n");
+    }
+    else
+    {
+        AcpiInformation->pm1_en_bits |= 0x100;
+        DPRINT("ACPILoadProcessFADT: Power Button in Fixed Feature Space\n");
+    }
+
+    if (Fadt->flags & 0x20)
+    {
+        DPRINT("ACPILoadProcessFADT: Sleep Button not fixed event or not present\n");
+    }
+    else
+    {
+        AcpiInformation->pm1_en_bits |= 0x200;
+        DPRINT("ACPILoadProcessFADT: Sleep Button in Fixed Feature Space\n");
+    }
+
+    PhysicalAddress.QuadPart = (ULONGLONG)Fadt->dsdt;
+
+    Status = ACPILoadProcessDSDT(PhysicalAddress);
+    return Status;
 }
 
 NTSTATUS
