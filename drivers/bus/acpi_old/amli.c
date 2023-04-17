@@ -1443,8 +1443,41 @@ HeapFindFirstFit(
     _In_ PAMLI_HEAP Heap,
     _In_ ULONG Length)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PAMLI_HEAP_HEADER RetHeader = NULL;
+    PAMLI_LIST HeadList;
+    PAMLI_LIST EntryList;
+  
+    //DPRINT("HeapFindFirstFit: Heap %X, Length %X\n", Heap, Length);
+
+    giIndent++;
+
+    HeadList = Heap->ListFreeHeap;
+    if (HeadList)
+    {
+        EntryList = Heap->ListFreeHeap;
+
+        while (TRUE)
+        {
+            RetHeader = CONTAINING_RECORD(EntryList, AMLI_HEAP_HEADER, List);
+
+            if (Length <= RetHeader->Length)
+                break;
+
+            EntryList = EntryList->Next;
+
+            if (EntryList == HeadList)
+            {
+                if (Length > RetHeader->Length)
+                    RetHeader = NULL;
+
+                break;
+            }
+        }
+    }
+
+    giIndent--;
+
+    return RetHeader;
 }
 
 NTSTATUS
