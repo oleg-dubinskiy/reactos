@@ -275,6 +275,15 @@ ACPIReadGpeStatusRegister(
     return AcpiReadRegisterRoutine(6, Size);
 }
 
+VOID
+NTAPI
+ACPIWriteGpeStatusRegister(
+    _In_ ULONG Size,
+    _In_ UCHAR Value)
+{
+    AcpiWriteRegisterRoutine(6, Size, Value);
+}
+
 PRSDT
 NTAPI
 ACPILoadFindRSDT(VOID)
