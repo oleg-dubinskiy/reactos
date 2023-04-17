@@ -2205,8 +2205,33 @@ InitMutex(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
     _In_ ULONG Level)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_MUTEX_OBJECT AmliMutex;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    giIndent++;
+
+    NsObject->ObjData.DataLen = 0x10;
+    NsObject->ObjData.DataType = 9;
+
+    gdwcMTObjs++;
+
+    NsObject->ObjData.DataBuff = AmliMutex = HeapAlloc(Heap, 'TUMH', NsObject->ObjData.DataLen);
+
+    if (AmliMutex)
+    {
+        RtlZeroMemory(AmliMutex, NsObject->ObjData.DataLen);
+        AmliMutex->SyncLevel = Level;
+    }
+    else
+    {
+        DPRINT1("CreateNameSpaceObject: failed to allocate Mutex object");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 VOID
