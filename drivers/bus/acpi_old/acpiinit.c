@@ -285,6 +285,16 @@ ACPIWriteGpeStatusRegister(
     AcpiWriteRegisterRoutine(6, Size, Value);
 }
 
+VOID
+NTAPI
+ACPIWriteGpeEnableRegister(
+    _In_ ULONG Size,
+    _In_ UCHAR Value)
+{
+    DPRINT("ACPIWriteGpeEnableRegister: Writing GPE Enable register %X = %X\n", Size, Value);
+    AcpiWriteRegisterRoutine(7, Size, Value);
+}
+
 PRSDT
 NTAPI
 ACPILoadFindRSDT(VOID)
