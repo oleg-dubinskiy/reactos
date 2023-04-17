@@ -446,6 +446,7 @@ AMLI_TERM_EX ExOpcodeTable[] =
 
 UCHAR OSIAML[] = { 0xA4, 0xCA, 0x68 };
 PCHAR gpszOSName = "Microsoft Windows NT";
+CHAR TmpSegString[8];
 
 /* 5.3.1 Predefined (under) Root Namespaces (Table 5-40) */
 PCHAR ObjTags[5] = {
@@ -672,6 +673,19 @@ StrCat(
     giIndent--;
 
     return Dst;
+}
+
+PCHAR
+__cdecl
+NameSegString(
+    _In_ ULONG NameSeg)
+{
+    giIndent++;
+    RtlZeroMemory(TmpSegString, sizeof(*TmpSegString));
+    StrCpy(TmpSegString, (PCHAR)&NameSeg, 4);
+    giIndent--;
+
+    return TmpSegString;
 }
 
 /* LIST FUNCTIONS ***********************************************************/
