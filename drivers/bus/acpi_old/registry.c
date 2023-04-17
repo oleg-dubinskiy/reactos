@@ -565,5 +565,48 @@ OSWriteRegValue(
     return Status;
 }
 
+NTSTATUS
+NTAPI
+OSCreateHandle(
+    _In_ PSZ NameString,
+    _In_ HANDLE ParentKeyHandle,
+    _Out_ HANDLE* OutKeyHandle)
+{
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    STRING AnsiName;
+    UNICODE_STRING Name;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("OSCreateHandle: NameString '%s'\n", NameString);
+
+    RtlInitAnsiString(&AnsiName, NameString);
+
+    Status = RtlAnsiStringToUnicodeString(&Name, &AnsiName, TRUE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("OSCreateHandle: Status %X\n", Status);
+        return Status;
+    }
+
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &Name,
+                               (OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE),
+                               ParentKeyHandle,
+                               NULL);
+    *OutKeyHandle = NULL;
+
+    Status = ZwCreateKey(OutKeyHandle, KEY_WRITE, &ObjectAttributes, 0, NULL, 0, NULL);
+
+    RtlFreeUnicodeString(&Name);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("OSCreateHandle: Status %X\n", Status);
+    }
+
+    return Status;
+}
+
 
 /* EOF */
