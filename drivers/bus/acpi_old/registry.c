@@ -633,5 +633,87 @@ ACPIRegLocalCopyString(
     return &DestString[ix];
 }
 
+VOID
+NTAPI
+ACPIRegDumpAcpiTable(
+    _In_ PCHAR NameString,
+    _In_ PVOID WriteData,
+    _In_ ULONG DataSize,
+    _In_ PDESCRIPTION_HEADER Header)
+{
+    HANDLE ParentKeyHandle;
+    HANDLE KeyHandle;
+    CHAR NameBuffer[0x50];
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIRegDumpAcpiTable: Table '%s'\n", NameString);
+
+    RtlZeroMemory(NameBuffer, sizeof(NameBuffer));
+    RtlCopyMemory(NameBuffer, "\\Registry\\Machine\\Hardware\\ACPI", sizeof("\\Registry\\Machine\\Hardware\\ACPI"));
+
+    Status = OSCreateHandle(NameBuffer, NULL, &ParentKeyHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIRegDumpAcpiTable: Status %X\n", Status);
+        return;
+    }
+
+    Status = OSCreateHandle(NameString, ParentKeyHandle, &KeyHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIRegDumpAcpiTable: Status %X\n", Status);
+        OSCloseHandle(ParentKeyHandle);
+        return;
+    }
+
+    if (Header)
+    {
+        OSCloseHandle(ParentKeyHandle);
+        ParentKeyHandle = KeyHandle;
+
+        ACPIRegLocalCopyString(NameBuffer, (PCHAR)Header->OEMID, 6);
+
+        Status = OSCreateHandle(NameBuffer, ParentKeyHandle, &KeyHandle);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIRegDumpAcpiTable: Status %X\n", Status);
+            OSCloseHandle(ParentKeyHandle);
+            return;
+        }
+
+        OSCloseHandle(ParentKeyHandle);
+        ParentKeyHandle = KeyHandle;
+
+        ACPIRegLocalCopyString(NameBuffer, (PCHAR)Header->OEMTableID, 8),
+
+        Status = OSCreateHandle(NameBuffer, ParentKeyHandle, &KeyHandle);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIRegDumpAcpiTable: Status %X\n", Status);
+            OSCloseHandle(ParentKeyHandle);
+            return;
+        }
+
+        OSCloseHandle(ParentKeyHandle);
+        ParentKeyHandle = KeyHandle;
+
+        sprintf(NameBuffer, "%.8x", (unsigned int)Header->OEMRevision),
+
+        Status = OSCreateHandle(NameBuffer, ParentKeyHandle, &KeyHandle);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIRegDumpAcpiTable: Status %X\n", Status);
+            OSCloseHandle(ParentKeyHandle);
+            return;
+        }
+    }
+
+    OSWriteRegValue("00000000", KeyHandle, WriteData, DataSize);
+
+    OSCloseHandle(KeyHandle);
+    OSCloseHandle(KeyHandle);
+}
+
 
 /* EOF */
