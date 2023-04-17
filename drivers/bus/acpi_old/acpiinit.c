@@ -483,6 +483,21 @@ ACPIGpeClearRegisters(VOID)
     }
 }
 
+VOID
+NTAPI
+ACPIGpeEnableDisableEvents(
+    _In_ BOOLEAN IsEnableEvents)
+{
+    ULONG ix;
+
+    DPRINT("ACPIGpeEnableDisableEvents: GpeSize %X\n", AcpiInformation->GpeSize);
+
+    for (ix = 0; ix < AcpiInformation->GpeSize; ix++)
+    {
+        ACPIWriteGpeEnableRegister(ix, (IsEnableEvents == FALSE ? 0 : GpeCurEnable[ix]));
+    }
+}
+
 NTSTATUS
 NTAPI
 ACPILoadProcessFADT(
