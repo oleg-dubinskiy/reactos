@@ -970,6 +970,21 @@ READ_PM1_STATUS(VOID)
     return RetValue;
 }
 
+USHORT
+NTAPI
+READ_PM1_ENABLE(VOID)
+{
+    USHORT RetValue = 0;
+
+    if (AcpiInformation->PM1a_BLK)
+        RetValue = AcpiReadRegisterRoutine(0, 0);
+
+    if (AcpiInformation->PM1b_BLK)
+        RetValue |= AcpiReadRegisterRoutine(1, 0);
+
+    return RetValue;
+}
+
 /* ACPI CALLBACKS ***********************************************************/
 
 NTSTATUS
