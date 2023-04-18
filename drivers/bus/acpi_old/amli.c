@@ -2354,6 +2354,7 @@ AMLILoadDDB(
 {
     PAMLI_OBJECT_OWNER Owner = NULL;
     PAMLI_CONTEXT AmliContext = NULL;
+    PAMLI_TERM_CALLBACK_1 CallBack;
     KIRQL OldIrql;
     NTSTATUS Status;
 
@@ -2375,8 +2376,8 @@ AMLILoadDDB(
 
         if (atLoad.CallBack && atLoad.Flags2 & 0x80000000)
         {
-            DPRINT("AMLILoadDDB: FIXME\n");
-            ASSERT(FALSE);
+            CallBack = atLoad.CallBack;
+            CallBack(12, 1, atLoad.Opcode, NULL, atLoad.Context);
         }
 
         Status = LoadDDB(AmliContext, Dsdt, gpnsNameSpaceRoot, &Owner);
@@ -2397,8 +2398,8 @@ AMLILoadDDB(
     {
         if (atLoad.Flags2 & 0x80000000)
         {
-            DPRINT("AMLILoadDDB: FIXME\n");
-            ASSERT(FALSE);
+            CallBack = atLoad.CallBack;
+            CallBack(0xC, 2, atLoad.Opcode, 0, atLoad.Context);
         }
         else
         {

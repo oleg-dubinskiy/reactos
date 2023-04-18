@@ -112,6 +112,7 @@ typedef struct _AMLI_CONTEXT
 
 typedef struct _AMLI_TERM_CONTEXT *PAMLI_TERM_CONTEXT;
 typedef NTSTATUS (__cdecl* PAMLI_TERM_HANDLER)(PAMLI_CONTEXT AmliContext, PAMLI_TERM_CONTEXT TermCtx);
+typedef NTSTATUS (__cdecl* PAMLI_TERM_CALLBACK_1)(ULONG, ULONG, ULONG, PVOID, PVOID);
 
 typedef struct _AMLI_TERM
 {
