@@ -919,6 +919,27 @@ ACPILoadProcessRSDT(VOID)
     return STATUS_ACPI_INVALID_TABLE;
 }
 
+/* ACPI INIT FUNCTIONS ******************************************************/
+
+VOID
+NTAPI
+CLEAR_PM1_STATUS_REGISTER(VOID)
+{
+    USHORT Value;
+
+    if (AcpiInformation->PM1a_BLK)
+    {
+        Value = AcpiReadRegisterRoutine(2, 0);
+        AcpiWriteRegisterRoutine(2, 0, Value);
+    }
+
+    if (AcpiInformation->PM1b_BLK)
+    {
+        Value = AcpiReadRegisterRoutine(3, 0);
+        AcpiWriteRegisterRoutine(3, 0, Value);
+    }
+}
+
 /* ACPI CALLBACKS ***********************************************************/
 
 NTSTATUS
