@@ -2245,12 +2245,40 @@ StartTimeSlicePassive(
 }
 
 VOID
+NTAPI
+TimeoutCallback(
+    _In_ PKDPC Dpc,
+    _In_ PVOID DeferredContext,
+    _In_ PVOID SystemArgument1,
+    _In_ PVOID SystemArgument2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
 __cdecl
 InitContext(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ ULONG Size)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    //DPRINT("InitContext: AmliContext %X, Size %X\n", AmliContext, Size);
+
+    giIndent++;
+
+    RtlZeroMemory(AmliContext, offsetof(AMLI_CONTEXT, LocalHeap));
+
+    AmliContext->Signature = 'TXTC';
+    AmliContext->End = (PUCHAR)((ULONG_PTR)AmliContext + Size);
+    AmliContext->HeapCurrent = &AmliContext->LocalHeap;
+
+    KeInitializeDpc(&AmliContext->Dpc, TimeoutCallback, AmliContext);
+    KeInitializeTimer(&AmliContext->Timer);
+
+    InitHeap(&AmliContext->LocalHeap, ((ULONG_PTR)AmliContext->End - (ULONG_PTR)&AmliContext->LocalHeap));
+
+    AmliContext->LocalHeap.HeapHead = &AmliContext->LocalHeap;
+
+    giIndent--;
 }
 
 NTSTATUS
