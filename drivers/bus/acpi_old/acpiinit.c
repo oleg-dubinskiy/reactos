@@ -1032,6 +1032,49 @@ WRITE_PM1_CONTROL(
     }
 }
 
+VOID
+NTAPI
+ACPIEnableEnterACPIMode(
+    _In_ BOOLEAN IsNotRevertAffinity)
+{
+    BOOLEAN IsNeedRevert = FALSE;
+    UCHAR acpi_on_value;
+    ULONG ix;
+
+    ASSERTMSG("ACPIEnableEnterACPIMode: System already in ACPI mode!\n", !(READ_PM1_CONTROL() & 1));
+    ASSERTMSG("ACPIEnableEnterACPIMode: System SMI_CMD port is zero\n", (AcpiInformation->SMI_CMD != 0));
+
+    DPRINT("ACPIEnableEnterACPIMode: Enabling ACPI\n");
+
+    if (!IsNotRevertAffinity)
+    {
+        if (KeGetCurrentIrql() >= DISPATCH_LEVEL)
+        {
+            ASSERTMSG("ACPIEnableEnterACPIMode: IRQL >= DISPATCH_LEVEL\n", FALSE);
+        }
+        else
+        {
+            KeSetSystemAffinityThread(1);
+            IsNeedRevert = TRUE;
+        }
+    }
+
+    acpi_on_value = AcpiInformation->FixedACPIDescTable->acpi_on_value;
+
+    AcpiWriteRegisterRoutine(8, 0, acpi_on_value);
+
+    for (ix = 0; !(READ_PM1_CONTROL() & 1); ix++)
+    {
+        if (ix > 0xFFFFFF)
+        {
+            KeBugCheckEx(0xA5, 0x11, 6, 0, 0);
+        }
+    }
+
+    if (IsNeedRevert)
+        KeRevertToUserAffinityThread();
+}
+
 /* ACPI CALLBACKS ***********************************************************/
 
 NTSTATUS
