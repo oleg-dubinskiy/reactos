@@ -353,6 +353,12 @@ DefPortWriteAcpiRegister(
     _In_ USHORT Value
 );
 
+VOID
+NTAPI
+ACPIEnableInitializeACPI(
+    _In_ BOOLEAN IsNotRevertAffinity
+);
+
 /* dispatch.c */
 NTSTATUS
 NTAPI

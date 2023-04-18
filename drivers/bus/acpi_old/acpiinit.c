@@ -1075,6 +1075,45 @@ ACPIEnableEnterACPIMode(
         KeRevertToUserAffinityThread();
 }
 
+VOID
+NTAPI
+ACPIEnableInitializeACPI(
+    _In_ BOOLEAN IsNotRevertAffinity)
+{
+    USHORT pm1_control;
+    USHORT contents;
+
+    if (!(READ_PM1_CONTROL() & 1))
+    {
+        AcpiInformation->ACPIOnly = FALSE;
+        ACPIEnableEnterACPIMode(IsNotRevertAffinity);
+    }
+
+    CLEAR_PM1_STATUS_REGISTER();
+
+    contents = (READ_PM1_STATUS() & 0xFBEF);
+    if (contents)
+    {
+        CLEAR_PM1_STATUS_REGISTER();
+
+        contents = (READ_PM1_STATUS() & 0xFBEF);
+        ASSERTMSG("ACPIEnableInitializeACPI: Cannot clear PM1 Status Register\n", (contents == 0));
+    }
+
+    WRITE_PM1_ENABLE(AcpiInformation->pm1_en_bits);
+
+    ASSERTMSG("ACPIEnableInitializeACPI: Cannot write all PM1 Enable Bits\n", (READ_PM1_ENABLE() == AcpiInformation->pm1_en_bits));
+
+    if (IsNotRevertAffinity)
+    {
+        ACPIGpeClearRegisters();
+        ACPIGpeEnableDisableEvents(1);
+    }
+
+    pm1_control = READ_PM1_CONTROL();
+    WRITE_PM1_CONTROL((pm1_control & ~0x2002), 1, 3);
+}
+
 /* ACPI CALLBACKS ***********************************************************/
 
 NTSTATUS

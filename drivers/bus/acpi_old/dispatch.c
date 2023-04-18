@@ -329,14 +329,6 @@ ACPIGpeHalEnableDisableEvents(
 
 VOID
 NTAPI
-ACPIEnableInitializeACPI(
-    _In_ BOOLEAN Param1)
-{
-    UNIMPLEMENTED_DBGBREAK();
-}
-
-VOID
-NTAPI
 ACPIWakeEnableWakeEvents(VOID)
 {
     UNIMPLEMENTED_DBGBREAK();
@@ -787,7 +779,7 @@ ACPIInitialize(
         KeBugCheckEx(0xA5, 0x11, 3, 0, 0);
     }
 
-    ACPIEnableInitializeACPI(0);
+    ACPIEnableInitializeACPI(FALSE);
 
     Status = ACPIInitializeDDBs();
     if (!NT_SUCCESS(Status))
