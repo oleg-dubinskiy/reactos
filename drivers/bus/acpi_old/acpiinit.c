@@ -985,6 +985,18 @@ READ_PM1_ENABLE(VOID)
     return RetValue;
 }
 
+VOID
+NTAPI
+WRITE_PM1_ENABLE(
+    _In_ USHORT Value)
+{
+    if (AcpiInformation->PM1a_BLK)
+      AcpiWriteRegisterRoutine(0, 0, Value);
+
+    if (AcpiInformation->PM1b_BLK)
+      AcpiWriteRegisterRoutine(1, 0, Value);
+}
+
 /* ACPI CALLBACKS ***********************************************************/
 
 NTSTATUS
