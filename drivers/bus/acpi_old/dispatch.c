@@ -94,6 +94,7 @@ extern LIST_ENTRY AcpiBuildSynchronizationList;
 extern LIST_ENTRY AcpiBuildQueueList;
 extern KDPC AcpiBuildDpc;
 extern BOOLEAN AcpiBuildDpcRunning;
+extern PRSDTINFORMATION RsdtInformation;
 
 /* FUNCTIOS *****************************************************************/
 
@@ -700,12 +701,80 @@ OSInterruptVector(
     return FALSE;
 }
 
+/* DDB - Differentiated Definition Block */
+NTSTATUS
+NTAPI
+ACPIInitializeDDB(
+    _In_ ULONG Index)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 NTAPI
 ACPIInitializeDDBs(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG NumElements;
+    ULONG index;
+    ULONG ix;
+    ULONG Flags;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    NumElements = RsdtInformation->NumElements;
+    if (!NumElements)
+    {
+        DPRINT1("ACPInitializeDDBs: No tables found in RSDT\n");
+        ASSERTMSG("ACPIInitializeDDBs: No tables found in RSDT\n", NumElements != 0);
+        return STATUS_ACPI_INVALID_TABLE;
+    }
+
+    index = (NumElements - 1);
+    Flags = RsdtInformation->Tables[index].Flags;
+
+    if (!(Flags & 1) || !(Flags & 4))
+    {
+        DPRINT1("ACPInitializeDDB: DSDT not mapped or loadable\n");
+
+        ASSERTMSG("ACPIInitializeDDB: DSDT not mapped\n", (RsdtInformation->Tables[index].Flags & 1));//RSDTELEMENT_MAPPED
+        ASSERTMSG("ACPIInitializeDDB: DSDT not loadable\n", (RsdtInformation->Tables[index].Flags & 4));//RSDTELEMENT_LOADABLE
+
+        return STATUS_ACPI_INVALID_TABLE;
+    }
+
+    Status = ACPIInitializeDDB(index);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPInitializeDDBs: Status %X\n", Status);
+        return Status;
+    }
+
+    if (NumElements == 1)
+        return STATUS_SUCCESS;
+
+    ix = 0;
+    while (TRUE)
+    {
+        Flags = RsdtInformation->Tables[ix].Flags;
+
+        if ((Flags & 1) && (Flags & 4))
+        {
+            Status = ACPIInitializeDDB(ix);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("ACPInitializeDDBs: Status %X\n", Status);
+                break;
+            }
+        }
+
+        ix++;
+        if (ix >= index)
+            return STATUS_SUCCESS;
+    }
+
+    return Status;
 }
 
 BOOLEAN
