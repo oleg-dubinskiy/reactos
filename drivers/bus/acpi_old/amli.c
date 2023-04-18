@@ -30,6 +30,7 @@ AMLI_MUTEX gmutCtxtList;
 AMLI_MUTEX gmutOwnerList;
 AMLI_MUTEX gmutHeap;
 AMLI_MUTEX gmutSleep;
+PAMLI_LIST gplistCtxtHead;
 
 LONG giIndent;
 LONG gdwcCTObjs;
@@ -2243,13 +2244,57 @@ StartTimeSlicePassive(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+VOID
+__cdecl
+InitContext(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ ULONG Size)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 __cdecl
 NewContext(
     _Out_ PAMLI_CONTEXT* OutContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_CONTEXT AmliContext;
+    KIRQL OldIrql;
+    LONG ObjsMax;
+    NTSTATUS Status = STATUS_SUCCESS;
+  
+    //DPRINT("NewContext: OutContext %X\n", OutContext);
+
+    giIndent++;
+
+    *OutContext = AmliContext = ExAllocateFromNPagedLookasideList(&AMLIContextLookAsideList);
+
+    if (AmliContext)
+    {
+        KeAcquireSpinLock(&gdwGContextSpinLock, &OldIrql);
+
+        ObjsMax = (gdwcCTObjs++ + 1);
+
+        if (gdwcCTObjs > 0 && ObjsMax > gdwcCTObjsMax)
+            gdwcCTObjsMax = ObjsMax;
+
+        KeReleaseSpinLock(&gdwGContextSpinLock, OldIrql);
+
+        InitContext(*OutContext, gdwCtxtBlkSize);
+
+        AcquireMutex(&gmutCtxtList);
+        ListInsertTail(&(*OutContext)->List, &gplistCtxtHead);
+        ReleaseMutex(&gmutCtxtList);
+    }
+    else
+    {
+        DPRINT1("NewContext: Could not Allocate New Context\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
