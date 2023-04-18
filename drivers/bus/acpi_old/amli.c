@@ -2243,6 +2243,16 @@ StartTimeSlicePassive(
 }
 
 NTSTATUS
+__cdecl 
+AMLILoadDDB(
+    _In_ PDSDT Dsdt,
+    _Out_ HANDLE* OutHandle)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
 __cdecl
 AMLIInitialize(
     _In_ ULONG CtxtBlkSize,

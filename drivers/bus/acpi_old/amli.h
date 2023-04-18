@@ -259,5 +259,12 @@ ACPIInitializeAMLI(
     VOID
 );
 
+NTSTATUS
+__cdecl 
+AMLILoadDDB(
+    _In_ PDSDT Dsdt,
+    _Out_ HANDLE* OutHandle
+);
+
 
 /* EOF */

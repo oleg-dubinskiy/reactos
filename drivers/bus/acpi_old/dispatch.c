@@ -707,8 +707,29 @@ NTAPI
 ACPIInitializeDDB(
     _In_ ULONG Index)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    HANDLE Handle = NULL;
+    PDSDT Dsdt;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIInitializeDDB: Index %X\n", Index);
+
+    Dsdt = RsdtInformation->Tables[Index].Address;
+
+    DPRINT("ACPIInitializeDDB: FIXME ACPILoadTableCheckSum()\n");
+
+    Status = AMLILoadDDB(Dsdt, &Handle);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInitializeDDB: AMLILoadDDB failed 0x%8x\n", Status);
+        ASSERTMSG("ACPIInitializeDDB: AMLILoadDDB failed to load DDB\n", 0);
+        KeBugCheckEx(0xA5, 0x11, 8, (ULONG_PTR)Dsdt, Dsdt->Header.CreatorRev);
+    }
+
+    RsdtInformation->Tables[Index].Flags |= 2;
+    RsdtInformation->Tables[Index].Handle = Handle;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
