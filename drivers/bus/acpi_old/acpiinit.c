@@ -997,6 +997,41 @@ WRITE_PM1_ENABLE(
       AcpiWriteRegisterRoutine(1, 0, Value);
 }
 
+VOID
+NTAPI
+WRITE_PM1_CONTROL(
+    _In_ USHORT Value,
+    _In_ BOOLEAN Param2,
+    _In_ UCHAR Flags)
+{
+    USHORT value;
+  
+    if (Param2)
+    {
+        ASSERT((Flags & 4) || (Value & 1));
+
+        if (Flags & 1 && AcpiInformation->PM1a_BLK)
+            AcpiWriteRegisterRoutine(4, 0, Value);
+
+        if (Flags & 2 && AcpiInformation->PM1b_BLK)
+            AcpiWriteRegisterRoutine(5, 0, Value);
+
+        return;
+    }
+
+    if ((Flags & 1) && AcpiInformation->PM1a_BLK)
+    {
+        value = AcpiReadRegisterRoutine(4, 0);
+        AcpiWriteRegisterRoutine(4, 0, (Value | value));
+    }
+
+    if ((Flags & 2) && AcpiInformation->PM1b_BLK)
+    {
+        value = AcpiReadRegisterRoutine(5, 0);
+        AcpiWriteRegisterRoutine(5, 0, (Value | value));
+    }
+}
+
 /* ACPI CALLBACKS ***********************************************************/
 
 NTSTATUS
