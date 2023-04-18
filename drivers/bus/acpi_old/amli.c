@@ -66,6 +66,7 @@ ULONG gdwcPCObjs;
 ULONG gdwcBFObjs;
 ULONG gdwcRSObjs;
 BOOLEAN g_AmliHookEnabled;
+BOOLEAN gInitTime;
 
 #if 1
 AMLI_TERM atAlias        = { "Alias",            0x06,       "NN",     1, 0,    NULL, NULL, Alias };
@@ -2243,13 +2244,112 @@ StartTimeSlicePassive(
 }
 
 NTSTATUS
+__cdecl
+NewContext(
+    _Out_ PAMLI_CONTEXT* OutContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+LoadDDB(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PDSDT Dsdt,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsScope,
+    _Out_ PAMLI_OBJECT_OWNER* OutOwner)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+SyncLoadDDB(
+    _In_ PAMLI_CONTEXT AmliContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
 __cdecl 
 AMLILoadDDB(
     _In_ PDSDT Dsdt,
     _Out_ HANDLE* OutHandle)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_OBJECT_OWNER Owner = NULL;
+    PAMLI_CONTEXT AmliContext = NULL;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("AMLILoadDDB: Dsdt %X\n", Dsdt);
+
+    giIndent++;
+
+    ASSERT(Dsdt != NULL);
+
+    gInitTime = TRUE;
+
+    Status = NewContext(&AmliContext);
+    if (Status == STATUS_SUCCESS)
+    {
+        ASSERT(gpheapGlobal != NULL);
+        AmliContext->HeapCurrent = gpheapGlobal;
+
+        gdwfAMLI |= 0x80000000;
+
+        if (atLoad.CallBack && atLoad.Flags2 & 0x80000000)
+        {
+            DPRINT("AMLILoadDDB: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        Status = LoadDDB(AmliContext, Dsdt, gpnsNameSpaceRoot, &Owner);
+        if (Status == STATUS_SUCCESS)
+            Status = SyncLoadDDB(AmliContext);
+
+        gdwfAMLI &= 0x80000000;
+
+        KeAcquireSpinLock(&gdwGHeapSpinLock, &OldIrql);
+        gdwGHeapSnapshot = gdwGlobalHeapSize;
+        KeReleaseSpinLock(&gdwGHeapSpinLock, OldIrql);
+    }
+
+    if (OutHandle)
+        *OutHandle = Owner;
+
+    if (Owner && atLoad.CallBack)
+    {
+        if (atLoad.Flags2 & 0x80000000)
+        {
+            DPRINT("AMLILoadDDB: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else
+        {
+            DPRINT("AMLILoadDDB: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    if (gdwfAMLIInit & 2)
+    {
+        DPRINT("AMLILoadDDB: Break at Load Definition Block Completion.\n");
+        ASSERT(FALSE);
+        //AMLIDebugger(0);
+    }
+
+    if (Status == 0x8004)
+        Status = STATUS_PENDING;
+
+    giIndent--;
+
+    gInitTime = FALSE;
+
+    DPRINT("AMLILoadDDB: Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS

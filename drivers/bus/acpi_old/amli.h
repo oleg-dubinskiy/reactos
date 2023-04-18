@@ -86,7 +86,28 @@ typedef struct _AMLI_HEAP
 typedef struct _AMLI_CONTEXT
 {
     ULONG Signature;
-
+    PUCHAR End;
+    AMLI_LIST List;
+    AMLI_LIST QueueList;
+    PAMLI_LIST* QueueLists;
+    PAMLI_LIST ResourcesList;
+    ULONG Flags;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PAMLI_NAME_SPACE_OBJECT Scope;
+    PAMLI_OBJECT_OWNER Owner;
+    //PAMLI_CALL Call;
+    //PAMLI_NESTED_CONTEXT NestedContext;
+    ULONG SyncLevel;
+    PUCHAR Op;
+    AMLI_OBJECT_DATA Result;
+    //PAMLI_FN_ASYNC_CALLBACK AsyncCallBack;
+    PAMLI_OBJECT_DATA DataCallBack;
+    PVOID CallBackContext;
+    KTIMER Timer;
+    KDPC Dpc;
+    PAMLI_HEAP HeapCurrent;
+    //AMLI_CONTEXT_DATA ContextData;
+    AMLI_HEAP LocalHeap;
 } AMLI_CONTEXT, *PAMLI_CONTEXT;
 
 typedef struct _AMLI_TERM_CONTEXT *PAMLI_TERM_CONTEXT;
