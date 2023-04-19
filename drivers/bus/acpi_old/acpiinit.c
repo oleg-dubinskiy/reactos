@@ -1245,8 +1245,21 @@ ACPICallBackLoad(
     _In_ int Param1,
     _In_ int Param2)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("ACPICallBackLoad: Param1 %X, Param2 %X\n", Param1, Param2);
+
+    if (Param2 == 1)
+    {
+        if (InterlockedIncrement(&AcpiTableDelta) == 1)
+            ACPIGpeClearEventMasks();
+    }
+    else if (!InterlockedDecrement(&AcpiTableDelta))
+    {
+        ACPIGpeBuildEventMasks();
+        ACPITableLoad();
+    }
+
+    DPRINT("ACPICallBackLoad: ret STATUS_SUCCESS\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
