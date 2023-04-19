@@ -2029,6 +2029,54 @@ Exit:
 
 NTSTATUS
 __cdecl
+AMLIGetNameSpaceObject(
+    _In_ PCHAR ObjPath,
+    _In_ PAMLI_NAME_SPACE_OBJECT ScopeObject,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutNsObject,
+    _In_ ULONG Flags)
+{
+    NTSTATUS Status;
+
+    DPRINT("AMLIGetNameSpaceObject: '%s', '%s', %X,  %X\n", ObjPath, GetObjectPath(ScopeObject), ScopeObject, Flags);
+
+    giIndent++;
+
+    ASSERT(ObjPath != NULL);
+    ASSERT(*ObjPath != '\\0');
+    ASSERT(OutNsObject != NULL);
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIGetNameSpaceObject: FIXME");
+        ASSERT(FALSE);
+    }
+
+    if (ScopeObject && (ScopeObject->ObjData.Flags & 4))
+    {
+        DPRINT1("AMLIGetNameSpaceObject: ScopeObject is no longer valid");
+        ASSERT(FALSE);
+        Status = STATUS_NO_SUCH_DEVICE;
+    }
+    else
+    {
+        Status = GetNameSpaceObject(ObjPath, ScopeObject, OutNsObject, Flags);
+        if (Status == 0x8004)
+            Status = STATUS_PENDING;
+    }
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIGetNameSpaceObject: FIXME");
+        ASSERT(FALSE);
+    }
+
+    giIndent--;
+
+    return Status;
+}
+
+NTSTATUS
+__cdecl
 CreateNameSpaceObject(
     _In_ PAMLI_HEAP Heap,
     _In_ PCHAR Name,
