@@ -873,6 +873,35 @@ Exit:
     return TmpPath;
 }
 
+PAMLI_NAME_SPACE_OBJECT
+NTAPI
+ACPIAmliGetNamedChild(
+    _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject,
+    _In_ ULONG NameSeg)
+{
+    PAMLI_NAME_SPACE_OBJECT Child;
+    PAMLI_NAME_SPACE_OBJECT Parent;
+
+    Child = AcpiObject->FirstChild;
+
+    while (Child && NameSeg != Child->NameSeg)
+    {
+        Parent = Child->Parent;
+
+        if (Parent)
+        {
+            Child = (PAMLI_NAME_SPACE_OBJECT)Child->List.Next;
+
+            if (Parent->FirstChild != Child)
+                continue;
+        }
+
+        Child = NULL;
+    }
+
+    return Child;
+}
+
 /* CALLBACKS TERM HANDLERS **************************************************/
 
 PAMLI_RS_ACCESS_HANDLER
