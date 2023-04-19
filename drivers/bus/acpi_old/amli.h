@@ -288,5 +288,31 @@ AMLILoadDDB(
     _Out_ HANDLE* OutHandle
 );
 
+NTSTATUS
+__cdecl
+AMLIGetNameSpaceObject(
+    _In_ PCHAR ObjPath,
+    _In_ PAMLI_NAME_SPACE_OBJECT ScopeObject,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutNsObject,
+    _In_ ULONG Flags
+);
+
+PAMLI_NAME_SPACE_OBJECT
+NTAPI
+ACPIAmliGetNamedChild(
+    _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject,
+    _In_ ULONG NameSeg
+);
+
+NTSTATUS
+__cdecl
+AMLIAsyncEvalObject(
+    _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject,
+    _In_ PAMLI_OBJECT_DATA DataResult,
+    _In_ ULONG ArgsCount,
+    _In_ PAMLI_OBJECT_DATA DataArgs,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext
+);
 
 /* EOF */

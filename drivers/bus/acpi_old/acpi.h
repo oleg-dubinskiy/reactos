@@ -213,6 +213,7 @@ typedef struct _DEVICE_EXTENSION
     LONG OutstandingIrpCount;
     LONG ReferenceCount;
     PKEVENT RemoveEvent;
+    PAMLI_NAME_SPACE_OBJECT AcpiObject;
     PDEVICE_OBJECT DeviceObject;
     PDEVICE_OBJECT TargetDeviceObject;
     PDEVICE_OBJECT PhysicalDeviceObject;
@@ -421,6 +422,16 @@ BOOLEAN
 NTAPI
 ACPIInitialize(
     _In_ PDEVICE_OBJECT DeviceObject
+);
+
+NTSTATUS
+NTAPI
+ACPIBuildSynchronizationRequest(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PVOID CallBack,
+    _In_ PKEVENT Event,
+    _In_ PLIST_ENTRY BuildDeviceList,
+    _In_ BOOLEAN IsAddDpc
 );
 
 /* registry.c */

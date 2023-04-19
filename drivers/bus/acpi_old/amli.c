@@ -2505,6 +2505,20 @@ AMLILoadDDB(
 
 NTSTATUS
 __cdecl
+AMLIAsyncEvalObject(
+    _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject,
+    _In_ PAMLI_OBJECT_DATA DataResult,
+    _In_ ULONG ArgsCount,
+    _In_ PAMLI_OBJECT_DATA DataArgs,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 AMLIInitialize(
     _In_ ULONG CtxtBlkSize,
     _In_ ULONG GlobalHeapBlkSize,

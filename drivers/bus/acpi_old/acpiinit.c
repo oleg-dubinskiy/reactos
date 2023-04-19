@@ -59,6 +59,7 @@ LIST_ENTRY ACPIWorkQueue;
 LIST_ENTRY AcpiBuildDeviceList;
 LIST_ENTRY AcpiBuildSynchronizationList;
 LIST_ENTRY AcpiBuildQueueList;
+LONG AcpiTableDelta = 0;
 BOOLEAN AcpiLoadSimulatorTable = TRUE;
 BOOLEAN AcpiBuildDpcRunning;
 
@@ -1115,6 +1116,128 @@ ACPIEnableInitializeACPI(
 }
 
 /* ACPI CALLBACKS ***********************************************************/
+
+VOID
+NTAPI
+ACPIGpeClearEventMasks(VOID)
+{
+    //UNIMPLEMENTED_DBGBREAK();
+    UNIMPLEMENTED;
+}
+
+VOID
+NTAPI
+ACPIGpeBuildEventMasks(VOID)
+{
+    //UNIMPLEMENTED_DBGBREAK();
+    UNIMPLEMENTED;
+}
+
+VOID
+NTAPI
+ACPITableLoadCallBack(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PVOID Param2,
+    _In_ NTSTATUS Param3)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildFixedButtonExtension(
+    _In_ PDEVICE_EXTENSION RootDeviceExtension,
+    _Out_ PDEVICE_EXTENSION* OutDeviceExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildRunMethodRequest(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext,
+    _In_ PVOID Context,
+    _In_ ULONG Param5,
+    _In_ BOOLEAN IsInsertDpc)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+ACPITableLoad(VOID)
+{
+    PAMLI_NAME_SPACE_OBJECT ChildObject;
+    PDEVICE_EXTENSION DeviceExtension = NULL;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    BOOLEAN IsGetChild = FALSE;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("ACPITableLoad()\n");
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &OldIrql);
+
+    /* System bus tree */
+    Status = AMLIGetNameSpaceObject("\\_SB", NULL, &NsObject, 0);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPITableLoad: No SB Object!\n");
+        ASSERT(FALSE);
+    }
+
+    if (!RootDeviceExtension->AcpiObject)
+    {
+        IsGetChild = TRUE;
+
+        InterlockedIncrement(&RootDeviceExtension->ReferenceCount);
+
+        RootDeviceExtension->AcpiObject = NsObject;
+        NsObject->Context = RootDeviceExtension;
+
+        Status = ACPIBuildFixedButtonExtension(RootDeviceExtension, &DeviceExtension);
+
+        if (NT_SUCCESS(Status) && DeviceExtension)
+            InterlockedIncrement(&DeviceExtension->ReferenceCount);
+    }
+
+    Status = ACPIBuildRunMethodRequest(RootDeviceExtension, NULL, NULL, (PVOID)'INI_', 7, FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPITableLoad: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
+
+    if (IsGetChild)
+    {
+        ChildObject = ACPIAmliGetNamedChild(NsObject->Parent, 'INI_');
+        if (ChildObject)
+            AMLIAsyncEvalObject(ChildObject, NULL, 0, NULL, NULL, NULL);
+    }
+
+    DPRINT("ACPITableLoad: ACPITableLoadCallBack %X\n", ACPITableLoadCallBack);
+
+    Status = ACPIBuildSynchronizationRequest(RootDeviceExtension, ACPITableLoadCallBack, NULL, &AcpiBuildDeviceList, FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPITableLoad: FIXME\n");
+        ASSERT(FALSE);
+    }
+    DPRINT("ACPITableLoad: Status %X\n", Status);
+
+    KeAcquireSpinLock(&AcpiBuildQueueLock, &OldIrql);
+    if (!AcpiBuildDpcRunning)
+        KeInsertQueueDpc(&AcpiBuildDpc, NULL, NULL);
+    KeReleaseSpinLock(&AcpiBuildQueueLock, OldIrql);
+
+    DPRINT("ACPITableLoad: exit\n");
+}
 
 NTSTATUS
 __cdecl
