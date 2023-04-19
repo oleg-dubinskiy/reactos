@@ -31,6 +31,7 @@ AMLI_MUTEX gmutOwnerList;
 AMLI_MUTEX gmutHeap;
 AMLI_MUTEX gmutSleep;
 PAMLI_LIST gplistCtxtHead;
+PAMLI_LIST gplistObjOwners;
 
 LONG giIndent;
 LONG gdwcCTObjs;
@@ -2394,6 +2395,45 @@ NewContext(
     else
     {
         DPRINT1("NewContext: Could not Allocate New Context\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    giIndent--;
+
+    return Status;
+}
+
+NTSTATUS
+__cdecl
+NewObjOwner(
+    _In_ PAMLI_HEAP Heap,
+    _Out_ PAMLI_OBJECT_OWNER* OutOwner)
+{
+    PAMLI_OBJECT_OWNER Owner;
+    NTSTATUS Status = STATUS_SUCCESS;
+  
+    DPRINT("NewObjOwner: %X, %X\n", Heap, OutOwner);
+
+    giIndent++;
+    gdwcOOObjs++;
+
+    *OutOwner = Owner = HeapAlloc(Heap, 'NWOH', sizeof(*Owner));
+
+    if (Owner)
+    {
+        Owner->List.Prev = NULL;
+        Owner->List.Next = NULL;
+        Owner->Signature = 'RNWO';
+        Owner->ObjList = NULL;
+
+        AcquireMutex(&gmutOwnerList);
+        ListInsertTail(&Owner->List, &gplistObjOwners);
+        ReleaseMutex(&gmutOwnerList);
+    }
+    else
+    {
+        DPRINT1("NewObjOwner: failed to allocate object owner\n");
+        ASSERT(FALSE);
         Status = STATUS_INSUFFICIENT_RESOURCES;
     }
 
