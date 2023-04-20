@@ -2452,13 +2452,97 @@ NewObjOwner(
 
 NTSTATUS
 __cdecl
+PushFrame(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ ULONG Signature,
+    _In_ ULONG Length,
+    _In_ PVOID ParseFunction,
+    _Out_ PVOID* OutFrame)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ParseCall(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_CALL AmliCall,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 PushCall(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_NAME_SPACE_OBJECT NsMethod,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_METHOD_OBJECT MethodObject;
+    PAMLI_CALL AmliCall;
+    ULONG Size;
+    NTSTATUS Status;
+
+    DPRINT("PushCall: %X, '%s', %X\n", AmliContext, GetObjectPath(NsMethod), DataResult);
+
+    giIndent++;
+
+    ASSERT((NsMethod == NULL) || (NsMethod->ObjData.DataType == 8));//OBJTYPE_METHOD
+
+    Status = PushFrame(AmliContext, 'LLAC', 0xCC, ParseCall, (PVOID *)&AmliCall);
+    if (Status != STATUS_SUCCESS)
+    {
+        goto Exit;
+    }
+
+    if (!NsMethod)
+    {
+        ASSERT(AmliContext->Call == NULL);
+        AmliContext->Call = AmliCall;
+
+        AmliCall->FrameHdr.Flags = 4;
+        AmliCall->DataResult = DataResult;
+
+        goto Exit;
+    }
+
+    MethodObject = NsMethod->ObjData.DataBuff;
+    AmliCall->NsMethod = NsMethod;
+
+    if (MethodObject->MethodFlags & 8)
+        AmliCall->FrameHdr.Flags |= 0x10000;
+
+    AmliCall->NumberOfArgs = (MethodObject->MethodFlags & 7);
+
+    if (AmliCall->NumberOfArgs > 0)
+    {
+        gdwcODObjs++;
+
+        Size = (AmliCall->NumberOfArgs * sizeof(AMLI_OBJECT_DATA));
+        AmliCall->DataArgs = HeapAlloc(AmliContext->HeapCurrent, 'TADH', Size);
+
+        if (AmliCall->DataArgs)
+        {
+            RtlZeroMemory(AmliCall->DataArgs, Size);
+        }
+        else
+        {
+            DPRINT1("PushCall: failed to allocate argument objects\n");
+            ASSERT(FALSE);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
+
+    AmliCall->DataResult = DataResult;
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
