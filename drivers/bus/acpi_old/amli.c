@@ -2459,8 +2459,44 @@ PushFrame(
     _In_ PVOID ParseFunction,
     _Out_ PVOID* OutFrame)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PCHAR SignatureStr;
+    PAMLI_FRAME_HEADER Frame;
+    NTSTATUS Status = 0;
+
+    SignatureStr = NameSegString(Signature);
+    DPRINT("PushFrame: %p, '%s', %X, %p\n", AmliContext, SignatureStr, Length, ParseFunction);
+
+    giIndent++;
+
+    Frame = (PAMLI_FRAME_HEADER)((ULONG_PTR)AmliContext->LocalHeap.HeapEnd - Length);
+
+    if ((ULONG_PTR)Frame < (ULONG_PTR)AmliContext->LocalHeap.HeapTop)
+    {
+        DPRINT1("PushFrame: stack ran out of space\n");
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_STACK_OVERFLOW;
+        goto Exit;
+    }
+
+    AmliContext->LocalHeap.HeapEnd = Frame;
+
+    RtlZeroMemory(Frame, Length);
+
+    Frame->Signature = Signature;
+    Frame->Length = Length;
+    Frame->ParseFunction = ParseFunction;
+
+    if (OutFrame)
+        *OutFrame = Frame;
+
+    if (((ULONG_PTR)AmliContext->End - (ULONG_PTR)AmliContext->LocalHeap.HeapEnd) > gdwLocalStackMax)
+        gdwLocalStackMax = ((ULONG_PTR)AmliContext->End - (ULONG_PTR)AmliContext->LocalHeap.HeapEnd);
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
