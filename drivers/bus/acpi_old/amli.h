@@ -197,6 +197,16 @@ typedef struct _AMLI_CONTEXT_QUEUE
 
 C_ASSERT(sizeof(AMLI_CONTEXT_QUEUE) == 0xA0);
 
+typedef struct _AMLI_SCOPE
+{
+    AMLI_FRAME_HEADER FrameHeader;
+    PUCHAR OpEnd;
+    PUCHAR OpcodeRet;
+    PAMLI_NAME_SPACE_OBJECT OldScope;
+    PAMLI_OBJECT_OWNER OldOwner;
+    PAMLI_HEAP HeapCurrent;
+    PAMLI_OBJECT_DATA DataResult;
+} AMLI_SCOPE, *PAMLI_SCOPE;
 typedef struct _AMLI_TERM_CONTEXT
 {
     AMLI_FRAME_HEADER FrameHeader;

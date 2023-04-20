@@ -2583,6 +2583,17 @@ Exit:
 
 NTSTATUS
 __cdecl
+ParseScope(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_SCOPE AmliScope,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 PushScope(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PUCHAR OpcodeBegin,
@@ -2593,8 +2604,31 @@ PushScope(
     _In_ PAMLI_HEAP Heap,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+    PAMLI_SCOPE AmliScope;
+
+    DPRINT("PushScope: %X, %X, %X, %X, %X, %X, %X\n", AmliContext, OpcodeBegin, OpEnd, OpcodeRet, NsScope, Heap, DataResult);
+
+    giIndent++;
+
+    Status = PushFrame(AmliContext, 'POCS', sizeof(AMLI_SCOPE), ParseScope, (PVOID *)&AmliScope);
+    if (Status == STATUS_SUCCESS)
+    {
+        AmliContext->Op = OpcodeBegin;
+        AmliScope->OpEnd = OpEnd;
+        AmliScope->OpcodeRet = OpcodeRet;
+        AmliScope->OldScope = AmliContext->Scope;
+        AmliContext->Scope = NsScope;
+        AmliScope->OldOwner = AmliContext->Owner;
+        AmliContext->Owner = Owner;
+        AmliScope->HeapCurrent = AmliContext->HeapCurrent;
+        AmliContext->HeapCurrent = Heap;
+        AmliScope->DataResult = DataResult;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
