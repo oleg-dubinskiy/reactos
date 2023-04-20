@@ -2403,6 +2403,14 @@ NewContext(
     return Status;
 }
 
+VOID
+__cdecl
+FreeContext(
+    _In_ PAMLI_CONTEXT AmliContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 __cdecl
 NewObjOwner(
@@ -2444,14 +2452,78 @@ NewObjOwner(
 
 NTSTATUS
 __cdecl
+PushCall(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsMethod,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+PushScope(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PUCHAR OpcodeBegin,
+    _In_ PUCHAR OpEnd,
+    _In_ PUCHAR OpcodeRet,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsScope,
+    _In_ PAMLI_OBJECT_OWNER Owner,
+    _In_ PAMLI_HEAP Heap,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 LoadDDB(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PDSDT Dsdt,
     _In_ PAMLI_NAME_SPACE_OBJECT NsScope,
     _Out_ PAMLI_OBJECT_OWNER* OutOwner)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    //PCHAR SegString;
+    NTSTATUS Status;
+
+    DPRINT("LoadDDB: Dsdt %X\n", Dsdt);
+
+    DPRINT("LoadDDB: FIXME ValidateTable()\n");
+
+    Status = NewObjOwner(gpheapGlobal, OutOwner);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("LoadDDB: Status %X\n", Status);
+        ASSERT(FALSE);
+        AmliContext->Owner = NULL;
+        FreeContext(AmliContext);
+        return Status;
+    }
+
+    if (!AmliContext->Call)
+    {
+        Status = PushCall(AmliContext, NULL, &AmliContext->Result);
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("LoadDDB: Status %X\n", Status);
+            ASSERT(FALSE);
+            return Status;
+        }
+    }
+
+    Status = PushScope(AmliContext,
+                       (PUCHAR)Dsdt->DiffDefBlock,
+                       ((PUCHAR)Dsdt + Dsdt->Header.Length),
+                       AmliContext->Op,
+                       NsScope,
+                       *OutOwner,
+                       gpheapGlobal,
+                       &AmliContext->Result);
+
+    DPRINT("LoadDDB: ret Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS

@@ -64,6 +64,19 @@ typedef struct _AMLI_FRAME_HEADER
     PAMLI_FN_PARSE ParseFunction;
 } AMLI_FRAME_HEADER, *PAMLI_FRAME_HEADER;
 
+typedef struct _AMLI_CALL
+{
+    AMLI_FRAME_HEADER FrameHdr;
+    struct _AMLI_CALL* CallPrev;
+    PAMLI_OBJECT_OWNER OwnerPrev;
+    PAMLI_NAME_SPACE_OBJECT NsMethod;
+    ULONG ArgIndex;
+    ULONG NumberOfArgs;
+    PAMLI_OBJECT_DATA DataArgs;
+    AMLI_OBJECT_DATA Locals[8];
+    PAMLI_OBJECT_DATA DataResult;
+} AMLI_CALL, *PAMLI_CALL;
+
 typedef struct _AMLI_HEAP_HEADER
 {
     ULONG Signature;
@@ -95,7 +108,7 @@ typedef struct _AMLI_CONTEXT
     PAMLI_NAME_SPACE_OBJECT NsObject;
     PAMLI_NAME_SPACE_OBJECT Scope;
     PAMLI_OBJECT_OWNER Owner;
-    //PAMLI_CALL Call;
+    PAMLI_CALL Call;
     //PAMLI_NESTED_CONTEXT NestedContext;
     ULONG SyncLevel;
     PUCHAR Op;
