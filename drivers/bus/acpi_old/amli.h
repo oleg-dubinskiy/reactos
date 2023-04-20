@@ -77,6 +77,8 @@ typedef struct _AMLI_CALL
     PAMLI_OBJECT_DATA DataResult;
 } AMLI_CALL, *PAMLI_CALL;
 
+typedef void (__cdecl* PAMLI_FN_ASYNC_CALLBACK)(PAMLI_NAME_SPACE_OBJECT Object, NTSTATUS InStatus, PAMLI_OBJECT_DATA Data, PVOID Context);
+
 typedef struct _AMLI_HEAP_HEADER
 {
     ULONG Signature;
@@ -113,7 +115,7 @@ typedef struct _AMLI_CONTEXT
     ULONG SyncLevel;
     PUCHAR Op;
     AMLI_OBJECT_DATA Result;
-    //PAMLI_FN_ASYNC_CALLBACK AsyncCallBack;
+    PVOID AsyncCallBack;
     PAMLI_OBJECT_DATA DataCallBack;
     PVOID CallBackContext;
     KTIMER Timer;
@@ -207,6 +209,14 @@ typedef struct _AMLI_SCOPE
     PAMLI_HEAP HeapCurrent;
     PAMLI_OBJECT_DATA DataResult;
 } AMLI_SCOPE, *PAMLI_SCOPE;
+
+typedef struct _AMLI_ASYNC_CONTEXT
+{
+    NTSTATUS Status;
+    PAMLI_CONTEXT AmliContext;
+    KEVENT Event;
+} AMLI_ASYNC_CONTEXT, *PAMLI_ASYNC_CONTEXT;
+
 typedef struct _AMLI_TERM_CONTEXT
 {
     AMLI_FRAME_HEADER FrameHeader;

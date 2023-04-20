@@ -2499,6 +2499,17 @@ Exit:
     return Status;
 }
 
+VOID
+__cdecl
+EvalMethodComplete(
+    _In_ PAMLI_NAME_SPACE_OBJECT Object,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA Data,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 __cdecl
 ParseCall(
@@ -2682,11 +2693,78 @@ LoadDDB(
 
 NTSTATUS
 __cdecl
-SyncLoadDDB(
-    _In_ PAMLI_CONTEXT AmliContext)
+RestartContext(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ BOOLEAN IsDelayExecute)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+SyncLoadDDB(
+    _In_ PAMLI_CONTEXT AmliContext)
+{
+    AMLI_ASYNC_CONTEXT AsyncContext;
+    NTSTATUS Status;
+  
+    DPRINT("SyncLoadDDB: %X\n", AmliContext);
+
+    giIndent++;
+
+    if (KeGetCurrentThread() == gReadyQueue.Thread)
+    {
+        DPRINT("SyncLoadDDB: cannot nest a SyncLoadDDB\n");
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_FATAL;
+        AmliContext->Owner = NULL;
+        FreeContext(AmliContext);
+        goto Exit;
+    }
+
+    if (KeGetCurrentIrql() >= DISPATCH_LEVEL)
+    {
+        DPRINT("SyncLoadDDB: cannot SyncLoadDDB at IRQL >= DISPATCH_LEVEL\n");
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_FATAL;
+        AmliContext->Owner = NULL;
+        FreeContext(AmliContext);
+        goto Exit;
+    }
+
+    KeInitializeEvent(&AsyncContext.Event, SynchronizationEvent, FALSE);
+
+    AmliContext->AsyncCallBack = EvalMethodComplete;
+    AmliContext->CallBackContext = &AsyncContext;
+
+    Status = RestartContext(AmliContext, FALSE);
+
+    while (Status == 0x8004)
+    {
+        Status = KeWaitForSingleObject(&AsyncContext.Event, Executive, KernelMode, FALSE, NULL);
+
+        if (Status)
+        {
+            DPRINT("SyncLoadDDB: object synchronization failed (%X)\n", Status);
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_FATAL;
+        }
+        else
+        {
+            if (AsyncContext.Status == 0x8003)
+                Status = RestartContext(AsyncContext.AmliContext, FALSE);
+            else
+                Status = AsyncContext.Status;
+        }
+    }
+
+  Exit:
+
+    giIndent--;
+
+    DPRINT("SyncLoadDDB: Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS
