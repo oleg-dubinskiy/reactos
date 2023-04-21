@@ -2715,8 +2715,13 @@ __cdecl
 IsStackEmpty(
     _In_ PAMLI_CONTEXT AmliContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    BOOLEAN RetIsEmpty;
+
+    giIndent++;
+    RetIsEmpty = (AmliContext->LocalHeap.HeapEnd == AmliContext->End);
+    giIndent--;
+
+    return RetIsEmpty;
 }
 
 NTSTATUS
