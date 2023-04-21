@@ -1473,6 +1473,25 @@ ACPIUnload(
 
 VOID
 NTAPI
+OSQueueWorkItem(
+    _In_ PWORK_QUEUE_ITEM WorkQueueItem)
+{
+    KIRQL OldIrql;
+
+    ASSERT(KeGetCurrentIrql() <= DISPATCH_LEVEL);
+
+    KeAcquireSpinLock(&ACPIWorkerSpinLock, &OldIrql);
+
+    if (IsListEmpty(&ACPIWorkQueue))
+        KeSetEvent(&ACPIWorkToDoEvent, 0, FALSE);
+
+    InsertTailList(&ACPIWorkQueue, &WorkQueueItem->List);
+ 
+    KeReleaseSpinLock(&ACPIWorkerSpinLock, OldIrql);
+}
+
+VOID
+NTAPI
 ACPIWorkerThread(PVOID Context)
 {
     UNIMPLEMENTED_DBGBREAK();
