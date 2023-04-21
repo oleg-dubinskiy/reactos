@@ -360,6 +360,12 @@ ACPIEnableInitializeACPI(
     _In_ BOOLEAN IsNotRevertAffinity
 );
 
+VOID
+NTAPI
+OSQueueWorkItem(
+    _In_ PWORK_QUEUE_ITEM WorkQueueItem
+);
+
 /* dispatch.c */
 NTSTATUS
 NTAPI

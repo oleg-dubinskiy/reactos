@@ -2691,14 +2691,75 @@ LoadDDB(
     return Status;
 }
 
+VOID
+NTAPI
+RestartCtxtPassive(
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+__cdecl
+InsertReadyQueue(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ BOOLEAN IsDelayExecute)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 __cdecl
 RestartContext(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ BOOLEAN IsDelayExecute)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_RESTART_CONTEXT RestartCtxt;
+    NTSTATUS Status;
+
+    DPRINT("RestartContext: %X, %X\n", AmliContext, IsDelayExecute);
+
+    giIndent++;
+
+    ASSERT(!(AmliContext->Flags & 1)); // CTXTF_TIMER_PENDING
+    ASSERT((IsDelayExecute == FALSE) || !(AmliContext->Flags & 0x100)); // CTXTF_ASYNC_EVAL
+
+    if (KeGetCurrentIrql() >= DISPATCH_LEVEL)
+    {
+        gdwcMemObjs++;
+
+        RestartCtxt = ExAllocatePoolWithTag(NonPagedPool, sizeof(*RestartCtxt), 'TlmA');
+        if (RestartCtxt)
+        {
+            AmliContext->Flags |= 0x20;
+
+            RestartCtxt->AmliContext = AmliContext;
+
+            RestartCtxt->WorkQueueItem.WorkerRoutine = RestartCtxtPassive;
+            RestartCtxt->WorkQueueItem.Parameter = RestartCtxt;
+            RestartCtxt->WorkQueueItem.List.Flink = NULL;
+
+            OSQueueWorkItem(&RestartCtxt->WorkQueueItem);
+            Status = 0x8004;
+        }
+        else
+        {
+            DPRINT("RestartContext: failed to allocate restart context item\n");
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_FATAL;
+        }
+    }
+    else
+    {
+        AcquireMutex(&gReadyQueue.Mutex);
+        Status = InsertReadyQueue(AmliContext, IsDelayExecute);
+        ReleaseMutex(&gReadyQueue.Mutex);
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
