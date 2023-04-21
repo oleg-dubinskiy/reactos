@@ -79,6 +79,19 @@ typedef struct _AMLI_CALL
 
 typedef void (__cdecl* PAMLI_FN_ASYNC_CALLBACK)(PAMLI_NAME_SPACE_OBJECT Object, NTSTATUS InStatus, PAMLI_OBJECT_DATA Data, PVOID Context);
 
+typedef struct _AMLI_NESTED_CONTEXT
+{
+    AMLI_FRAME_HEADER FrameHeader;
+    PAMLI_NAME_SPACE_OBJECT Object;
+    PAMLI_NAME_SPACE_OBJECT Scope;
+    AMLI_OBJECT_DATA Result;
+    PAMLI_FN_ASYNC_CALLBACK AsyncCallBack;
+    PAMLI_OBJECT_DATA DataCallBack;
+    PVOID Context;
+    ULONG PrevCtxt;
+    struct _AMLI_NESTED_CONTEXT* Prev;
+} AMLI_NESTED_CONTEXT, *PAMLI_NESTED_CONTEXT;
+
 typedef struct _AMLI_HEAP_HEADER
 {
     ULONG Signature;
@@ -111,7 +124,7 @@ typedef struct _AMLI_CONTEXT
     PAMLI_NAME_SPACE_OBJECT Scope;
     PAMLI_OBJECT_OWNER Owner;
     PAMLI_CALL Call;
-    //PAMLI_NESTED_CONTEXT NestedContext;
+    PAMLI_NESTED_CONTEXT NestedContext;
     ULONG SyncLevel;
     PUCHAR Op;
     AMLI_OBJECT_DATA Result;
@@ -222,6 +235,14 @@ typedef struct _AMLI_RESTART_CONTEXT
     PAMLI_CONTEXT AmliContext;
     WORK_QUEUE_ITEM WorkQueueItem;
 } AMLI_RESTART_CONTEXT, *PAMLI_RESTART_CONTEXT;
+
+typedef struct _AMLI_RESOURCE
+{
+    ULONG ResType;
+    PAMLI_CONTEXT ContextOwner;
+    PVOID ResObject;
+    AMLI_LIST List;
+} AMLI_RESOURCE, *PAMLI_RESOURCE;
 
 typedef struct _AMLI_TERM_CONTEXT
 {

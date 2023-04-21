@@ -926,6 +926,17 @@ FindRSAccess(
     return RsAccess;
 }
 
+NTSTATUS
+__cdecl
+DupObjData(
+    _In_ PAMLI_HEAP Heap,
+    _In_ PAMLI_OBJECT_DATA Dest,
+    _In_ PAMLI_OBJECT_DATA Src)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* TERM HANDLERS ************************************************************/
 
 #if 1
@@ -2699,13 +2710,163 @@ RestartCtxtPassive(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+BOOLEAN
+__cdecl
+IsStackEmpty(
+    _In_ PAMLI_CONTEXT AmliContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+NTSTATUS
+__cdecl
+ReleaseASLMutex(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_MUTEX_OBJECT AmliMutex)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+__cdecl
+AsyncCallBack(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 __cdecl
 RunContext(
     _In_ PAMLI_CONTEXT AmliContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_CONTEXT OldAmliContext;
+    PAMLI_RESOURCE AmliResourse;
+    PAMLI_FRAME_HEADER Frame;
+    PAMLI_LIST Entry;
+    PKTHREAD Thread;
+    ULONG Flags;
+    NTSTATUS Status;
+
+    Thread = gReadyQueue.Thread;
+    OldAmliContext = gReadyQueue.CurrentContext;
+
+    DPRINT("RunContext: AmliContext %X\n", AmliContext);
+
+    giIndent++;
+
+    ASSERT(AmliContext->Signature == 'TXTC'); // SIG_CTXT
+    ASSERT(AmliContext->Flags & 8); // CTXTF_READY
+
+    gReadyQueue.CurrentContext = AmliContext;
+    gReadyQueue.Thread = KeGetCurrentThread();
+
+    while (TRUE)
+    {
+        Status = STATUS_SUCCESS;
+
+        AmliContext->Flags = ((AmliContext->Flags & ~8) | 0x10);
+
+        ReleaseMutex(&gReadyQueue.Mutex);
+
+        while (!IsStackEmpty(AmliContext))
+        {
+            Frame = AmliContext->LocalHeap.HeapEnd;
+            ASSERT(Frame->ParseFunction != NULL);
+
+            Status = Frame->ParseFunction(AmliContext, Frame, Status);
+
+            if (Status == 0x8004 || Status == 0x8000)
+                break;
+        }
+
+        AcquireMutex(&gReadyQueue.Mutex);
+        Flags = AmliContext->Flags;
+
+        if ((Flags & 0x80) == 0 || Status != 0x8000)
+            AmliContext->Flags = (Flags & ~0x10);
+
+        if (!(AmliContext->Flags & 8))
+            break;
+
+        ASSERT(Status == 0x8004);//AMLISTA_PENDING
+    }
+
+    if (Status == 0x8004)
+    {
+        AmliContext->Flags |= 0x20;
+    }
+    else if (Status == 0x8000)
+    {
+        if (!AmliContext->NestedContext)
+            AmliContext->Flags &= ~0x80;
+
+        Status = STATUS_SUCCESS;
+    }
+    else
+    {
+        ReleaseMutex(&gReadyQueue.Mutex);
+
+        if (Status == STATUS_SUCCESS)
+        {
+            if (AmliContext->DataCallBack)
+            {
+                Status = DupObjData(gpheapGlobal, AmliContext->DataCallBack, &AmliContext->Result);
+            }
+        }
+
+        if (AmliContext->Flags & 0x20)
+        {
+            AsyncCallBack(AmliContext, Status);
+
+            if (AmliContext->Flags & 0x100)
+                Status = 0x8004;
+        }
+
+        while (AmliContext->ResourcesList)
+        {
+            Entry = AmliContext->ResourcesList;
+            AmliResourse = CONTAINING_RECORD(Entry, AMLI_RESOURCE, List);
+
+            ASSERT(AmliResourse->ContextOwner == AmliContext);
+
+            if (AmliResourse->ResType == 1)
+            {
+                ReleaseASLMutex(AmliContext, AmliResourse->ResObject);
+            }
+            else
+            {
+                DPRINT1("RunContext: FIXME\n");
+                ASSERT(FALSE);
+            }
+        }
+
+        FreeContext(AmliContext);
+        AcquireMutex(&gReadyQueue.Mutex);
+    }
+
+    gReadyQueue.Thread = Thread;
+    gReadyQueue.CurrentContext = OldAmliContext;
+
+    if (gReadyQueue.Flags & 4)
+    {
+        if (!gplistCtxtHead)
+        {
+            gReadyQueue.Flags = ((gReadyQueue.Flags & ~4) | 8);
+
+            if (gReadyQueue.PauseCallback)
+            {
+                gReadyQueue.PauseCallback(gReadyQueue.CallbackContext);
+            }
+        }
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
