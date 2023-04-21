@@ -2701,12 +2701,89 @@ RestartCtxtPassive(
 
 NTSTATUS
 __cdecl
+RunContext(
+    _In_ PAMLI_CONTEXT AmliContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 InsertReadyQueue(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ BOOLEAN IsDelayExecute)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG Flags;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("InsertReadyQueue: %X, %X\n", AmliContext, IsDelayExecute);
+
+    giIndent++;
+
+    Flags = AmliContext->Flags;
+    if (Flags & 1)
+    {
+        AmliContext->Flags = (Flags & ~1);
+
+        if (!KeCancelTimer(&AmliContext->Timer))
+            AmliContext->Flags |= 2;
+    }
+
+    AmliContext->Flags |= 8;
+    Flags = AmliContext->Flags;
+
+    if ((Flags & 2) || ((Flags & 0x10) && (Flags & 0x80) == 0))
+    {
+        goto Exit;
+    }
+
+    if (IsDelayExecute)
+    {
+        DPRINT("InsertReadyQueue: FIXME AsyncCallBack()\n");
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    if ((Flags & 0x80) && gReadyQueue.Thread == KeGetCurrentThread())
+    {
+        Status = RunContext(AmliContext);
+        goto Exit;
+    }
+
+    if (!gReadyQueue.Thread && !(gReadyQueue.Flags & 8))
+    {
+        Status = RunContext(AmliContext);
+
+        if (gReadyQueue.List && !(gReadyQueue.Flags & 2))
+        {
+            OSQueueWorkItem(&gReadyQueue.WorkItem);
+            gReadyQueue.Flags |= 2;
+        }
+
+        goto Exit;
+    }
+
+    ASSERT(!(AmliContext->Flags & 0x50)); // (CTXTF_IN_READYQ | CTXTF_RUNNING)
+
+    Flags = AmliContext->Flags;
+
+    if (!(Flags & 0x40))
+    {
+        AmliContext->Flags = (Flags | 0x40);
+
+        ListInsertTail(&AmliContext->QueueList, &gReadyQueue.List);
+        AmliContext->QueueLists = &gReadyQueue.List;
+    }
+
+    AmliContext->Flags |= 0x20;
+    Status = 0x8004;
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
