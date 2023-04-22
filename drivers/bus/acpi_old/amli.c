@@ -2424,11 +2424,51 @@ FreeContext(
 
 VOID
 __cdecl
+FreeObjData(
+    _In_ PAMLI_OBJECT_DATA AmliData)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+__cdecl
 FreeDataBuffs(
     _In_ PAMLI_OBJECT_DATA AmliData,
     _In_ LONG DataCount)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ULONG ix;
+
+    DPRINT("FreeDataBuffs: %X, %X\n", AmliData, DataCount);
+
+    giIndent++;
+
+    for (ix = 0; ix < DataCount; ix++)
+    {
+        if (AmliData[ix].DataBuff)
+        {
+            if (AmliData[ix].Flags & 1)
+            {
+                AmliData[ix].DataBase->RefCount--;
+            }
+            else
+            {
+                ASSERT(AmliData[ix].RefCount == 0);
+
+                if (AmliData[ix].DataType == 4)
+                {
+                    FreeDataBuffs(Add2Ptr(AmliData[ix].DataBuff, 4), *(LONG *)AmliData[ix].DataBuff);
+                }
+
+                giIndent++;
+                FreeObjData(&AmliData[ix]);
+                giIndent--;
+            }
+        }
+
+        RtlZeroMemory(&AmliData[ix], sizeof(*AmliData));
+    }
+
+    giIndent--;
 }
 
 NTSTATUS
