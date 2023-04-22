@@ -2662,13 +2662,154 @@ Exit:
 
 NTSTATUS
 __cdecl
+ParseIntObj(
+    _Inout_ PUCHAR* OutOp,
+    _In_ PAMLI_OBJECT_DATA DataResult,
+    _In_ BOOLEAN ErrOk)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ParseString(
+    _Inout_ PUCHAR* OutOp,
+    _In_ PAMLI_OBJECT_DATA DataResult,
+    _In_ BOOLEAN ErrOk)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+PushTerm(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PUCHAR OpTerm,
+    _In_ PUCHAR ScopeEnd,
+    _In_ PAMLI_TERM AmliTerm,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ParseNameObj(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ParseArgObj(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ParseLocalObj(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 ParseOpcode(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PUCHAR ScopeEnd,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PUCHAR* OpArray;
+    PUCHAR Op;
+    UCHAR Opcode;
+    NTSTATUS Status;
+    ULONG Flags2;
+    PAMLI_TERM AmliTerm;
+
+    DPRINT("ParseOpcode: %X, %X, %X, %X\n", AmliContext, AmliContext->Op, ScopeEnd, DataResult);
+
+    giIndent++;
+
+    ASSERT(DataResult != NULL);
+
+    OpArray = &AmliContext->Op;
+
+    DPRINT("ParseOpcode: FIXME CheckBP()\n");
+
+    Op = *OpArray;
+    Opcode = **OpArray;
+
+    if (Opcode == 0x5B)
+    {
+        *OpArray = (Op + 1);
+
+        AmliTerm = FindOpcodeTerm(Op[1], ExOpcodeTable);
+    }
+    else
+    {
+        AmliTerm = OpcodeTable[Opcode];
+    }
+
+    if (AmliTerm)
+    {
+        Flags2 = AmliTerm->Flags2;
+
+        if (Flags2 & 8)
+        {
+            Status = ParseIntObj(&AmliContext->Op, DataResult, FALSE);
+        }
+        else if (Flags2 & 0x10)
+        {
+            Status = ParseString(&AmliContext->Op, DataResult, FALSE);
+        }
+        else if (Flags2 & 2)
+        {
+            Status = ParseArgObj(AmliContext, DataResult);
+        }
+        else if (Flags2 & 4)
+        {
+            Status = ParseLocalObj(AmliContext, DataResult);
+        }
+        else if (Flags2 & 0x20)
+        {
+            Status = ParseNameObj(AmliContext, DataResult);
+        }
+        else if (Flags2 & 0x40)
+        {
+            DPRINT1("ParseOpcode: debug object cannot be evaluated\n");
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_FATAL;
+        }
+        else
+        {
+            ++*OpArray;
+
+            Status = PushTerm(AmliContext, Op, ScopeEnd, AmliTerm, DataResult);
+        }
+    }
+    else
+    {
+        DPRINT1("ParseOpcode: invalid opcode %X at %X\n", **OpArray, *OpArray);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_OPCODE;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
