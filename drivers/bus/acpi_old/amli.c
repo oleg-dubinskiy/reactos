@@ -2422,6 +2422,15 @@ FreeContext(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+VOID
+__cdecl
+FreeDataBuffs(
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ LONG DataCount)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 __cdecl
 NewObjOwner(
@@ -2508,6 +2517,14 @@ Exit:
     giIndent--;
 
     return Status;
+}
+
+VOID
+__cdecl
+PopFrame(
+    _In_ PAMLI_CONTEXT AmliContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
 }
 
 VOID
@@ -2605,13 +2622,96 @@ Exit:
 
 NTSTATUS
 __cdecl
+ParseOpcode(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PUCHAR ScopeEnd,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 ParseScope(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_SCOPE AmliScope,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG Stage;
+
+    if (InStatus && InStatus != 0x8001)
+        Stage = 2;
+    else
+        Stage = AmliScope->FrameHeader.Flags & 0xF;
+
+    DPRINT("ParseScope: %X, %p, %X, %p, %X\n", Stage, AmliContext, AmliContext->Op, AmliScope, InStatus);
+
+    giIndent++;
+
+    ASSERT(AmliScope->FrameHeader.Signature == 'POCS');//SIG_SCOPE
+
+    if (Stage == 0)
+    {
+        AmliScope->FrameHeader.Flags++;
+        Stage++;
+    }
+
+    if (Stage == 1)
+    {
+        while (InStatus != 0x8001)
+        {
+            while (AmliContext->Op < AmliScope->OpEnd)
+            {
+                FreeDataBuffs(AmliScope->DataResult, 1);
+
+                InStatus = ParseOpcode(AmliContext, AmliScope->OpEnd, AmliScope->DataResult);
+                if (InStatus)
+                    break;
+
+                if (AmliScope != AmliContext->LocalHeap.HeapEnd)
+                    goto Exit;
+            }
+
+            if (InStatus == 0x8001)
+            {
+                AmliContext->Op = AmliScope->OpEnd;
+                AmliScope->OpcodeRet = AmliScope->OpEnd;
+
+                if ((AmliScope->FrameHeader.Flags & 0x20000))
+                    InStatus = STATUS_SUCCESS;
+
+                break;
+            }
+
+            if (InStatus == 0x8004 || AmliScope != AmliContext->LocalHeap.HeapEnd)
+                goto Exit;
+
+            if (InStatus || AmliContext->Op >= AmliScope->OpEnd)
+                break;
+        }
+
+        AmliScope->FrameHeader.Flags++;
+    }
+    else if (Stage != 2)
+    {
+        goto Exit;
+    }
+
+    AmliContext->Scope = AmliScope->OldScope;
+    AmliContext->Owner = AmliScope->OldOwner;
+    AmliContext->HeapCurrent = AmliScope->HeapCurrent;
+
+    if (AmliScope->OpcodeRet)
+        AmliContext->Op = AmliScope->OpcodeRet;
+
+    PopFrame(AmliContext);
+
+Exit:
+
+    giIndent--;
+
+    return InStatus;
 }
 
 NTSTATUS
