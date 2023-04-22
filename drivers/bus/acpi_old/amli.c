@@ -2684,6 +2684,17 @@ ParseString(
 
 NTSTATUS
 __cdecl
+ParseTerm(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_TERM_CONTEXT TermContext,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 PushTerm(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PUCHAR OpTerm,
@@ -2691,8 +2702,47 @@ PushTerm(
     _In_ PAMLI_TERM AmliTerm,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_TERM_CONTEXT TermContext;
+    ULONG Size;
+    NTSTATUS Status;
+
+    DPRINT("PushTerm: %X, %X, %X, %X, %X\n", AmliContext, OpTerm, ScopeEnd, AmliTerm, DataResult);
+
+    giIndent++;
+
+    Status = PushFrame(AmliContext, 'MRET', sizeof(*TermContext), ParseTerm, (PVOID *)&TermContext);
+    if (Status == STATUS_SUCCESS)
+    {
+        TermContext->Op = OpTerm;
+        TermContext->ScopeEnd = ScopeEnd;
+        TermContext->AmliTerm = AmliTerm;
+        TermContext->DataResult = DataResult;
+
+        TermContext->NumberOfArgs = (AmliTerm->TypesOfArgs ? StrLen(AmliTerm->TypesOfArgs, 0xFFFFFFFF) : 0);
+
+        if (TermContext->NumberOfArgs > 0)
+        {
+            gdwcODObjs++;
+
+            Size = (TermContext->NumberOfArgs * sizeof(AMLI_OBJECT_DATA));
+            TermContext->DataArgs = HeapAlloc(AmliContext->HeapCurrent, 'TADH', Size);
+
+            if (TermContext->DataArgs)
+            {
+                RtlZeroMemory(TermContext->DataArgs, Size);
+            }
+            else
+            {
+                DPRINT1("PushTerm: failed to allocate argument objects\n");
+                ASSERT(FALSE);
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+            }
+        }
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS

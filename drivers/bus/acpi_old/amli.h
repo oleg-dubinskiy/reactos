@@ -160,6 +160,20 @@ typedef struct _AMLI_TERM_EX
     PAMLI_TERM AmliTerm;
 } AMLI_TERM_EX, *PAMLI_TERM_EX;
 
+typedef struct _AMLI_TERM_CONTEXT
+{
+    AMLI_FRAME_HEADER FrameHeader;
+    PUCHAR Op;
+    PUCHAR OpEnd;
+    PUCHAR ScopeEnd;
+    PAMLI_TERM AmliTerm;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    ULONG ArgIndex;
+    ULONG NumberOfArgs;
+    PAMLI_OBJECT_DATA DataArgs;
+    PAMLI_OBJECT_DATA DataResult;
+} AMLI_TERM_CONTEXT, *PAMLI_TERM_CONTEXT;
+
 typedef struct _AMLI_EVHANDLE
 {
     PVOID Handler;
@@ -243,12 +257,6 @@ typedef struct _AMLI_RESOURCE
     PVOID ResObject;
     AMLI_LIST List;
 } AMLI_RESOURCE, *PAMLI_RESOURCE;
-
-typedef struct _AMLI_TERM_CONTEXT
-{
-    AMLI_FRAME_HEADER FrameHeader;
-
-} AMLI_TERM_CONTEXT, *PAMLI_TERM_CONTEXT;
 
 typedef struct _AMLI_FIELD_DESCRIPTOR
 {
