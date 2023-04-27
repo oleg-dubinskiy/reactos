@@ -2714,13 +2714,103 @@ ParseSuperName(
 
 NTSTATUS
 __cdecl
-ParseName(
+ParseNameTail(
     _Inout_ PUCHAR* OutOp,
     _Inout_ PCHAR NameBuff,
     _In_ ULONG BuffLen)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ParseName(
+    _Inout_ PUCHAR* OutOp,
+    _Inout_ PCHAR NameBuff,
+    _In_ ULONG BuffLen)
+{
+    UCHAR Opcode;
+    PUCHAR Op;
+    ULONG ix;
+    NTSTATUS Status;
+
+    giIndent++;
+
+    Opcode = **OutOp;
+
+    if (Opcode == '\\')
+    {
+        if (BuffLen > 1)
+        {
+            StrCpy(NameBuff, "\\", 0xFFFFFFFF);
+            ++*OutOp;
+            Status = ParseNameTail(OutOp, NameBuff, BuffLen);
+            goto Exit;
+        }
+
+        DPRINT1("ParseName: name too long - '%s'\n", NameBuff);
+        ASSERT(FALSE);
+        Status = STATUS_NAME_TOO_LONG;
+        goto Exit;
+    }
+
+    if (Opcode != '^')
+    {
+        if (BuffLen)
+        {
+            *NameBuff = 0;
+            Status = ParseNameTail(OutOp, NameBuff, BuffLen);
+            goto Exit;
+        }
+
+        DPRINT1("ParseName: name too long - '%s'\n", NameBuff);
+        ASSERT(FALSE);
+        Status = STATUS_NAME_TOO_LONG;
+        goto Exit;
+    }
+
+    if (BuffLen <= 1)
+    {
+        DPRINT1("ParseName: name too long - '%s'\n", NameBuff);
+        ASSERT(FALSE);
+        Status = STATUS_NAME_TOO_LONG;
+        goto Exit;
+    }
+
+    StrCpy(NameBuff, "^", 0xFFFFFFFF);
+
+    ++*OutOp;
+    Op = *OutOp;
+
+    for (ix = 1; ix < BuffLen; ix++)
+    {
+        if (*Op != '^')
+            break;
+
+        NameBuff[ix] = '^';
+
+        ++*OutOp;
+        Op = *OutOp;
+    }
+
+    NameBuff[ix] = 0;
+
+    if (**OutOp == '^')
+    {
+        DPRINT1("ParseName: name too long - '%s'\n", NameBuff);
+        ASSERT(FALSE);
+        Status = STATUS_NAME_TOO_LONG;
+        goto Exit;
+    }
+
+    Status = ParseNameTail(OutOp, NameBuff, BuffLen);
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
