@@ -2560,7 +2560,83 @@ __cdecl
 FreeObjData(
     _In_ PAMLI_OBJECT_DATA AmliData)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ULONG DataType;
+
+    DataType = AmliData->DataType;
+
+    DPRINT("FreeObjData: %X, %X\n", AmliData, DataType);
+
+    switch (DataType)
+    {
+        case 2:
+            HeapFree(AmliData->DataBuff);
+            gdwcSDObjs--;
+            break;
+
+        case 3:
+            HeapFree(AmliData->DataBuff);
+            gdwcBDObjs--;
+            break;
+
+        case 4:
+            HeapFree(AmliData->DataBuff);
+            gdwcPKObjs--;
+            break;
+
+        case 5:
+            HeapFree(AmliData->DataBuff);
+            gdwcFUObjs--;
+            break;
+
+        case 7:
+            HeapFree(AmliData->DataBuff);
+            gdwcEVObjs--;
+            break;
+
+        case 8:
+            HeapFree(AmliData->DataBuff);
+            gdwcMEObjs--;
+            break;
+
+        case 9:
+            HeapFree(AmliData->DataBuff);
+            gdwcMTObjs--;
+            break;
+
+        case 10:
+            HeapFree(AmliData->DataBuff);
+            gdwcORObjs--;
+            break;
+
+        case 11:
+            HeapFree(AmliData->DataBuff);
+            gdwcPRObjs--;
+            break;
+
+        case 12:
+            HeapFree(AmliData->DataBuff);
+            gdwcPCObjs--;
+            break;
+
+        case 14:
+            HeapFree(AmliData->DataBuff);
+            gdwcBFObjs--;
+            break;
+
+        case 0x83:
+            HeapFree(AmliData->DataBuff);
+            gdwcFObjs--;
+            break;
+
+        case 0x84:
+            HeapFree(AmliData->DataBuff);
+            gdwcIFObjs--;
+            break;
+
+        default:
+            DPRINT1("FreeObjData: invalid object type '%s'\n", GetObjectTypeName(AmliData->DataType));
+            ASSERT(FALSE);
+    }
 }
 
 VOID
