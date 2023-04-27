@@ -2675,9 +2675,24 @@ ParseInteger(
     _In_ PAMLI_OBJECT_DATA Data,
     _In_ ULONG DataLen)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("ParseInteger: %p, %p, %X\n", *OutOp, Data, DataLen);
+
+    giIndent++;
+
+    ASSERT(Data != NULL);
+
+    Data->DataValue = 0;
+    Data->DataType = 1;
+
+    RtlCopyMemory(&Data->DataValue, *OutOp, DataLen);
+
+    *OutOp += DataLen;
+
+    giIndent--;
+
+    return STATUS_SUCCESS;
 }
+
 
 NTSTATUS
 __cdecl
