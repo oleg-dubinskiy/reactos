@@ -2416,6 +2416,14 @@ NewContext(
 
 VOID
 __cdecl
+HeapFree(
+    _In_ PVOID Entry)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+__cdecl
 FreeContext(
     _In_ PAMLI_CONTEXT AmliContext)
 {
@@ -2684,13 +2692,148 @@ ParseString(
 
 NTSTATUS
 __cdecl
+ParseArg(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ CHAR ArgType,
+    _In_ PAMLI_OBJECT_DATA DataArg)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+ULONG
+__cdecl
+ParsePackageLen(
+    _Inout_ PUCHAR* OutOp,
+    _Out_ PUCHAR* OutOpEnd)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+NTSTATUS
+__cdecl
 ParseTerm(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_TERM_CONTEXT TermContext,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_TERM_HANDLER Handler;
+    PAMLI_TERM AmliTerm;
+    ULONG ArgIndex;
+    ULONG Stage;
+
+    if (InStatus != STATUS_SUCCESS)
+        Stage = 4;
+    else
+        Stage = (TermContext->FrameHeader.Flags & 0xF);
+
+    DPRINT("ParseTerm: '%s', %X, %X, %X, %X, %X\n", TermContext->AmliTerm->Name, Stage, AmliContext, AmliContext->Op, TermContext, InStatus);
+
+    giIndent++;
+
+    ASSERT(TermContext->FrameHeader.Signature == 'MRET');//SIG_TERM
+
+    if (Stage == 0)
+    {
+        TermContext->FrameHeader.Flags++; // next stage
+
+        if (TermContext->AmliTerm->Flags2 & 1)
+            ParsePackageLen(&AmliContext->Op, &TermContext->OpEnd);
+
+        goto Stage1;
+    }
+    else if (Stage == 1)
+    {
+Stage1:
+        while (TermContext->ArgIndex < TermContext->NumberOfArgs)
+        {
+            while (TermContext->ArgIndex < TermContext->NumberOfArgs)
+            {
+                ArgIndex = TermContext->ArgIndex;
+                TermContext->ArgIndex++;
+
+                InStatus = ParseArg(AmliContext, TermContext->AmliTerm->TypesOfArgs[ArgIndex], &TermContext->DataArgs[ArgIndex]);
+
+                if (InStatus != STATUS_SUCCESS || TermContext != AmliContext->LocalHeap.HeapEnd)
+                    goto Exit;
+            }
+
+            if (InStatus != STATUS_SUCCESS || TermContext != AmliContext->LocalHeap.HeapEnd)
+                goto Exit;
+        }
+
+        TermContext->FrameHeader.Flags++; // next stage
+        goto Stage2;
+    }
+    else if (Stage == 2)
+    {
+Stage2:
+        TermContext->FrameHeader.Flags++; // next stage
+        AmliTerm = TermContext->AmliTerm;
+
+        if (AmliTerm->Flags2 & 0x80000000)
+        {
+            if (AmliTerm->CallBack)
+            {
+                DPRINT1("ParseTerm: FIXME\n");
+                ASSERT(FALSE);
+            }
+        }
+
+        Handler = TermContext->AmliTerm->Handler;
+        if (!Handler)
+        {
+            goto Stage3;
+        }
+
+        InStatus = Handler(AmliContext, TermContext);
+        if (InStatus == STATUS_SUCCESS && TermContext == AmliContext->LocalHeap.HeapEnd)
+        {
+            goto Stage3;
+        }
+    }
+    else if (Stage == 3)
+    {
+Stage3:
+        TermContext->FrameHeader.Flags++; // next stage
+        AmliTerm = TermContext->AmliTerm;
+
+        if (AmliTerm->CallBack)
+        {
+            if (AmliTerm->Flags2 & 0x80000000)
+            {
+                DPRINT1("ParseTerm: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                DPRINT1("ParseTerm: FIXME\n");
+                ASSERT(FALSE);
+            }
+        }
+
+        goto Stage4;
+    }
+    else if (Stage == 4)
+    {
+Stage4:
+        if (TermContext->DataArgs)
+        {
+            FreeDataBuffs(TermContext->DataArgs, TermContext->NumberOfArgs);
+            HeapFree(TermContext->DataArgs);
+            gdwcODObjs--;
+        }
+
+        PopFrame(AmliContext);
+    }
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("ParseTerm: Status %X\n", InStatus);
+    return InStatus;
 }
 
 NTSTATUS
