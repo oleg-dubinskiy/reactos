@@ -447,6 +447,36 @@ AMLI_TERM_EX ExOpcodeTable[] =
 };
 #endif
 
+AMLI_OBJECT_TYPE_NAME ObjTypesNames[26] =
+{
+    { 0x00, "Unknown"       },
+    { 0x01, "Integer"       },
+    { 0x02, "String"        },
+    { 0x03, "Buffer"        },
+    { 0x04, "Package"       },
+    { 0x05, "FieldUnit"     },
+    { 0x06, "Device"        },
+    { 0x07, "Event"         },
+    { 0x08, "Method"        },
+    { 0x09, "Mutex"         },
+    { 0x0A, "OpRegion"      }, // 10
+    { 0x0B, "PowerResource" }, // 11
+    { 0x0C, "Processor"     }, // 12
+    { 0x0D, "ThermalZone"   }, // 13
+    { 0x0E, "BuffField"     }, // 14
+    { 0x0F, "DDBHandle"     }, // 15
+    { 0x10, "Debug"         }, // 16
+    { 0x80, "ObjAlias"      }, // 128
+    { 0x81, "DataAlias"     }, // 129
+    { 0x82, "BankField"     }, // 130
+    { 0x83, "Field"         }, // 131
+    { 0x84, "IndexField"    }, // 132
+    { 0x85, "Data"          }, // 133
+    { 0x86, "DataField"     }, // 134
+    { 0x87, "DataObject"    }, // 135
+    { 0, NULL               }
+};
+
 UCHAR OSIAML[] = { 0xA4, 0xCA, 0x68 };
 PCHAR gpszOSName = "Microsoft Windows NT";
 CHAR TmpSegString[8];
@@ -901,6 +931,38 @@ ACPIAmliGetNamedChild(
     }
 
     return Child;
+}
+
+PCHAR
+__cdecl
+GetObjectTypeName(
+    _In_ ULONG Type)
+{
+    PCHAR TypeName = NULL;
+    ULONG ix;
+
+    TypeName;
+
+    giIndent++;
+
+    ix = 0;
+    if (ObjTypesNames[0].Name)
+    {
+        while (Type != ObjTypesNames[ix].Type)
+        {
+            ix++;
+            if (!ObjTypesNames[ix].Name)
+                goto Exit;
+        }
+
+        TypeName = ObjTypesNames[ix].Name;
+    }
+
+Exit:
+
+    giIndent--;
+
+    return TypeName;
 }
 
 /* CALLBACKS TERM HANDLERS **************************************************/

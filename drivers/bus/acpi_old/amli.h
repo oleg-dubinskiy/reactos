@@ -301,6 +301,12 @@ typedef struct _AMLI_REGION_HANDLER
     ULONG EventData;
 } AMLI_REGION_HANDLER, *PAMLI_REGION_HANDLER;
 
+typedef struct _AMLI_OBJECT_TYPE_NAME
+{
+    ULONG Type;
+    PCHAR Name;
+} AMLI_OBJECT_TYPE_NAME, *PAMLI_OBJECT_TYPE_NAME;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1
