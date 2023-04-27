@@ -1112,8 +1112,71 @@ NTSTATUS __cdecl ObjTypeSizeOf(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_C
 }
 NTSTATUS __cdecl OpRegion(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT* OutNsObject;
+    PAMLI_OP_REGION_OBJECT OpRegionObject;
+    NTSTATUS Status;
+
+    DPRINT("OpRegion: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    OutNsObject = &TermContext->NsObject;
+
+    Status = CreateNameSpaceObject(AmliContext->HeapCurrent,
+                                   TermContext->DataArgs->DataBuff,
+                                   AmliContext->Scope,
+                                   AmliContext->Owner,
+                                   &TermContext->NsObject,
+                                   0);
+    if (Status != STATUS_SUCCESS)
+    {
+        goto Exit;
+    }
+
+    (*OutNsObject)->ObjData.DataType = 10;
+    (*OutNsObject)->ObjData.DataLen = sizeof(*OpRegionObject);
+
+    gdwcORObjs++;
+
+    (*OutNsObject)->ObjData.DataBuff = OpRegionObject = HeapAlloc(AmliContext->HeapCurrent, 'GROH', (*OutNsObject)->ObjData.DataLen);
+
+    if (!OpRegionObject)
+    {
+        DPRINT1("OpRegion: failed to allocate OpRegion object\n");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    RtlZeroMemory(OpRegionObject, (*OutNsObject)->ObjData.DataLen);
+
+    OpRegionObject->RegionSpace = (UCHAR)((ULONG_PTR)TermContext->DataArgs[1].DataValue & 0xFF);
+    OpRegionObject->Offset = (ULONG)TermContext->DataArgs[2].DataValue;
+    OpRegionObject->Len = (ULONG)TermContext->DataArgs[3].DataValue;
+
+    KeInitializeSpinLock(&OpRegionObject->ListLock);
+
+    if (OpRegionObject->RegionSpace == 0)
+    {
+        DPRINT1("OpRegion: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (OpRegionObject->RegionSpace == 1)
+    {
+        OpRegionObject->Offset = OpRegionObject->Offset;
+    }
+    else if (OpRegionObject->RegionSpace == 6 && ghCreate.Handler)
+    {
+        DPRINT1("OpRegion: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("OpRegion: Status %X\n", Status);
+    return Status;
 }
 NTSTATUS __cdecl OSInterface(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
@@ -2094,7 +2157,7 @@ CreateNameSpaceObject(
     _In_ PCHAR Name,
     _In_ PAMLI_NAME_SPACE_OBJECT NsScope,
     _In_ PAMLI_OBJECT_OWNER Owner,
-    _In_ PAMLI_NAME_SPACE_OBJECT* OutObject,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutObject,
     _In_ ULONG Flags)
 {
     PAMLI_NAME_SPACE_OBJECT NsObject = NULL;

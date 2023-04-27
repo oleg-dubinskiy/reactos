@@ -258,6 +258,17 @@ typedef struct _AMLI_RESOURCE
     AMLI_LIST List;
 } AMLI_RESOURCE, *PAMLI_RESOURCE;
 
+typedef struct _AMLI_OP_REGION_OBJECT
+{
+    ULONG Offset;
+    ULONG Len;
+    UCHAR RegionSpace;
+    UCHAR Reserved[3];
+    LONG RegionBusy;
+    ULONG ListLock;
+    PAMLI_LIST ListWaiters;
+} AMLI_OP_REGION_OBJECT, *PAMLI_OP_REGION_OBJECT;
+
 typedef struct _AMLI_FIELD_DESCRIPTOR
 {
     ULONG ByteOffset;
@@ -399,6 +410,25 @@ ParseOpcode(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PUCHAR ScopeEnd,
     _In_ PAMLI_OBJECT_DATA DataResult
+);
+
+NTSTATUS
+__cdecl
+CreateNameSpaceObject(
+    _In_ PAMLI_HEAP Heap,
+    _In_ PCHAR Name,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsScope,
+    _In_ PAMLI_OBJECT_OWNER Owner,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutObject,
+    _In_ ULONG Flags
+);
+
+PVOID
+__cdecl
+HeapAlloc(
+    _In_ PAMLI_HEAP InHeap,
+    _In_ ULONG NameSeg,
+    _In_ ULONG Length
 );
 
 /* EOF */
