@@ -2719,8 +2719,86 @@ ParseNameTail(
     _Inout_ PCHAR NameBuff,
     _In_ ULONG BuffLen)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG NameLen;
+    PUCHAR Op;
+    PCHAR Buffer;
+    ULONG BufferSize;
+    LONG SegCount;
+    UCHAR Opcode;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ParseNameTail: %X, '%s', %X\n", *OutOp, NameBuff, BuffLen);
+
+    giIndent++;
+
+    NameLen = StrLen(NameBuff, 0xFFFFFFFF);
+
+    Op = *OutOp;
+    Opcode = *Op;
+
+    if (Opcode == 0)
+    {
+        *OutOp = (Op + 1);
+        goto Exit;
+    }
+    else if (Opcode == '/')
+    {
+        *OutOp = (Op + 1);
+        SegCount = *(Op + 1);
+        *OutOp = (Op + 2);
+
+        if (SegCount <= 0)
+            goto Exit;
+    }
+    else if (Opcode != '.')
+    {
+        SegCount = 1;
+    }
+    else
+    {
+        *OutOp = (Op + 1);
+        SegCount = 2;
+    }
+
+    Buffer = &NameBuff[NameLen];
+    BufferSize = (NameLen + 1);
+    NameLen += 4;
+
+    while (NameLen < BuffLen)
+    {
+        StrCpy(Buffer, (PCHAR)*OutOp, 4);
+
+        Buffer += 4;
+        BufferSize += 4;
+        NameLen += 4;
+        *OutOp += 4;
+
+        SegCount--;
+        if (SegCount <= 0)
+            goto Exit;
+
+        if (BufferSize < BuffLen)
+        {
+            StrCpy(Buffer, ".", 0xFFFFFFFF);
+
+            Buffer++;
+            BufferSize++;
+            NameLen++;
+        }
+    }
+
+    if (SegCount > 0)
+    {
+        DPRINT1("ParseNameTail: name too long - '%s'\n", NameBuff);
+        ASSERT(FALSE);
+        Status = STATUS_NAME_TOO_LONG;
+    }
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
