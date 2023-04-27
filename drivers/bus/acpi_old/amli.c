@@ -2670,6 +2670,17 @@ Exit:
 
 NTSTATUS
 __cdecl
+ParseInteger(
+    _Inout_ PUCHAR* OutOp,
+    _In_ PAMLI_OBJECT_DATA Data,
+    _In_ ULONG DataLen)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 ParseIntObj(
     _Inout_ PUCHAR* OutOp,
     _In_ PAMLI_OBJECT_DATA DataResult,
@@ -2692,13 +2703,101 @@ ParseString(
 
 NTSTATUS
 __cdecl
+ParseSuperName(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_OBJECT_DATA Data,
+    _In_ BOOLEAN AbsentOk)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ParseObjName(
+    _Inout_ PUCHAR* OutOp,
+    _In_ PAMLI_OBJECT_DATA Data,
+    _In_ BOOLEAN ErrOk)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 ParseArg(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ CHAR ArgType,
     _In_ PAMLI_OBJECT_DATA DataArg)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PUCHAR* OutOp;
+    UCHAR idx;
+    NTSTATUS Status;
+
+    DPRINT("ParseArg: %X, %X, %c, %X\n", AmliContext, AmliContext->Op, ArgType, DataArg);
+
+    giIndent++;
+
+    ASSERT(DataArg != NULL);
+
+    if (ArgType == 'S')
+    {
+        Status = ParseSuperName(AmliContext, DataArg, 0);
+    }
+    else if (ArgType == 'W')
+    {
+        Status = ParseInteger(&AmliContext->Op, DataArg, 2);
+    }
+    else if (ArgType == 's')
+    {
+        Status = ParseSuperName(AmliContext, DataArg, 1);
+    }
+    else if (ArgType == 'O')
+    {
+        OutOp = &AmliContext->Op;
+
+        Status = ParseIntObj(&AmliContext->Op, DataArg, 1);
+
+        if (Status == STATUS_ACPI_INVALID_OPCODE)
+        {
+            Status = ParseString(&AmliContext->Op, DataArg, TRUE);
+            if (Status == STATUS_ACPI_INVALID_OPCODE)
+            {
+                idx = **OutOp;
+                if (idx == 0x11 || idx == 0x12)
+                {
+                    Status = PushTerm(AmliContext, (*OutOp)++, 0, OpcodeTable[idx], DataArg);
+                }
+            }
+        }
+    }
+    else if (ArgType == 'B')
+    {
+        Status = ParseInteger(&AmliContext->Op, DataArg, 1);
+    }
+    else if (ArgType == 'C')
+    {
+        Status = ParseOpcode(AmliContext, 0, DataArg);
+    }
+    else if (ArgType == 'D')
+    {
+        Status = ParseInteger(&AmliContext->Op, DataArg, 4);
+    }
+    else if (ArgType == 'N')
+    {
+        Status = ParseObjName(&AmliContext->Op, DataArg, 0);
+    }
+    else
+    {
+        DPRINT1("ParseArg: unexpected arguemnt type (%c)\n", ArgType);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_ASSERT_FAILED;
+    }
+
+    giIndent--;
+
+    //DPRINT("ParseArg: Status %X\n", Status);
+    return Status;
 }
 
 ULONG

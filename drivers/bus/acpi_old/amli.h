@@ -383,4 +383,22 @@ AMLIAsyncEvalObject(
     _In_ PVOID CallBackContext
 );
 
+NTSTATUS
+__cdecl
+PushTerm(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PUCHAR OpTerm,
+    _In_ PUCHAR ScopeEnd,
+    _In_ PAMLI_TERM AmliTerm,
+    _In_ PAMLI_OBJECT_DATA DataResult
+);
+
+NTSTATUS
+__cdecl
+ParseOpcode(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PUCHAR ScopeEnd,
+    _In_ PAMLI_OBJECT_DATA DataResult
+);
+
 /* EOF */
