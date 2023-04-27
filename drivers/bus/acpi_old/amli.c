@@ -2714,13 +2714,74 @@ ParseSuperName(
 
 NTSTATUS
 __cdecl
+ParseName(
+    _Inout_ PUCHAR* OutOp,
+    _Inout_ PCHAR NameBuff,
+    _In_ ULONG BuffLen)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 ParseObjName(
     _Inout_ PUCHAR* OutOp,
     _In_ PAMLI_OBJECT_DATA Data,
     _In_ BOOLEAN ErrOk)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_TERM AmliTerm;
+    CHAR Name[256];
+    NTSTATUS Status;
+
+    AmliTerm = OpcodeTable[**OutOp];
+
+    DPRINT("ParseObjName: %X, %X, %X\n", *OutOp, Data, ErrOk);
+
+    giIndent++;
+
+    ASSERT(Data != NULL);
+
+    if (AmliTerm && (AmliTerm->Flags2 & 0x20))
+    {
+        Status = ParseName(OutOp, Name, 0x100);
+        if (Status)
+            goto Exit;
+
+        Data->DataType = 2;
+        Data->DataLen = (StrLen(Name, 0xFFFFFFFF) + 1);
+
+        gdwcSDObjs++;
+
+        Data->DataBuff = HeapAlloc(gpheapGlobal, 'RTSH', Data->DataLen);
+        if (Data->DataBuff)
+        {
+            RtlCopyMemory(Data->DataBuff, Name, Data->DataLen);
+            goto Exit;
+        }
+
+        DPRINT1("ParseObjName: failed to allocate name buffer '%s'\n", Name);
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+    else
+    {
+        if (ErrOk)
+        {
+            Status = STATUS_ACPI_INVALID_OPCODE;
+            goto Exit;
+        }
+
+        DPRINT1("ParseObjName: invalid opcode %X at %X\n", **OutOp, *OutOp);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_OPCODE;
+    }
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
