@@ -2701,8 +2701,69 @@ ParseIntObj(
     _In_ PAMLI_OBJECT_DATA DataResult,
     _In_ BOOLEAN ErrOk)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    UCHAR Opcode;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ParseIntObj: %X, %X, %X\n", *OutOp, DataResult, ErrOk);
+
+    giIndent++;
+
+    ASSERT(DataResult != NULL);
+
+    Opcode = *(*OutOp)++;
+
+    DataResult->DataType = 1;
+    DataResult->DataValue = 0;
+
+    if (Opcode == 0)
+    {
+        DataResult->DataValue = 0;
+    }
+    else if (Opcode == 1)
+    {
+        DataResult->DataValue = ULongToPtr(1);
+    }
+    else if (Opcode == 0xA)
+    {
+        DataResult->DataValue = (PVOID)(((ULONG_PTR)DataResult->DataValue & 0xFFFFFF00) + *(PUCHAR)*OutOp);
+        *OutOp += 1;
+    }
+    else if (Opcode == 0xB)
+    {
+        DataResult->DataValue = (PVOID)(((ULONG_PTR)DataResult->DataValue & 0xFFFF0000) + *(PUSHORT)*OutOp);
+        *OutOp += 2;
+    }
+    else if (Opcode == 0xC)
+    {
+        DataResult->DataValue = (PVOID)(*(PULONG)*OutOp);
+        *OutOp += 4;
+    }
+    else if (Opcode == 0xFF)
+    {
+        DataResult->DataValue = (PVOID)0xFFFFFFFF;
+    }
+    else if (Opcode == 0x305B)
+    {
+        DataResult->DataValue = ULongToPtr(1);
+    }
+    else
+    {
+        --*OutOp;
+
+        DPRINT1("ParseIntObj: invalid opcode %X at %X", **OutOp, *OutOp);
+
+        if (!ErrOk)
+        {
+            ASSERT(FALSE);
+        }
+
+        Status = STATUS_ACPI_INVALID_OPCODE;
+    }
+
+    giIndent--;
+
+    //DPRINT("ParseIntObj: Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS
