@@ -2544,7 +2544,42 @@ __cdecl
 HeapFree(
     _In_ PVOID Entry)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_HEAP_HEADER HeapHeader;
+    PAMLI_HEAP heap;
+    KIRQL OldIrql;
+
+    ASSERT(Entry != NULL);
+
+    HeapHeader = CONTAINING_RECORD(Entry, AMLI_HEAP_HEADER, List);
+
+    DPRINT("HeapFree: %X, %X, '%s', %X\n", HeapHeader->Heap, Entry, NameSegString(HeapHeader->Signature), HeapHeader->Length);
+
+    giIndent++;
+
+    heap = HeapHeader->Heap;
+
+    ASSERT((ULONG_PTR)HeapHeader >= (ULONG_PTR)&heap->Heap &&
+           ((ULONG_PTR)HeapHeader + HeapHeader->Length) <= (ULONG_PTR)heap->HeapEnd);
+
+    ASSERT(HeapHeader->Signature != 0);
+
+    if (Entry && HeapHeader->Signature)
+    {
+        if (HeapHeader->Heap->HeapHead == gpheapGlobal)
+        {
+            KeAcquireSpinLock(&gdwGHeapSpinLock, &OldIrql);
+            gdwGlobalHeapSize -= HeapHeader->Length;
+            KeReleaseSpinLock(&gdwGHeapSpinLock, OldIrql);
+        }
+
+        HeapHeader->Signature = 0;
+
+        AcquireMutex(&gmutHeap);
+        HeapInsertFreeList(HeapHeader->Heap, HeapHeader);
+        ReleaseMutex(&gmutHeap);
+    }
+
+    giIndent--;
 }
 
 VOID
