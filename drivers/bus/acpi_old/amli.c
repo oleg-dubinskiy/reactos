@@ -815,7 +815,29 @@ ListRemoveEntry(
     _In_ PAMLI_LIST ListEntry,
     _Inout_ PAMLI_LIST* OutListHead)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ASSERT(OutListHead);
+
+    //DPRINT("ListRemoveEntry: ListEntry %X, OutListHead %X\n", ListEntry, *OutListHead);
+
+    giIndent++;
+
+    ASSERT(ListEntry != NULL);
+
+    if (ListEntry->Next == ListEntry)
+    {
+        ASSERT(ListEntry == *OutListHead);
+        *OutListHead = NULL;
+    }
+    else
+    {
+        if (ListEntry == *OutListHead)
+            *OutListHead = (*OutListHead)->Next;
+
+        ListEntry->Next->Prev = ListEntry->Prev;
+        ListEntry->Prev->Next = ListEntry->Next;
+    }
+
+    giIndent--;
 }
 
 PAMLI_LIST
