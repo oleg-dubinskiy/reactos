@@ -2901,12 +2901,39 @@ Exit:
     return Status;
 }
 
+BOOLEAN
+__cdecl
+IsStackEmpty(
+    _In_ PAMLI_CONTEXT AmliContext)
+{
+    BOOLEAN RetIsEmpty;
+
+    giIndent++;
+    RetIsEmpty = (AmliContext->LocalHeap.HeapEnd == AmliContext->End);
+    giIndent--;
+
+    return RetIsEmpty;
+}
+
 VOID
 __cdecl
 PopFrame(
     _In_ PAMLI_CONTEXT AmliContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_FRAME_HEADER Header;
+
+    DPRINT("PopFrame: %X\n", AmliContext);
+
+    giIndent++;
+
+    ASSERT(!IsStackEmpty(AmliContext));
+
+    Header = AmliContext->LocalHeap.HeapEnd;
+    ASSERT(Header->Signature != 0);
+
+    AmliContext->LocalHeap.HeapEnd = Add2Ptr(AmliContext->LocalHeap.HeapEnd, Header->Length);
+
+    giIndent--;
 }
 
 VOID
@@ -3920,20 +3947,6 @@ RestartCtxtPassive(
     _In_ PVOID Context)
 {
     UNIMPLEMENTED_DBGBREAK();
-}
-
-BOOLEAN
-__cdecl
-IsStackEmpty(
-    _In_ PAMLI_CONTEXT AmliContext)
-{
-    BOOLEAN RetIsEmpty;
-
-    giIndent++;
-    RetIsEmpty = (AmliContext->LocalHeap.HeapEnd == AmliContext->End);
-    giIndent--;
-
-    return RetIsEmpty;
 }
 
 NTSTATUS
