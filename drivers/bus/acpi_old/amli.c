@@ -1867,7 +1867,72 @@ HeapInsertFreeList(
     _In_ PAMLI_HEAP Heap,
     _In_ PAMLI_HEAP_HEADER HeapHeader)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_HEAP_HEADER NextHeader;
+    PAMLI_LIST Entry;
+
+    //DPRINT("HeapInsertFreeList: Heap %X, HeapHeader %X\n", Heap, HeapHeader);
+
+    giIndent++;
+
+    ASSERT(HeapHeader->Length >= sizeof(AMLI_HEAP_HEADER));
+
+    Entry = Heap->ListFreeHeap;
+    if (!Entry)
+    {
+        ListInsertHead(&HeapHeader->List, &Heap->ListFreeHeap);
+    }
+    else
+    {
+        Entry = Heap->ListFreeHeap;
+        while (&HeapHeader->List >= Entry)
+        {
+            Entry = Entry->Next;
+            if (Entry == Heap->ListFreeHeap)
+                break;
+        }
+
+        if (&HeapHeader->List >= Entry)
+        {
+            ListInsertTail(&HeapHeader->List, &Heap->ListFreeHeap);
+        }
+        else
+        {
+            HeapHeader->List.Next = Entry;
+            HeapHeader->List.Prev = Entry->Prev;
+            HeapHeader->List.Prev->Next = &HeapHeader->List;
+            HeapHeader->List.Next->Prev = &HeapHeader->List;
+
+            if (Heap->ListFreeHeap == Entry)
+                Heap->ListFreeHeap = &HeapHeader->List;
+        }
+    }
+
+    NextHeader = Add2Ptr(HeapHeader, HeapHeader->Length);
+
+    if (HeapHeader->List.Next == &NextHeader->List)
+    {
+        ASSERT(NextHeader->Signature == 0);
+        HeapHeader->Length += NextHeader->Length;
+        ListRemoveEntry(&NextHeader->List, &Heap->ListFreeHeap);
+    }
+
+    NextHeader = CONTAINING_RECORD(HeapHeader->List.Prev, AMLI_HEAP_HEADER, List);
+
+    if (Add2Ptr(NextHeader, NextHeader->Length) == HeapHeader)
+    {
+        ASSERT(NextHeader->Signature == 0);
+        NextHeader->Length += HeapHeader->Length;
+        ListRemoveEntry(&HeapHeader->List, &Heap->ListFreeHeap);
+        HeapHeader = NextHeader;
+    }
+
+    if (Add2Ptr(HeapHeader, HeapHeader->Length) >= Heap->HeapTop)
+    {
+        Heap->HeapTop = HeapHeader;
+        ListRemoveEntry(&HeapHeader->List, &Heap->ListFreeHeap);
+    }
+
+    giIndent--;
 }
 
 PVOID
