@@ -795,7 +795,18 @@ ListInsertHead(
     _In_ PAMLI_LIST ListEntry,
     _Inout_ PAMLI_LIST* OutListHead)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ASSERT(OutListHead != NULL);
+
+    //DPRINT("ListInsertHead: ListEntry %X, OutListHead %X\n", ListEntry, *OutListHead);
+
+    giIndent++;
+
+    ASSERT(ListEntry != NULL);
+
+    ListInsertTail(ListEntry, OutListHead);
+    *OutListHead = ListEntry;
+
+    giIndent--;
 }
 
 VOID
