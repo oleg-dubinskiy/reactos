@@ -1137,8 +1137,68 @@ NTSTATUS __cdecl Fatal(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT T
 }
 NTSTATUS __cdecl Field(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT* OutNsObject;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PAMLI_OP_REGION_OBJECT OpRegionObj;
+    NTSTATUS Status;
+
+    DPRINT("Field: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    Status = GetNameSpaceObject((PCHAR)TermContext->DataArgs->DataBuff, AmliContext->Scope, &NsObject, 0x80000000);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("Field: ret Status %X\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    if (NsObject->ObjData.DataType != 0xA)
+    {
+        DPRINT1("Field: %s is not an operation region\n", TermContext->DataArgs->DataBuff);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_OBJTYPE;
+    }
+
+    OutNsObject = &TermContext->NsObject;
+
+    Status = CreateNameSpaceObject(AmliContext->HeapCurrent, 0, AmliContext->Scope, AmliContext->Owner, &TermContext->NsObject, 0);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("Field: ret Status %X\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    (*OutNsObject)->ObjData.DataType = 0x83;
+    (*OutNsObject)->ObjData.DataLen = 4;
+
+    gdwcFObjs++;
+
+    (*OutNsObject)->ObjData.DataBuff = HeapAlloc(AmliContext->HeapCurrent, 'ODFH', (*OutNsObject)->ObjData.DataLen);
+
+    if ((*OutNsObject)->ObjData.DataBuff == NULL)
+    {
+        DPRINT1("Field: failed to allocate Field object\n");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    RtlZeroMemory((*OutNsObject)->ObjData.DataBuff, (*OutNsObject)->ObjData.DataLen);
+
+    *(PAMLI_NAME_SPACE_OBJECT *)(*OutNsObject)->ObjData.DataBuff = NsObject;
+
+    OpRegionObj = NsObject->ObjData.DataBuff;
+    Status = ParseFieldList(AmliContext, TermContext->OpEnd, *OutNsObject, (ULONG)TermContext->DataArgs[1].DataValue, OpRegionObj->Len);
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("Field: ret Status %X\n", Status);
+    return Status;
 }
 NTSTATUS __cdecl IfElse(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
@@ -3508,6 +3568,19 @@ ParsePackageLen(
     giIndent--;
 
     return Result;
+}
+
+NTSTATUS
+__cdecl
+ParseFieldList(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PUCHAR OpEnd,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsParentObject,
+    _In_ ULONG FieldFlags,
+    _In_ ULONG RegionLen)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 NTSTATUS

@@ -437,4 +437,24 @@ HeapAlloc(
     _In_ ULONG Length
 );
 
+NTSTATUS
+__cdecl
+GetNameSpaceObject(
+    _In_ PCHAR ObjPath,
+    _In_ PAMLI_NAME_SPACE_OBJECT ScopeObject,
+    _In_ PAMLI_NAME_SPACE_OBJECT* OutObject,
+    _In_ ULONG Flags
+);
+
+NTSTATUS
+__cdecl
+ParseFieldList(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PUCHAR OpEnd,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsParentObject,
+    _In_ ULONG FieldFlags,
+    _In_ ULONG RegionLen
+);
+
+
 /* EOF */
