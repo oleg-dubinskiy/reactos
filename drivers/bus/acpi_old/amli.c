@@ -3472,8 +3472,42 @@ ParsePackageLen(
     _Inout_ PUCHAR* OutOp,
     _Out_ PUCHAR* OutOpEnd)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    PUCHAR Op;
+    ULONG MaxSize;
+    ULONG ix;
+    ULONG Result;
+
+    DPRINT("ParsePackageLen: %X, %X\n", *OutOp, OutOpEnd);
+
+    giIndent++;
+
+    if (OutOpEnd)
+        *OutOpEnd = *OutOp;
+
+    Result = **OutOp;
+    MaxSize = ((**OutOp >> 6) & 3);
+
+    (*OutOp)++;
+
+    Op = *OutOp;
+
+    if (MaxSize)
+    {
+        Result &= 0xF;
+
+        for (ix = 0; ix < MaxSize; ix++)
+        {
+            Result |= (*Op++ << (4 + (ix * 8)));
+            *OutOp = Op;
+        }
+    }
+
+    if (OutOpEnd)
+        *OutOpEnd += Result;
+
+    giIndent--;
+
+    return Result;
 }
 
 NTSTATUS
