@@ -3572,6 +3572,18 @@ ParsePackageLen(
 
 NTSTATUS
 __cdecl
+ParseField(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsParentObject,
+    _Out_ ULONG* OutFieldFlags,
+    _Out_ ULONG* OutBitPos)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 ParseFieldList(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PUCHAR OpEnd,
@@ -3579,8 +3591,40 @@ ParseFieldList(
     _In_ ULONG FieldFlags,
     _In_ ULONG RegionLen)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG Offset;
+    ULONG BitPos = 0;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ParseFieldList: %X, %X, %X, %X, %X\n", AmliContext, AmliContext->Op, NsParentObject, FieldFlags, RegionLen);
+
+    giIndent++;
+
+    do
+    {
+        if (AmliContext->Op >= OpEnd)
+            break;
+
+        Status = ParseField(AmliContext, NsParentObject, &FieldFlags, &BitPos);
+        if (Status)
+            break;
+
+        if (RegionLen != -1)
+        {
+            Offset = ((BitPos + 7) >> 3);
+
+            if (Offset > RegionLen)
+            {
+                DPRINT1("ParseFieldList: offset exceeds OpRegion range (Offset %X, RegionLen %X\n", Offset, RegionLen);
+                ASSERT(FALSE);
+                Status = STATUS_ACPI_INVALID_INDEX;
+            }
+        }
+    }
+    while (Status != STATUS_SUCCESS);
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
