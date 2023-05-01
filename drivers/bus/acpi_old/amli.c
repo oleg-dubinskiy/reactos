@@ -1251,8 +1251,62 @@ NTSTATUS __cdecl Match(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT T
 }
 NTSTATUS __cdecl Method(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT* OutNsObject;
+    PUCHAR Op;
+    NTSTATUS Status;
+
+    DPRINT("Method: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    OutNsObject = &TermContext->NsObject;
+
+    Status = CreateNameSpaceObject(AmliContext->HeapCurrent,
+                                   (PCHAR)TermContext->DataArgs->DataBuff,
+                                   AmliContext->Scope,
+                                   AmliContext->Owner,
+                                   &TermContext->NsObject,
+                                   0);
+
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("Method: Status %X\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    (*OutNsObject)->ObjData.DataType = 8;
+    (*OutNsObject)->ObjData.DataLen = (TermContext->OpEnd - AmliContext->Op + 0x11);
+
+    gdwcMEObjs++;
+
+    (*OutNsObject)->ObjData.DataBuff = HeapAlloc(AmliContext->HeapCurrent, 'TEMH', (*OutNsObject)->ObjData.DataLen);
+    if ((*OutNsObject)->ObjData.DataBuff == NULL)
+    {
+        DPRINT1("Method: failed to allocate method buffer\n");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    Op = (*OutNsObject)->ObjData.DataBuff;
+
+    DPRINT("Method: FIXME AddObjSymbol()\n");
+
+    RtlZeroMemory(Op, (*OutNsObject)->ObjData.DataLen);
+
+    Op[0x10] = *(AmliContext->Op - 1);
+    RtlCopyMemory((Op + 0x11), AmliContext->Op, (TermContext->OpEnd - AmliContext->Op));
+
+    OutNsObject = &TermContext->NsObject;
+    AmliContext->Op = TermContext->OpEnd;
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("Method: ret Status %X\n", Status);
+    return Status;
 }
 NTSTATUS __cdecl Mutex(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
