@@ -3408,8 +3408,54 @@ ParseString(
     _In_ PAMLI_OBJECT_DATA DataResult,
     _In_ BOOLEAN ErrOk)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ParseString: %X, %X, %X\n", *OutOp, DataResult, ErrOk);
+
+    giIndent++;
+
+    ASSERT(DataResult != NULL);
+
+    if (**OutOp == 0xD)
+    {
+        ++*OutOp;
+
+        DataResult->DataType = 2;
+        DataResult->DataLen = (StrLen((PCHAR)*OutOp, 0xFFFFFFFF) + 1);
+
+        gdwcSDObjs++;
+
+        DataResult->DataBuff = HeapAlloc(gpheapGlobal, 'RTSH', DataResult->DataLen);
+
+        if (DataResult->DataBuff)
+        {
+            RtlCopyMemory(DataResult->DataBuff, *OutOp, DataResult->DataLen);
+        }
+        else
+        {
+            DPRINT("ParseString: failed to allocate string buffer\n");
+            ASSERT(FALSE);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        *OutOp += DataResult->DataLen;
+    }
+    else
+    {
+        DPRINT1("ParseString: invalid opcode %X at %X\n", **OutOp, *OutOp);
+
+        if (!ErrOk)
+        {
+            ASSERT(FALSE);
+        }
+
+        Status = STATUS_ACPI_INVALID_OPCODE;
+    }
+
+    giIndent--;
+
+    //DPRINT("ParseString: Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS
