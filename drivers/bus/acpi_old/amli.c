@@ -3720,7 +3720,7 @@ ParseFieldList(
             }
         }
     }
-    while (Status != STATUS_SUCCESS);
+    while (Status == STATUS_SUCCESS);
 
     giIndent--;
 
