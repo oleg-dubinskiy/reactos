@@ -3912,8 +3912,43 @@ ParseAndGetNameSpaceObject(
     _Out_ PAMLI_NAME_SPACE_OBJECT* OutNsObject,
     _In_ BOOLEAN AbsentOk)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    CHAR Name[256];
+    NTSTATUS Status;
+
+    DPRINT("ParseAndGetNameSpaceObject: %X, '%s', %X, %X\n", *OutOp, GetObjectPath(ScopeObject), OutNsObject, AbsentOk);
+
+    giIndent++;
+
+    Status = ParseName(OutOp, Name, 0x100);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("ParseAndGetNameSpaceObject: Status %X\n", Status);
+        goto Exit;
+    }
+
+    Status = GetNameSpaceObject(Name, ScopeObject, OutNsObject, 0);
+    if (Status != STATUS_OBJECT_NAME_NOT_FOUND)
+    {
+        DPRINT1("ParseAndGetNameSpaceObject: Status %X\n", Status);
+        goto Exit;
+    }
+
+    if (AbsentOk)
+    {
+        Status = STATUS_SUCCESS;
+        *OutNsObject = NULL;
+    }
+    else
+    {
+        DPRINT1("ParseAndGetNameSpaceObject: object '%s' not found", Name);
+    }
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("ParseAndGetNameSpaceObject: ret Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS
