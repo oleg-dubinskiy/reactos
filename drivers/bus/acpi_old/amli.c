@@ -1250,8 +1250,86 @@ NTSTATUS __cdecl Index(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT T
 }
 NTSTATUS __cdecl IndexField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT* OutNsObject;
+    PAMLI_NAME_SPACE_OBJECT* NsObjects;
+    PAMLI_NAME_SPACE_OBJECT NsObject1;
+    PAMLI_NAME_SPACE_OBJECT NsObject0;
+    NTSTATUS Status;
+
+    DPRINT("IndexField: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    Status = GetNameSpaceObject(TermContext->DataArgs->DataBuff, AmliContext->Scope, &NsObject0, 0x80000000);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("IndexField: Status %X\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    Status = GetNameSpaceObject(TermContext->DataArgs[1].DataBuff, AmliContext->Scope, &NsObject1, 0x80000000);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("IndexField: Status %X\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    if (NsObject0->ObjData.DataType != 5)
+    {
+        DPRINT1("IndexField: Index '%s' is not a field unit\n", TermContext->DataArgs->DataBuff);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_OBJTYPE;
+    }
+
+    if (NsObject1->ObjData.DataType != 5)
+    {
+        DPRINT1("IndexField: Data '%s' is not a field unit\n", TermContext->DataArgs[1].DataBuff);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_OBJTYPE;
+    }
+
+    OutNsObject = &TermContext->NsObject;
+
+    Status = CreateNameSpaceObject(AmliContext->HeapCurrent,
+                                   NULL,
+                                   AmliContext->Scope,
+                                   AmliContext->Owner,
+                                   &TermContext->NsObject,
+                                   0);
+    if (Status != STATUS_SUCCESS)
+    {
+        goto Exit;
+    }
+
+    (*OutNsObject)->ObjData.DataType = 0x84;
+    (*OutNsObject)->ObjData.DataLen = 8;
+
+    gdwcIFObjs++;
+
+    (*OutNsObject)->ObjData.DataBuff = HeapAlloc(AmliContext->HeapCurrent, 'FXIH', (*OutNsObject)->ObjData.DataLen);
+    if ((*OutNsObject)->ObjData.DataBuff == NULL)
+    {
+        DPRINT1("IndexField: failed to allocate IndexField object\n");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory((*OutNsObject)->ObjData.DataBuff, (*OutNsObject)->ObjData.DataLen);
+
+    NsObjects = (PAMLI_NAME_SPACE_OBJECT *)(*OutNsObject)->ObjData.DataBuff;
+    NsObjects[0] = NsObject0;
+    NsObjects[1] = NsObject1;
+
+    Status = ParseFieldList(AmliContext, TermContext->OpEnd, *OutNsObject, (ULONG)TermContext->DataArgs[2].DataValue, 0xFFFFFFFF);
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("IndexField: ret Status %X\n", Status);
+    return Status;
 }
 NTSTATUS __cdecl LNot(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
