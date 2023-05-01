@@ -1031,7 +1031,28 @@ Exit:
     return TypeName;
 }
 
+NTSTATUS
+__cdecl
+ValidateArgTypes(
+    _In_ PAMLI_OBJECT_DATA ObjData,
+    _In_ PCHAR ExpectedTypes)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* CALLBACKS TERM HANDLERS **************************************************/
+
+NTSTATUS
+__cdecl
+ParsePackage(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_PACKAGE_CONTEXT PackageContext,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
 
 PAMLI_RS_ACCESS_HANDLER
 __cdecl
@@ -1527,8 +1548,55 @@ NTSTATUS __cdecl OSInterface(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CON
 }
 NTSTATUS __cdecl Package(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_PACKAGE_OBJECT PackageObject;
+    PAMLI_PACKAGE_CONTEXT PackageContext;
+    NTSTATUS Status;
+
+    DPRINT("Package: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    Status = ValidateArgTypes(TermContext->DataArgs, "I");
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("Package: Status %X\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    TermContext->DataResult->DataLen = (sizeof(ULONG) + (ULONG)TermContext->DataArgs[0].DataValue * sizeof(AMLI_OBJECT_DATA));
+
+    gdwcPKObjs++;
+
+    PackageObject = HeapAlloc(gpheapGlobal, 'GKPH', TermContext->DataResult->DataLen);
+    if (!PackageObject)
+    {
+        DPRINT1("Package: failed to allocate package object (size %X)\n", TermContext->DataResult->DataLen);
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    TermContext->DataResult->DataType = 4;
+
+    memset(PackageObject, 0, TermContext->DataResult->DataLen);
+
+    TermContext->DataResult->DataBuff = PackageObject;
+    PackageObject->Elements = (UCHAR)(ULONG)TermContext->DataArgs[0].DataValue;
+
+    Status = PushFrame(AmliContext, 'FGKP', sizeof(*PackageContext), ParsePackage, (PVOID *)&PackageContext);
+    if (Status == STATUS_SUCCESS)
+    {
+        PackageContext->PackageObject = PackageObject;
+        PackageContext->OpEnd = TermContext->OpEnd;
+    }
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("Package: ret Status %X\n", Status);
+    return Status;
 }
 NTSTATUS __cdecl PowerRes(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {

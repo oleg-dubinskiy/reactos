@@ -307,6 +307,20 @@ typedef struct _AMLI_OBJECT_TYPE_NAME
     PCHAR Name;
 } AMLI_OBJECT_TYPE_NAME, *PAMLI_OBJECT_TYPE_NAME;
 
+typedef struct _AMLI_PACKAGE_OBJECT
+{
+    ULONG Elements;
+    AMLI_OBJECT_DATA Data[1];
+} AMLI_PACKAGE_OBJECT, *PAMLI_PACKAGE_OBJECT;
+
+typedef struct _AMLI_PACKAGE_CONTEXT
+{
+    AMLI_FRAME_HEADER FrameHeader;
+    PAMLI_PACKAGE_OBJECT PackageObject;
+    ULONG ElementCount;
+    PUCHAR OpEnd;
+} AMLI_PACKAGE_CONTEXT, *PAMLI_PACKAGE_CONTEXT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1
@@ -467,6 +481,16 @@ PushScope(
     _In_ PAMLI_OBJECT_OWNER Owner,
     _In_ PAMLI_HEAP Heap,
     _In_ PAMLI_OBJECT_DATA DataResult
+);
+
+NTSTATUS
+__cdecl
+PushFrame(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ ULONG Signature,
+    _In_ ULONG Length,
+    _In_ PVOID ParseFunction,
+    _Out_ PVOID* OutFrame
 );
 
 /* EOF */
