@@ -899,6 +899,15 @@ ReleaseMutex(
     giIndent--;
 }
 
+VOID
+__cdecl
+MoveObjData(
+    _In_ PAMLI_OBJECT_DATA DataDst,
+    _In_ PAMLI_OBJECT_DATA DataSrc)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 PCHAR
 __cdecl
 GetObjectPath(
@@ -1315,8 +1324,30 @@ NTSTATUS __cdecl Mutex(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT T
 }
 NTSTATUS __cdecl Name(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT *OutNsObject;
+    NTSTATUS Status;
+
+    DPRINT("Method: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    ASSERT(TermContext->DataArgs[0].DataType == 2); // OBJTYPE_STRDATA
+
+    OutNsObject = &TermContext->NsObject;
+
+    Status = CreateNameSpaceObject(AmliContext->HeapCurrent,
+                                   (PCHAR)TermContext->DataArgs->DataBuff,
+                                   AmliContext->Scope,
+                                   AmliContext->Owner,
+                                   &TermContext->NsObject,
+                                   0);
+    if (Status == STATUS_SUCCESS)
+        MoveObjData(&((*OutNsObject)->ObjData), (TermContext->DataArgs + 1));
+
+    giIndent--;
+
+    //DPRINT("Name: ret Status %X\n", Status);
+    return Status;
 }
 NTSTATUS __cdecl Notify(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
