@@ -1557,8 +1557,35 @@ NTSTATUS __cdecl Return(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT 
 }
 NTSTATUS __cdecl Scope(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    DPRINT("Scope: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    ASSERT(TermContext->DataArgs[0].DataType == 2);//OBJTYPE_STRDATA
+
+    Status = GetNameSpaceObject(TermContext->DataArgs->DataBuff,
+                                AmliContext->Scope,
+                                &TermContext->NsObject,
+                                0x80000000);
+
+    if (Status == STATUS_SUCCESS)
+    {
+        Status = PushScope(AmliContext,
+                           AmliContext->Op,
+                           TermContext->OpEnd,
+                           NULL,
+                           TermContext->NsObject,
+                           AmliContext->Owner,
+                           AmliContext->HeapCurrent,
+                           TermContext->DataResult);
+    }
+
+    giIndent--;
+
+    //DPRINT("Scope: ret Status %X\n", Status);
+    return Status;
 }
 NTSTATUS __cdecl SleepStall(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
@@ -3358,7 +3385,7 @@ ParseIntObj(
     {
         --*OutOp;
 
-        DPRINT1("ParseIntObj: invalid opcode %X at %X", **OutOp, *OutOp);
+        DPRINT1("ParseIntObj: invalid opcode %X at %X\n", **OutOp, *OutOp);
 
         if (!ErrOk)
         {

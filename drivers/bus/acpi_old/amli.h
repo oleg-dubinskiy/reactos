@@ -456,5 +456,17 @@ ParseFieldList(
     _In_ ULONG RegionLen
 );
 
+NTSTATUS
+__cdecl
+PushScope(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PUCHAR OpcodeBegin,
+    _In_ PUCHAR OpEnd,
+    _In_ PUCHAR OpcodeRet,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsScope,
+    _In_ PAMLI_OBJECT_OWNER Owner,
+    _In_ PAMLI_HEAP Heap,
+    _In_ PAMLI_OBJECT_DATA DataResult
+);
 
 /* EOF */
