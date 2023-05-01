@@ -1037,8 +1037,147 @@ ValidateArgTypes(
     _In_ PAMLI_OBJECT_DATA ObjData,
     _In_ PCHAR ExpectedTypes)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG ExpectedType;
+    ULONG DataLen;
+    ULONG ix;
+    USHORT DataType;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    giIndent++;
+
+    ASSERT(ExpectedTypes != NULL);
+
+    DataLen = StrLen(ExpectedTypes, 0xFFFFFFFF);
+
+    for (ix = 0; ix < DataLen; ix++)
+    {
+        DataType = ObjData[ix].DataType;
+        ExpectedType = ExpectedTypes[ix];
+
+        switch (ExpectedType)
+        {
+            case 0x41:
+            {
+                if (DataType != 0x81)
+                {
+                    DPRINT1("ValidateArgTypes: expected Arg %X to be type DataAlias (Type '%s')\n", ix, GetObjectTypeName(DataType));
+                    ASSERT(FALSE);
+                    Status = STATUS_ACPI_INVALID_OBJTYPE;
+                }
+                break;
+            }
+            case 0x42:
+            {
+                if (DataType != 3)
+                {
+                    DPRINT1("ValidateArgTypes: expected Arg %X to be type Buffer (Type '%s')\n", ix, GetObjectTypeName(DataType));
+                    ASSERT(FALSE);
+                    Status = STATUS_ACPI_INVALID_ARGTYPE;
+                }
+                break;
+            }
+            case 0x43:
+            {
+                if (DataType == 3 || DataType == 4)
+                    break;
+
+                DPRINT1("ValidateArgTypes: expected Arg %X to be type buff/pkg (Type '%s')\n", ix, GetObjectTypeName(DataType));
+                ASSERT(FALSE);
+                Status = STATUS_ACPI_INVALID_OBJTYPE;
+                break;
+            }
+            case 0x44:
+            {
+                if (DataType == 1 || DataType == 2 || DataType == 3)
+                    break;
+
+                DPRINT1("ValidateArgTypes: expected Arg %X to be type int/str/buff (Type '%s')\n", ix, GetObjectTypeName(DataType));
+                ASSERT(FALSE);
+                Status = STATUS_ACPI_INVALID_OBJTYPE;
+                break;
+            }
+            case 0x46:
+            {
+                if (DataType != 5)
+                {
+                    DPRINT1("ValidateArgTypes: expected Arg %X to be type FieldUnit (Type '%s')\n", ix, GetObjectTypeName(DataType));
+                    ASSERT(FALSE);
+                    Status = STATUS_ACPI_INVALID_ARGTYPE;
+                }
+                break;
+            }
+            case 0x49:
+            {
+                if (DataType != 1)
+                {
+                    DPRINT1("ValidateArgTypes: expected Arg %X to be type Integer (Type '%s')\n", ix, GetObjectTypeName(DataType));
+                    ASSERT(FALSE);
+                    Status = STATUS_ACPI_INVALID_ARGTYPE;
+                }
+                break;
+            }
+            case 0x4F:
+            {
+                if (DataType != 0x80)
+                {
+                    DPRINT1("ValidateArgTypes: expected Arg %X to be type ObjAlias (Type '%s')\n", ix, GetObjectTypeName(DataType));
+                    ASSERT(FALSE);
+                    Status = STATUS_ACPI_INVALID_OBJTYPE;
+                }
+                break;
+            }
+            case 0x50:
+            {
+                if (DataType != 4)
+                {
+                    DPRINT1("ValidateArgTypes: expected Arg %X to be type Package (Type '%s')\n", ix, GetObjectTypeName(DataType));
+                    ASSERT(FALSE);
+                    Status = STATUS_ACPI_INVALID_ARGTYPE;
+                }
+                break;
+            }
+            case 0x52:
+            {
+                if (DataType == 0x80 || DataType == 0x81 || DataType == 0xE)
+                    break;
+
+                ASSERT(ExpectedTypes != NULL);
+
+                DPRINT1("ValidateArgTypes: expected Arg %X to be type reference (Type '%s')\n", ix, GetObjectTypeName(DataType));
+                ASSERT(FALSE);
+                Status = STATUS_ACPI_INVALID_ARGTYPE;
+                break;
+            }
+            case 0x55:
+            {
+                break;
+            }
+            case 0x5A:
+            {
+                if (DataType != 2)
+                {
+                    DPRINT1("ValidateArgTypes: expected Arg %X to be type String (Type '%s')\n", ix, GetObjectTypeName(DataType));
+                    ASSERT(FALSE);
+                    Status = STATUS_ACPI_INVALID_ARGTYPE;
+                }
+                break;
+            }
+            default:
+            {
+                DPRINT1("ValidateArgTypes: internal error (invalid type - '%c'), ix %X\n", ix, ExpectedTypes[ix]);
+                ASSERT(FALSE);
+                Status = STATUS_ACPI_ASSERT_FAILED;
+                break;
+            }
+        }
+
+        if (Status != STATUS_SUCCESS)
+            break;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 /* CALLBACKS TERM HANDLERS **************************************************/
