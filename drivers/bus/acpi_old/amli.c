@@ -851,6 +851,15 @@ ListRemoveHead(
 
 /* FUNCTIONS ****************************************************************/
 
+PAMLI_NAME_SPACE_OBJECT
+__cdecl
+GetBaseObject(
+    _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
 VOID
 __cdecl
 InitializeMutex(
@@ -3897,12 +3906,61 @@ PushTerm(
 
 NTSTATUS
 __cdecl
-ParseNameObj(
+ParseAndGetNameSpaceObject(
+    _Out_ PUCHAR* OutOp,
+    _In_ PAMLI_NAME_SPACE_OBJECT ScopeObject,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutNsObject,
+    _In_ BOOLEAN AbsentOk)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ReadObject(
     _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_OBJECT_DATA DataObj,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ParseNameObj(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    PAMLI_NAME_SPACE_OBJECT AcpiObject = NULL;
+    NTSTATUS Status;
+
+    DPRINT("ParseNameObj: %X, %X, %X\n", AmliContext, AmliContext->Op, DataResult);
+
+    giIndent++;
+
+    ASSERT(DataResult != NULL);
+
+    Status = ParseAndGetNameSpaceObject(&AmliContext->Op, AmliContext->Scope, &AcpiObject, FALSE);
+    if (Status == STATUS_SUCCESS)
+    {
+        AcpiObject = GetBaseObject(AcpiObject);
+
+        if (AcpiObject->ObjData.DataType == 8)
+        {
+            Status = PushCall(AmliContext, AcpiObject, DataResult);
+        }
+        else
+        {
+            Status = ReadObject(AmliContext, &AcpiObject->ObjData, DataResult);
+        }
+    }
+
+    giIndent--;
+
+    DPRINT("ParseNameObj: Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS
