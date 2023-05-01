@@ -3578,8 +3578,99 @@ ParseField(
     _Out_ ULONG* OutFieldFlags,
     _Out_ ULONG* OutBitPos)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_FIELD_UNIT_OBJECT FieldUnitObject;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PUCHAR Op;
+    ULONG AccessFlags;
+    ULONG ByteOffset;
+    ULONG Access;
+    ULONG NumBits;
+    CHAR Name[8];
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ParseField: %X, %X, %X, %X, %X\n", AmliContext, AmliContext->Op, NsParentObject, *OutFieldFlags, *OutBitPos);
+
+    giIndent++;
+
+    Op = AmliContext->Op;
+
+    if (*AmliContext->Op == 1)
+    {
+        AmliContext->Op++;
+
+        *OutFieldFlags &= ~0xF;
+        *OutFieldFlags |= (*AmliContext->Op & 0xF);
+
+        AmliContext->Op++;
+
+        *OutFieldFlags &= ~0xFF00;
+        *OutFieldFlags |= (*AmliContext->Op * 0x100);
+
+        AmliContext->Op++;
+
+        goto Exit;
+    }
+
+    AccessFlags = (*OutFieldFlags & 0xF);
+
+    if (AccessFlags >= 1 && AccessFlags <= 3)
+        Access = (1 << (AccessFlags - 1));
+    else
+        Access = 1;
+
+    if (*Op)
+    {
+        StrCpy(Name, (PCHAR)Op, 4);
+        AmliContext->Op += 4;
+    }
+    else
+    {
+        Name[0] = 0;
+        AmliContext->Op++;
+    }
+
+    NumBits = ParsePackageLen(&AmliContext->Op, 0);
+
+    Status = CreateNameSpaceObject(AmliContext->HeapCurrent, Name, AmliContext->Scope, AmliContext->Owner, &NsObject, 0);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT("ParseField: Status %X\n", Status);
+        goto Exit;
+    }
+
+    NsObject->ObjData.DataType = 5;
+    NsObject->ObjData.DataLen = sizeof(AMLI_FIELD_UNIT_OBJECT);
+
+    gdwcFUObjs++;
+
+    NsObject->ObjData.DataBuff = FieldUnitObject = HeapAlloc(AmliContext->HeapCurrent, 'UDFH', NsObject->ObjData.DataLen);
+    if (!NsObject->ObjData.DataBuff)
+    {
+        DPRINT1("ParseField: failed to allocate FieldUnit object\n");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    RtlZeroMemory(FieldUnitObject, NsObject->ObjData.DataLen);
+
+    FieldUnitObject = NsObject->ObjData.DataBuff;
+    FieldUnitObject->NsFieldParent = NsParentObject;
+    FieldUnitObject->FieldDesc.FieldFlags = *OutFieldFlags;
+
+    ByteOffset = (Access * (*OutBitPos / (8 * Access)));
+
+    FieldUnitObject->FieldDesc.ByteOffset = ByteOffset;
+    FieldUnitObject->FieldDesc.StartBitPos = (*OutBitPos - (8 * ByteOffset));
+    FieldUnitObject->FieldDesc.NumBits = NumBits;
+
+    *OutBitPos += NumBits;
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
