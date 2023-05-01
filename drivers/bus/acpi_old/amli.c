@@ -905,7 +905,22 @@ MoveObjData(
     _In_ PAMLI_OBJECT_DATA DataDst,
     _In_ PAMLI_OBJECT_DATA DataSrc)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    DPRINT("MoveObjData: DataDst %X, DataSrc %X\n", DataDst, DataSrc);
+
+    giIndent++;
+
+    ASSERT(DataDst != NULL);
+    ASSERT(DataSrc != NULL);
+
+    if (DataDst != DataSrc)
+    {
+        ASSERT((DataSrc->Flags & 1) || (DataSrc->DataBuff == NULL) || (DataSrc->RefCount == 0));//DATAF_BUFF_ALIAS
+
+        RtlCopyMemory(DataDst, DataSrc, sizeof(*DataDst));
+        RtlZeroMemory(DataSrc, sizeof(*DataSrc));
+    }
+
+    giIndent--;
 }
 
 PCHAR
