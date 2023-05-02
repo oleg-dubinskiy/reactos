@@ -1122,8 +1122,67 @@ ACPIBuildDeviceExtension(
     _In_ PDEVICE_EXTENSION ParentDeviceExtension,
     _Out_ PDEVICE_EXTENSION* OutDeviceExtension)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBuildDeviceExtension: Parent %p\n", ParentDeviceExtension);
+
+    if (ParentDeviceExtension)
+    {
+        ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    }
+
+    if (AcpiObject && AcpiObject->Context)
+    {
+        DeviceExtension = AcpiObject->Context;
+        ASSERT(DeviceExtension->ParentExtension == ParentDeviceExtension);
+        Status = ((DeviceExtension->ParentExtension != ParentDeviceExtension) ? STATUS_NO_SUCH_DEVICE : STATUS_SUCCESS);
+        return Status;
+    }
+
+    DeviceExtension = ExAllocateFromNPagedLookasideList(&DeviceExtensionLookAsideList);
+    if (!DeviceExtension)
+    {
+        DPRINT1("ACPIBuildDeviceExtension: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(DeviceExtension, sizeof(*DeviceExtension));
+
+    DeviceExtension->ReferenceCount++;
+    DeviceExtension->OutstandingIrpCount++;
+    DeviceExtension->AcpiObject = AcpiObject;
+    DeviceExtension->Signature = '_SGP';
+    DeviceExtension->Flags = 0xA;
+
+    *OutDeviceExtension = DeviceExtension;
+
+    DeviceExtension->PowerInfo.DevicePowerMatrix[0] = 0;
+    DeviceExtension->PowerInfo.DevicePowerMatrix[1] = 1;
+    DeviceExtension->PowerInfo.DevicePowerMatrix[2] = 1;
+    DeviceExtension->PowerInfo.DevicePowerMatrix[3] = 1;
+    DeviceExtension->PowerInfo.DevicePowerMatrix[4] = 1;
+    DeviceExtension->PowerInfo.DevicePowerMatrix[5] = 4;
+    DeviceExtension->PowerInfo.DevicePowerMatrix[6] = 4;
+
+    InitializeListHead(&DeviceExtension->ChildDeviceList);
+    InitializeListHead(&DeviceExtension->EjectDeviceHead);
+    InitializeListHead(&DeviceExtension->EjectDeviceList);
+    InitializeListHead(&DeviceExtension->PowerInfo.WakeSupportList);
+    InitializeListHead(&DeviceExtension->PowerInfo.PowerRequestListEntry);
+
+    DeviceExtension->ParentExtension = ParentDeviceExtension;
+
+    if (ParentDeviceExtension)
+    {
+        InterlockedIncrement(&ParentDeviceExtension->ReferenceCount);
+        InsertTailList(&ParentDeviceExtension->ChildDeviceList, &DeviceExtension->SiblingDeviceList);
+    }
+
+    if (AcpiObject)
+        AcpiObject->Context = DeviceExtension;
+
+    return STATUS_SUCCESS;
 }
 
 /* ACPI CALLBACKS ***********************************************************/

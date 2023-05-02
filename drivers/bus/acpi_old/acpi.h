@@ -116,6 +116,8 @@ typedef struct _ACPI_POWER_INFO
     DEVICE_POWER_STATE DevicePowerMatrix[7];
     SYSTEM_POWER_STATE SystemWakeLevel;
     DEVICE_POWER_STATE DeviceWakeLevel;
+    ULONG WakeSupportCount;
+    LIST_ENTRY WakeSupportList;
     LIST_ENTRY PowerRequestListEntry;
 } ACPI_POWER_INFO, *PACPI_POWER_INFO;
 
@@ -217,6 +219,7 @@ typedef struct _DEVICE_EXTENSION
     PDEVICE_OBJECT DeviceObject;
     PDEVICE_OBJECT TargetDeviceObject;
     PDEVICE_OBJECT PhysicalDeviceObject;
+    struct _DEVICE_EXTENSION* ParentExtension;
     LIST_ENTRY ChildDeviceList;
     LIST_ENTRY SiblingDeviceList;
     LIST_ENTRY EjectDeviceHead;
