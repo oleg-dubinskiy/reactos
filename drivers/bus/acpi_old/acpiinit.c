@@ -1115,6 +1115,17 @@ ACPIEnableInitializeACPI(
     WRITE_PM1_CONTROL((pm1_control & ~0x2002), 1, 3);
 }
 
+NTSTATUS
+NTAPI
+ACPIBuildDeviceExtension(
+    _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject,
+    _In_ PDEVICE_EXTENSION ParentDeviceExtension,
+    _Out_ PDEVICE_EXTENSION* OutDeviceExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* ACPI CALLBACKS ***********************************************************/
 
 VOID
@@ -1309,12 +1320,61 @@ GlobalLockEventHandler(
 
 NTSTATUS
 NTAPI
+ACPIBuildDeviceRequest(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext,
+    _In_ BOOLEAN IsInsertDpc)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 OSNotifyCreateDevice(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
     _In_ ULONGLONG FlagValue)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+    PDEVICE_EXTENSION Destination = NULL;
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(NsObject != NULL);
+    ASSERT(NsObject->Parent != NULL);
+
+    DeviceExtension = NsObject->Parent->Context;
+    if (!DeviceExtension)
+    {
+        DeviceExtension = RootDeviceExtension;
+        ASSERT(RootDeviceExtension != NULL);
+    }
+
+    Status = ACPIBuildDeviceExtension(NsObject, DeviceExtension, &Destination);
+    if (!Destination)
+    {
+        DPRINT1("OSNotifyCreateDevice: STATUS_UNSUCCESSFUL\n");
+        Status = STATUS_UNSUCCESSFUL;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("OSNotifyCreateDevice: NSObj %p, Status %X\n", NsObject, Status);
+        return Status;
+    }
+
+    InterlockedIncrement(&Destination->ReferenceCount);
+
+    ACPIInternalUpdateFlags(Destination, FlagValue, FALSE);
+
+    Status = ACPIBuildDeviceRequest(Destination, NULL, NULL, FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("OSNotifyCreateDevice: Destination %p, Status %X\n", Destination, Status);
+    }
+
+    return Status;
 }
 
 NTSTATUS
