@@ -1458,8 +1458,46 @@ NTSTATUS __cdecl DerefOf(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT
 }
 NTSTATUS __cdecl Device(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT* OutNsObject;
+    PAMLI_FN_HANDLER FnHandler;
+    NTSTATUS Status;
+
+    DPRINT("Device: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    OutNsObject = &TermContext->NsObject;
+
+    Status = CreateNameSpaceObject(AmliContext->HeapCurrent,
+                                   TermContext->DataArgs->DataBuff,
+                                   AmliContext->Scope,
+                                   AmliContext->Owner,
+                                   &TermContext->NsObject,
+                                   0);
+    if (Status == 0)
+    {
+        (*OutNsObject)->ObjData.DataType = 6;
+
+        if (ghCreate.Handler)
+        {
+            FnHandler = ghCreate.Handler;
+            FnHandler(6, *OutNsObject);
+        }
+
+        Status = PushScope(AmliContext,
+                           AmliContext->Op,
+                           TermContext->OpEnd,
+                           NULL,
+                           *OutNsObject,
+                           AmliContext->Owner,
+                           AmliContext->HeapCurrent,
+                           TermContext->DataResult);
+    }
+
+    giIndent--;
+
+    //DPRINT("Device: Status %X\n", Status);
+    return Status;
 }
 NTSTATUS __cdecl Divide(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {

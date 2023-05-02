@@ -174,6 +174,8 @@ typedef struct _AMLI_TERM_CONTEXT
     PAMLI_OBJECT_DATA DataResult;
 } AMLI_TERM_CONTEXT, *PAMLI_TERM_CONTEXT;
 
+typedef NTSTATUS (__cdecl* PAMLI_FN_HANDLER)(ULONG, PVOID);
+
 typedef struct _AMLI_EVHANDLE
 {
     PVOID Handler;
