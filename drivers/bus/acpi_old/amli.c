@@ -1355,8 +1355,66 @@ NTSTATUS __cdecl BreakPoint(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONT
 }
 NTSTATUS __cdecl Buffer(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG InitSize;
+    ULONG Buffersize;
+    NTSTATUS Status;
+
+    InitSize = TermContext->OpEnd - AmliContext->Op;
+
+    DPRINT("Buffer: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    Status = ValidateArgTypes(TermContext->DataArgs, "I");
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("Buffer: Status %X\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    Buffersize = (ULONG)TermContext->DataArgs->DataValue;
+    if (Buffersize < InitSize)
+    {
+        DPRINT1("Buffer: too many initializers (buffsize %X, InitSize %X)\n", TermContext->DataArgs->DataValue, InitSize);
+        ASSERT(FALSE);
+        Status = STATUS_BUFFER_TOO_SMALL;
+        goto Exit;
+    }
+
+    if (!Buffersize)
+    {
+        DPRINT1("Buffer: invalid buffer size %X\n", TermContext->DataArgs->DataValue);
+        ASSERT(FALSE);
+        Status = STATUS_INVALID_BUFFER_SIZE;
+        goto Exit;
+    }
+
+    gdwcBDObjs++;
+
+    TermContext->DataResult->DataBuff = HeapAlloc(gpheapGlobal, 'FUBH', (ULONG)TermContext->DataArgs->DataValue);
+    if (!TermContext->DataResult->DataBuff)
+    {
+        DPRINT1("Buffer: failed to allocate data buffer (size %X)\n", TermContext->DataArgs->DataValue);
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    TermContext->DataResult->DataType = 3;
+    TermContext->DataResult->DataLen = (ULONG)TermContext->DataArgs->DataValue;
+
+    RtlZeroMemory(TermContext->DataResult->DataBuff, TermContext->DataResult->DataLen);
+    RtlCopyMemory(TermContext->DataResult->DataBuff, AmliContext->Op, InitSize);
+
+    AmliContext->Op = TermContext->OpEnd;
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("Buffer: ret Status %X\n", Status);
+    return Status;
 }
 NTSTATUS __cdecl Concat(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
