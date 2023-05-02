@@ -1385,8 +1385,47 @@ ACPIBuildDeviceRequest(
     _In_ PVOID CallBackContext,
     _In_ BOOLEAN IsInsertDpc)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_BUILD_REQUEST BuildRequest;
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+
+    BuildRequest = ExAllocateFromNPagedLookasideList(&BuildRequestLookAsideList);
+    if (!BuildRequest)
+    {
+        DPRINT1("ACPIBuildDeviceRequest: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (!DeviceExtension->ReferenceCount)
+    {
+        DPRINT1("ACPIBuildDeviceRequest: STATUS_DEVICE_REMOVED\n");
+        ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, BuildRequest);
+        return STATUS_DEVICE_REMOVED;
+    }
+
+    InterlockedIncrement(&DeviceExtension->ReferenceCount);
+
+    RtlZeroMemory(BuildRequest, sizeof(*BuildRequest));
+
+    BuildRequest->DeviceExtension = DeviceExtension;
+    BuildRequest->CallBack = CallBack;
+    BuildRequest->Signature = '_SGP';
+    BuildRequest->ListHeadForInsert = &AcpiBuildDeviceList;
+    BuildRequest->WorkDone = 3;
+    BuildRequest->Status = STATUS_SUCCESS;
+    BuildRequest->CallBackContext = CallBackContext;
+    BuildRequest->Flags = 0x1001;
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
+
+    InsertTailList(&AcpiBuildQueueList, &BuildRequest->Link);
+
+    if (IsInsertDpc && !AcpiBuildDpcRunning)
+        KeInsertQueueDpc(&AcpiBuildDpc, NULL, NULL);
+
+    KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+
+    return STATUS_PENDING;
 }
 
 NTSTATUS
