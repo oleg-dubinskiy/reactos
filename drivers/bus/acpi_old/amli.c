@@ -4678,7 +4678,32 @@ CopyObjData(
     _In_ PAMLI_OBJECT_DATA DataDest,
     _In_ PAMLI_OBJECT_DATA DataSrc)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    DPRINT("CopyObjData: %p, %p\n", DataDest, DataSrc);
+
+    giIndent++;
+
+    ASSERT(DataDest != NULL);
+    ASSERT(DataSrc != NULL);
+
+    if (DataDest != DataSrc)
+    {
+        RtlCopyMemory(DataDest, DataSrc, sizeof(*DataDest));
+
+        if (DataSrc->Flags & 1)
+        {
+            ASSERT(DataSrc->DataBase != NULL);
+            DataSrc->DataBase->RefCount++;
+        }
+        else if (DataSrc->DataBuff)
+        {
+            DataSrc->RefCount++;
+
+            DataDest->Flags |= 1;
+            DataDest->DataBase = DataSrc;
+        }
+    }
+
+    giIndent--;
 }
 
 NTSTATUS
