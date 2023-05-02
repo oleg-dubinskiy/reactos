@@ -920,8 +920,35 @@ __cdecl
 GetBaseData(
     _In_ PAMLI_OBJECT_DATA DataObj)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    USHORT DataType;
+
+    DPRINT("GetBaseData: DataObj %p\n", DataObj);
+
+    giIndent++;
+
+    ASSERT(DataObj);
+
+    while (TRUE)
+    {
+        while (TRUE)
+        {
+            DataType = DataObj->DataType;
+
+            if (DataType != 0x80)
+                break;
+
+            DataObj = &DataObj->Alias->ObjData;
+        }
+
+        if (DataType != 0x81)
+            break;
+
+        DataObj = DataObj->DataAlias;
+    }
+
+    giIndent--;
+
+    return DataObj;
 }
 
 VOID
