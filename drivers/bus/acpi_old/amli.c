@@ -851,13 +851,68 @@ ListRemoveHead(
 
 /* FUNCTIONS ****************************************************************/
 
+PCHAR
+__cdecl
+GetObjectPath(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
+{
+    static CHAR TmpPath[0x100] = {0};
+    int ix;
+
+    giIndent++;
+
+    if (!NsObject)
+    {
+        TmpPath[0] = 0;
+        goto Exit;
+    }
+
+    if (NsObject->Parent)
+    {
+        GetObjectPath(NsObject->Parent);
+
+        if (NsObject->Parent->Parent)
+            StrCat(TmpPath, ".", 0xFFFFFFFF);
+
+        StrCat(TmpPath, (PCHAR)&NsObject->NameSeg, 4);
+    }
+    else
+    {
+        StrCpy(TmpPath, "\\", 0xFFFFFFFF);
+    }
+
+    for (ix = StrLen(TmpPath, 0xFFFFFFFF); ; TmpPath[ix] = 0)
+    {
+        ix--;
+        if (ix < 0)
+            break;
+
+        if (TmpPath[ix] != '_')
+            break;
+    }
+
+Exit:
+
+    giIndent--;
+
+    return TmpPath;
+}
+
 PAMLI_NAME_SPACE_OBJECT
 __cdecl
 GetBaseObject(
-    _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject)
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    DPRINT("GetBaseObject: %X, '%s'\n", NsObject, GetObjectPath(NsObject));
+
+    giIndent++;
+
+    while (NsObject->ObjData.DataType == 0x80)
+        NsObject = NsObject->ObjData.Alias;
+
+    giIndent--;
+
+    return NsObject;
 }
 
 VOID
@@ -921,53 +976,6 @@ MoveObjData(
     }
 
     giIndent--;
-}
-
-PCHAR
-__cdecl
-GetObjectPath(
-    _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
-{
-    static CHAR TmpPath[0x100] = {0};
-    int ix;
-
-    giIndent++;
-
-    if (!NsObject)
-    {
-        TmpPath[0] = 0;
-        goto Exit;
-    }
-
-    if (NsObject->Parent)
-    {
-        GetObjectPath(NsObject->Parent);
-
-        if (NsObject->Parent->Parent)
-            StrCat(TmpPath, ".", 0xFFFFFFFF);
-
-        StrCat(TmpPath, (PCHAR)&NsObject->NameSeg, 4);
-    }
-    else
-    {
-        StrCpy(TmpPath, "\\", 0xFFFFFFFF);
-    }
-
-    for (ix = StrLen(TmpPath, 0xFFFFFFFF); ; TmpPath[ix] = 0)
-    {
-        ix--;
-        if (ix < 0)
-            break;
-
-        if (TmpPath[ix] != '_')
-            break;
-    }
-
-Exit:
-
-    giIndent--;
-
-    return TmpPath;
 }
 
 PAMLI_NAME_SPACE_OBJECT
