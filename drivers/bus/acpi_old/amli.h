@@ -323,6 +323,13 @@ typedef struct _AMLI_PACKAGE_CONTEXT
     PUCHAR OpEnd;
 } AMLI_PACKAGE_CONTEXT, *PAMLI_PACKAGE_CONTEXT;
 
+typedef struct _AMLI_AFU_CONTEXT // Access Field Unit
+{
+    AMLI_FRAME_HEADER FrameHeader;
+    PAMLI_OBJECT_DATA DataObj;
+    PAMLI_OBJECT_DATA DataResult;
+} AMLI_AFU_CONTEXT, *PAMLI_AFU_CONTEXT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1

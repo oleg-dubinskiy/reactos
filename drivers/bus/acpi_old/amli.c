@@ -915,6 +915,15 @@ GetBaseObject(
     return NsObject;
 }
 
+PAMLI_OBJECT_DATA
+__cdecl
+GetBaseData(
+    _In_ PAMLI_OBJECT_DATA DataObj)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
 VOID
 __cdecl
 InitializeMutex(
@@ -1320,6 +1329,29 @@ FindRSAccess(
     giIndent--;
 
     return RsAccess;
+}
+
+NTSTATUS
+__cdecl
+ReadField(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_OBJECT_DATA DataObj,
+    _In_ PAMLI_FIELD_DESCRIPTOR FieldDesc,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+AccFieldUnit(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_AFU_CONTEXT AfuContext,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 NTSTATUS
@@ -4613,6 +4645,15 @@ Exit:
     return Status;
 }
 
+VOID
+__cdecl
+CopyObjData(
+    _In_ PAMLI_OBJECT_DATA DataDest,
+    _In_ PAMLI_OBJECT_DATA DataSrc)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 __cdecl
 ReadObject(
@@ -4620,8 +4661,40 @@ ReadObject(
     _In_ PAMLI_OBJECT_DATA DataObj,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_OBJECT_DATA BaseData;
+    PAMLI_AFU_CONTEXT AcfuContext;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ReadObject: %X, %X, %X\n", AmliContext, DataObj, DataResult);
+
+    giIndent++;
+
+    BaseData = GetBaseData(DataObj);
+
+    if (BaseData->DataType == 5)
+    {
+        Status = PushFrame(AmliContext, 'UFCA', sizeof(*AcfuContext), AccFieldUnit, (PVOID *)&AcfuContext);
+        if (Status == STATUS_SUCCESS)
+        {
+            AcfuContext->FrameHeader.Flags = 0x10000;
+            AcfuContext->DataObj = BaseData;
+            AcfuContext->DataResult = DataResult;
+        }
+    }
+    else if (BaseData->DataType == 0xE)
+    {
+        Status = ReadField(AmliContext, BaseData, BaseData->DataBuff, DataResult);
+    }
+    else
+    {
+        ASSERT(DataResult->DataType == 0);//OBJTYPE_UNKNOWN
+        CopyObjData(DataResult, BaseData);
+    }
+
+    giIndent--;
+
+    //DPRINT("ReadObject: ret Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS
