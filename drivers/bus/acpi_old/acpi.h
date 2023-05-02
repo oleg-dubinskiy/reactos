@@ -326,8 +326,8 @@ GlobalLockEventHandler(
 NTSTATUS
 __cdecl
 OSNotifyCreate(
-    _In_ int Param1,
-    _In_ int Param2
+    _In_ ULONG Type,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject
 );
 
 NTSTATUS

@@ -1308,13 +1308,92 @@ GlobalLockEventHandler(
 }
 
 NTSTATUS
-__cdecl
-OSNotifyCreate(
-    _In_ int Param1,
-    _In_ int Param2)
+NTAPI
+OSNotifyCreateDevice(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ ULONGLONG FlagValue)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+OSNotifyCreateProcessor(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ ULONGLONG FlagValue)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+static CHAR NameObject[8];
+
+PCHAR
+NTAPI
+ACPIAmliNameObject(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
+{
+    RtlZeroMemory(NameObject, sizeof(NameObject));
+
+    ASSERT(sizeof(NameObject) >= sizeof(NsObject->NameSeg));
+    RtlCopyMemory(NameObject, &NsObject->NameSeg, sizeof(NsObject->NameSeg));
+
+    NameObject[4] = 0;
+
+    return NameObject;
+}
+
+NTSTATUS
+__cdecl
+OSNotifyCreate(
+    _In_ ULONG Type,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
+{
+    KIRQL OldIrql;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("OSNotifyCreate: Type %X, NsObject %p\n");
+
+    ASSERT(NsObject != NULL);
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &OldIrql);
+
+    switch (Type)
+    {
+        case 6:
+            Status = OSNotifyCreateDevice(NsObject, 0);
+            break;
+
+        case 0xA:
+            DPRINT("OSNotifyCreate: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case 0xB:
+            DPRINT("OSNotifyCreate: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case 0xC:
+            Status = OSNotifyCreateProcessor(NsObject, 0);
+            break;
+
+        case 0xD:
+            DPRINT("OSNotifyCreate: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        default:
+            DPRINT("OSNotifyCreate: received unhandled type %X\n", Type);
+            break;
+    }
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
+
+    DPRINT("OSNotifyCreate: (%p) '%s', Status %X\n", NsObject, ACPIAmliNameObject(NsObject), Status);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
