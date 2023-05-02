@@ -1189,8 +1189,108 @@ ParsePackage(
     _In_ PAMLI_PACKAGE_CONTEXT PackageContext,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+   ULONG Stage;
+   UCHAR Opcode;
+   ULONG idx;
+
+    if (InStatus != STATUS_SUCCESS)
+        Stage = 2;
+    else
+        Stage = (PackageContext->FrameHeader.Flags & 0xF);
+
+    DPRINT("ParsePackage: %X, %X, %X, %X, %X\n", Stage, AmliContext, AmliContext->Op, PackageContext, InStatus);
+
+    giIndent++;
+
+   ASSERT(PackageContext->FrameHeader.Signature == 'FGKP');//SIG_PACKAGE
+
+    if (Stage == 0)
+    {
+        PackageContext->FrameHeader.Flags++;
+    }
+    else if (Stage == 1)
+    {
+        ;
+    }
+    else if (Stage == 2)
+    {
+        PopFrame(AmliContext);
+        goto Exit;
+    }
+    else
+    {
+        goto Exit;
+    }
+
+    while (TRUE)
+    {
+        if (AmliContext->Op < PackageContext->OpEnd)
+        {
+            while ((PackageContext->ElementCount < PackageContext->PackageObject->Elements))
+            {
+                idx = PackageContext->ElementCount;
+                PackageContext->ElementCount++;
+
+                Opcode = *AmliContext->Op;
+
+                if (Opcode == 0x11 || Opcode == 0x12)
+                {
+                    InStatus = ParseOpcode(AmliContext, NULL, &PackageContext->PackageObject->Data[idx]);
+                    if (InStatus != STATUS_SUCCESS)
+                        break;
+
+                    if (PackageContext != AmliContext->LocalHeap.HeapEnd)
+                        goto Next;
+                }
+                else
+                {
+                    InStatus = ParseIntObj(&AmliContext->Op, &PackageContext->PackageObject->Data[idx], TRUE);
+                    if (InStatus == STATUS_ACPI_INVALID_OPCODE)
+                    {
+                        InStatus = ParseString(&AmliContext->Op, &PackageContext->PackageObject->Data[idx], TRUE);
+                        if (InStatus == STATUS_ACPI_INVALID_OPCODE)
+                        {
+                            InStatus = ParseObjName(&AmliContext->Op, &PackageContext->PackageObject->Data[idx], TRUE);
+                            if (InStatus == STATUS_ACPI_INVALID_OPCODE)
+                            {
+                                DPRINT("ParsePackage: invalid opcode %X at %X", *AmliContext->Op, AmliContext->Op);
+                                ASSERT(FALSE);
+                                break;
+                            }
+                        }
+                    }
+
+                    if (InStatus != STATUS_SUCCESS)
+                        break;
+                }
+
+                if (AmliContext->Op >= PackageContext->OpEnd)
+                    goto Next;
+            }
+        }
+
+        if (InStatus == 0x8004)
+            break;
+Next:
+        if (PackageContext != AmliContext->LocalHeap.HeapEnd)
+            break;
+
+        if (InStatus != STATUS_SUCCESS ||
+            AmliContext->Op >= PackageContext->OpEnd ||
+            PackageContext->ElementCount >= PackageContext->PackageObject->Elements)
+        {
+            PackageContext->FrameHeader.Flags++;
+            PopFrame(AmliContext);
+            goto Exit;
+        }
+    }
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("ParsePackage: ret Status %X\n", InStatus);
+    return InStatus;
 }
 
 PAMLI_RS_ACCESS_HANDLER

@@ -493,4 +493,34 @@ PushFrame(
     _Out_ PVOID* OutFrame
 );
 
+VOID
+__cdecl
+PopFrame(
+    _In_ PAMLI_CONTEXT AmliContext
+);
+
+NTSTATUS
+__cdecl
+ParseIntObj(
+    _Inout_ PUCHAR* OutOp,
+    _In_ PAMLI_OBJECT_DATA DataResult,
+    _In_ BOOLEAN ErrOk
+);
+
+NTSTATUS
+__cdecl
+ParseString(
+    _Inout_ PUCHAR* OutOp,
+    _In_ PAMLI_OBJECT_DATA DataResult,
+    _In_ BOOLEAN ErrOk
+);
+
+NTSTATUS
+__cdecl
+ParseObjName(
+    _Inout_ PUCHAR* OutOp,
+    _In_ PAMLI_OBJECT_DATA Data,
+    _In_ BOOLEAN ErrOk
+);
+
 /* EOF */
