@@ -330,6 +330,13 @@ typedef struct _AMLI_AFU_CONTEXT // Access Field Unit
     PAMLI_OBJECT_DATA DataResult;
 } AMLI_AFU_CONTEXT, *PAMLI_AFU_CONTEXT;
 
+typedef struct _AMLI_BUFF_FIELD_OBJECT
+{
+    AMLI_FIELD_DESCRIPTOR FieldDesc;
+    PUCHAR DataBuff;
+    ULONG BuffLen;
+} AMLI_BUFF_FIELD_OBJECT, *PAMLI_BUFF_FIELD_OBJECT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1

@@ -1337,6 +1337,18 @@ Exit:
     return InStatus;
 }
 
+NTSTATUS
+__cdecl
+CreateXField(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_TERM_CONTEXT TermiContext,
+    _In_ PAMLI_OBJECT_DATA DataTarget,
+    _Out_ PAMLI_BUFF_FIELD_OBJECT* OutBufferField)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 PAMLI_RS_ACCESS_HANDLER
 __cdecl
 FindRSAccess(
@@ -1515,8 +1527,26 @@ NTSTATUS __cdecl CreateField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CON
 }
 NTSTATUS __cdecl CreateWordField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_BUFF_FIELD_OBJECT BufferField;
+    NTSTATUS Status;
+
+    DPRINT("CreateWordField: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    Status = CreateXField(AmliContext, TermContext, (TermContext->DataArgs + 2), &BufferField);
+    if (Status == STATUS_SUCCESS)
+    {
+        BufferField->FieldDesc.ByteOffset = (ULONG)TermContext->DataArgs[1].DataValue;
+        BufferField->FieldDesc.StartBitPos = 0;
+        BufferField->FieldDesc.NumBits = 0x10;
+        BufferField->FieldDesc.FieldFlags = 2;
+    }
+
+    giIndent--;
+
+    //DPRINT("CreateWordField: Status %X\n", Status);
+    return Status;
 }
 NTSTATUS __cdecl DerefOf(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
