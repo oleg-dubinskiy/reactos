@@ -1404,6 +1404,15 @@ Exit:
     return Status;
 }
 
+BOOLEAN
+__cdecl
+NeedGlobalLock(
+    _In_ PAMLI_FIELD_UNIT_OBJECT FieldUnitObj)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
 PAMLI_RS_ACCESS_HANDLER
 __cdecl
 FindRSAccess(
@@ -1427,6 +1436,18 @@ FindRSAccess(
 
 NTSTATUS
 __cdecl
+WriteField(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_OBJECT_DATA DataObj,
+    _In_ PAMLI_FIELD_DESCRIPTOR FieldDesc,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 ReadField(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_OBJECT_DATA DataObj,
@@ -1444,8 +1465,100 @@ AccFieldUnit(
     _In_ PAMLI_AFU_CONTEXT AfuContext,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_FIELD_UNIT_OBJECT FieldUnitObj;
+    PAMLI_OBJECT_DATA DataResult;
+    PAMLI_OBJECT_DATA DataObj;
+    ULONG Stage;
+
+    if (InStatus != STATUS_SUCCESS)
+        Stage = 3;
+    else
+        Stage = (AfuContext->FrameHeader.Flags & 0xF);
+
+    DPRINT("AccFieldUnit: %X, %p, %p, %X\n", Stage, AmliContext, AfuContext, InStatus);
+
+    giIndent++;
+
+    ASSERT(AfuContext->FrameHeader.Signature == 'UFCA');//SIG_ACCFIELDUNIT
+
+    FieldUnitObj = AfuContext->DataObj->DataBuff;
+
+    if (Stage == 0)
+    {
+        AfuContext->FrameHeader.Flags++;
+
+        if (FieldUnitObj->NsFieldParent->ObjData.DataType == 0x82)
+        {
+            DPRINT1("AccFieldUnit: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        AfuContext->FrameHeader.Flags++;
+
+        if (NeedGlobalLock(FieldUnitObj))
+        {
+            DPRINT1("AccFieldUnit: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else if (Stage == 1)
+    {
+        AfuContext->FrameHeader.Flags++;
+
+        if (NeedGlobalLock(FieldUnitObj))
+        {
+            DPRINT1("AccFieldUnit: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else if (Stage == 2)
+    {
+        ;
+    }
+    else if (Stage == 3)
+    {
+        goto Exit1;
+    }
+    else
+    {
+        goto Exit;
+    }
+
+    AfuContext->FrameHeader.Flags++;
+
+    if (FieldUnitObj->FieldDesc.FieldFlags & 0x80000000)
+        AfuContext->FrameHeader.Flags |= 0x20000;
+
+    DataResult = AfuContext->DataResult;
+    DataObj = AfuContext->DataObj;
+
+    if (AfuContext->FrameHeader.Flags & 0x10000)
+    {
+        InStatus = ReadField(AmliContext, DataObj, &FieldUnitObj->FieldDesc, DataResult);
+    }
+    else
+    {
+        InStatus = WriteField(AmliContext, DataObj, &FieldUnitObj->FieldDesc, DataResult);
+    }
+
+    if (InStatus == 0x8004 || AfuContext != AmliContext->LocalHeap.HeapEnd)
+        goto Exit;
+
+Exit1:
+
+    if (AfuContext->FrameHeader.Flags & 0x20000)
+    {
+        DPRINT1("AccFieldUnit: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    PopFrame(AmliContext);
+
+Exit:
+
+    giIndent--;
+
+    return InStatus;
 }
 
 NTSTATUS
