@@ -1345,8 +1345,63 @@ CreateXField(
     _In_ PAMLI_OBJECT_DATA DataTarget,
     _Out_ PAMLI_BUFF_FIELD_OBJECT* OutBufferField)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_OBJECT_DATA Data = NULL;
+    NTSTATUS Status;
+
+    DPRINT("CreateXField: %X, %X, %X, %X, %X\n", AmliContext, AmliContext->Op, TermiContext, DataTarget, OutBufferField);
+
+    giIndent++;
+
+    ASSERT(DataTarget != NULL);
+    ASSERT(DataTarget->DataType == 2);//OBJTYPE_STRDATA
+
+    Status = ValidateArgTypes(TermiContext->DataArgs, "BI");
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("CreateXField: Status %X\n", Status);
+        goto Exit;
+    }
+
+    Status = CreateNameSpaceObject(AmliContext->HeapCurrent, 
+                                   DataTarget->DataBuff,
+                                   AmliContext->Scope,
+                                   AmliContext->Owner,
+                                   &TermiContext->NsObject,
+                                   0);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("CreateXField: Status %X\n", Status);
+        goto Exit;
+    }
+
+    Data = &TermiContext->NsObject->ObjData;
+    Data->DataLen = 0x18;
+    Data->DataType = 0xE;
+
+    gdwcBFObjs++;
+
+    Data->DataBuff = HeapAlloc(AmliContext->HeapCurrent, 'DFBH', Data->DataLen);
+    if (!Data->DataBuff)
+    {
+        DPRINT1("CreateXField: failed to allocate BuffField object\n");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    RtlZeroMemory(Data->DataBuff, Data->DataLen);
+
+    *OutBufferField = Data->DataBuff;
+
+    (*OutBufferField)->DataBuff = TermiContext->DataArgs->DataBuff;
+    (*OutBufferField)->BuffLen = TermiContext->DataArgs->DataLen;
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("CreateXField: ret Status %X\n", Status);
+    return Status;
 }
 
 PAMLI_RS_ACCESS_HANDLER
