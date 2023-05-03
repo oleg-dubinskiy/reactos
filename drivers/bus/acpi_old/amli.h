@@ -337,6 +337,12 @@ typedef struct _AMLI_BUFF_FIELD_OBJECT
     ULONG BuffLen;
 } AMLI_BUFF_FIELD_OBJECT, *PAMLI_BUFF_FIELD_OBJECT;
 
+typedef struct _AMLI_INDEX_FIELD_OBJECT
+{
+    PAMLI_NAME_SPACE_OBJECT IndexObj;
+    PAMLI_NAME_SPACE_OBJECT DataObj;
+} AMLI_INDEX_FIELD_OBJECT, *PAMLI_INDEX_FIELD_OBJECT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1

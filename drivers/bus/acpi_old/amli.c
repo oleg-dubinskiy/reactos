@@ -1409,8 +1409,58 @@ __cdecl
 NeedGlobalLock(
     _In_ PAMLI_FIELD_UNIT_OBJECT FieldUnitObj)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PAMLI_FIELD_UNIT_OBJECT ParentFieldUnitObj;
+    PAMLI_INDEX_FIELD_OBJECT IndexFieldObj;
+    BOOLEAN Result = FALSE;
+
+    DPRINT("NeedGlobalLock: %X\n", FieldUnitObj);
+
+    giIndent++;
+
+    if ((FieldUnitObj->FieldDesc.FieldFlags & 0x80000000) ||
+        (FieldUnitObj->FieldDesc.FieldFlags & 0x10))
+    {
+        FieldUnitObj->FieldDesc.FieldFlags |= 0x80000000;
+        Result = TRUE;
+        goto Exit;
+    }
+
+    IndexFieldObj = FieldUnitObj->NsFieldParent->ObjData.DataBuff;
+
+    if (FieldUnitObj->NsFieldParent->ObjData.DataType == 0x82)
+    {
+        DPRINT1("NeedGlobalLock: FIXME\n");
+        ASSERT(FALSE);
+
+        goto Exit;
+    }
+
+    if (FieldUnitObj->NsFieldParent->ObjData.DataType == 0x84)
+    {
+        ParentFieldUnitObj = IndexFieldObj->IndexObj->ObjData.DataBuff;
+
+        if (ParentFieldUnitObj->FieldDesc.FieldFlags & 0x10)
+        {
+            FieldUnitObj->FieldDesc.FieldFlags |= 0x80000000;
+            Result = TRUE;
+        }
+        else
+        {
+            ParentFieldUnitObj = IndexFieldObj->DataObj->ObjData.DataBuff;
+
+            if (ParentFieldUnitObj->FieldDesc.FieldFlags & 0x10)
+            {
+                FieldUnitObj->FieldDesc.FieldFlags |= 0x80000000;
+                Result = TRUE;
+            }
+        }
+    }
+
+Exit:
+
+    giIndent--;
+
+    return Result;
 }
 
 PAMLI_RS_ACCESS_HANDLER
