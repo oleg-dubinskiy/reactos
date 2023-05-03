@@ -1505,8 +1505,55 @@ PushAccFieldObj(
     _In_ PUCHAR Buffer,
     _In_ ULONG ByteCount)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_ACCESS_FIELD_OBJECT Afo;
+    ULONG AccSize;
+    ULONG Shift;
+    ULONG Bits;
+    ULONG Size;
+    NTSTATUS Status;
+
+    DPRINT("PushAccFieldObj: %p, %p, %p, %p, %p, %X\n", AmliContext, AccCallBack, DataObj, FieldDesc, Buffer, ByteCount);
+
+    giIndent++;
+
+    Status = PushFrame(AmliContext, 'OFCA', sizeof(*Afo), AccCallBack, (PVOID *)&Afo);
+    if (Status == STATUS_SUCCESS)
+    {
+        Afo->DataObj = DataObj;
+        Afo->BufferStart = Buffer;
+        Afo->BufferEnd = &Buffer[ByteCount];
+
+        Shift = (FieldDesc->FieldFlags & 0xF);
+
+        if (Shift >= 1 && Shift <= 3)
+            AccSize = (1 << (Shift - 1));
+        else
+            AccSize = 1;
+
+        Afo->AccSize = AccSize;
+        ASSERT((AccSize == sizeof(UCHAR)) || (AccSize == sizeof(USHORT)) || (AccSize == sizeof(ULONG)));
+
+        Afo->AccCount = (FieldDesc->StartBitPos + FieldDesc->NumBits + (8 * Afo->AccSize - 1)) / (8 * Afo->AccSize);
+
+        Bits = (8 * Afo->AccSize);
+
+        if (Bits < 0x20)
+            Size = (1 << Bits);
+        else
+            Size = 0;
+
+        Afo->Mask = (Size - 1);
+
+        Afo->BitPos1 = (8 * Afo->AccSize - FieldDesc->StartBitPos);
+        Afo->BitPos2 = FieldDesc->StartBitPos;
+
+        Afo->FieldDesc = *FieldDesc;
+    }
+
+    giIndent--;
+
+    DPRINT("PushAccFieldObj: Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS
