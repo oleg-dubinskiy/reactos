@@ -1486,6 +1486,31 @@ FindRSAccess(
 
 NTSTATUS
 __cdecl
+ReadFieldObj(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_ACCESS_FIELD_OBJECT Afo,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+PushAccFieldObj(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PVOID AccCallBack,
+    _In_ PAMLI_OBJECT_DATA DataObj,
+    _In_ PAMLI_FIELD_DESCRIPTOR FieldDesc,
+    _In_ PUCHAR Buffer,
+    _In_ ULONG ByteCount)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 WriteField(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_OBJECT_DATA DataObj,
@@ -1504,8 +1529,93 @@ ReadField(
     _In_ PAMLI_FIELD_DESCRIPTOR FieldDesc,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PVOID DataBuff;
+    PVOID TargetBuffer;
+    ULONG Size;
+    NTSTATUS Status;
+
+    DPRINT("ReadField: %X, %X, %X, %X\n", AmliContext, DataObj, FieldDesc, DataResult);
+
+    giIndent++;
+
+    if ((FieldDesc->FieldFlags & 0xF) > 3)
+    {
+        if (DataObj->DataType == 5)
+        {
+            DPRINT1("ReadField: failed to allocate target buffer (size %X)\n", DataResult->DataLen);
+            ASSERT(FALSE);
+        }
+        else
+        {
+            DPRINT1("ReadField: invalid access size for buffer field (FieldFlags %X)\n", FieldDesc->FieldFlags);
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_INVALID_ACCESS_SIZE;
+        }
+
+        goto Exit;
+    }
+
+    if (DataResult->DataType == 0)
+    {
+        if (FieldDesc->FieldFlags & 0x10000 || FieldDesc->NumBits > 0x20)
+        {
+            DataResult->DataType = 3;
+            DataResult->DataLen = (FieldDesc->NumBits + 7) >> 3;
+
+            gdwcBDObjs++;
+
+            DataResult->DataBuff = TargetBuffer = HeapAlloc(gpheapGlobal, 'FUBH', DataResult->DataLen);
+            if (!TargetBuffer)
+            {
+                DPRINT1("ReadField: failed to allocate target buffer (size %X)\n", DataResult->DataLen);
+                ASSERT(FALSE);
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto Exit;
+            }
+
+            RtlZeroMemory(TargetBuffer, DataResult->DataLen);
+
+            DataBuff = DataResult->DataBuff;
+            Size = DataResult->DataLen;
+        }
+        else
+        {
+            DataResult->DataType = 1;
+            DataBuff = &DataResult->DataValue;
+            Size = 4;
+        }
+    }
+    else if (DataResult->DataType == 1)
+    {
+        DataBuff = &DataResult->DataValue;
+        Size = 4;
+    }
+    else if (DataResult->DataType == 2)
+    {
+        DataBuff = DataResult->DataBuff;
+        Size = (DataResult->DataLen - 1);
+    }
+    else if (DataResult->DataType == 3)
+    {
+        DataBuff = DataResult->DataBuff;
+        Size = DataResult->DataLen;
+    }
+    else
+    {
+        DPRINT1("ReadField: invalid target data type (type '%s')\n", GetObjectTypeName(DataResult->DataType));
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_OBJTYPE;
+        goto Exit;
+    }
+
+    Status = PushAccFieldObj(AmliContext, ReadFieldObj, DataObj, FieldDesc, DataBuff, Size);
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT1("ReadField: ret Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS

@@ -343,6 +343,22 @@ typedef struct _AMLI_INDEX_FIELD_OBJECT
     PAMLI_NAME_SPACE_OBJECT DataObj;
 } AMLI_INDEX_FIELD_OBJECT, *PAMLI_INDEX_FIELD_OBJECT;
 
+typedef struct _AMLI_ACCESS_FIELD_OBJECT
+{
+    AMLI_FRAME_HEADER FrameHeader;
+    PAMLI_OBJECT_DATA DataObj;
+    PUCHAR BufferStart;
+    PUCHAR BufferEnd;
+    ULONG AccSize;
+    ULONG AccCount;
+    ULONG Mask;
+    ULONG BitPos1;
+    ULONG BitPos2;
+    ULONG CurrentNum;
+    ULONG Data;
+    AMLI_FIELD_DESCRIPTOR FieldDesc;
+} AMLI_ACCESS_FIELD_OBJECT, *PAMLI_ACCESS_FIELD_OBJECT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1
