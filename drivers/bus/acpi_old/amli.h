@@ -561,4 +561,15 @@ ParseObjName(
     _In_ BOOLEAN ErrOk
 );
 
+NTSTATUS
+__cdecl
+PushAccFieldObj(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PVOID AccCallBack,
+    _In_ PAMLI_OBJECT_DATA DataObj,
+    _In_ PAMLI_FIELD_DESCRIPTOR FieldDesc,
+    _In_ PUCHAR Buffer,
+    _In_ ULONG ByteCount
+);
+
 /* EOF */
