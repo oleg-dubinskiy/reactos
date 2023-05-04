@@ -1470,8 +1470,20 @@ ReadSystemMem(
     _In_ ULONG Size,
     _In_ ULONG Mask)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    UCHAR buffer[4] = {0};
+    ULONG Result;
+
+    giIndent++;
+
+    ASSERT((Size == sizeof(UCHAR)) || (Size == sizeof(USHORT)) || (Size == sizeof(ULONG)));
+
+    RtlCopyMemory(buffer, Addr, Size);
+
+    Result = (*(ULONG *)buffer & Mask);
+
+    giIndent--;
+
+    return Result;
 }
 
 VOID
