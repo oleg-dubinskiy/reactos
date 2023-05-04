@@ -1463,6 +1463,17 @@ Exit:
     return Result;
 }
 
+ULONG
+__cdecl
+ReadSystemMem(
+    _In_ PVOID Addr,
+    _In_ ULONG Size,
+    _In_ ULONG Mask)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
 VOID
 __cdecl
 WriteSystemMem(
@@ -1497,17 +1508,6 @@ FindRSAccess(
 
 NTSTATUS
 __cdecl
-WriteFieldObj(
-    _In_ PAMLI_CONTEXT AmliContext,
-    _In_ PAMLI_ACCESS_FIELD_OBJECT Afo,
-    _In_ NTSTATUS InStatus)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-NTSTATUS
-__cdecl
 AccessFieldData(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_OBJECT_DATA DataObj,
@@ -1517,6 +1517,131 @@ AccessFieldData(
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+WriteFieldObj(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_ACCESS_FIELD_OBJECT Afo,
+    _In_ NTSTATUS InStatus)
+{
+    PAMLI_FIELD_UNIT_OBJECT FieldUnitObj;
+    PAMLI_FIELD_UNIT_OBJECT ParentFieldUnitObj;
+    PAMLI_OBJECT_DATA ParentObjData;
+    PAMLI_INDEX_FIELD_OBJECT IndexFieldObj;
+    ULONG Stage;
+    ULONG data;
+
+    if (InStatus != STATUS_SUCCESS)
+        Stage = 3;
+    else
+        Stage = (Afo->FrameHeader.Flags & 0xF);
+
+    DPRINT("WriteFieldObj: %X, %X, %X, %X\n", Stage, AmliContext, Afo, InStatus);
+
+    giIndent++;
+
+    ASSERT(Afo->FrameHeader.Signature == 'OFCA');//SIG_ACCFIELDOBJ
+
+    if (Stage == 0)
+        goto Stage0;
+    else if (Stage == 1)
+        goto Stage1;
+    else if (Stage == 2)
+        goto Stage2;
+    else if (Stage == 3)
+        PopFrame(AmliContext);
+
+    goto Exit;
+
+Stage0:
+
+    while (TRUE)
+    {
+        if (Afo->CurrentNum >= Afo->AccCount)
+        {
+            Afo->FrameHeader.Flags += 3;
+            PopFrame(AmliContext);
+            goto Exit;
+        }
+
+        Afo->FrameHeader.Flags++;
+
+        if (Afo->DataObj->DataType == 5)
+        {
+            FieldUnitObj = Afo->DataObj->DataBuff;
+            ParentObjData = &FieldUnitObj->NsFieldParent->ObjData;
+
+            if (ParentObjData->DataType == 0x84)
+            {
+                IndexFieldObj = ParentObjData->DataBuff;
+                ParentFieldUnitObj = IndexFieldObj->IndexObj->ObjData.DataBuff;
+
+                InStatus = PushAccFieldObj(AmliContext,
+                                           WriteFieldObj,
+                                           &IndexFieldObj->IndexObj->ObjData,
+                                           &ParentFieldUnitObj->FieldDesc,
+                                           (PUCHAR)&Afo->FieldDesc.ByteOffset,
+                                           4);
+                goto Exit;
+            }
+        }
+
+Stage1:
+
+        Afo->FrameHeader.Flags++;
+
+        data = ReadSystemMem(Afo->BufferStart, Afo->AccSize, Afo->Mask);
+
+        if (Afo->CurrentNum > 0)
+        {
+            Afo->Data = data >> Afo->BitPos1;
+            Afo->BufferStart += Afo->AccSize;
+
+            if (Afo->BufferStart < Afo->BufferEnd)
+                data = ReadSystemMem(Afo->BufferStart, Afo->AccSize, Afo->Mask);
+            else
+                data = 0;
+        }
+        else
+        {
+            Afo->Data = 0;
+        }
+
+        Afo->Data |= (Afo->Mask & (data << Afo->BitPos2));
+
+        InStatus = AccessFieldData(AmliContext, Afo->DataObj, &Afo->FieldDesc, &Afo->Data, FALSE);
+        if (InStatus == 0x8004)
+            break;
+
+        if (Afo != AmliContext->LocalHeap.HeapEnd)
+            break;
+
+Stage2:
+
+        Afo->FieldDesc.ByteOffset += Afo->AccSize;
+        Afo->FieldDesc.StartBitPos = 0;
+        Afo->FieldDesc.NumBits += (Afo->FieldDesc.StartBitPos - 8 * Afo->AccSize);
+
+        Afo->CurrentNum++;
+
+        if (Afo->CurrentNum >= Afo->AccCount)
+        {
+            Afo->FrameHeader.Flags++;
+            PopFrame(AmliContext);
+            goto Exit;
+        }
+
+        Afo->FrameHeader.Flags -= 2;
+    }
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("WriteFieldObj: ret InStatus %X\n", InStatus);
+    return InStatus;
 }
 
 NTSTATUS
