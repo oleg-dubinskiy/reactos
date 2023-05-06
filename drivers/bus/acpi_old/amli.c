@@ -1497,6 +1497,27 @@ WriteSystemMem(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+ULONG
+__cdecl
+ReadSystemIO(
+    _In_ PVOID Addr,
+    _In_ ULONG Size,
+    _In_ int Mask)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+VOID
+__cdecl
+WriteSystemIO(
+    _In_ PVOID Port,
+    _In_ ULONG Size,
+    _In_ ULONG Value)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 PAMLI_RS_ACCESS_HANDLER
 __cdecl
 FindRSAccess(
@@ -1518,6 +1539,14 @@ FindRSAccess(
     return RsAccess;
 }
 
+VOID
+__cdecl
+RestartCtxtCallback(
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 __cdecl
 AccessBaseField(
@@ -1527,8 +1556,134 @@ AccessBaseField(
     _Out_ ULONG* OutData,
     _In_ BOOLEAN IsRead)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PINTERNAL_OP_REGION_HANDLER IntRegionHandler;
+    PAMLI_OP_REGION_OBJECT OpRegionObj;
+    PAMLI_RS_ACCESS_HANDLER RsAccess;
+    PVOID Addr;
+    ULONG DataSize;
+    ULONG DataMask;
+    ULONG NumBits;
+    ULONG AccMask;
+    ULONG AccSize;
+    ULONG Value;
+    ULONG Stage;
+    BOOLEAN IsReadBeforeWrite;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("AccessBaseField: %X, %X, %X, %X, %X\n", AmliContext, BaseObj, FieldDesc, OutData, IsRead);
+
+    giIndent++;
+
+    ASSERT(BaseObj->ObjData.DataType == 0xA);//OBJTYPE_OPREGION
+
+    Stage = (FieldDesc->FieldFlags & 0xF);
+
+    if (Stage >= 1 || Stage <= 3)
+        AccSize = (1 << (Stage - 1));
+    else
+        AccSize = 1;
+
+    NumBits = FieldDesc->NumBits;
+
+    DataSize = ((NumBits < 0x20) ?  (1 << NumBits) : 0);
+    DataMask = ((DataSize - 1) << FieldDesc->StartBitPos);
+    AccMask = ((8 * AccSize) < 0x20 ? ((1 << (8 * AccSize)) + 1) : 0xFFFFFFFF);
+
+    if ((FieldDesc->FieldFlags & 0x60) || !(~DataMask & AccMask))
+        IsReadBeforeWrite = FALSE;
+    else
+        IsReadBeforeWrite = TRUE;
+
+    *OutData &= DataMask;
+
+    if (!IsRead && (FieldDesc->FieldFlags & 0x60) == 0x20)
+        *OutData |= ~DataMask;
+
+    Addr = Add2Ptr(BaseObj->ObjData.DataBuff, FieldDesc->ByteOffset);
+    OpRegionObj = BaseObj->ObjData.DataBuff;
+
+    if (OpRegionObj->RegionSpace == 0)
+    {
+        if (IsRead)
+        {
+            DPRINT1("AccessBaseField: FIXME\n");
+            ASSERT(FALSE);
+            goto Exit;
+        }
+
+        if (IsReadBeforeWrite)
+        {
+            DPRINT1("AccessBaseField: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        WriteSystemMem(Addr, AccSize, *OutData, AccMask);
+
+        goto Exit;
+    }
+
+    if (OpRegionObj->RegionSpace == 1)
+    {
+        if (IsRead)
+        {
+            Value = ReadSystemIO(Addr, AccSize, DataMask);
+            *OutData = Value;
+        }
+        else
+        {
+            if (IsReadBeforeWrite)
+                *OutData |= ReadSystemIO(Addr, AccSize, ~DataMask);
+
+            WriteSystemIO(Addr, AccSize, *OutData);
+        }
+        goto Exit;
+    }
+
+    RsAccess = FindRSAccess(OpRegionObj->RegionSpace);
+
+    if (!RsAccess || !RsAccess->CookAccessHandler)
+    {
+        DPRINT1("AccessBaseField: AccessBaseField: no handler for RegionSpace %x\n", OpRegionObj->RegionSpace);
+        Status = STATUS_ACPI_INVALID_REGION;
+        goto Exit;
+    }
+
+    if (IsRead)
+    {
+        ASSERT(!(AmliContext->Flags & 8));//CTXTF_READY
+
+        IntRegionHandler = RsAccess->CookAccessHandler;
+
+        Status = IntRegionHandler(0,
+                                  BaseObj,
+                                  (ULONG)Addr,
+                                  AccSize,
+                                  OutData,
+                                  RsAccess->CookAccessParam,
+                                  RestartCtxtCallback,
+                                  &AmliContext->ContextData);
+
+        if (Status == STATUS_PENDING)
+        {
+            Status = 0x8004;
+        }
+        else if (Status)
+        {
+            DPRINT1("AccessBaseField: RegionSpace %X read handler returned error %X\n", OpRegionObj->RegionSpace, Status);
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_RS_ACCESS;
+        }
+    }
+    else
+    {
+        ASSERT(FALSE);
+    }
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS

@@ -111,6 +111,14 @@ typedef struct _AMLI_HEAP
     AMLI_HEAP_HEADER Heap;
 } AMLI_HEAP, *PAMLI_HEAP;
 
+typedef struct _AMLI_CONTEXT_DATA
+{
+    PVOID Data1;
+    PVOID Data2;
+    PVOID Data3;
+    PVOID Data4;
+} AMLI_CONTEXT_DATA, *PAMLI_CONTEXT_DATA;
+
 typedef struct _AMLI_CONTEXT
 {
     ULONG Signature;
@@ -134,7 +142,7 @@ typedef struct _AMLI_CONTEXT
     KTIMER Timer;
     KDPC Dpc;
     PAMLI_HEAP HeapCurrent;
-    //AMLI_CONTEXT_DATA ContextData;
+    AMLI_CONTEXT_DATA ContextData;
     AMLI_HEAP LocalHeap;
 } AMLI_CONTEXT, *PAMLI_CONTEXT;
 
@@ -302,6 +310,8 @@ typedef struct _AMLI_REGION_HANDLER
     ULONG EventType;
     ULONG EventData;
 } AMLI_REGION_HANDLER, *PAMLI_REGION_HANDLER;
+
+typedef NTSTATUS (__cdecl* PINTERNAL_OP_REGION_HANDLER)(ULONG AccType, PAMLI_NAME_SPACE_OBJECT BaseObj, ULONG Offset, ULONG Length, PVOID Buffer, PAMLI_REGION_HANDLER Handler, PVOID Callback, PVOID Context);
 
 typedef struct _AMLI_OBJECT_TYPE_NAME
 {
