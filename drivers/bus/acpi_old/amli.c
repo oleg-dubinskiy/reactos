@@ -1520,6 +1520,40 @@ FindRSAccess(
 
 NTSTATUS
 __cdecl
+AccessBaseField(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_NAME_SPACE_OBJECT BaseObj,
+    _In_ PAMLI_FIELD_DESCRIPTOR FieldDesc,
+    _Out_ ULONG* OutData,
+    _In_ BOOLEAN IsRead)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+ReadBuffField(
+    _In_ PAMLI_BUFF_FIELD_OBJECT BufferFieldObj,
+    _In_ PAMLI_FIELD_DESCRIPTOR FieldDesc,
+    _Out_ ULONG* OutData)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+GetFieldUnitRegionObj(
+    _In_ PAMLI_FIELD_UNIT_OBJECT FieldUnitObj,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* RegionObj)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 AccessFieldData(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_OBJECT_DATA DataObj,
@@ -1527,8 +1561,96 @@ AccessFieldData(
     _Out_ ULONG* OutData,
     _In_ BOOLEAN IsRead)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_FIELD_UNIT_OBJECT FieldUnitObj;
+    PAMLI_NAME_SPACE_OBJECT FieldUnitRegionObj;
+    PAMLI_INDEX_FIELD_OBJECT IndexFieldObj;
+    PAMLI_OBJECT_DATA ParentObjData;
+    PAMLI_OBJECT_DATA IndexObjData;
+    ULONG PreserveMaskData;
+    ULONG PreserveMask;
+    ULONG AccSize;
+    ULONG AccMask;
+    ULONG Stage;
+    NTSTATUS Status;
+
+    DPRINT("AccessFieldData: %p, %p, %p, %p, %X\n", AmliContext, DataObj, FieldDesc, OutData, IsRead);
+
+    giIndent++;
+
+    if (DataObj->DataType == 0xE)
+    {
+        if (IsRead)
+        {
+            Status = ReadBuffField(DataObj->DataBuff, FieldDesc, OutData);
+        }
+        else
+        {
+            DPRINT1("AccessFieldData: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        goto Exit;
+    }
+
+    FieldUnitObj = DataObj->DataBuff;
+    PreserveMaskData = 0;
+    DataObj = NULL;
+
+    if (FieldUnitObj->NsFieldParent->ObjData.DataType != 0x84)
+    {
+        Status = GetFieldUnitRegionObj(FieldUnitObj, &FieldUnitRegionObj);
+        if (Status == STATUS_SUCCESS && FieldUnitRegionObj)
+        {
+            Status = AccessBaseField(AmliContext, FieldUnitRegionObj, FieldDesc, OutData, IsRead);
+        }
+
+        goto Exit;
+    }
+
+    ParentObjData = &FieldUnitObj->NsFieldParent->ObjData;
+    IndexFieldObj = ParentObjData->DataBuff;
+
+    if (IsRead)
+    {
+        IndexObjData = &IndexFieldObj->DataObj->ObjData;
+
+        Status = PushAccFieldObj(AmliContext, ReadFieldObj, IndexObjData, IndexObjData->DataBuff, (PUCHAR)OutData, 4);
+        goto Exit;
+    }
+
+    if (FieldDesc->NumBits < 0x20)
+        PreserveMaskData = (1 << FieldDesc->NumBits);
+
+    Stage = (FieldDesc->FieldFlags & 0xF);
+
+    PreserveMask = ~((PreserveMaskData - 1) << FieldDesc->StartBitPos);
+
+    if (Stage >= 1 && Stage <= 3)
+        AccSize = (1 << (Stage - 1));
+    else
+        AccSize = 1;
+
+    if ((8 * AccSize) < 0x20)
+        AccMask = ((1 << (8 * AccSize)) - 1);
+    else
+        AccMask = 0xFFFFFFFF;
+
+    if (!(FieldDesc->FieldFlags & 0x60) && (AccMask & PreserveMask))
+    {
+        DPRINT1("AccessFieldData: FIXME\n");
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    DPRINT1("AccessFieldData: FIXME\n");
+    ASSERT(FALSE);
+
+Exit:
+
+    giIndent--;
+
+    //DPRINT("AccessFieldData: ret Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS

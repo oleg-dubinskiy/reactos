@@ -572,4 +572,12 @@ PushAccFieldObj(
     _In_ ULONG ByteCount
 );
 
+NTSTATUS
+__cdecl
+ReadFieldObj(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_ACCESS_FIELD_OBJECT Afo,
+    _In_ NTSTATUS InStatus
+);
+
 /* EOF */
