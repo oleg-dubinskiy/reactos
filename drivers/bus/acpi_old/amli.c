@@ -1515,7 +1515,31 @@ WriteSystemIO(
     _In_ ULONG Size,
     _In_ ULONG Value)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    giIndent++;
+
+    ASSERT((Size == sizeof(UCHAR)) || (Size == sizeof(USHORT)) || (Size == sizeof(ULONG)));
+
+    //FIXME
+    //if (CheckSystemIOAddressValidity(0, Port, Size, &Value))
+    if (TRUE)
+    {
+        switch (Size)
+        {
+            case 1:
+                WRITE_PORT_UCHAR((PUCHAR)Port, (UCHAR)Value);
+                break;
+
+            case 2:
+                WRITE_PORT_USHORT((PUSHORT)Port, (USHORT)Value);
+                break;
+
+            case 4:
+                WRITE_PORT_ULONG((PULONG)Port, Value);
+                break;
+        }
+    }
+
+    giIndent--;
 }
 
 PAMLI_RS_ACCESS_HANDLER
