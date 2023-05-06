@@ -1546,11 +1546,59 @@ NTSTATUS
 __cdecl
 GetFieldUnitRegionObj(
     _In_ PAMLI_FIELD_UNIT_OBJECT FieldUnitObj,
-    _Out_ PAMLI_NAME_SPACE_OBJECT* RegionObj)
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutRegionObj)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT NsParent;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PAMLI_INDEX_FIELD_OBJECT IndexFieldObj;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("GetFieldUnitRegionObj: %X, %X\n", FieldUnitObj, OutRegionObj);
+
+    giIndent++;
+
+    NsParent = FieldUnitObj->NsFieldParent;
+
+    if (NsParent->ObjData.DataType == 0x82) // BankField
+    {
+        DPRINT1("GetFieldUnitRegionObj: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (NsParent->ObjData.DataType == 0x83) // Field
+    {
+        *OutRegionObj = *(PAMLI_NAME_SPACE_OBJECT *)NsParent->ObjData.DataBuff;
+    }
+    else if (NsParent->ObjData.DataType == 0x84) // IndexField
+    {
+        IndexFieldObj = NsParent->ObjData.DataBuff;
+        NsObject = IndexFieldObj->DataObj;
+
+        ASSERT(NsObject->ObjData.DataType == 5);//OBJTYPE_FIELDUNIT
+
+        Status = GetFieldUnitRegionObj(NsObject->ObjData.DataBuff, OutRegionObj);
+    }
+    else
+    {
+        DPRINT1("GetFieldUnitRegionObj: unknown field unit parent object type %X\n", (*OutRegionObj)->ObjData.DataType);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_ASSERT_FAILED;
+    }
+
+    if (*OutRegionObj && (*OutRegionObj)->ObjData.DataType != 0xA)
+    {
+        DPRINT1("GetFieldUnitRegionObj: base object of field unit is not OperationRegion (BaseObj '%s', Type %X)\n",
+                GetObjectPath(*OutRegionObj), (*OutRegionObj)->ObjData.DataType);
+
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_ASSERT_FAILED;
+    }
+
+    giIndent--;
+
+    return Status;
 }
+    PAMLI_NAME_SPACE_OBJECT IndexObj;
+    PAMLI_NAME_SPACE_OBJECT DataObj;
 
 NTSTATUS
 __cdecl
