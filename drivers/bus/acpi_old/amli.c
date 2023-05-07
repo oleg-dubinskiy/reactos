@@ -1502,10 +1502,46 @@ __cdecl
 ReadSystemIO(
     _In_ PVOID Addr,
     _In_ ULONG Size,
-    _In_ int Mask)
+    _In_ ULONG Mask)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return 0;
+    ULONG Value;
+    ULONG OutValue = 0;
+
+    DPRINT("ReadSystemIO: %X, %X, %X\n", Addr, Size, Mask);
+
+    giIndent++;
+
+    ASSERT((Size == sizeof(UCHAR)) || (Size == sizeof(USHORT)) || (Size == sizeof(ULONG)));
+
+    //FIXME
+    //if (CheckSystemIOAddressValidity(1, Addr, Size, &OutValue))
+    if (TRUE)
+    {
+        switch (Size)
+        {
+            case 1:
+                Value = READ_PORT_UCHAR((PUCHAR)Addr);
+                break;
+
+            case 2:
+                Value = READ_PORT_USHORT((PUSHORT)Addr);
+                break;
+
+            case 4:
+                Value = READ_PORT_ULONG((PULONG)Addr);
+                break;
+        }
+    }
+    else
+    {
+        Value = OutValue;
+    }
+
+    giIndent--;
+
+    OutValue = (Value & Mask);
+
+    return OutValue;
 }
 
 VOID
