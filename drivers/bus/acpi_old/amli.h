@@ -590,4 +590,13 @@ ReadFieldObj(
     _In_ NTSTATUS InStatus
 );
 
+NTSTATUS
+__cdecl
+ParseAndGetNameSpaceObject(
+    _Out_ PUCHAR* OutOp,
+    _In_ PAMLI_NAME_SPACE_OBJECT ScopeObject,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutNsObject,
+    _In_ BOOLEAN AbsentOk
+);
+
 /* EOF */

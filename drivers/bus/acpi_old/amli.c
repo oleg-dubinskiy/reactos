@@ -5040,8 +5040,115 @@ ParseSuperName(
     _In_ PAMLI_OBJECT_DATA Data,
     _In_ BOOLEAN AbsentOk)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT NsObject = NULL;
+    PAMLI_TERM OpcodeTerm;
+    PUCHAR* PointToOp;
+    PUCHAR Op;
+    LONG nx;
+    UCHAR Opcode;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ParseSuperName: %x, %x, %x, %X\n", AmliContext, AmliContext->Op, Data, AbsentOk);
+
+    giIndent++;
+
+    ASSERT(Data != NULL);
+
+    PointToOp = &AmliContext->Op;
+    Op = AmliContext->Op;
+    Opcode = *Op;
+
+    if (Opcode == 0)
+    {
+        ASSERT(Data->DataType == 0);//OBJTYPE_UNKNOWN
+        (*PointToOp)++;
+        goto Exit;
+    }
+
+    if (Opcode == 0x5B && *(Op + 1) == 0x31)
+    {
+        *PointToOp = (Op + 2);
+        Data->DataType = 0x10;
+        goto Exit;
+    }
+
+    OpcodeTerm = OpcodeTable[Opcode];
+    if (!OpcodeTerm)
+    {
+        DPRINT1("ParseSuperName: invalid SuperName %X at %X\n", **PointToOp, *PointToOp);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_SUPERNAME;
+        goto Exit;
+    }
+
+    if (OpcodeTerm->Flags2 & 0x20)
+    {
+        Status = ParseAndGetNameSpaceObject(&AmliContext->Op, AmliContext->Scope, &NsObject, AbsentOk);
+        if (Status == STATUS_SUCCESS)
+        {
+            if (!NsObject)
+            {
+                ASSERT(Data->DataType == 0);//OBJTYPE_UNKNOWN
+            }
+            else
+            {
+                Data->DataType = 0x80;
+                Data->Alias = GetBaseObject(NsObject);
+            }
+        }
+
+        goto Exit;
+    }
+
+    if (OpcodeTerm->Flags2 & 2)
+    {
+        *PointToOp = (Op + 1);
+
+        nx = (Opcode - 0x68);
+
+        if (nx >= AmliContext->Call->NumberOfArgs)
+        {
+            DPRINT1("ParseSuperName: Arg %X does not exist\n", nx);
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_INVALID_ARGUMENT;
+        }
+        else
+        {
+            Data->DataType = 0x81;
+            Data->DataValue = GetBaseData(&AmliContext->Call->DataArgs[nx]);
+        }
+
+        goto Exit;
+    }
+
+    if (OpcodeTerm->Flags2 & 4)
+    {
+        nx = (Opcode - 0x60);
+
+        *PointToOp = (Op + 1);
+
+        Data->DataType = 0x81;
+        Data->DataAlias = &AmliContext->Call->Locals[nx];
+
+        goto Exit;
+    }
+
+    if (OpcodeTerm->Flags2 & 0x80)
+    {
+        Status = PushTerm(AmliContext, Op, NULL, OpcodeTable[Opcode], Data);
+        (*PointToOp)++;
+        goto Exit;
+    }
+
+    DPRINT1("ParseSuperName: invalid SuperName %X at %X\n", **PointToOp, *PointToOp);
+    ASSERT(FALSE);
+    Status = STATUS_ACPI_INVALID_SUPERNAME;
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
