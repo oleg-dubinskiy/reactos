@@ -599,4 +599,11 @@ ParseAndGetNameSpaceObject(
     _In_ BOOLEAN AbsentOk
 );
 
+VOID
+__cdecl
+FreeDataBuffs(
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ LONG DataCount
+);
+
 /* EOF */

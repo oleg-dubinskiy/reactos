@@ -1404,6 +1404,16 @@ Exit:
     return Status;
 }
 
+BOOLEAN
+__cdecl
+MatchObjType(
+    _In_ ULONG Type,
+    _In_ ULONG Expected)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
 NTSTATUS
 __cdecl
 ValidateTarget(
@@ -1411,8 +1421,58 @@ ValidateTarget(
     _In_ ULONG ExpectedType,
     _Out_ PAMLI_OBJECT_DATA* OutData)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ValidateTarget: %X, '%s'\n", DataTarget, GetObjectTypeName(ExpectedType));
+
+    giIndent++;
+
+    ASSERT(DataTarget != NULL);
+
+    if (DataTarget->DataType == 0x80)
+    {
+        *OutData = Add2Ptr(DataTarget->DataValue, 0x1C);
+    }
+    else if (DataTarget->DataType == 0x81)
+    {
+        *OutData = DataTarget->DataAlias;
+    }
+    else if (DataTarget->DataType == 0 ||
+             DataTarget->DataType == 0xE ||
+             DataTarget->DataType == 0x10)
+    {
+        *OutData = DataTarget;
+    }
+    else
+    {
+        DPRINT("ValidateTarget: target is not a supername (Type '%s')\n", GetObjectTypeName(DataTarget->DataType));
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_TARGETTYPE;
+        goto Exit;
+    }
+
+    if (DataTarget->DataType == 0x80)
+    {
+        if (!MatchObjType((*OutData)->DataType, ExpectedType))
+        {
+            DPRINT("ValidateTarget: unexpected target type '%s' (Expected '%s')\n",
+                   GetObjectTypeName((*OutData)->DataType), GetObjectTypeName(ExpectedType));
+
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_INVALID_TARGETTYPE;
+        }
+
+        goto Exit;
+    }
+
+    if (MatchObjType((*OutData)->DataType, 0x85))
+        FreeDataBuffs(*OutData, 1);
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 BOOLEAN
