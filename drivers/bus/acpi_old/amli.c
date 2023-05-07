@@ -1494,7 +1494,30 @@ WriteSystemMem(
     _In_ ULONG Data,
     _In_ ULONG Mask)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ULONG mask[5];
+    ULONG buff = 0;
+    BOOLEAN IsNotBuffering = FALSE;
+
+    mask[0] = 0;
+    mask[1] = 0xFF;
+    mask[2] = 0xFFFF;
+    mask[3] = 0;
+    mask[4] = 0xFFFFFFFF;
+
+    if (Mask == mask[Size])
+        IsNotBuffering = TRUE;
+
+    giIndent++;
+
+    ASSERT((Size == sizeof(UCHAR)) || (Size == sizeof(USHORT)) || (Size == sizeof(ULONG)));
+
+    if (!IsNotBuffering)
+        RtlCopyMemory(&buff, Addr, Size);
+
+    buff = (buff & ~Mask) | Data;
+    RtlCopyMemory(Addr, &buff, Size);
+
+    giIndent--;
 }
 
 ULONG
