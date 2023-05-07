@@ -1404,6 +1404,17 @@ Exit:
     return Status;
 }
 
+NTSTATUS
+__cdecl
+ValidateTarget(
+    _In_ PAMLI_OBJECT_DATA DataTarget,
+    _In_ ULONG ExpectedType,
+    _Out_ PAMLI_OBJECT_DATA* OutData)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 BOOLEAN
 __cdecl
 NeedGlobalLock(
@@ -2479,6 +2490,17 @@ DupObjData(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+__cdecl
+WriteObject(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_OBJECT_DATA DataObj,
+    _In_ PAMLI_OBJECT_DATA DataSrc)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* TERM HANDLERS ************************************************************/
 
 #if 1
@@ -2688,8 +2710,105 @@ NTSTATUS __cdecl ExprOp1(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT
 }
 NTSTATUS __cdecl ExprOp2(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_OBJECT_DATA DataObj;
+    ULONG Opcode;
+    NTSTATUS Status;
+
+    DPRINT("ExprOp2: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    Status = ValidateArgTypes(TermContext->DataArgs, "II");
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("ExprOp2: Status %X\n", Status);
+        goto Exit;
+    }
+
+    Status = ValidateTarget((TermContext->DataArgs + 2), 0x87, &DataObj);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("ExprOp2: Status %X\n", Status);
+        goto Exit;
+    }
+
+    TermContext->DataResult->DataType = 1;
+    Opcode = TermContext->AmliTerm->Opcode;
+
+    if (Opcode == 0x72)
+    {
+        giIndent++;
+        TermContext->DataResult->DataValue = (PVOID)((ULONG)TermContext->DataArgs[0].DataValue + (ULONG)TermContext->DataArgs[1].DataValue);
+        giIndent--;
+    }
+    else if (Opcode == 0x74)
+    {
+        giIndent++;
+        TermContext->DataResult->DataValue = (PVOID)((ULONG)TermContext->DataArgs[0].DataValue - (ULONG)TermContext->DataArgs[1].DataValue);
+        giIndent--;
+    }
+    else if (Opcode == 0x77)
+    {
+        giIndent++;
+        TermContext->DataResult->DataValue = (PVOID)((ULONG)TermContext->DataArgs[0].DataValue * (ULONG)TermContext->DataArgs[1].DataValue);
+        giIndent--;
+    }
+    else if (Opcode == 0x79)
+    {
+        giIndent++;
+        if ((ULONG)TermContext->DataArgs[1].DataValue < 0x20)
+           TermContext->DataResult->DataValue = (PVOID)((ULONG)TermContext->DataArgs[0].DataValue << (CHAR)(ULONG)TermContext->DataArgs[1].DataValue);
+        else
+           TermContext->DataResult->DataValue = 0;
+        giIndent--;
+    }
+    else if (Opcode == 0x7A)
+    {
+        giIndent++;
+        if ((ULONG)TermContext->DataArgs[1].DataValue < 0x20)
+           TermContext->DataResult->DataValue = (PVOID)((ULONG)TermContext->DataArgs[0].DataValue >> (CHAR)(ULONG)TermContext->DataArgs[1].DataValue);
+        else
+           TermContext->DataResult->DataValue = 0;
+        giIndent--;
+    }
+    else if (Opcode == 0x7B)
+    {
+        giIndent++;
+        TermContext->DataResult->DataValue = (PVOID)((ULONG)TermContext->DataArgs[0].DataValue & (ULONG)TermContext->DataArgs[1].DataValue);
+        giIndent--;
+    }
+    else if (Opcode == 0x7C)
+    {
+        giIndent++;
+        TermContext->DataResult->DataValue = (PVOID)~((ULONG)TermContext->DataArgs[0].DataValue & (ULONG)TermContext->DataArgs[1].DataValue);
+        giIndent--;
+    }
+    else if (Opcode == 0x7D)
+    {
+        giIndent++;
+        TermContext->DataResult->DataValue = (PVOID)((ULONG)TermContext->DataArgs[0].DataValue | (ULONG)TermContext->DataArgs[1].DataValue);
+        giIndent--;
+    }
+    else if (Opcode == 0x7E)
+    {
+        giIndent++;
+        TermContext->DataResult->DataValue = (PVOID)~((ULONG)TermContext->DataArgs[0].DataValue | (ULONG)TermContext->DataArgs[1].DataValue);
+        giIndent--;
+    }
+    else if (Opcode == 0x7F)
+    {
+        giIndent++;
+        TermContext->DataResult->DataValue = (PVOID)((ULONG)TermContext->DataArgs[0].DataValue ^ (ULONG)TermContext->DataArgs[1].DataValue);
+        giIndent--;
+    }
+
+    Status = WriteObject(AmliContext, DataObj, TermContext->DataResult);
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl Fatal(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
