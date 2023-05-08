@@ -2582,13 +2582,87 @@ DupObjData(
 
 NTSTATUS
 __cdecl
+CopyObjBuffer(
+    _In_ PVOID BufferDest,
+    _In_ ULONG DataLen,
+    _In_ PAMLI_OBJECT_DATA DataSrc)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 WriteObject(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_OBJECT_DATA DataObj,
     _In_ PAMLI_OBJECT_DATA DataSrc)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_OBJECT_DATA BaseData;
+    PAMLI_AFU_CONTEXT AccessFieldUnit;
+    ULONG BaseDataType;
+    ULONG DataLen;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("WriteObject: %X, %X, %X\n", AmliContext, DataObj, DataSrc);
+
+    giIndent++;
+
+    BaseData = GetBaseData(DataObj);
+    BaseDataType = BaseData->DataType;
+
+    if (BaseDataType == 0)
+    {
+        Status = DupObjData(gpheapGlobal, BaseData, DataSrc);
+        goto Exit;
+    }
+
+    if (BaseDataType == 1)
+    {
+        Status = CopyObjBuffer(&BaseData->DataValue, 4, DataSrc);
+        goto Exit;
+    }
+    if (BaseDataType == 2)
+    {
+        DataLen = (BaseData->DataLen - 1);
+        Status = CopyObjBuffer(BaseData->DataBuff, DataLen, DataSrc);
+        goto Exit;
+    }
+    if (BaseDataType == 3)
+    {
+        DataLen = BaseData->DataLen;
+        Status = CopyObjBuffer(BaseData->DataBuff, DataLen, DataSrc);
+        goto Exit;
+    }
+    if (BaseDataType == 5)
+    {
+        Status = PushFrame(AmliContext, 'UFCA', sizeof(*AccessFieldUnit), AccFieldUnit, (PVOID *)&AccessFieldUnit);
+        if (Status == STATUS_SUCCESS)
+        {
+            AccessFieldUnit->DataObj = BaseData;
+            AccessFieldUnit->DataResult = DataSrc;
+        }
+    }
+    else if (BaseDataType == 0x0E)
+    {
+        Status = WriteField(AmliContext, BaseData, BaseData->DataBuff, DataSrc);
+    }
+    else if (BaseDataType == 0x10)
+    {
+        DPRINT("WriteObject: BaseDataType == 0x10\n"); // for AMLI debugger
+    }
+    else
+    {
+        Status = STATUS_ACPI_INVALID_OBJTYPE;
+        DPRINT("WriteObject: unexpected target object type '%s'\n", GetObjectTypeName(BaseData->DataType));
+        ASSERT(FALSE);
+    }
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 /* TERM HANDLERS ************************************************************/
