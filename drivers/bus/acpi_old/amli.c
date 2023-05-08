@@ -1410,8 +1410,38 @@ MatchObjType(
     _In_ ULONG Type,
     _In_ ULONG Expected)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    BOOLEAN Result = FALSE;
+
+    DPRINT("MatchObjType: '%s', '%s'\n", GetObjectTypeName(Type), GetObjectTypeName(Expected));
+
+    giIndent++;
+
+    if ((Type == 0xE && Expected == 1) || Expected == 0 || Type == 0 || Type == Expected)
+    {
+        Result = TRUE;
+        goto Exit;
+    }
+
+    if (Type == 1 || Type == 2 || Type == 3 || Type == 4)
+    {
+        Type = 0x85;
+    }
+    else if (Type == 5 || Type == 0xE)
+    {
+        Type = 0x86;
+    }
+
+    if (Type == Expected)
+        Result = TRUE;
+
+    if (Expected == 0x87 && (Type == 0x85 || Type == 0x86))
+        Result = TRUE;
+
+Exit:
+
+    giIndent--;
+
+    return Result;
 }
 
 NTSTATUS
