@@ -1224,6 +1224,16 @@ ValidateArgTypes(
     return Status;
 }
 
+PVOID
+__cdecl
+NewObjData(
+    _In_ PAMLI_HEAP Heap,
+    _In_ PAMLI_OBJECT_DATA Src)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
 /* CALLBACKS TERM HANDLERS **************************************************/
 
 NTSTATUS
@@ -2576,8 +2586,78 @@ DupObjData(
     _In_ PAMLI_OBJECT_DATA Dest,
     _In_ PAMLI_OBJECT_DATA Src)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_PACKAGE_OBJECT NewData;
+    PAMLI_PACKAGE_OBJECT DataBuff;
+    PAMLI_OBJECT_DATA Data;
+    ULONG HeaderSize;
+    ULONG ix;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("DupObjData: %X, %X, %X\n", Heap, Dest, Src);
+
+    giIndent++;
+
+    ASSERT(Dest != NULL);
+    ASSERT(Src != NULL);
+
+    if (Dest == Src)
+        goto Exit;
+
+    RtlCopyMemory(Dest, Src, sizeof(*Dest));
+
+    if (!Src->DataBuff)
+        goto Exit;
+
+    Dest->DataBuff = NewData = NewObjData(Heap, Src);
+    if (!NewData)
+    {
+        DPRINT1("DupObjData: failed to allocate destination buffer\n");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        Dest->Flags &= ~1;
+        Dest->RefCount = 0;
+        goto Exit;
+    }
+
+    DataBuff = Src->DataBuff;
+
+    if (Src->DataType != 4)
+    {
+        RtlCopyMemory(NewData, DataBuff, Src->DataLen);
+
+        Dest->Flags &= ~1;
+        Dest->RefCount = 0;
+        goto Exit;
+    }
+
+    ix = 0;
+    NewData->Elements = DataBuff->Elements;
+
+    if (DataBuff->Elements > 0)
+    {
+      HeaderSize = ((ULONG_PTR)DataBuff - (ULONG_PTR)NewData);
+      Data = NewData->Data;
+
+      do
+      {
+          Status = DupObjData(Heap, Data, Add2Ptr(Data, HeaderSize));
+          if (Status)
+              break;
+
+          ix++;
+          Data++;
+      }
+      while (ix < DataBuff->Elements);
+
+      Dest->Flags &= ~1;
+      Dest->RefCount = 0;
+  }
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
