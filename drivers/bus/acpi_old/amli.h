@@ -606,4 +606,11 @@ FreeDataBuffs(
     _In_ LONG DataCount
 );
 
+ULONG
+__cdecl
+ParsePackageLen(
+    _Inout_ PUCHAR* OutOp,
+    _Out_ PUCHAR* OutOpEnd
+);
+
 /* EOF */

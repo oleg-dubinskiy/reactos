@@ -3126,8 +3126,82 @@ Exit:
 }
 NTSTATUS __cdecl IfElse(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PUCHAR OpEnd;
+    PUCHAR Op;
+    PUCHAR OpcodeRet;
+    NTSTATUS Status;
+
+    DPRINT("IfElse: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    ASSERT(*TermContext->Op == 0xA0);//OP_IF
+    ASSERT(TermContext->ScopeEnd != NULL);
+
+    if (*TermContext->Op != 0xA0)
+    {
+        DPRINT1("IfElse: Else statement found without matching If\n");
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_OPCODE;
+        goto Exit;
+    }
+
+    Status = ValidateArgTypes(TermContext->DataArgs, "I");
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("IfElse: Status %X\n", Status);
+        goto Exit;
+    }
+
+    if (TermContext->DataArgs->DataValue)
+    {
+        OpEnd = TermContext->OpEnd;
+
+        if (OpEnd >= TermContext->ScopeEnd || *OpEnd != 0xA1)
+        {
+            Status = STATUS_SUCCESS;
+        }
+        else
+        {
+            Op = (OpEnd + 1);
+            ParsePackageLen(&Op, &OpcodeRet);
+        }
+
+        Status = PushScope(AmliContext,
+                           AmliContext->Op,
+                           TermContext->OpEnd,
+                           OpcodeRet,
+                           AmliContext->Scope,
+                           AmliContext->Owner,
+                           AmliContext->HeapCurrent,
+                           TermContext->DataResult);
+        goto Exit;
+    }
+
+    AmliContext->Op = TermContext->OpEnd;
+
+    if (AmliContext->Op < TermContext->ScopeEnd && *AmliContext->Op == 0xA1)
+    {
+        AmliContext->Op++;
+
+        ParsePackageLen(&AmliContext->Op, &TermContext->OpEnd);
+
+        Status = PushScope(AmliContext,
+                           AmliContext->Op,
+                           TermContext->OpEnd,
+                           NULL,
+                           AmliContext->Scope,
+                           AmliContext->Owner,
+                           AmliContext->HeapCurrent,
+                           TermContext->DataResult);
+        goto Exit;
+    }
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl IncDec(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
