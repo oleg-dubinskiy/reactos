@@ -22,6 +22,8 @@
 
 /* GLOBALS *******************************************************************/
 
+PCHAR ACPIFixedButtonId = "ACPI\\FixedButton";
+
 PACPI_READ_REGISTER AcpiReadRegisterRoutine = DefPortReadAcpiRegister;
 PACPI_WRITE_REGISTER AcpiWriteRegisterRoutine = DefPortWriteAcpiRegister;
 
@@ -62,6 +64,7 @@ LIST_ENTRY AcpiBuildQueueList;
 LONG AcpiTableDelta = 0;
 BOOLEAN AcpiLoadSimulatorTable = TRUE;
 BOOLEAN AcpiBuildDpcRunning;
+BOOLEAN AcpiBuildFixedButtonEnumerated;
 
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 extern PACPI_INFORMATION AcpiInformation;
@@ -1213,14 +1216,78 @@ ACPITableLoadCallBack(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+USHORT
+NTAPI
+ACPIEnableQueryFixedEnables(VOID)
+{
+    return AcpiInformation->pm1_en_bits;
+}
+
 NTSTATUS
 NTAPI
 ACPIBuildFixedButtonExtension(
     _In_ PDEVICE_EXTENSION RootDeviceExtension,
     _Out_ PDEVICE_EXTENSION* OutDeviceExtension)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    ULONG ButtonCaps;
+    USHORT EnBits;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBuildFixedButtonExtension: %p\n", RootDeviceExtension);
+
+    if (AcpiBuildFixedButtonEnumerated)
+    {
+        *OutDeviceExtension = NULL;
+        return STATUS_SUCCESS;
+    }
+
+    AcpiBuildFixedButtonEnumerated = TRUE;
+
+    EnBits = ACPIEnableQueryFixedEnables();
+
+    ButtonCaps = 0;
+
+    if (EnBits & 0x100)
+        ButtonCaps = 1;
+
+    if (EnBits & 0x200)
+        ButtonCaps |= 2;
+
+    if (!ButtonCaps)
+    {
+        *OutDeviceExtension = NULL;
+        return STATUS_SUCCESS;
+    }
+
+    Status = ACPIBuildDeviceExtension(NULL, RootDeviceExtension, OutDeviceExtension);
+    if (!NT_SUCCESS(Status))
+    {
+        *OutDeviceExtension = NULL;
+        return Status;
+    }
+
+    DeviceExtension = *OutDeviceExtension;
+
+    ACPIInternalUpdateFlags(*OutDeviceExtension, 0x0018000000360000, FALSE);
+
+    KeInitializeSpinLock(&DeviceExtension->Button.SpinLock);
+
+    DeviceExtension->Button.Capabilities = (ButtonCaps | 0x80000000);
+
+    DeviceExtension->Address = ExAllocatePoolWithTag(NonPagedPool, (strlen(ACPIFixedButtonId) + 1), 'SpcA');
+    if (!DeviceExtension->Address)
+    {
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0002000000000000, FALSE);
+        *OutDeviceExtension = NULL;
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    strcpy(DeviceExtension->Address, ACPIFixedButtonId);
+
+    ACPIInternalUpdateFlags(DeviceExtension, 0x0000A00000000000, FALSE);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -1810,6 +1877,8 @@ DriverEntry(
 
     InitializeListHead(&AcpiBuildDeviceList);
     InitializeListHead(&AcpiBuildSynchronizationList);
+
+    AcpiBuildFixedButtonEnumerated = FALSE;
 
     ExInitializeNPagedLookasideList(&DeviceExtensionLookAsideList, NULL, NULL, 0, sizeof(DEVICE_EXTENSION), 'DpcA', 0x40);
     ExInitializeNPagedLookasideList(&BuildRequestLookAsideList, NULL, NULL, 0, sizeof(ACPI_BUILD_REQUEST), 'DpcA', 0x38);

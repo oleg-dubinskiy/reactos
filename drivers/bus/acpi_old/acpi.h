@@ -133,6 +133,43 @@ typedef struct _IRP_DISPATCH_TABLE
     VOID (NTAPI* Worker)(struct _DEVICE_EXTENSION*, ULONG);
 } IRP_DISPATCH_TABLE, *PIRP_DISPATCH_TABLE;
 
+typedef struct _EXTENSION_WORKER
+{
+    ULONG PendingEvents;
+    LIST_ENTRY Link;
+} EXTENSION_WORKER, *PEXTENSION_WORKER;
+
+typedef struct _BUTTON_EXTENSION
+{
+    EXTENSION_WORKER WorkQueue;
+    KSPIN_LOCK SpinLock;
+    CHAR LidState;
+    union
+    {
+        ULONG Events;
+        struct
+        {
+            ULONG Power_Button : 1;
+            ULONG Sleep_Button : 1;
+            ULONG Lid_Switch : 1;
+            ULONG Reserved : 28;
+            ULONG Wake_Capable : 1;
+        } UEvents;
+    };
+    union
+    {
+        ULONG Capabilities;
+        struct
+        {
+          ULONG Power_Button : 1;
+          ULONG Sleep_Button : 1;
+          ULONG Lid_Switch : 1;
+          ULONG Reserved : 28;
+          ULONG Wake_Capable : 1;
+        } UCapabilities;
+    };
+} BUTTON_EXTENSION, *PBUTTON_EXTENSION;
+
 typedef struct _DEVICE_EXTENSION
 {
     union
@@ -202,6 +239,11 @@ typedef struct _DEVICE_EXTENSION
     };
     ULONG Signature;
     PIRP_DISPATCH_TABLE DispatchTable;
+    union
+    {
+        EXTENSION_WORKER WorkQueue;
+        BUTTON_EXTENSION Button;
+    };
     ACPI_DEVICE_STATE DeviceState;
     ACPI_DEVICE_STATE PreviousState;
     ACPI_POWER_INFO PowerInfo;
