@@ -5222,6 +5222,16 @@ PopFrame(
     giIndent--;
 }
 
+NTSTATUS
+__cdecl
+ReleaseASLMutex(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_MUTEX_OBJECT AmliMutex)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 __cdecl
 EvalMethodComplete(
@@ -5235,13 +5245,217 @@ EvalMethodComplete(
 
 NTSTATUS
 __cdecl
+ParseAcquire(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAML_ACQUIRE AmliAcquire,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+__cdecl
+FreeObjOwner(
+    _In_ PAMLI_OBJECT_OWNER Owner,
+    _In_ BOOLEAN IsUnload)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+__cdecl
 ParseCall(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_CALL AmliCall,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT NsMethod;
+    PAMLI_OBJECT_DATA pdataArg;
+    PAMLI_METHOD_OBJECT Method;
+    PAMLI_OBJECT_OWNER Owner;
+    PAML_ACQUIRE AmliAcquire;
+    ULONG Stage;
+    ULONG ix;
+
+    if (InStatus == STATUS_SUCCESS)
+        Stage = (AmliCall->FrameHdr.Flags & 0xF);
+    else
+        Stage = 4;
+
+    DPRINT("ParseCall: %X, %X, %X, %X, %X\n", Stage, AmliContext, AmliContext->Op, AmliCall, InStatus);
+
+    giIndent++;
+
+    ASSERT(AmliCall->FrameHdr.Signature == 'LLAC');//SIG_CALL
+
+    NsMethod = AmliCall->NsMethod;
+
+    if (NsMethod)
+        Method = NsMethod->ObjData.DataBuff;
+    else
+        Method = NULL;
+
+    if (Stage == 0)
+    {
+        AmliCall->FrameHdr.Flags++;
+        goto Stage1;
+    }
+    else if (Stage == 1)
+    {
+        goto Stage1;
+    }
+    else if (Stage == 2)
+    {
+        goto Stage2;
+    }
+    else if (Stage == 3)
+    {
+        goto Stage3;
+    }
+    else if (Stage == 4)
+    {
+        goto Stage4;
+    }
+    else if (Stage == 5)
+    {
+        PopFrame(AmliContext);
+    }
+
+    goto Exit;
+
+Stage1:
+
+    while (TRUE)
+    {
+        while (TRUE)
+        {
+            ix = AmliCall->ArgIndex;
+            if (ix >= AmliCall->NumberOfArgs)
+                break;
+
+            pdataArg = &AmliCall->DataArgs[AmliCall->ArgIndex];
+            AmliCall->ArgIndex++;
+
+            InStatus = ParseArg(AmliContext, 'C', pdataArg);
+            if (InStatus != STATUS_SUCCESS)
+                goto Exit;
+
+            if (AmliCall != AmliContext->LocalHeap.HeapEnd)
+                goto Exit;
+        }
+
+        if (InStatus != STATUS_SUCCESS)
+            goto Exit;
+
+        if (AmliCall != AmliContext->LocalHeap.HeapEnd)
+            goto Exit;
+
+        if (ix >= AmliCall->NumberOfArgs)
+            break;
+    }
+
+    AmliCall->FrameHdr.Flags++;
+
+Stage2:
+
+    AmliCall->FrameHdr.Flags++;
+
+    if (!Method)
+    {
+        DPRINT1("ParseCall: AmliCall->NsMethod == NULL\n");
+        ASSERT(FALSE);
+        InStatus = STATUS_ACPI_ASSERT_FAILED;
+        goto Exit;
+    }
+
+    if (Method->MethodFlags & 8)
+    {
+        InStatus = PushFrame(AmliContext, 'FQCA', 0x1C, ParseAcquire, (PVOID *)&AmliAcquire);
+        if (InStatus == STATUS_SUCCESS)
+        {
+            AmliAcquire->AmliMutex = &Method->Mutex;
+            AmliAcquire->Timeout = 0xFFFF;
+            AmliAcquire->DataResult = AmliCall->DataResult;
+        }
+
+        goto Exit;
+    }
+
+Stage3:
+
+    AmliCall->FrameHdr.Flags++;
+
+    if (AmliCall->FrameHdr.Flags & 0x10000)
+        AmliCall->FrameHdr.Flags |= 0x20000;
+
+    InStatus = NewObjOwner(AmliContext->HeapCurrent, &Owner);
+    if (InStatus == STATUS_SUCCESS)
+    {
+        AmliCall->OwnerPrev = AmliContext->Owner;
+        AmliContext->Owner = Owner;
+
+        AmliCall->CallPrev = AmliContext->Call;
+        AmliContext->Call = AmliCall;
+
+        AmliCall->FrameHdr.Flags |= 0x40000;
+
+        InStatus = PushScope(AmliContext,
+                             Method->CodeBuff,
+                             Add2Ptr(AmliCall->NsMethod->ObjData.DataBuff, AmliCall->NsMethod->ObjData.DataLen),
+                             AmliContext->Op,
+                             AmliCall->NsMethod,
+                             Owner,
+                             AmliContext->HeapCurrent,
+                             AmliCall->DataResult);
+        goto Exit;
+    }
+
+Stage4:
+
+    AmliCall->FrameHdr.Flags++;
+
+    if (InStatus == 0x8002)
+        InStatus = STATUS_SUCCESS;
+
+    if (AmliCall->DataResult->Flags & 1)
+    {
+        DPRINT1("ParseCall: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    FreeDataBuffs(AmliCall->Locals, 8);
+
+    if (AmliCall->FrameHdr.Flags & 0x40000)
+    {
+        FreeObjOwner(AmliContext->Owner, FALSE);
+
+        AmliContext->Owner = AmliCall->OwnerPrev;
+        AmliContext->Call = AmliCall->CallPrev;
+    }
+    else if (!AmliCall->NsMethod)
+    {
+        AmliContext->Owner = AmliCall->OwnerPrev;
+        AmliContext->Call = AmliCall->CallPrev;
+    }
+
+    if (AmliCall->DataArgs)
+    {
+        FreeDataBuffs(AmliCall->DataArgs, AmliCall->NumberOfArgs);
+        HeapFree(AmliCall->DataArgs);
+        gdwcODObjs--;
+    }
+
+    if (AmliCall->FrameHdr.Flags & 0x20000)
+        ReleaseASLMutex(AmliContext, &Method->Mutex);
+
+    PopFrame(AmliContext);
+
+Exit:
+
+    giIndent--;
+
+    return InStatus;
 }
 
 NTSTATUS
@@ -6718,16 +6932,6 @@ RestartCtxtPassive(
     _In_ PVOID Context)
 {
     UNIMPLEMENTED_DBGBREAK();
-}
-
-NTSTATUS
-__cdecl
-ReleaseASLMutex(
-    _In_ PAMLI_CONTEXT AmliContext,
-    _In_ PAMLI_MUTEX_OBJECT AmliMutex)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
 }
 
 VOID

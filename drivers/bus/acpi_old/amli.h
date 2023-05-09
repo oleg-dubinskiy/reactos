@@ -369,6 +369,14 @@ typedef struct _AMLI_ACCESS_FIELD_OBJECT
     AMLI_FIELD_DESCRIPTOR FieldDesc;
 } AMLI_ACCESS_FIELD_OBJECT, *PAMLI_ACCESS_FIELD_OBJECT;
 
+typedef struct _AML_ACQUIRE
+{
+    PAMLI_MUTEX_OBJECT AmliMutex;
+    USHORT Timeout;
+    USHORT Pad;
+    PAMLI_OBJECT_DATA DataResult;
+} AML_ACQUIRE, *PAML_ACQUIRE;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1
@@ -611,6 +619,14 @@ __cdecl
 ParsePackageLen(
     _Inout_ PUCHAR* OutOp,
     _Out_ PUCHAR* OutOpEnd
+);
+
+NTSTATUS
+__cdecl
+ParseArg(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ CHAR ArgType,
+    _In_ PAMLI_OBJECT_DATA DataArg
 );
 
 /* EOF */
