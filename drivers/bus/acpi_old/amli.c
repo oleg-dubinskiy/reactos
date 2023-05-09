@@ -4971,7 +4971,35 @@ __cdecl
 FreeContext(
     _In_ PAMLI_CONTEXT AmliContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    KIRQL OldIrql;
+
+    DPRINT("FreeContext: %X\n", AmliContext);
+
+    giIndent++;
+
+    ASSERT(AmliContext->Owner == NULL);
+
+    AcquireMutex(&gmutCtxtList);
+
+    ListRemoveEntry(&AmliContext->List, &gplistCtxtHead);
+
+    if (AmliContext->QueueLists)
+        ListRemoveEntry(&AmliContext->QueueList, AmliContext->QueueLists);
+
+    ReleaseMutex(&gmutCtxtList);
+
+    FreeDataBuffs(&AmliContext->Result, 1);
+
+    KeAcquireSpinLock(&gdwGContextSpinLock, &OldIrql);
+    gdwcCTObjs--;
+    ASSERT(gdwcCTObjs >= 0);
+    KeReleaseSpinLock(&gdwGContextSpinLock, OldIrql);
+
+    //DPRINT("FreeContext: FIXME ACPIWmiLogEvent()\n");
+
+    ExFreeToNPagedLookasideList(&AMLIContextLookAsideList, AmliContext);
+
+    giIndent--;
 }
 
 VOID
