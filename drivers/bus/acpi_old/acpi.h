@@ -280,6 +280,8 @@ typedef struct _ACPI_BUILD_REQUEST
     PVOID CallBack;
     PVOID CallBackContext;
     PLIST_ENTRY ListHead1;
+    PVOID Context;
+    ULONG BuildReserved4;
     PLIST_ENTRY ListHeadForInsert;
 } ACPI_BUILD_REQUEST, *PACPI_BUILD_REQUEST;
 
@@ -300,6 +302,11 @@ typedef VOID
     _In_ ULONG RegType,
     _In_ ULONG Size,
     _In_ USHORT Value
+);
+
+typedef NTSTATUS
+(NTAPI * PACPI_BUILD_DISPATCH)(
+    _In_ PACPI_BUILD_REQUEST BuildRequest
 );
 
 /* acpiinit.c */
@@ -451,6 +458,12 @@ NTSTATUS NTAPI ACPIWakeWaitIrp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS NTAPI ACPIDispatchForwardPowerIrp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS NTAPI ACPIRootIrpSetPower(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS NTAPI ACPIRootIrpQueryPower(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
+NTSTATUS NTAPI ACPIBuildProcessGenericComplete(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessRunMethodPhaseCheckSta(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessRunMethodPhaseCheckBridge(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessRunMethodPhaseRunMethod(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessRunMethodPhaseRecurse(_In_ PACPI_BUILD_REQUEST BuildRequest);
 
 ULONGLONG
 NTAPI

@@ -86,14 +86,32 @@ IRP_DISPATCH_TABLE AcpiFdoIrpDispatch =
     NULL
 };
 
+PACPI_BUILD_DISPATCH AcpiBuildRunMethodDispatch[] =
+{
+    ACPIBuildProcessGenericComplete,
+    NULL,
+    NULL,
+    ACPIBuildProcessRunMethodPhaseCheckSta,
+    ACPIBuildProcessRunMethodPhaseCheckBridge,
+    ACPIBuildProcessRunMethodPhaseRunMethod,
+    ACPIBuildProcessRunMethodPhaseRecurse
+};
+
 extern NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
 extern KSPIN_LOCK AcpiDeviceTreeLock;
 extern KSPIN_LOCK AcpiBuildQueueLock;
+extern KSPIN_LOCK AcpiPowerQueueLock;
 extern LIST_ENTRY AcpiBuildDeviceList;
 extern LIST_ENTRY AcpiBuildSynchronizationList;
 extern LIST_ENTRY AcpiBuildQueueList;
+extern LIST_ENTRY AcpiBuildRunMethodList;
+extern LIST_ENTRY AcpiBuildOperationRegionList;
+extern LIST_ENTRY AcpiBuildPowerResourceList;
+extern LIST_ENTRY AcpiBuildThermalZoneList;
+extern LIST_ENTRY AcpiPowerDelayedQueueList;
 extern KDPC AcpiBuildDpc;
 extern BOOLEAN AcpiBuildDpcRunning;
+extern BOOLEAN AcpiBuildWorkDone;
 extern PRSDTINFORMATION RsdtInformation;
 
 /* FUNCTIOS *****************************************************************/
@@ -119,6 +137,51 @@ ACPIInternalGetDeviceExtension(
     KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
 
     return DeviceExtension;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessGenericComplete(
+    _In_ PACPI_BUILD_REQUEST Entry)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessRunMethodPhaseCheckSta(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessRunMethodPhaseCheckBridge(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessRunMethodPhaseRunMethod(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessRunMethodPhaseRecurse(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 VOID
@@ -309,13 +372,137 @@ ACPIFilterFastIoDetachCallback(
 
 VOID
 NTAPI
+ACPIBuildProcessQueueList(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessSynchronizationList(
+    _In_ PLIST_ENTRY SynchronizationList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessGenericList(
+    _In_ PLIST_ENTRY GenericList,
+    _In_ PACPI_BUILD_DISPATCH* BuildDispatch)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
 ACPIBuildDeviceDpc(
     _In_ PKDPC Dpc,
     _In_ PVOID DeferredContext,
     _In_ PVOID SystemArgument1,
     _In_ PVOID SystemArgument2)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    NTSTATUS Status;
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
+
+    if (AcpiBuildDpcRunning)
+    {
+        KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+        DPRINT("ACPIBuildDeviceDpc: AcpiBuildDpcRunning %X\n", AcpiBuildDpcRunning);
+        return;
+    }
+
+    AcpiBuildDpcRunning = TRUE;
+
+    do
+    {
+        AcpiBuildWorkDone = FALSE;
+
+        if (!IsListEmpty(&AcpiBuildQueueList))
+            ACPIBuildProcessQueueList();
+
+        KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+
+        if (!IsListEmpty(&AcpiBuildRunMethodList))
+        {
+            Status = ACPIBuildProcessGenericList(&AcpiBuildRunMethodList, AcpiBuildRunMethodDispatch);
+
+            KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
+
+            if (Status == STATUS_PENDING)
+            {
+                DPRINT("ACPIBuildDeviceDpc: continue Status == STATUS_PENDING\n");
+                continue;
+            }
+
+            if (!IsListEmpty(&AcpiBuildQueueList))
+            {
+                AcpiBuildWorkDone = TRUE;
+                continue;
+            }
+
+            KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+        }
+
+        if (!IsListEmpty(&AcpiBuildOperationRegionList))
+        {
+            DPRINT1("ACPIBuildDeviceDpc: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!IsListEmpty(&AcpiBuildPowerResourceList))
+        {
+            DPRINT1("ACPIBuildDeviceDpc: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!IsListEmpty(&AcpiBuildDeviceList))
+        {
+            DPRINT1("ACPIBuildDeviceDpc: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!IsListEmpty(&AcpiBuildThermalZoneList))
+        {
+            DPRINT1("ACPIBuildDeviceDpc: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (IsListEmpty(&AcpiBuildDeviceList) &&
+            IsListEmpty(&AcpiBuildOperationRegionList) &&
+            IsListEmpty(&AcpiBuildPowerResourceList) &&
+            IsListEmpty(&AcpiBuildRunMethodList) &&
+            IsListEmpty(&AcpiBuildThermalZoneList))
+        {
+            KeAcquireSpinLockAtDpcLevel(&AcpiPowerQueueLock);
+
+            if (!IsListEmpty(&AcpiPowerDelayedQueueList))
+            {
+                DPRINT1("ACPIBuildDeviceDpc: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            KeReleaseSpinLockFromDpcLevel(&AcpiPowerQueueLock);
+        }
+
+        if (!IsListEmpty(&AcpiBuildSynchronizationList))
+        {
+            Status = ACPIBuildProcessSynchronizationList(&AcpiBuildSynchronizationList);
+            DPRINT("ACPIBuildDeviceDpc: Status %X, AcpiBuildWorkDone %X\n", Status, AcpiBuildWorkDone);
+        }
+
+        KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
+    }
+    while (AcpiBuildWorkDone);
+
+    AcpiBuildDpcRunning = FALSE;
+
+    KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+
+    DPRINT("ACPIBuildDeviceDpc: exit (%p)\n", Dpc);
 }
 
 /* HAL FUNCTIOS *************************************************************/
