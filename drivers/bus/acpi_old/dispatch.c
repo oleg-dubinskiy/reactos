@@ -148,13 +148,79 @@ ACPIBuildProcessGenericComplete(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+VOID
+__cdecl
+ACPIBuildCompleteMustSucceed(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS Status,
+    _In_ ULONG Unknown3,
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+ACPIGet(
+    _In_ PVOID Context,
+    _In_ ULONG NameSeg,
+    _In_ ULONG Flags,
+    _In_ PVOID SimpleArgumentBuff,
+    _In_ ULONG SimpleArgumentSize,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext,
+    _Out_ PVOID* OutDataBuff,
+    _Out_ ULONG* OutDataLen)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 NTAPI
 ACPIBuildProcessRunMethodPhaseCheckSta(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    ULONG Flags; // ?
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIBuildProcessRunMethodPhaseCheckSta: %p\n", BuildRequest);
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+    BuildRequest->BuildReserved1 = 4;
+
+    if (DeviceExtension->Flags & 0x0008000000000000)
+    {
+        BuildRequest->BuildReserved1 = 0;
+        ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+        return Status;
+    }
+
+    Flags = (ULONG)BuildRequest->Context;
+    if ( !(Flags & 1))
+    {
+        ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+        return Status;
+    }
+
+    Status = ACPIGet(DeviceExtension,
+                     'ATS_',
+                     0x40040802,
+                     NULL,
+                     0,
+                     ACPIBuildCompleteMustSucceed,
+                     BuildRequest,
+                     (PVOID *)&BuildRequest->ListHeadForInsert,
+                     NULL);
+
+
+    if (Status != STATUS_PENDING)
+        ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+
+    DPRINT("ACPIBuildProcessRunMethodPhaseCheckSta: ret Status %X\n", Status);
+
+    return Status;
 }
 
 NTSTATUS
