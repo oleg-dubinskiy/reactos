@@ -161,6 +161,20 @@ ACPIBuildCompleteMustSucceed(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+NTSTATUS
+NTAPI 
+ACPIGetConvertToDevicePresence(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ ULONG GetFlags,
+    _Out_ PVOID* OutDataBuff,
+    _Out_ ULONG* OutDataLen)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 __cdecl
 ACPIGetWorkerForInteger(
@@ -169,7 +183,82 @@ ACPIGetWorkerForInteger(
     _In_ PAMLI_OBJECT_DATA AmliData,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_GET_CONTEXT AcpiGetContext = Context;
+    PAMLI_FN_ASYNC_CALLBACK CallBack;
+    ULONG Flags;
+    KIRQL OldIrql;
+    NTSTATUS Status = InStatus;
+
+    DPRINT("ACPIGetWorkerForInteger: %p\n", AcpiGetContext);
+
+    ASSERT(AcpiGetContext->OutDataBuff);
+
+    if (!AcpiGetContext->OutDataBuff)
+    {
+        DPRINT("ACPIGetWorkerForInteger: FIXME\n");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Finish;
+    }
+
+    Flags = AcpiGetContext->Flags;
+
+    if (Flags & 0x400)
+    {
+        DPRINT("ACPIGetWorkerForInteger: FIXME\n");
+        ASSERT(FALSE);
+        goto Finish;
+    }
+
+    if (Flags & 0x800)
+    {
+        Status = ACPIGetConvertToDevicePresence(AcpiGetContext->DeviceExtension,
+                                                InStatus,
+                                                AmliData,
+                                                Flags,
+                                                AcpiGetContext->OutDataBuff,
+                                                AcpiGetContext->OutDataLen);
+        goto Finish;
+    }
+
+    if (NT_SUCCESS(InStatus))
+    {
+        if ((Flags & 0x4000) && AmliData->DataType != 1)
+        {
+            DPRINT("ACPIGetWorkerForInteger: FIXME\n");
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_INVALID_DATA;
+        }
+        else
+        {
+            *AcpiGetContext->OutDataBuff = AmliData->DataValue;
+
+            if (AcpiGetContext->OutDataLen)
+                *AcpiGetContext->OutDataLen = 4;
+
+            Status = STATUS_SUCCESS;
+        }
+    }
+
+Finish:
+
+    AcpiGetContext->Status = Status;
+
+    if (NT_SUCCESS(InStatus))
+        AMLIFreeDataBuffs(AmliData, 1);
+
+    if (AcpiGetContext->Flags & 0x20000000)
+        return;
+
+    CallBack = AcpiGetContext->CallBack;
+    if (CallBack)
+        CallBack(NsObject, Status, NULL, AcpiGetContext->CallBackContext);
+
+    KeAcquireSpinLock(&AcpiGetLock, &OldIrql);
+    RemoveEntryList(&AcpiGetContext->List);
+    KeReleaseSpinLock(&AcpiGetLock, OldIrql);
+
+    ExFreePool(AcpiGetContext);
 }
 
 NTSTATUS
@@ -197,7 +286,7 @@ ACPIGet(
     KIRQL OldIrql;
     NTSTATUS Status;
 
-    DbgPrint("ACPIGet: %p, %X, %X, %X, %X, %X, %X\n", Context, NameSeg, Flags, SimpleArgumentBuff, SimpleArgumentSize, CallBack, CallBackContext);
+    DPRINT("ACPIGet: %p, %X, %X, %X, %X, %X, %X\n", Context, NameSeg, Flags, SimpleArgumentBuff, SimpleArgumentSize, CallBack, CallBackContext);
 
     IsAsyncEval = ((Flags & 0x40000000) != 0);
     IsFlag8000000 = ((Flags & 0x8000000) != 0);

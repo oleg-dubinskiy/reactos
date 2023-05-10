@@ -5127,6 +5127,15 @@ FreeDataBuffs(
     giIndent--;
 }
 
+VOID
+__cdecl
+AMLIFreeDataBuffs(
+    _In_ PAMLI_OBJECT_DATA Data,
+    _In_ ULONG Count)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 __cdecl
 NewObjOwner(
