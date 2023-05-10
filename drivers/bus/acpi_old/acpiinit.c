@@ -54,17 +54,24 @@ NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
 KSPIN_LOCK AcpiDeviceTreeLock;
 KSPIN_LOCK AcpiBuildQueueLock;
 KSPIN_LOCK ACPIWorkerSpinLock;
+KSPIN_LOCK AcpiPowerQueueLock;
 KEVENT ACPIWorkToDoEvent;
 KEVENT ACPITerminateEvent;
 LIST_ENTRY ACPIDeviceWorkQueue;
 LIST_ENTRY ACPIWorkQueue;
 LIST_ENTRY AcpiBuildDeviceList;
 LIST_ENTRY AcpiBuildSynchronizationList;
+LIST_ENTRY AcpiBuildRunMethodList;
 LIST_ENTRY AcpiBuildQueueList;
+LIST_ENTRY AcpiBuildOperationRegionList;
+LIST_ENTRY AcpiBuildPowerResourceList;
+LIST_ENTRY AcpiBuildThermalZoneList;
+LIST_ENTRY AcpiPowerDelayedQueueList;
 LONG AcpiTableDelta = 0;
 BOOLEAN AcpiLoadSimulatorTable = TRUE;
 BOOLEAN AcpiBuildDpcRunning;
 BOOLEAN AcpiBuildFixedButtonEnumerated;
+BOOLEAN AcpiBuildWorkDone;
 
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 extern PACPI_INFORMATION AcpiInformation;
@@ -1300,8 +1307,105 @@ ACPIBuildRunMethodRequest(
     _In_ ULONG Param5,
     _In_ BOOLEAN IsInsertDpc)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_BUILD_REQUEST BuildRequest;
+    PACPI_BUILD_REQUEST RunMethodRequest;
+
+    DbgPrint("ACPIBuildRunMethodRequest: %p, %X, %X\n", DeviceExtension, Param5, IsInsertDpc);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+
+    BuildRequest = ExAllocateFromNPagedLookasideList(&BuildRequestLookAsideList);
+    if (!BuildRequest)
+    {
+        if (!CallBack)
+            return STATUS_INSUFFICIENT_RESOURCES;
+
+        DPRINT1("ACPIBuildRunMethodRequest: FIXME\n");
+        ASSERT(FALSE);
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (CallBack)
+    {
+        RunMethodRequest = ExAllocateFromNPagedLookasideList(&BuildRequestLookAsideList);
+        if (!RunMethodRequest)
+        {
+            ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, BuildRequest);
+
+            DPRINT1("ACPIBuildRunMethodRequest: FIXME\n");
+            ASSERT(FALSE);
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
+    else
+    {
+        DPRINT("ACPIBuildRunMethodRequest: No CallBack\n");
+    }
+
+    if (!DeviceExtension->ReferenceCount)
+    {
+        ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, BuildRequest);
+
+        if (CallBack)
+        {
+            DPRINT1("ACPIBuildRunMethodRequest: FIXME\n");
+            ASSERT(FALSE);
+            ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, RunMethodRequest);
+        }
+
+        DPRINT1("ACPIBuildRunMethodRequest: STATUS_DEVICE_REMOVED\n");
+        return STATUS_DEVICE_REMOVED;
+    }
+
+    InterlockedIncrement(&DeviceExtension->ReferenceCount);
+
+    if (CallBack)
+        InterlockedIncrement(&DeviceExtension->ReferenceCount);
+
+    RtlZeroMemory(BuildRequest, sizeof(ACPI_BUILD_REQUEST));
+
+    BuildRequest->Signature = '_SGP';
+    BuildRequest->Status = STATUS_SUCCESS;
+    BuildRequest->Flags = 0x100C;
+    BuildRequest->DeviceExtension = DeviceExtension;
+    BuildRequest->ListHead1 = Context;
+    BuildRequest->ListHeadForInsert = &AcpiBuildRunMethodList;
+    BuildRequest->WorkDone = 3;
+    BuildRequest->Context = (PVOID)Param5;
+
+    if (CallBack)
+    {
+        RtlZeroMemory(RunMethodRequest, sizeof(ACPI_BUILD_REQUEST));
+
+        RunMethodRequest->Signature = '_SGP';
+        RunMethodRequest->Status = STATUS_SUCCESS;
+        RunMethodRequest->Flags = 0x100A;
+        RunMethodRequest->DeviceExtension = DeviceExtension;
+        RunMethodRequest->CallBack = CallBack;
+        RunMethodRequest->CallBackContext = CallBackContext;
+        RunMethodRequest->ListHead1 = &AcpiBuildRunMethodList;
+        RunMethodRequest->ListHeadForInsert = &AcpiBuildSynchronizationList;
+        RunMethodRequest->WorkDone = 3;
+        RunMethodRequest->Context = Context;
+        RunMethodRequest->BuildReserved1 = 0;
+        RunMethodRequest->BuildReserved4 = 1;
+    }
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
+
+    InsertTailList(&AcpiBuildQueueList, &BuildRequest->Link);
+
+    if (CallBack)
+        InsertTailList(&AcpiBuildQueueList, &RunMethodRequest->Link);
+
+    if (IsInsertDpc && !AcpiBuildDpcRunning)
+        KeInsertQueueDpc(&AcpiBuildDpc, NULL, NULL);
+
+    KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+
+    return STATUS_PENDING;
 }
 
 VOID
@@ -1874,11 +1978,18 @@ DriverEntry(
 
     KeInitializeSpinLock(&AcpiDeviceTreeLock);
     KeInitializeSpinLock(&AcpiBuildQueueLock);
+    KeInitializeSpinLock(&AcpiPowerQueueLock);
 
     InitializeListHead(&AcpiBuildDeviceList);
     InitializeListHead(&AcpiBuildSynchronizationList);
+    InitializeListHead(&AcpiBuildRunMethodList);
+    InitializeListHead(&AcpiBuildOperationRegionList);
+    InitializeListHead(&AcpiBuildPowerResourceList);
+    InitializeListHead(&AcpiBuildThermalZoneList);
+    InitializeListHead(&AcpiPowerDelayedQueueList);
 
     AcpiBuildFixedButtonEnumerated = FALSE;
+    AcpiBuildWorkDone = FALSE;
 
     ExInitializeNPagedLookasideList(&DeviceExtensionLookAsideList, NULL, NULL, 0, sizeof(DEVICE_EXTENSION), 'DpcA', 0x40);
     ExInitializeNPagedLookasideList(&BuildRequestLookAsideList, NULL, NULL, 0, sizeof(ACPI_BUILD_REQUEST), 'DpcA', 0x38);
