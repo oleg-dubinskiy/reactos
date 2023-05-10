@@ -411,8 +411,50 @@ ACPIBuildProcessGenericList(
     _In_ PLIST_ENTRY GenericList,
     _In_ PACPI_BUILD_DISPATCH* BuildDispatch)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_BUILD_DISPATCH CallBack = NULL;
+    PACPI_BUILD_REQUEST BuildRequest;
+    PLIST_ENTRY Entry;
+    PLIST_ENTRY NextValue;
+    ULONG Idx;
+    BOOLEAN allWorkComplete = TRUE;
+    //NTSTATUS status = STATUS_SUCCESS;
+
+    DPRINT("ACPIBuildProcessGenericList: %p, %p\n", BuildDispatch, *BuildDispatch);
+
+    Entry = GenericList->Flink;
+    while (Entry != GenericList)
+    {
+        BuildRequest = CONTAINING_RECORD(Entry, ACPI_BUILD_REQUEST, Link);
+
+        //DPRINT("ACPIBuildProcessGenericList: %X '%s', %X\n", BuildRequest, NameSegString(BuildRequest->Signature), BuildRequest->WorkDone);
+
+        NextValue = Entry->Flink;
+        Idx = InterlockedCompareExchange(&(BuildRequest->WorkDone), 1, 1);
+
+        //DPRINT("ACPIBuildProcessGenericList: [%X] %p, %p\n", Idx, GenericList, Entry);
+
+        CallBack = BuildDispatch[Idx];
+        if (!CallBack)
+        {
+            allWorkComplete = FALSE;
+            Entry = NextValue;
+            continue;
+        }
+
+        if (Idx != 2)
+            BuildRequest->BuildReserved0 = Idx;
+
+        Idx = InterlockedCompareExchange(&(BuildRequest->WorkDone), 1, Idx);
+        /*status =*/ (CallBack)(BuildRequest);
+        //DPRINT("ACPIBuildProcessGenericList: [%X] status %X\n", Idx, status);
+
+        if (Idx == 0 || Idx == 2)
+            Entry = NextValue;
+    }
+
+    DPRINT("ACPIBuildProcessGenericList: status %X\n", allWorkComplete ? STATUS_SUCCESS : STATUS_PENDING);
+
+    return (allWorkComplete ? STATUS_SUCCESS : STATUS_PENDING);
 }
 
 VOID

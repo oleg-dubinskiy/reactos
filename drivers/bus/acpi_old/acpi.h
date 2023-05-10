@@ -274,6 +274,7 @@ typedef struct _ACPI_BUILD_REQUEST
     ULONG Signature;
     ULONG Flags;
     LONG WorkDone;
+    ULONG BuildReserved0;
     ULONG BuildReserved1;
     PDEVICE_EXTENSION DeviceExtension;
     NTSTATUS Status;
