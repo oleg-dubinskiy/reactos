@@ -377,6 +377,21 @@ typedef struct _AML_ACQUIRE
     PAMLI_OBJECT_DATA DataResult;
 } AML_ACQUIRE, *PAML_ACQUIRE;
 
+typedef struct _ACPI_GET_CONTEXT
+{
+    ULONG Flags;
+    ULONG NameSeg;
+    LIST_ENTRY List;
+    struct _DEVICE_EXTENSION* DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PVOID CallBack;
+    PVOID CallBackContext;
+    PVOID* OutDataBuff;
+    ULONG* OutDataLen;
+    NTSTATUS Status;
+    AMLI_OBJECT_DATA DataResult;
+} ACPI_GET_CONTEXT, *PACPI_GET_CONTEXT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1

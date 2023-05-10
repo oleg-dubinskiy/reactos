@@ -55,6 +55,7 @@ KSPIN_LOCK AcpiDeviceTreeLock;
 KSPIN_LOCK AcpiBuildQueueLock;
 KSPIN_LOCK ACPIWorkerSpinLock;
 KSPIN_LOCK AcpiPowerQueueLock;
+KSPIN_LOCK AcpiGetLock;
 KEVENT ACPIWorkToDoEvent;
 KEVENT ACPITerminateEvent;
 LIST_ENTRY ACPIDeviceWorkQueue;
@@ -67,6 +68,7 @@ LIST_ENTRY AcpiBuildOperationRegionList;
 LIST_ENTRY AcpiBuildPowerResourceList;
 LIST_ENTRY AcpiBuildThermalZoneList;
 LIST_ENTRY AcpiPowerDelayedQueueList;
+LIST_ENTRY AcpiGetListEntry;
 LONG AcpiTableDelta = 0;
 BOOLEAN AcpiLoadSimulatorTable = TRUE;
 BOOLEAN AcpiBuildDpcRunning;
@@ -1979,6 +1981,7 @@ DriverEntry(
     KeInitializeSpinLock(&AcpiDeviceTreeLock);
     KeInitializeSpinLock(&AcpiBuildQueueLock);
     KeInitializeSpinLock(&AcpiPowerQueueLock);
+    KeInitializeSpinLock(&AcpiGetLock);
 
     InitializeListHead(&AcpiBuildDeviceList);
     InitializeListHead(&AcpiBuildSynchronizationList);
@@ -1987,6 +1990,7 @@ DriverEntry(
     InitializeListHead(&AcpiBuildPowerResourceList);
     InitializeListHead(&AcpiBuildThermalZoneList);
     InitializeListHead(&AcpiPowerDelayedQueueList);
+    InitializeListHead(&AcpiGetListEntry);
 
     AcpiBuildFixedButtonEnumerated = FALSE;
     AcpiBuildWorkDone = FALSE;

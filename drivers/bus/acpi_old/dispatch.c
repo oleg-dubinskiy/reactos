@@ -101,6 +101,7 @@ extern NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
 extern KSPIN_LOCK AcpiDeviceTreeLock;
 extern KSPIN_LOCK AcpiBuildQueueLock;
 extern KSPIN_LOCK AcpiPowerQueueLock;
+extern KSPIN_LOCK AcpiGetLock;
 extern LIST_ENTRY AcpiBuildDeviceList;
 extern LIST_ENTRY AcpiBuildSynchronizationList;
 extern LIST_ENTRY AcpiBuildQueueList;
@@ -109,6 +110,7 @@ extern LIST_ENTRY AcpiBuildOperationRegionList;
 extern LIST_ENTRY AcpiBuildPowerResourceList;
 extern LIST_ENTRY AcpiBuildThermalZoneList;
 extern LIST_ENTRY AcpiPowerDelayedQueueList;
+extern LIST_ENTRY AcpiGetListEntry;
 extern KDPC AcpiBuildDpc;
 extern BOOLEAN AcpiBuildDpcRunning;
 extern BOOLEAN AcpiBuildWorkDone;
@@ -159,6 +161,17 @@ ACPIBuildCompleteMustSucceed(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+VOID
+__cdecl
+ACPIGetWorkerForInteger(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 ACPIGet(
@@ -172,8 +185,175 @@ ACPIGet(
     _Out_ PVOID* OutDataBuff,
     _Out_ ULONG* OutDataLen)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PACPI_GET_CONTEXT AcpiGetContext;
+    PAMLI_OBJECT_DATA DataArgs = NULL;
+    PAMLI_FN_ASYNC_CALLBACK Worker;
+    AMLI_OBJECT_DATA Argument = {0};
+    ULONG ArgsCount = 0;
+    BOOLEAN IsAsyncEval;
+    BOOLEAN IsFlag8000000;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DbgPrint("ACPIGet: %p, %X, %X, %X, %X, %X, %X\n", Context, NameSeg, Flags, SimpleArgumentBuff, SimpleArgumentSize, CallBack, CallBackContext);
+
+    IsAsyncEval = ((Flags & 0x40000000) != 0);
+    IsFlag8000000 = ((Flags & 0x8000000) != 0);
+
+    if (!IsFlag8000000)
+    {
+        DeviceExtension = Context;
+        NsObject = DeviceExtension->AcpiObject;
+    }
+    else
+    {
+        DeviceExtension = NULL;
+        NsObject = Context;
+    }
+
+    if ((Flags & 0x1F0000) == 0x10000)
+    {
+        DPRINT1("ACPIGet: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if ((Flags & 0x1F0000) == 0x20000)
+    {
+        DPRINT1("ACPIGet: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if ((Flags & 0x1F0000) == 0x40000)
+    {
+        Worker = ACPIGetWorkerForInteger;
+
+        if ((Flags & 0x800) && !IsFlag8000000 && (DeviceExtension->Flags & 0x0200000000000000))
+        {
+            DPRINT1("ACPIGet: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else if ((Flags & 0x1F0000) == 0x80000)
+    {
+        DPRINT1("ACPIGet: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if ((Flags & 0x1F0000) == 0x100000)
+    {
+        DPRINT1("ACPIGet: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        DPRINT1("ACPIGet: STATUS_INVALID_PARAMETER_3\n");
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    if (Flags & 0x7000000)
+    {
+        ASSERT(SimpleArgumentSize != 0);
+
+        if (Flags & 0x1000000)
+        {
+            Argument.DataType = 1;
+            Argument.DataValue = SimpleArgumentBuff;
+        }
+        else
+        {
+            if (Flags & 0x2000000)
+            {
+                Argument.DataType = 2;
+            }
+            else
+            {
+                if (!(Flags & 0x4000000))
+                {
+                    DPRINT1("ACPIGet: FIXME\n");
+                    ASSERT(FALSE);
+                }
+
+                Argument.DataType = 3;
+            }
+
+            Argument.DataLen = SimpleArgumentSize;
+            Argument.DataBuff = SimpleArgumentBuff;
+        }
+
+        ArgsCount = 1;
+        DataArgs = &Argument;
+    }
+
+    AcpiGetContext = ExAllocatePoolWithTag(NonPagedPool, sizeof(*AcpiGetContext), 'MpcA');
+    if (!AcpiGetContext)
+    {
+        DPRINT1("ACPIGet: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(AcpiGetContext, sizeof(*AcpiGetContext));
+
+    AcpiGetContext->DeviceExtension = DeviceExtension;
+    AcpiGetContext->NsObject = NsObject;
+    AcpiGetContext->NameSeg = NameSeg;
+    AcpiGetContext->Flags = Flags;
+    AcpiGetContext->CallBack = CallBack;
+    AcpiGetContext->CallBackContext = CallBackContext;
+    AcpiGetContext->OutDataBuff = OutDataBuff;
+    AcpiGetContext->OutDataLen = OutDataLen;
+
+    KeAcquireSpinLock(&AcpiGetLock, &OldIrql);
+    InsertTailList(&AcpiGetListEntry, &AcpiGetContext->List);
+    KeReleaseSpinLock(&AcpiGetLock, OldIrql);
+
+    if (!IsFlag8000000 &&
+        (DeviceExtension->Flags & 0x0008000000000000) &&
+        !(DeviceExtension->Flags & 0x0200000000000000))
+    {
+        DPRINT("ACPIGet: STATUS_OBJECT_NAME_NOT_FOUND\n");
+        Status = STATUS_OBJECT_NAME_NOT_FOUND;
+        goto Finish;
+    }
+
+    NsObject = ACPIAmliGetNamedChild(NsObject, NameSeg);
+    if (!NsObject)
+    {
+        DPRINT("ACPIGet: STATUS_OBJECT_NAME_NOT_FOUND\n");
+        Status = STATUS_OBJECT_NAME_NOT_FOUND;
+        goto Finish;
+    }
+
+    if (IsAsyncEval)
+    {
+        Status = AMLIAsyncEvalObject(NsObject,
+                                     &AcpiGetContext->DataResult,
+                                     ArgsCount,
+                                     DataArgs,
+                                     Worker,
+                                     AcpiGetContext);
+        if (Status == STATUS_PENDING)
+            return STATUS_PENDING;
+    }
+    else
+    {
+        DPRINT1("ACPIGet: FIXME (%p)\n", DataArgs);
+        ASSERT(FALSE);
+    }
+
+Finish:
+
+    AcpiGetContext->Flags |= 0x20000000;
+
+    Worker(NsObject, Status, &AcpiGetContext->DataResult, AcpiGetContext);
+
+    Status = AcpiGetContext->Status;
+
+    KeAcquireSpinLock(&AcpiGetLock, &OldIrql);
+    RemoveEntryList(&AcpiGetContext->List);
+    KeReleaseSpinLock(&AcpiGetLock, OldIrql);
+
+    ExFreePoolWithTag(AcpiGetContext, 'MpcA');
+
+    return Status;
 }
 
 NTSTATUS
