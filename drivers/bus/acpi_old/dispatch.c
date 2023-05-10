@@ -161,6 +161,15 @@ ACPIBuildCompleteMustSucceed(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+VOID
+NTAPI 
+ACPIInternalUpdateDeviceStatus(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ ULONG DeviceStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI 
 ACPIGetConvertToDevicePresence(
@@ -171,8 +180,88 @@ ACPIGetConvertToDevicePresence(
     _Out_ PVOID* OutDataBuff,
     _Out_ ULONG* OutDataLen)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT Child;
+    ULONGLONG UFlags;
+    ULONG DeviceStatus = 0xF;
+
+    DPRINT("ACPIGetConvertToDevicePresence: %p\n", DeviceExtension);
+
+    if (GetFlags & 0x08000000)
+    {
+        if (InStatus != STATUS_OBJECT_NAME_NOT_FOUND)
+        {
+            if (NT_SUCCESS(InStatus))
+            {
+                if (AmliData->DataType != 1)
+                {
+                    DPRINT1("ACPIGetConvertToDevicePresence: KeBugCheckEx()\n");
+                    ASSERT(FALSE);
+                    KeBugCheckEx(0xA5, 8, (ULONG_PTR)DeviceExtension, 0, AmliData->DataType);
+                }
+
+                DeviceStatus = (ULONG)AmliData->DataValue;
+            }
+            else
+            {
+                DeviceStatus = 0;
+            }
+        }
+
+        goto Finish;
+    }
+
+    if (DeviceExtension->Flags & 0x0200000000000000)            // Prop_Dock
+        UFlags = (DeviceExtension->Flags & 0x0000000400000000); // Cap_Unattached_Dock
+    else
+        UFlags = (DeviceExtension->Flags & 0x0008000000000000); // Prop_No_Object
+
+    if (UFlags == 0)
+    {
+        if (InStatus == STATUS_OBJECT_NAME_NOT_FOUND)
+        {
+            if (DeviceExtension->Flags & 0x0000001000000000)    // Cap_Processor
+            {
+                DPRINT1("ACPIGetConvertToDevicePresence: KeBugCheckEx()\n");
+                ASSERT(FALSE);
+            }
+        }
+        else
+        {
+            if (NT_SUCCESS(InStatus))
+            {
+                if (AmliData->DataType != 1)
+                {
+                    Child = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'ATS_');
+                    DPRINT1("ACPIGetConvertToDevicePresence: KeBugCheckEx()\n");
+                    ASSERT(FALSE);
+                    KeBugCheckEx(0xA5, 8, (ULONG_PTR)Child, AmliData->DataType, AmliData->DataType);
+                }
+
+                DeviceStatus = (ULONG)AmliData->DataValue;
+            }
+            else
+            {
+                DeviceStatus = 0;
+            }
+        }
+    }
+
+    if ((DeviceExtension->Flags & 1) && !(GetFlags & 0x1000)) // Type_Never_Present
+        DeviceStatus &= ~1;
+
+    if (DeviceExtension->Flags & 0x40000000) // Cap_Never_show_in_UI
+        DeviceStatus &= ~4;
+
+    ACPIInternalUpdateDeviceStatus(DeviceExtension, DeviceStatus);
+
+Finish:
+
+    *OutDataBuff = (PVOID)DeviceStatus;
+
+    if (OutDataLen)
+        *OutDataLen = 4;
+
+    return STATUS_SUCCESS;
 }
 
 VOID
