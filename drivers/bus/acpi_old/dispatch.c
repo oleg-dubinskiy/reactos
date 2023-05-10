@@ -374,7 +374,26 @@ VOID
 NTAPI
 ACPIBuildProcessQueueList(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_BUILD_REQUEST BuildRequest;
+    PLIST_ENTRY Entry;
+
+    DPRINT("ACPIBuildProcessQueueList: start\n");
+
+    Entry = AcpiBuildQueueList.Flink;
+    while (Entry != &AcpiBuildQueueList)
+    {
+        BuildRequest = CONTAINING_RECORD(Entry, ACPI_BUILD_REQUEST, Link);
+
+        RemoveEntryList(Entry);
+        InsertTailList(BuildRequest->ListHeadForInsert, Entry);
+
+        BuildRequest->Flags &= ~0x1000;
+        BuildRequest->ListHeadForInsert = NULL;
+
+        Entry = AcpiBuildQueueList.Flink;
+    }
+
+    DPRINT("ACPIBuildProcessQueueList: exit\n");
 }
 
 NTSTATUS
