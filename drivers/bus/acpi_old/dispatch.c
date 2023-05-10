@@ -167,7 +167,43 @@ ACPIInternalUpdateDeviceStatus(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ ULONG DeviceStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    DEVICE_EXTENSION* Extension;
+    ULONGLONG RetFlagValue;
+    KIRQL OldIrql;
+
+    //DPRINT("ACPIInternalUpdateDeviceStatus: %p, %X\n", DeviceExtension, DeviceStatus);
+
+    ACPIInternalUpdateFlags(DeviceExtension, 0x0080000000000000, (DeviceStatus & 8));
+    ACPIInternalUpdateFlags(DeviceExtension, 0x0000000020000000, (DeviceStatus & 4));
+    ACPIInternalUpdateFlags(DeviceExtension, 0x0040000000000000, !(DeviceStatus & 2));
+
+    RetFlagValue = ACPIInternalUpdateFlags(DeviceExtension, 2, (DeviceStatus & 1));
+
+    if (RetFlagValue & 2)
+        return;
+
+    if (DeviceStatus & 1)
+        return;
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &OldIrql);
+
+    Extension = DeviceExtension->ParentExtension;
+    if (Extension)
+    {
+        do
+        {
+            if (!(Extension->Flags & 8))
+                break;
+
+            Extension = Extension->ParentExtension;
+        }
+        while (Extension);
+
+        if (Extension)
+            IoInvalidateDeviceRelations(Extension->PhysicalDeviceObject, BusRelations);
+    }
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
 }
 
 NTSTATUS
