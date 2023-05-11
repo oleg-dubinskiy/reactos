@@ -671,8 +671,40 @@ NTAPI
 ACPIBuildProcessRunMethodPhaseCheckBridge(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension = BuildRequest->DeviceExtension;
+    ULONG Flags;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIBuildProcessRunMethodPhaseCheckBridge: %p\n", BuildRequest);
+
+    Flags = (ULONG)BuildRequest->Context;
+
+    if ((Flags & 1) && (DeviceExtension->Flags & 2))
+    {
+        BuildRequest->BuildReserved1 = 0;
+        ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+        return Status;
+    }
+
+    BuildRequest->BuildReserved1 = 5;
+
+    if (!(Flags & 0x40))
+    {
+        ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+        return Status;
+    }
+
+    BuildRequest->ListHeadForInsert = NULL;
+
+    DPRINT("ACPIBuildProcessRunMethodPhaseCheckBridge: FIXME\n");
+    ASSERT(FALSE);
+
+    if (Status != STATUS_PENDING)
+        ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+
+    DPRINT("ACPIBuildProcessRunMethodPhaseCheckBridge: ret Status %X\n", Status);
+
+    return Status;
 }
 
 NTSTATUS
