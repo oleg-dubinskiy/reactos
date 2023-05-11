@@ -7399,8 +7399,79 @@ AsyncEvalObject(
     _In_ PVOID CallBackContext,
     _In_ BOOLEAN IsAsync)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_CONTEXT AmliContext = NULL;
+    PAMLI_CALL AmliCall;
+    ULONG ArgIndex;
+    NTSTATUS Status;
+
+    DPRINT("AsyncEvalObject: '%s', %X, %X, %X, %X, %X, %X\n", GetObjectPath(NsObject), DataResult, ArgsCount, DataArgs, InAsyncCallBack, CallBackContext, IsAsync);
+
+    giIndent++;
+
+    //LogSchedEvent(..);
+
+    Status = NewContext(&AmliContext);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("AsyncEvalObject: Status %X\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    AmliContext->NsObject = NsObject;
+    AmliContext->Scope = NsObject;
+    AmliContext->AsyncCallBack = InAsyncCallBack;
+    AmliContext->DataCallBack = DataResult;
+    AmliContext->CallBackContext = CallBackContext;
+
+    //ACPIWmiLogEvent(..);
+
+    if (IsAsync)
+        AmliContext->Flags |= 0x100;
+
+    if (NsObject->ObjData.DataType != 8)
+    {
+        DPRINT1("AsyncEvalObject: Status %X\n", Status);
+        ASSERT(FALSE);
+    }
+
+    Status = PushCall(AmliContext, NsObject, &AmliContext->Result);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("AsyncEvalObject: Status %X\n", Status);
+        ASSERT(FALSE);
+    }
+
+    AmliCall = AmliContext->LocalHeap.HeapEnd;
+    ASSERT(AmliCall->FrameHdr.Signature == 'LLAC');//SIG_CALL
+
+    if (ArgsCount != AmliCall->NumberOfArgs)
+    {
+        DPRINT1("AsyncEvalObject: Status %X\n", Status);
+        ASSERT(FALSE);
+    }
+
+    for (AmliCall->ArgIndex = 0; AmliCall->ArgIndex < ArgsCount; AmliCall->ArgIndex++)
+    {
+        ArgIndex = AmliCall->ArgIndex;
+
+        Status = DupObjData(AmliContext->HeapCurrent, &AmliCall->DataArgs[ArgIndex], &DataArgs[ArgIndex]);
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("AsyncEvalObject: Status %X\n", Status);
+            ASSERT(FALSE);
+        }
+    }
+
+    AmliCall->FrameHdr.Flags = 2;
+
+    Status = RestartContext(AmliContext, FALSE);
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
