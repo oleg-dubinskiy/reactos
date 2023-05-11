@@ -712,8 +712,81 @@ NTAPI
 ACPIBuildProcessRunMethodPhaseRunMethod(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension = BuildRequest->DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT NsObject = NULL;
+    AMLI_OBJECT_DATA amliData[2];
+    PAMLI_OBJECT_DATA AmliData = NULL;
+    ULONG ArgsCount = 0;
+    ULONG flags;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIBuildProcessRunMethodPhaseRunMethod: %p\n", BuildRequest);
+
+    if (!(((ULONG)BuildRequest->Context & 0x40) == 0) && BuildRequest->ListHeadForInsert)
+    {
+        DPRINT("ACPIBuildProcessRunMethodPhaseRunMethod: Is PCI-PCI bridge\n");
+        BuildRequest->BuildReserved1 = 0;
+        goto Exit;
+    }
+
+    BuildRequest->BuildReserved1 = 6;
+
+    NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, (ULONG)BuildRequest->ListHead1);//?
+    if (!NsObject)
+    {
+        goto Exit;
+    }
+
+    if ((ULONG)BuildRequest->Context & 2)
+    {
+        if ((ACPIInternalUpdateFlags(DeviceExtension, 0x0020000000000000, FALSE) >> 0x20) & 0x200000)
+            goto Exit;
+    }
+
+    else if ((ULONG)BuildRequest->Context & 8)
+    {
+        if (!DeviceExtension->PowerInfo.WakeSupportCount)
+            goto Exit;
+
+        RtlZeroMemory(amliData, sizeof(AMLI_OBJECT_DATA));
+
+        amliData[0].DataType = 1;
+        amliData[0].DataValue = ULongToPtr(1);
+
+        AmliData = amliData;
+        ArgsCount = 1;
+    }
+    else if ((ULONG)BuildRequest->Context & 0x30)
+    {
+        flags = ((ULONG)BuildRequest->Context | 0x40);
+        BuildRequest->Context = (PVOID)flags;
+
+        RtlZeroMemory(amliData, sizeof(amliData));
+
+        amliData[0].DataType = 1;
+        amliData[0].DataValue = (PVOID)2;
+
+        amliData[1].DataType = 1;
+        amliData[1].DataValue = (PVOID)(((ULONG)(UCHAR)flags >> 4) & 1);
+
+        AmliData = amliData;
+        ArgsCount = 2;
+    }
+
+    BuildRequest->BuildReserved2 = (ULONG)NsObject;
+
+    Status = AMLIAsyncEvalObject(NsObject, NULL, ArgsCount, AmliData, (PVOID)ACPIBuildCompleteMustSucceed, BuildRequest);
+
+Exit:
+
+    if (Status == STATUS_PENDING)
+        Status = STATUS_SUCCESS;
+    else
+        ACPIBuildCompleteMustSucceed(NsObject, Status, 0, BuildRequest);
+
+    DPRINT("ACPIBuildProcessRunMethodPhaseRunMethod: retStatus %X\n", Status);
+
+    return Status;
 }
 
 NTSTATUS

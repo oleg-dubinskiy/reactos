@@ -278,6 +278,7 @@ typedef struct _ACPI_BUILD_REQUEST
     ULONG BuildReserved1;
     PDEVICE_EXTENSION DeviceExtension;
     NTSTATUS Status;
+    ULONG BuildReserved2;
     PVOID CallBack;
     PVOID CallBackContext;
     PLIST_ENTRY ListHead1;
