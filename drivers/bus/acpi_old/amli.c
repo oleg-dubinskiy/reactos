@@ -3549,8 +3549,72 @@ NTSTATUS __cdecl PowerRes(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEX
 }
 NTSTATUS __cdecl Processor(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT* OutNsObject;
+    PAMLI_PROCESSOR_OBJECT ProcObject;
+    PAMLI_FN_HANDLER FnHandler;
+    NTSTATUS Status;
+
+    DPRINT("Processor: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    OutNsObject = &TermContext->NsObject;
+
+    Status = CreateNameSpaceObject(AmliContext->HeapCurrent,
+                                   TermContext->DataArgs->DataBuff,
+                                   AmliContext->Scope,
+                                   AmliContext->Owner,
+                                   &TermContext->NsObject,
+                                   0);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("Processor: Status %x\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    (*OutNsObject)->ObjData.DataType = 0xC;
+    (*OutNsObject)->ObjData.DataLen = 0xC;
+
+    gdwcPCObjs++;
+
+    (*OutNsObject)->ObjData.DataBuff = HeapAlloc(AmliContext->HeapCurrent, 'ORPH', (*OutNsObject)->ObjData.DataLen);
+
+    if ((*OutNsObject)->ObjData.DataBuff == NULL)
+    {
+        DPRINT1("Processor: failed to allocate processor object\n");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    RtlZeroMemory((*OutNsObject)->ObjData.DataBuff, (*OutNsObject)->ObjData.DataLen);
+
+    ProcObject = (*OutNsObject)->ObjData.DataBuff;
+    ProcObject->ApicID = (ULONG)TermContext->DataArgs[1].DataValue;
+    ProcObject->PBlk = (ULONG)TermContext->DataArgs[2].DataValue;
+    ProcObject->PBlkLen = (ULONG)TermContext->DataArgs[3].DataValue;
+
+    if (ghCreate.Handler)
+    {
+        FnHandler = ghCreate.Handler;
+        FnHandler(0xC, *OutNsObject);
+    }
+
+    Status = PushScope(AmliContext,
+                       AmliContext->Op,
+                       TermContext->OpEnd,
+                       NULL,
+                       *OutNsObject,
+                       AmliContext->Owner,
+                       AmliContext->HeapCurrent,
+                       TermContext->DataResult);
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl RefOf(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {

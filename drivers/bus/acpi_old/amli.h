@@ -392,6 +392,14 @@ typedef struct _ACPI_GET_CONTEXT
     AMLI_OBJECT_DATA DataResult;
 } ACPI_GET_CONTEXT, *PACPI_GET_CONTEXT;
 
+typedef struct _AMLI_PROCESSOR_OBJECT
+{
+    ULONG PBlk;
+    ULONG PBlkLen;
+    CHAR ApicID;
+    UCHAR Pad[3];
+} AMLI_PROCESSOR_OBJECT, *PAMLI_PROCESSOR_OBJECT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1
