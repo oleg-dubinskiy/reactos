@@ -151,6 +151,31 @@ ACPIBuildProcessGenericComplete(
 }
 
 VOID
+NTAPI
+ACPIBuildCompleteCommon(
+    _In_ LONG* Destination,
+    _In_ LONG ExChange)
+{
+    KIRQL OldIrql;
+
+    DPRINT("ACPIBuildCompleteCommon: %X, %X\n", *Destination, ExChange);
+
+    InterlockedCompareExchange(Destination, ExChange, 1);
+
+    KeAcquireSpinLock(&AcpiBuildQueueLock, &OldIrql);
+
+    AcpiBuildWorkDone = TRUE;
+
+    if (!AcpiBuildDpcRunning)
+    {
+        DPRINT("ACPIBuildCompleteCommon: %X\n", *Destination);
+        KeInsertQueueDpc(&AcpiBuildDpc, NULL, NULL);
+    }
+
+    KeReleaseSpinLock(&AcpiBuildQueueLock, OldIrql);
+}
+
+VOID
 __cdecl
 ACPIBuildCompleteMustSucceed(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
@@ -158,7 +183,31 @@ ACPIBuildCompleteMustSucceed(
     _In_ ULONG Unknown3,
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    LONG OldBuildReserved1;
+    ULONG NameSeg;
+
+    DPRINT("ACPIBuildCompleteMustSucceed: %p, %X\n", BuildRequest, Status);
+
+    OldBuildReserved1 = BuildRequest->BuildReserved1;
+
+    if (NT_SUCCESS(Status))
+    {
+        BuildRequest->BuildReserved1 = 2;
+        ACPIBuildCompleteCommon(&BuildRequest->WorkDone, OldBuildReserved1);
+        return;
+    }
+
+    BuildRequest->Status = Status;
+
+    if (NsObject)
+        NameSeg = NsObject->NameSeg;
+    else
+        NameSeg = 0;
+
+    DPRINT1("ACPIBuildCompleteMustSucceed: KeBugCheckEx()\n");
+    ASSERT(FALSE);
+
+    KeBugCheckEx(0xA5, 3, (ULONG_PTR)NsObject, Status, NameSeg);
 }
 
 VOID
