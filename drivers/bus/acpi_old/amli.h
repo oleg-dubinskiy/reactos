@@ -481,7 +481,7 @@ AMLIAsyncEvalObject(
     _In_ PAMLI_OBJECT_DATA DataResult,
     _In_ ULONG ArgsCount,
     _In_ PAMLI_OBJECT_DATA DataArgs,
-    _In_ PVOID CallBack,
+    _In_ PAMLI_FN_ASYNC_CALLBACK InAsyncCallBack,
     _In_ PVOID CallBackContext
 );
 

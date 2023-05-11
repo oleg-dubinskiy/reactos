@@ -7390,16 +7390,69 @@ AMLILoadDDB(
 
 NTSTATUS
 __cdecl
+AsyncEvalObject(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PAMLI_OBJECT_DATA DataResult,
+    _In_ ULONG ArgsCount,
+    _In_ PAMLI_OBJECT_DATA DataArgs,
+    _In_ PAMLI_FN_ASYNC_CALLBACK InAsyncCallBack,
+    _In_ PVOID CallBackContext,
+    _In_ BOOLEAN IsAsync)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 AMLIAsyncEvalObject(
     _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject,
     _In_ PAMLI_OBJECT_DATA DataResult,
     _In_ ULONG ArgsCount,
     _In_ PAMLI_OBJECT_DATA DataArgs,
-    _In_ PVOID CallBack,
+    _In_ PAMLI_FN_ASYNC_CALLBACK InAsyncCallBack,
     _In_ PVOID CallBackContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    DPRINT("AMLIAsyncEvalObject: '%s', %X, %X, %X, %X\n",
+           GetObjectPath(AcpiObject), DataResult, ArgsCount, DataArgs, InAsyncCallBack);
+
+    giIndent++;
+
+    ASSERT(AcpiObject != NULL);
+    ASSERT((ArgsCount == 0) || (DataArgs != NULL));
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIAsyncEvalObject: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (AcpiObject->ObjData.Flags & 4)
+    {
+        DPRINT1("AMLIAsyncEvalObject: AcpiObject is no longer valid\n");
+        Status = STATUS_NO_SUCH_DEVICE;
+    }
+    else
+    {
+        if (DataResult)
+            RtlZeroMemory(DataResult, sizeof(*DataResult));
+
+        Status = AsyncEvalObject(GetBaseObject(AcpiObject), DataResult, ArgsCount, DataArgs, InAsyncCallBack, CallBackContext, TRUE);
+        if (Status == 0x8004)
+            Status = STATUS_PENDING;
+    }
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIAsyncEvalObject: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
