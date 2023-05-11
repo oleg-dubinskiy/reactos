@@ -77,6 +77,7 @@ BOOLEAN AcpiBuildWorkDone;
 
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 extern PACPI_INFORMATION AcpiInformation;
+extern PAMLI_NAME_SPACE_OBJECT ProcessorList[0x20];
 
 /* ACPI TABLES FUNCTIONS ****************************************************/
 
@@ -1650,12 +1651,86 @@ OSNotifyCreateDevice(
 
 NTSTATUS
 NTAPI
+ACPIBuildProcessorRequest(
+    _In_ PDEVICE_EXTENSION ProcessorExt,
+    _In_ ULONG Param2,
+    _In_ ULONG Param3,
+    _In_ ULONG Param4)
+{
+    return STATUS_PENDING;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessorExtension(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PDEVICE_EXTENSION ParentDeviceExtension,
+    _Out_ PDEVICE_EXTENSION* OutNsObject,
+    _In_ ULONG ProcessorIndex)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 OSNotifyCreateProcessor(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
     _In_ ULONGLONG FlagValue)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION ParentDeviceExt;
+    PDEVICE_EXTENSION ProcessorExt = NULL;
+    PAMLI_NAME_SPACE_OBJECT NsParentObject;
+    ULONG ix;
+    NTSTATUS Status;
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ASSERT(NsObject != NULL);
+
+    for (ix = 0; ix < 0x20; ix++)
+    {
+        if (!ProcessorList[ix])
+            break;
+    }
+
+    if (ix >= 0x20)
+        return STATUS_UNSUCCESSFUL;
+
+    if (ProcessorList[ix])
+        return STATUS_UNSUCCESSFUL;
+
+    DPRINT("OSNotifyCreateProcessor: Processor %X, NsObject %p\n", (ix + 1), NsObject);
+
+    ProcessorList[ix] = NsObject;
+
+    NsParentObject = NsObject->Parent;
+    ASSERT(NsParentObject != NULL);
+
+    ParentDeviceExt = NsParentObject->Context;
+    if (!ParentDeviceExt)
+    {
+        ParentDeviceExt = RootDeviceExtension;
+        ASSERT(ParentDeviceExt != NULL);
+    }
+
+    Status = ACPIBuildProcessorExtension(NsObject, ParentDeviceExt, &ProcessorExt, ix);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("OSNotifyCreateProcessor: NSObj %p Failed %08lx\n", NsObject, Status);
+        return Status;
+    }
+
+    InterlockedIncrement(&ProcessorExt->ReferenceCount);
+
+    ACPIInternalUpdateFlags(ProcessorExt, FlagValue, FALSE);
+
+    Status = ACPIBuildProcessorRequest(ProcessorExt, 0, 0, 0);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("OSNotifyCreateProcessor: Status %X\n", Status);
+    }
+
+    return Status;
 }
 
 static CHAR NameObject[8];

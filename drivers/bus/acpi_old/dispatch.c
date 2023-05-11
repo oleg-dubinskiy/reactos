@@ -28,6 +28,7 @@
 
 /* GLOBALS *******************************************************************/
 
+PAMLI_NAME_SPACE_OBJECT ProcessorList[0x20];
 ACPI_INTERFACE_STANDARD ACPIInterfaceTable;
 ACPI_HAL_DISPATCH_TABLE AcpiHalDispatchTable;
 PPM_DISPATCH_TABLE PmHalDispatchTable;
@@ -1705,6 +1706,8 @@ ACPIInitialize(
 
     KeInitializeSpinLock(&NotifyHandlerLock);
     KeInitializeSpinLock(&GpeTableLock);
+
+    RtlZeroMemory(ProcessorList, sizeof(ProcessorList));
 
     AcpiInformation = ExAllocatePoolWithTag(NonPagedPool, sizeof(*AcpiInformation), 'ipcA');
     if (!AcpiInformation)
