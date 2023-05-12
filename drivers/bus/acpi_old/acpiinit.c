@@ -22,6 +22,7 @@
 
 /* GLOBALS *******************************************************************/
 
+PCHAR AcpiProcessorCompatId = "ACPI\\Processor";
 PCHAR ACPIFixedButtonId = "ACPI\\FixedButton";
 
 PACPI_READ_REGISTER AcpiReadRegisterRoutine = DefPortReadAcpiRegister;
@@ -78,6 +79,7 @@ BOOLEAN AcpiBuildWorkDone;
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 extern PACPI_INFORMATION AcpiInformation;
 extern PAMLI_NAME_SPACE_OBJECT ProcessorList[0x20];
+extern ANSI_STRING AcpiProcessorString;
 
 /* ACPI TABLES FUNCTIONS ****************************************************/
 
@@ -1665,11 +1667,102 @@ NTAPI
 ACPIBuildProcessorExtension(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
     _In_ PDEVICE_EXTENSION ParentDeviceExtension,
-    _Out_ PDEVICE_EXTENSION* OutNsObject,
+    _Out_ PDEVICE_EXTENSION* OutDeviceExtension,
     _In_ ULONG ProcessorIndex)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PCHAR CompatIdStr;
+    CHAR Char;
+    NTSTATUS Status;
+
+    if (!AcpiProcessorString.Buffer)
+    {
+        DPRINT1("ACPIBuildProcessorExtension: STATUS_OBJECT_NAME_NOT_FOUND\n");
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
+    Status = ACPIBuildDeviceExtension(NsObject, ParentDeviceExtension, OutDeviceExtension);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBuildProcessorExtension: Status %X\n", Status);
+        return Status;
+    }
+
+    DeviceExtension = *OutDeviceExtension;
+    if (DeviceExtension == NULL)
+    {
+        DPRINT1("ACPIBuildProcessorExtension: Status %X\n", Status);
+        return Status;
+    }
+
+    ACPIInternalUpdateFlags(DeviceExtension, 0x0010001000300000, FALSE);
+
+    DeviceExtension->Processor.ProcessorIndex = ProcessorIndex;
+
+    DeviceExtension->DeviceID = ExAllocatePoolWithTag(NonPagedPool, AcpiProcessorString.Length, 'SpcA');
+    if (!DeviceExtension->DeviceID)
+    {
+        DPRINT1("ACPIBuildProcessorExtension: failed to allocate %X bytes\n", AcpiProcessorString.Length);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto ErrorExit;
+    }
+
+    RtlCopyMemory(DeviceExtension->DeviceID, AcpiProcessorString.Buffer, AcpiProcessorString.Length);
+
+    CompatIdStr = AcpiProcessorCompatId;
+
+    DeviceExtension->Processor.CompatibleID = ExAllocatePoolWithTag(NonPagedPool, (strlen(AcpiProcessorCompatId) + 1), 'SpcA');
+    if (!DeviceExtension->Processor.CompatibleID)
+    {
+        do
+            Char = *CompatIdStr++;
+        while (Char);
+
+        DPRINT1("ACPIBuildProcessorExtension: failed to allocate %X bytes\n", (CompatIdStr - (AcpiProcessorCompatId + 1) + 1));
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto ErrorExit;
+    }
+
+    strcpy(DeviceExtension->Processor.CompatibleID, AcpiProcessorCompatId);
+
+    DeviceExtension->InstanceID = ExAllocatePoolWithTag(NonPagedPool, 3, 'SpcA');
+    if (DeviceExtension->InstanceID)
+    {
+        sprintf(DeviceExtension->InstanceID, "%2d", (int)ProcessorIndex);
+        ACPIInternalUpdateFlags(DeviceExtension, 0x8001E00000000000, FALSE);
+        DPRINT("ACPIBuildProcessorExtension: Status %X\n", Status);
+        return Status;
+    }
+
+    DPRINT1("ACPIBuildProcessorExtension: failed to allocate %X bytes\n", 3);
+    Status = STATUS_INSUFFICIENT_RESOURCES;
+
+ErrorExit:
+
+    if (DeviceExtension->InstanceID)
+    {
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0001400000000000, TRUE);
+        ExFreePoolWithTag(DeviceExtension->InstanceID, 'SpcA');
+        DeviceExtension->InstanceID = NULL;
+    }
+
+    if (DeviceExtension->DeviceID)
+    {
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0000A00000000000, TRUE);
+        ExFreePoolWithTag(DeviceExtension->DeviceID, 'SpcA');
+        DeviceExtension->DeviceID = NULL;
+    }
+
+    if (DeviceExtension->Processor.CompatibleID)
+    {
+        ACPIInternalUpdateFlags(DeviceExtension, 0x8000000000000000, TRUE);
+        ExFreePoolWithTag(DeviceExtension->Processor.CompatibleID, 'SpcA');
+        DeviceExtension->Processor.CompatibleID = NULL;
+    }
+
+    ACPIInternalUpdateFlags(DeviceExtension, 0x0002000000000000, TRUE);
+
+    return Status;
 }
 
 NTSTATUS

@@ -170,6 +170,13 @@ typedef struct _BUTTON_EXTENSION
     };
 } BUTTON_EXTENSION, *PBUTTON_EXTENSION;
 
+typedef struct _PROCESSOR_DEVICE_EXTENSION
+{
+    EXTENSION_WORKER WorkQueue;
+    PCHAR CompatibleID;
+    ULONG ProcessorIndex;
+} PROCESSOR_DEVICE_EXTENSION, *PPROCESSOR_DEVICE_EXTENSION;
+
 typedef struct _DEVICE_EXTENSION
 {
     union
@@ -243,6 +250,7 @@ typedef struct _DEVICE_EXTENSION
     {
         EXTENSION_WORKER WorkQueue;
         BUTTON_EXTENSION Button;
+        PROCESSOR_DEVICE_EXTENSION Processor;
     };
     ACPI_DEVICE_STATE DeviceState;
     ACPI_DEVICE_STATE PreviousState;
