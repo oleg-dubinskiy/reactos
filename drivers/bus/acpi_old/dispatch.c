@@ -795,8 +795,14 @@ NTAPI
 ACPIExtListIsFinished(
     _In_ PACPI_EXT_LIST_ENUM_DATA ExtList)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    BOOLEAN Result;
+
+    if (Add2Ptr(ExtList->DeviceExtension, ExtList->Offset) == ExtList->List)
+        Result = TRUE;
+    else
+        Result = FALSE;
+
+    return Result;
 }
 
 PDEVICE_EXTENSION
