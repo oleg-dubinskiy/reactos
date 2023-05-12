@@ -790,13 +790,29 @@ Exit:
     return Status;
 }
 
+BOOLEAN
+NTAPI
+ACPIExtListIsFinished(
+    _In_ PACPI_EXT_LIST_ENUM_DATA ExtList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
 PDEVICE_EXTENSION
 __cdecl
 ACPIExtListStartEnum(
     _In_ PACPI_EXT_LIST_ENUM_DATA ExtList)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    if (ExtList->ExtListEnum2)
+        KeAcquireSpinLock(ExtList->SpinLock, &ExtList->Irql);
+
+    ExtList->DeviceExtension = (PDEVICE_EXTENSION)((ULONG_PTR)ExtList->List->Flink - ExtList->Offset);
+
+    if (ACPIExtListIsFinished(ExtList))
+        return NULL ;
+
+    return ExtList->DeviceExtension;
 }
 
 BOOLEAN
