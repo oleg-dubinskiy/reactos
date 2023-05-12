@@ -790,13 +790,76 @@ Exit:
     return Status;
 }
 
+PDEVICE_EXTENSION
+__cdecl
+ACPIExtListStartEnum(
+    _In_ PACPI_EXT_LIST_ENUM_DATA ExtList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
+BOOLEAN
+__cdecl
+ACPIExtListTestElement(
+    _In_ PACPI_EXT_LIST_ENUM_DATA ExtList,
+    _In_ BOOLEAN IsParam2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+PDEVICE_EXTENSION
+__cdecl
+ACPIExtListEnumNext(
+    _In_ PACPI_EXT_LIST_ENUM_DATA ExtList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
 NTSTATUS
 NTAPI
 ACPIBuildProcessRunMethodPhaseRecurse(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    ACPI_EXT_LIST_ENUM_DATA ExtList;
+    ULONG flags;
+    BOOLEAN Result;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIBuildProcessRunMethodPhaseRecurse: %p\n", BuildRequest);
+
+    flags = (ULONG)BuildRequest->Context;
+
+    BuildRequest->BuildReserved1 = 0;
+
+    if (!(flags & 4))
+        goto Finish;
+
+    ExtList.List = &BuildRequest->DeviceExtension->ChildDeviceList;
+    ExtList.SpinLock = &AcpiDeviceTreeLock;
+    ExtList.Offset = FIELD_OFFSET(DEVICE_EXTENSION, SiblingDeviceList);//0x148
+    ExtList.ExtListEnum2 = 2;
+
+    DeviceExtension = ACPIExtListStartEnum(&ExtList);
+
+    for (Result = ACPIExtListTestElement(&ExtList, TRUE);
+         Result;
+         Result = ACPIExtListTestElement(&ExtList, NT_SUCCESS(Status)))
+    {
+        Status = ACPIBuildRunMethodRequest(DeviceExtension, NULL, NULL, BuildRequest->ListHead1, flags, FALSE);
+        DeviceExtension = ACPIExtListEnumNext(&ExtList);
+    }
+
+Finish:
+
+    ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+
+    DPRINT("ACPIBuildProcessRunMethodPhaseRecurse: ret Status %X\n", Status);
+
+    return Status;
 }
 
 VOID

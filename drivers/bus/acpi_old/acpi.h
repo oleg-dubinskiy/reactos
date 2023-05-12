@@ -295,6 +295,17 @@ typedef struct _ACPI_BUILD_REQUEST
     PLIST_ENTRY ListHeadForInsert;
 } ACPI_BUILD_REQUEST, *PACPI_BUILD_REQUEST;
 
+typedef struct _ACPI_EXT_LIST_ENUM_DATA
+{
+    PLIST_ENTRY List;
+    PKSPIN_LOCK SpinLock;
+    KIRQL Irql;
+    UCHAR Pad[3];
+    struct _DEVICE_EXTENSION* DeviceExtension;
+    ULONG Offset;
+    ULONG ExtListEnum2;
+} ACPI_EXT_LIST_ENUM_DATA, *PACPI_EXT_LIST_ENUM_DATA;
+
 /* FUNCTIONS ****************************************************************/
 
 #ifndef Add2Ptr
@@ -571,6 +582,17 @@ VOID
 NTAPI
 ACPIRegDumpAcpiTables(
     VOID
+);
+
+NTSTATUS
+NTAPI
+ACPIBuildRunMethodRequest(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext,
+    _In_ PVOID Context,
+    _In_ ULONG Param5,
+    _In_ BOOLEAN IsInsertDpc
 );
 
 #endif /* _ACPI_H_ */
