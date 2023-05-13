@@ -827,8 +827,27 @@ ACPIExtListTestElement(
     _In_ PACPI_EXT_LIST_ENUM_DATA ExtList,
     _In_ BOOLEAN IsParam2)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    BOOLEAN Result;
+
+    if (ACPIExtListIsFinished(ExtList) || !IsParam2)
+    {
+        if (ExtList->ExtListEnum2)
+            KeReleaseSpinLock(ExtList->SpinLock, ExtList->Irql);
+
+        Result = FALSE;
+    }
+    else
+    {
+        if (ExtList->ExtListEnum2 == 1)
+        {
+            InterlockedIncrement(&ExtList->DeviceExtension->ReferenceCount);
+            KeReleaseSpinLock(ExtList->SpinLock, ExtList->Irql);
+        }
+
+        Result = TRUE;
+    }
+
+    return Result;
 }
 
 PDEVICE_EXTENSION

@@ -1315,7 +1315,7 @@ ACPIBuildRunMethodRequest(
     PACPI_BUILD_REQUEST BuildRequest;
     PACPI_BUILD_REQUEST RunMethodRequest;
 
-    DbgPrint("ACPIBuildRunMethodRequest: %p, %X, %X\n", DeviceExtension, Param5, IsInsertDpc);
+    DPRINT("ACPIBuildRunMethodRequest: %p, %X, %X\n", DeviceExtension, Param5, IsInsertDpc);
 
     ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
 
