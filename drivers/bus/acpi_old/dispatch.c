@@ -855,8 +855,26 @@ __cdecl
 ACPIExtListEnumNext(
     _In_ PACPI_EXT_LIST_ENUM_DATA ExtList)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PDEVICE_EXTENSION DeviceExtension;
+    PLIST_ENTRY List;
+    BOOLEAN Result;
+
+    //DPRINT("ACPIExtListEnumNext: %p\n", ExtList);
+
+    if (ExtList->ExtListEnum2 != 1)
+    {
+        List = Add2Ptr(ExtList->DeviceExtension, ExtList->Offset);
+        ExtList->DeviceExtension = (PDEVICE_EXTENSION)((ULONG_PTR)List->Flink - ExtList->Offset);
+
+        Result = ACPIExtListIsFinished(ExtList);
+
+        return (Result ? NULL : ExtList->DeviceExtension);
+    }
+
+    DPRINT1("ACPIExtListEnumNext: FIXME\n");
+    ASSERT(FALSE);
+
+    return DeviceExtension;
 }
 
 NTSTATUS
