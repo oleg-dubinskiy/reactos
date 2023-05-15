@@ -177,6 +177,51 @@ typedef struct _PROCESSOR_DEVICE_EXTENSION
     ULONG ProcessorIndex;
 } PROCESSOR_DEVICE_EXTENSION, *PPROCESSOR_DEVICE_EXTENSION;
 
+typedef struct _WORK_QUEUE_CONTEXT
+{
+    WORK_QUEUE_ITEM Item;
+    PDEVICE_OBJECT DeviceObject;
+    PIRP Irp;
+} WORK_QUEUE_CONTEXT, *PWORK_QUEUE_CONTEXT;
+
+typedef struct _FDO_DEVICE_EXTENSION
+{
+    WORK_QUEUE_CONTEXT WorkContext;
+    PKINTERRUPT InterruptObject;
+    union
+    {
+        ULONG Pm1Status;
+        struct
+        {
+            ULONG Tmr_Sts : 1;
+            ULONG Reserved1 : 3;
+            ULONG Bm_Sts : 1;
+            ULONG Gbl_Sts : 1;
+            ULONG Reserved2 : 2;
+            ULONG PwrBtn_Sts : 1;
+            ULONG SlpBtn_Sts : 1;
+            ULONG Rtc_Sts : 1;
+            ULONG Reserved3 : 4;
+            ULONG Wak_Sts : 1;
+            ULONG Gpe_Sts : 1;
+            ULONG Reserved4 : 14;
+            ULONG Dpc_Sts : 1;
+        } UPm1Status;
+    };
+    KDPC InterruptDpc;
+} FDO_DEVICE_EXTENSION, *PFDO_DEVICE_EXTENSION;
+
+typedef struct _FILTER_DEVICE_EXTENSION
+{
+    WORK_QUEUE_CONTEXT WorkContext;
+    PBUS_INTERFACE_STANDARD Interface;
+} FILTER_DEVICE_EXTENSION, *PFILTER_DEVICE_EXTENSION;
+
+typedef struct _PDO_DEVICE_EXTENSION
+{
+    WORK_QUEUE_CONTEXT WorkContext;
+} PDO_DEVICE_EXTENSION, *PPDO_DEVICE_EXTENSION;
+
 typedef struct _DEVICE_EXTENSION
 {
     union
@@ -246,6 +291,13 @@ typedef struct _DEVICE_EXTENSION
     };
     ULONG Signature;
     PIRP_DISPATCH_TABLE DispatchTable;
+    union                                                   // +0014  +020 // 
+    {
+        FDO_DEVICE_EXTENSION Fdo;
+        PDO_DEVICE_EXTENSION Pdo;
+        FILTER_DEVICE_EXTENSION Filter;
+        WORK_QUEUE_CONTEXT WorkContext;
+    };
     union
     {
         EXTENSION_WORKER WorkQueue;
@@ -328,6 +380,12 @@ typedef VOID
 typedef NTSTATUS
 (NTAPI * PACPI_BUILD_DISPATCH)(
     _In_ PACPI_BUILD_REQUEST BuildRequest
+);
+
+typedef VOID
+(NTAPI * PHAL_ACPI_TIMER_INIT)(
+    _In_ PULONG TimerPort,
+    _In_ BOOLEAN TimerValExt
 );
 
 /* acpiinit.c */

@@ -1702,13 +1702,83 @@ RtlDuplicateCmResourceList(
     return OutCmResource;
 }
 
+PCM_PARTIAL_RESOURCE_DESCRIPTOR
+NTAPI
+RtlUnpackPartialDesc(
+    _In_ UCHAR Type,
+    _In_ PCM_RESOURCE_LIST CmResource,
+    _Inout_ ULONG* OutStartIndex)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
+VOID
+NTAPI
+ACPIInterruptServiceRoutineDPC(
+    _In_ PKDPC Dpc,
+    _In_ PVOID DeferredContext,
+    _In_ PVOID SystemArgument1,
+    _In_ PVOID SystemArgument2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+BOOLEAN
+NTAPI
+ACPIInterruptServiceRoutine(
+    _In_ PKINTERRUPT Interrupt,
+    _In_ PVOID ServiceContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
 BOOLEAN
 NTAPI
 OSInterruptVector(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR PartialDesc;
+    PDEVICE_EXTENSION DeviceExtension;
+    ULONG StartIndex = 0;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("OSInterruptVector: %p\n", DeviceObject);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    PartialDesc = RtlUnpackPartialDesc(CmResourceTypeInterrupt, DeviceExtension->ResourceList, &StartIndex);
+    if (!PartialDesc)
+    {
+        DPRINT1("OSInterruptVector: Could not find interrupt descriptor\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0xA5, 1, (ULONG_PTR)DeviceExtension, (ULONG_PTR)&DeviceExtension->ResourceList->Count, 1);
+    }
+
+    KeInitializeDpc(&DeviceExtension->Fdo.InterruptDpc, ACPIInterruptServiceRoutineDPC, DeviceExtension);
+
+    Status = IoConnectInterrupt(&DeviceExtension->Fdo.InterruptObject,
+                                ACPIInterruptServiceRoutine,
+                                DeviceExtension,
+                                NULL,
+                                PartialDesc->u.Interrupt.Vector,
+                                (KIRQL)PartialDesc->u.Generic.Start.LowPart,
+                                (KIRQL)PartialDesc->u.Generic.Start.LowPart,
+                                LevelSensitive,
+                                CmResourceShareShared,
+                                PartialDesc->u.Interrupt.Affinity,
+                                FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("OSInterruptVector: Could not connected to interrupt (%X)\n", Status);
+        return FALSE;
+    }
+
+    ((PHAL_ACPI_TIMER_INIT)(PmHalDispatchTable->Function[0]))(NULL, FALSE);
+
+    return TRUE;
 }
 
 /* DDB - Differentiated Definition Block */
