@@ -2006,11 +2006,10 @@ AccessFieldData(
 
     ParentObjData = &FieldUnitObj->NsFieldParent->ObjData;
     IndexFieldObj = ParentObjData->DataBuff;
+    IndexObjData = &IndexFieldObj->DataObj->ObjData;
 
     if (IsRead)
     {
-        IndexObjData = &IndexFieldObj->DataObj->ObjData;
-
         Status = PushAccFieldObj(AmliContext, ReadFieldObj, IndexObjData, IndexObjData->DataBuff, (PUCHAR)OutData, 4);
         goto Exit;
     }
@@ -2039,8 +2038,7 @@ AccessFieldData(
         goto Exit;
     }
 
-    DPRINT1("AccessFieldData: FIXME\n");
-    ASSERT(FALSE);
+    Status = PushAccFieldObj(AmliContext, WriteFieldObj, IndexObjData, IndexObjData->DataBuff, (PUCHAR)OutData, 4);
 
 Exit:
 
@@ -2374,8 +2372,57 @@ WriteFieldLoop(
     _In_ PAMLI_WRITE_FIELD_LOOP WrFieldLoop,
     _In_ NTSTATUS Status)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG Stage;
+    ULONG Length;
+    ULONG ByteCount;
+
+    if (Status)
+        Stage = 1;
+    else
+        Stage = (WrFieldLoop->FrameHeader.Flags & 0xF);
+
+    DPRINT("WriteFieldLoop: %X, %X, %X, %X\n", Stage, AmliContext, WrFieldLoop, Status);
+
+    giIndent++;
+
+    ASSERT(WrFieldLoop->FrameHeader.Signature == 'LFRW');//SIG_WRFIELDLOOP
+
+    if (Stage)
+    {
+        if (Stage != 1)
+            goto Exit;
+
+        PopFrame(AmliContext);
+        goto Exit;
+    }
+
+    Length = WrFieldLoop->Length;
+    if (!Length)
+    {
+        WrFieldLoop->FrameHeader.Flags++;
+        PopFrame(AmliContext);
+        goto Exit;
+    }
+
+    ByteCount = WrFieldLoop->ByteCount;
+    if (ByteCount > Length)
+        ByteCount = WrFieldLoop->Length;
+
+    Status = PushAccFieldObj(AmliContext,
+                             WriteFieldObj,
+                             WrFieldLoop->DataObj,
+                             WrFieldLoop->FieldDesc,
+                             WrFieldLoop->Buffer,
+                             ByteCount);
+
+    WrFieldLoop->Length -= ByteCount;
+    WrFieldLoop->Buffer = Add2Ptr(WrFieldLoop->Buffer, ByteCount);
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS

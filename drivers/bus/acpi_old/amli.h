@@ -676,4 +676,12 @@ InsertReadyQueue(
     _In_ BOOLEAN IsDelayExecute
 );
 
+NTSTATUS
+__cdecl
+WriteFieldObj(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_ACCESS_FIELD_OBJECT Afo,
+    _In_ NTSTATUS InStatus
+);
+
 /* EOF */
