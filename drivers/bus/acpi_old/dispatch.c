@@ -1709,7 +1709,36 @@ RtlUnpackPartialDesc(
     _In_ PCM_RESOURCE_LIST CmResource,
     _Inout_ ULONG* OutStartIndex)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ULONG Index = 0;
+    ULONG ix;
+    ULONG jx;
+
+    if (OutStartIndex)
+    {
+        DPRINT("RtlUnpackPartialDesc: %X, %p, %X\n", Type, CmResource, *OutStartIndex);
+    }
+    else
+    {
+        DPRINT("RtlUnpackPartialDesc: %X, %p\n", Type, CmResource);
+    }
+
+    for (ix = 0; ix < CmResource->Count; ix++)
+    {
+        for (jx = 0; jx < CmResource->List[ix].PartialResourceList.Count; jx++)
+        {
+            if (CmResource->List[ix].PartialResourceList.PartialDescriptors[jx].Type == Type)
+            {
+                if (Index == *OutStartIndex)
+                {
+                    (*OutStartIndex)++;
+                    return &CmResource->List[ix].PartialResourceList.PartialDescriptors[jx];
+                }
+
+                Index++;
+            }
+        }
+    }
+
     return NULL;
 }
 
