@@ -1946,8 +1946,6 @@ GetFieldUnitRegionObj(
 
     return Status;
 }
-    PAMLI_NAME_SPACE_OBJECT IndexObj;
-    PAMLI_NAME_SPACE_OBJECT DataObj;
 
 NTSTATUS
 __cdecl
@@ -6899,8 +6897,33 @@ ParseArgObj(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_CALL AmliCall;
+    ULONG ix;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    giIndent++;
+
+    ASSERT(DataResult != NULL);
+
+    AmliCall = AmliContext->Call;
+
+    ix = (*AmliContext->Op - 0x68);
+
+    if ((int)ix < (int)AmliCall->NumberOfArgs)
+    {
+        CopyObjData(DataResult, &AmliCall->DataArgs[ix]);
+        AmliContext->Op++;
+    }
+    else
+    {
+        DPRINT1("ParseOpcode: Arg%d does not exist\n", ix);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_ARGUMENT;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
