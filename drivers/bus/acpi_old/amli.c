@@ -3670,8 +3670,21 @@ NTSTATUS __cdecl SleepStall(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONT
 }
 NTSTATUS __cdecl Store(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+    PAMLI_OBJECT_DATA DataObj;
+
+    giIndent++;
+
+    Status = ValidateTarget((TermContext->DataArgs + 1), 0x87, &DataObj);
+    if (Status == STATUS_SUCCESS)
+    {
+        MoveObjData(TermContext->DataResult, TermContext->DataArgs);
+        Status = WriteObject(AmliContext, DataObj, TermContext->DataResult);
+    }
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl ThermalZone(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
