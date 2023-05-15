@@ -400,6 +400,16 @@ typedef struct _AMLI_PROCESSOR_OBJECT
     UCHAR Pad[3];
 } AMLI_PROCESSOR_OBJECT, *PAMLI_PROCESSOR_OBJECT;
 
+typedef struct _AMLI_WRITE_FIELD_LOOP
+{
+    AMLI_FRAME_HEADER FrameHeader;
+    PAMLI_OBJECT_DATA DataObj;
+    PAMLI_FIELD_DESCRIPTOR FieldDesc;
+    PVOID Buffer;
+    ULONG Length;
+    ULONG ByteCount;
+} AMLI_WRITE_FIELD_LOOP, *PAMLI_WRITE_FIELD_LOOP;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1

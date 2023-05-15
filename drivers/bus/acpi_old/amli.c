@@ -2369,14 +2369,98 @@ PushAccFieldObj(
 
 NTSTATUS
 __cdecl
+WriteFieldLoop(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_WRITE_FIELD_LOOP WrFieldLoop,
+    _In_ NTSTATUS Status)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 WriteField(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_OBJECT_DATA DataObj,
     _In_ PAMLI_FIELD_DESCRIPTOR FieldDesc,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_WRITE_FIELD_LOOP WrFieldLoopData;
+    PVOID Buffer;
+    ULONG ByteCount;
+    ULONG Length;
+    NTSTATUS Status;
+
+    ByteCount = ((FieldDesc->NumBits + 7) >> 3);
+
+    DPRINT("WriteField: %X, %X, %X, %X\n", AmliContext, DataObj, FieldDesc, DataResult);
+
+    giIndent++;
+
+    if ((FieldDesc->FieldFlags & 0xF) > 3)
+    {
+        if (DataObj->DataType == 5)
+        {
+            DPRINT1("WriteField: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else
+        {
+            DPRINT1("WriteField: invalid access size for buffer field (FieldFlags %X)\n", FieldDesc->FieldFlags);
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_INVALID_ACCESS_SIZE;
+        }
+
+        goto Exit;
+    }
+
+    if (DataResult->DataType == 1)
+    {
+        if (ByteCount < 4)
+            Length = ByteCount;
+        else
+            Length = 4;
+
+        Buffer = &DataResult->DataValue;
+    }
+    else if (DataResult->DataType == 2)
+    {
+        Length = (DataResult->DataLen - 1);
+        Buffer = DataResult->DataBuff;
+    }
+    else if (DataResult->DataType == 3)
+    {
+        Length = DataResult->DataLen;
+        Buffer = DataResult->DataBuff;
+    }
+    else
+    {
+        DPRINT1("WriteField: invalid source data type '%s'\n", GetObjectTypeName(DataResult->DataType));
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_OBJTYPE;
+        goto Exit;
+    }
+
+    Status = PushFrame(AmliContext, 'LFRW', sizeof(*WrFieldLoopData), WriteFieldLoop, (PVOID *)&WrFieldLoopData);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("WriteField: Status %X\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    WrFieldLoopData->DataObj = DataObj;
+    WrFieldLoopData->FieldDesc = FieldDesc;
+    WrFieldLoopData->Buffer = Buffer;
+    WrFieldLoopData->Length = Length;
+    WrFieldLoopData->ByteCount = ByteCount;
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
