@@ -1230,8 +1230,105 @@ NewObjData(
     _In_ PAMLI_HEAP Heap,
     _In_ PAMLI_OBJECT_DATA Src)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    ULONG NameSeg;
+    ULONG Length;
+
+    switch (Src->DataType)
+    {
+        case 2:
+            gdwcSDObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'RTSH';
+            Heap = gpheapGlobal;
+            break;
+
+        case 3:
+            gdwcBDObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'FUBH';
+            Heap = gpheapGlobal;
+            break;
+
+        case 4:
+            gdwcPKObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'GKPH';
+            Heap = gpheapGlobal;
+            break;
+
+        case 5:
+            gdwcFUObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'UDFH';
+            break;
+
+        case 7:
+            gdwcEVObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'NVEH';
+            break;
+
+        case 8:
+            gdwcMEObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'TEMH';
+            break;
+
+        case 9:
+            gdwcMTObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'TUMH';
+            break;
+
+        case 0xA:
+            gdwcORObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'GROH';
+            break;
+
+        case 0xB:
+            gdwcPRObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'SRPH';
+            break;
+
+        case 0xC:
+            gdwcPCObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'ORPH';
+            break;
+
+        case 0xE:
+            gdwcBFObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'DFBH';
+            break;
+
+        case 0x82:
+            gdwcKFObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'FKBH';
+            break;
+
+        case 0x83:
+            gdwcFObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'ODFH';
+            break;
+
+        case 0x84:
+            gdwcIFObjs++;
+            Length = Src->DataLen;
+            NameSeg = 'FXIH';
+            break;
+
+        default:
+            DPRINT1("NewObjData: NewObjData: invalid object type '%s'\n", GetObjectTypeName(Src->DataType));
+            ASSERT(FALSE);
+            return NULL;
+    }
+
+    return HeapAlloc(Heap, NameSeg, Length);
 }
 
 /* CALLBACKS TERM HANDLERS **************************************************/
@@ -6932,8 +7029,20 @@ ParseLocalObj(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+      int ix;
+
+      giIndent++;
+
+      ASSERT(DataResult != NULL);
+
+      ix = (*AmliContext->Op - 0x60);
+
+      CopyObjData(DataResult, &AmliContext->Call->Locals[ix]);
+
+      AmliContext->Op++;
+      giIndent--;
+
+      return STATUS_SUCCESS;
 }
 
 NTSTATUS
