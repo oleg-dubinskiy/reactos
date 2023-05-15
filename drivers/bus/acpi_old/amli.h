@@ -659,4 +659,11 @@ AMLIFreeDataBuffs(
     _In_ ULONG Count
 );
 
+NTSTATUS
+__cdecl
+InsertReadyQueue(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ BOOLEAN IsDelayExecute
+);
+
 /* EOF */

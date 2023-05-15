@@ -7028,11 +7028,30 @@ LoadDDB(
 }
 
 VOID
+__cdecl 
+FreeMem(
+    _In_ PVOID P,
+    _Out_ ULONG* OutMemObjs)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
 NTAPI
 RestartCtxtPassive(
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_RESTART_CONTEXT RestartCtxt = Context;
+
+    giIndent++;
+
+    AcquireMutex(&gReadyQueue.Mutex);
+    InsertReadyQueue(RestartCtxt->AmliContext, (~((USHORT)RestartCtxt->AmliContext->Flags >> 8) & 1)); // FIXME
+    ReleaseMutex(&gReadyQueue.Mutex);
+
+    FreeMem(RestartCtxt, &gdwcMemObjs);
+
+    giIndent--;
 }
 
 VOID
