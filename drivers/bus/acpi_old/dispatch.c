@@ -147,8 +147,33 @@ NTAPI
 ACPIBuildProcessGenericComplete(
     _In_ PACPI_BUILD_REQUEST Entry)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_BUILD_REQUEST BuildRequest = Entry;
+    PDEVICE_EXTENSION DeviceExtension;
+
+    //DPRINT("ACPIBuildProcessGenericComplete: %p\n", BuildRequest);
+
+    if (Entry->CallBack)
+    {
+        ((VOID (NTAPI *)(PDEVICE_EXTENSION, PVOID, NTSTATUS))Entry->CallBack)(Entry->DeviceExtension, Entry->CallBackContext, Entry->Status);
+    }
+
+    if (Entry->Flags & 8)
+    {
+        DeviceExtension = Entry->DeviceExtension;
+
+        KeAcquireSpinLockAtDpcLevel(&AcpiDeviceTreeLock);
+        InterlockedDecrement(&DeviceExtension->ReferenceCount);
+        KeReleaseSpinLockFromDpcLevel(&AcpiDeviceTreeLock);
+    }
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
+    AcpiBuildWorkDone = TRUE;
+    RemoveEntryList(&BuildRequest->Link);
+    KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+
+    ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, BuildRequest);
+
+    return STATUS_SUCCESS;
 }
 
 VOID
