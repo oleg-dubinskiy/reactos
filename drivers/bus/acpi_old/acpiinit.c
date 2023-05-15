@@ -35,6 +35,7 @@ PDEVICE_EXTENSION RootDeviceExtension;
 PRSDTINFORMATION RsdtInformation;
 WORK_QUEUE_ITEM ACPIWorkItem;
 KDPC AcpiBuildDpc;
+PVOID ACPIThread;
 
 PUCHAR GpeEnable;
 PUCHAR GpeCurEnable;
@@ -2079,7 +2080,54 @@ VOID
 NTAPI
 ACPIWorker(PVOID StartContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PWORK_QUEUE_ITEM WorkQueueItem;
+    KWAIT_BLOCK WaitBlockArray;
+    PLIST_ENTRY Entry;
+    PVOID Object[2];
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("ACPIWorker()\n");
+
+    ACPIThread = KeGetCurrentThread();
+
+    Object[0] = &ACPIWorkToDoEvent;
+    Object[1] = &ACPITerminateEvent;
+
+    while (TRUE)
+    {
+        Status = KeWaitForMultipleObjects(2, Object, WaitAny, Executive, KernelMode, FALSE, NULL, &WaitBlockArray);
+        if (Status == STATUS_WAIT_1)
+            PsTerminateSystemThread(STATUS_SUCCESS);
+
+        KeAcquireSpinLock(&ACPIWorkerSpinLock, &OldIrql);
+
+        ASSERT(!IsListEmpty(&ACPIWorkQueue));
+
+        Entry = RemoveHeadList(&ACPIWorkQueue);
+        WorkQueueItem = CONTAINING_RECORD(Entry, WORK_QUEUE_ITEM, List);
+
+        if (IsListEmpty(&ACPIWorkQueue))
+            KeClearEvent(&ACPIWorkToDoEvent);
+
+        KeReleaseSpinLock(&ACPIWorkerSpinLock, OldIrql);
+
+        //_SEH2_TRY
+
+        WorkQueueItem->WorkerRoutine(WorkQueueItem->Parameter);
+
+        if (KeGetCurrentIrql())
+        {
+            OldIrql = KeGetCurrentIrql();
+
+            DPRINT1("ACPIWorker: worker exit at IRQL %X, worker routine %X, parameter %X, item %X\n",
+                    OldIrql, WorkQueueItem->WorkerRoutine, WorkQueueItem->Parameter, WorkQueueItem);
+
+            DbgBreakPoint();
+        }
+
+        //_SEH2_END
+    }
 }
 
 VOID
