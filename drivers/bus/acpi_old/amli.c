@@ -5564,6 +5564,17 @@ PopFrame(
 
 NTSTATUS
 __cdecl
+AcquireASLMutex(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_MUTEX_OBJECT AmliMutex,
+    _In_ USHORT Timeout)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 ReleaseASLMutex(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_MUTEX_OBJECT AmliMutex)
@@ -5590,8 +5601,87 @@ ParseAcquire(
     _In_ PAML_ACQUIRE AmliAcquire,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_OBJECT_DATA DataResult;
+    ULONG Stage;
+
+    if (InStatus != STATUS_SUCCESS)
+        Stage = 2;
+    else
+        Stage = (AmliAcquire->FrameHeader.Flags & 0xF);
+
+    giIndent++;
+
+    if (AmliAcquire->FrameHeader.Signature != 'FQCA')//SIG_ACQUIRE
+    {
+        DPRINT1("ParseAcquire: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (Stage == 0)
+    {
+        AmliAcquire->FrameHeader.Flags++;
+
+        if (AmliAcquire->FrameHeader.Flags & 0x10000)
+        {
+            DPRINT1("ParseAcquire: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else
+    {
+        if (Stage != 1)
+        {
+            if (Stage == 2)
+            {
+                PopFrame(AmliContext);
+                goto Exit;
+            }
+            else
+            {
+                goto Exit;
+            }
+        }
+    }
+
+    if (AmliAcquire->FrameHeader.Flags & 0x10000)
+        AmliAcquire->FrameHeader.Flags |= 0x20000;
+
+    InStatus = AcquireASLMutex(AmliContext, AmliAcquire->AmliMutex, AmliAcquire->Timeout);
+    if (InStatus != 0x8004)
+    {
+        if (AmliAcquire->FrameHeader.Flags & 0x40000)
+        {
+            AmliAcquire->DataResult->DataType = 1;
+            DataResult = AmliAcquire->DataResult;
+
+            if (InStatus == 0x8005)
+            {
+                DataResult->DataValue = (PVOID)0xFFFFFFFF;
+                InStatus = STATUS_SUCCESS;
+            }
+            else
+            {
+                DataResult->DataValue = NULL;
+            }
+        }
+
+        AmliAcquire->FrameHeader.Flags++;
+        PopFrame(AmliContext);
+        goto Exit;
+    }
+
+    if (AmliAcquire->FrameHeader.Flags & 0x20000)
+    {
+        AmliAcquire->FrameHeader.Flags &= ~0x20000;
+        DPRINT1("ParseAcquire: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+Exit:
+
+    giIndent--;
+
+    return InStatus;
 }
 
 VOID

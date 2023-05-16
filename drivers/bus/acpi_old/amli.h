@@ -371,6 +371,7 @@ typedef struct _AMLI_ACCESS_FIELD_OBJECT
 
 typedef struct _AML_ACQUIRE
 {
+    AMLI_FRAME_HEADER FrameHeader;
     PAMLI_MUTEX_OBJECT AmliMutex;
     USHORT Timeout;
     USHORT Pad;
