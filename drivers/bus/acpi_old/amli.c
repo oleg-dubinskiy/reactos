@@ -3640,8 +3640,53 @@ NTSTATUS __cdecl Notify(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT 
 }
 NTSTATUS __cdecl ObjTypeSizeOf(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_OBJECT_DATA DataObj;
+    PAMLI_PACKAGE_OBJECT PackageObject;
+    PVOID Value;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    giIndent++;
+
+    DataObj = GetBaseData(TermContext->DataArgs);
+    TermContext->DataResult->DataType = 1;
+
+    if (TermContext->AmliTerm->Opcode == 0x8E)
+    {
+        giIndent++;
+        TermContext->DataResult->DataValue = (PVOID)(ULONG)DataObj->DataType;
+        giIndent--;
+
+        giIndent--;
+        return Status;
+    }
+
+    giIndent++;
+
+    if (DataObj->DataType == 2)
+    {
+        Value = (PVOID)(DataObj->DataLen - 1);
+        TermContext->DataResult->DataValue = Value;
+    }
+    else if (DataObj->DataType == 3)
+    {
+        TermContext->DataResult->DataValue = (PVOID)DataObj->DataLen;
+    }
+    else if (DataObj->DataType == 4)
+    {
+        PackageObject = DataObj->DataBuff;
+        TermContext->DataResult->DataValue = (PVOID)PackageObject->Elements;
+    }
+    else
+    {
+        DPRINT1("OpRegion: expected argument type string/buffer/package '%s'\n", GetObjectTypeName(DataObj->DataType));
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_ARGTYPE;
+    }
+
+    giIndent--;
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl OpRegion(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
