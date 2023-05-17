@@ -3899,8 +3899,17 @@ NTSTATUS __cdecl ReleaseResetSignalUnload(_In_ PAMLI_CONTEXT AmliContext, _In_ P
 }
 NTSTATUS __cdecl Return(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    giIndent++;
+
+    Status = DupObjData(AmliContext->HeapCurrent, TermContext->DataResult, TermContext->DataArgs);
+    if (Status == STATUS_SUCCESS)
+        Status = 0x8002;
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl Scope(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
