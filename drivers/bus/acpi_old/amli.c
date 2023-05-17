@@ -2893,8 +2893,49 @@ CopyObjBuffer(
     _In_ ULONG DataLen,
     _In_ PAMLI_OBJECT_DATA DataSrc)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PVOID BufferSrc;
+    ULONG CopyLen = 0;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    giIndent++;
+
+    if (DataSrc->DataType == 1)
+    {
+        BufferSrc = &DataSrc->DataValue;
+        CopyLen = 4;
+    }
+    else if (DataSrc->DataType == 2)
+    {
+        BufferSrc = DataSrc->DataBuff;
+        CopyLen = (DataSrc->DataLen - 1);
+    }
+    else if (DataSrc->DataType == 3)
+    {
+        BufferSrc = DataSrc->DataBuff;
+        CopyLen = DataSrc->DataLen;
+    }
+    else
+    {
+        DPRINT("CopyObjBuffer: invalid source object type '%s'\n", GetObjectTypeName(DataSrc->DataType));
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_OBJTYPE;
+        giIndent--;
+        return Status;
+    }
+
+    if (BufferDest != BufferSrc)
+    {
+        RtlZeroMemory(BufferDest, DataLen);
+
+        if (DataLen <= CopyLen)
+            CopyLen = DataLen;
+
+        RtlCopyMemory(BufferDest, BufferSrc, CopyLen);
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
