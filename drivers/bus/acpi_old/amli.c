@@ -5569,8 +5569,71 @@ AcquireASLMutex(
     _In_ PAMLI_MUTEX_OBJECT AmliMutex,
     _In_ USHORT Timeout)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_RESOURCE AmliResource;
+    ULONG OwnedCounter;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    giIndent++;
+
+    if (AmliContext->Flags & 4)
+    {
+        AmliContext->Flags = (AmliContext->Flags & ~4);
+        Status = 0x8005;
+    }
+    else if (AmliMutex->SyncLevel >= AmliContext->SyncLevel)
+    {
+        OwnedCounter = AmliMutex->OwnedCounter;
+        if (OwnedCounter)
+        {
+            AmliResource = AmliMutex->Owner;
+
+            if (AmliResource->ContextOwner == AmliContext)
+            {
+                AmliMutex->OwnedCounter = (OwnedCounter + 1);
+            }
+            else
+            {
+                DPRINT1("AcquireASLMutex: FIXME\n");
+                ASSERT(FALSE);
+                Status = 0x8004;
+            }
+        }
+        else
+        {
+            gdwcCRObjs++;
+
+            AmliResource = HeapAlloc(AmliContext->HeapCurrent, 'RNWO', sizeof(*AmliResource));
+            if (AmliResource)
+            {
+                AmliResource->ResType = 1;
+                AmliResource->ContextOwner = AmliContext;
+                AmliResource->ResObject = AmliMutex;
+
+                ListInsertHead(&AmliResource->List, &AmliContext->ResourcesList);
+
+                AmliMutex->OwnedCounter = 1;
+                AmliMutex->Owner = AmliResource;
+
+                AmliContext->SyncLevel = AmliMutex->SyncLevel;
+            }
+            else
+            {
+                DPRINT1("AcquireASLMutex: failed to allocate context resource\n");
+                ASSERT(FALSE);
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+            }
+        }
+    }
+    else
+    {
+        DPRINT1("AcquireASLMutex: invalid sync level\n");
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_MUTEX_LEVEL;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
