@@ -5803,11 +5803,50 @@ Exit:
 
 VOID
 __cdecl
+FreeNameSpaceObjects(
+    _In_ PAMLI_NAME_SPACE_OBJECT InputNsObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+__cdecl
 FreeObjOwner(
     _In_ PAMLI_OBJECT_OWNER Owner,
     _In_ BOOLEAN IsUnload)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PAMLI_NAME_SPACE_OBJECT NextNsObject;
+
+    giIndent++;
+
+    ASSERT(Owner != NULL);
+
+    AcquireMutex(&gmutOwnerList);
+    ListRemoveEntry(&Owner->List, &gplistObjOwners);
+    ReleaseMutex(&gmutOwnerList);
+
+    if (!IsUnload || !ghDestroyObj.Handler)
+    {
+        for (NsObject = Owner->ObjList; NsObject; NsObject = NextNsObject)
+        {
+            NextNsObject = NsObject->OwnedNext;
+            FreeNameSpaceObjects(NsObject);
+        }
+
+        goto Exit;
+    }
+
+    DPRINT1("FreeObjOwner: FIXME\n");
+    ASSERT(FALSE);
+
+Exit:
+
+    Owner->ObjList = NULL;
+    HeapFree(Owner);
+
+    gdwcOOObjs--;
+    giIndent--;
 }
 
 NTSTATUS
