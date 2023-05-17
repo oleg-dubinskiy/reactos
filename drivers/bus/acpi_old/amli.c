@@ -3024,6 +3024,17 @@ Exit:
     return Status;
 }
 
+NTSTATUS
+__cdecl
+ProcessIncDec(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_POST_CONTEXT AmliPostContext,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* TERM HANDLERS ************************************************************/
 
 #if 1
@@ -3484,8 +3495,22 @@ Exit:
 }
 NTSTATUS __cdecl IncDec(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    giIndent++;
+
+    Status = PushPost(AmliContext,
+                      ProcessIncDec,
+                      (PVOID)TermContext->AmliTerm->Opcode,
+                      TermContext->DataArgs,
+                      TermContext->DataResult);
+
+    if (Status == STATUS_SUCCESS)
+        Status = ReadObject(AmliContext, TermContext->DataArgs, TermContext->DataResult);
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl Index(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
@@ -5667,6 +5692,19 @@ PopFrame(
     AmliContext->LocalHeap.HeapEnd = Add2Ptr(AmliContext->LocalHeap.HeapEnd, Header->Length);
 
     giIndent--;
+}
+
+NTSTATUS
+__cdecl
+PushPost(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PVOID PostCallBack,
+    _In_ PVOID Data1,
+    _In_ PVOID Data2,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 NTSTATUS

@@ -411,6 +411,14 @@ typedef struct _AMLI_WRITE_FIELD_LOOP
     ULONG ByteCount;
 } AMLI_WRITE_FIELD_LOOP, *PAMLI_WRITE_FIELD_LOOP;
 
+typedef struct _AMLI_POST_CONTEXT
+{
+    AMLI_FRAME_HEADER FrameHeader;
+    PVOID Data1;
+    PVOID Data2;
+    PAMLI_OBJECT_DATA DataResult;
+} AMLI_POST_CONTEXT, *PAMLI_POST_CONTEXT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1
@@ -683,6 +691,24 @@ WriteFieldObj(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_ACCESS_FIELD_OBJECT Afo,
     _In_ NTSTATUS InStatus
+);
+
+NTSTATUS
+__cdecl
+PushPost(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PVOID PostCallBack,
+    _In_ PVOID Data1,
+    _In_ PVOID Data2,
+    _In_ PAMLI_OBJECT_DATA DataResult
+);
+
+NTSTATUS
+__cdecl
+ReadObject(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_OBJECT_DATA DataObj,
+    _In_ PAMLI_OBJECT_DATA DataResult
 );
 
 /* EOF */
