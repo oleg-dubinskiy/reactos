@@ -845,8 +845,20 @@ __cdecl
 ListRemoveHead(
     _Inout_ PAMLI_LIST* OutListHead)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PAMLI_LIST Result;
+
+    ASSERT(OutListHead);
+
+    giIndent++;
+
+    Result = *OutListHead;
+
+    if (*OutListHead)
+        ListRemoveEntry(Result, OutListHead);
+
+    giIndent--;
+
+    return Result;
 }
 
 /* FUNCTIONS ****************************************************************/
