@@ -3031,8 +3031,72 @@ ProcessIncDec(
     _In_ PAMLI_POST_CONTEXT AmliPostContext,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_OBJECT_DATA DataResult;
+    ULONG Stage;
+
+    if (InStatus != STATUS_SUCCESS)
+        Stage = 1;
+    else
+        Stage = (AmliPostContext->FrameHeader.Flags & 0xF);
+
+    giIndent++;
+
+    ASSERT(AmliPostContext->FrameHeader.Signature == 'TSOP');//SIG_POST
+
+    if (Stage == 0)
+    {
+        DataResult = AmliPostContext->DataResult;
+
+        AmliPostContext->FrameHeader.Flags++;
+
+        if (DataResult->DataType == 1)
+        {
+            if ((ULONG)AmliPostContext->Data1 == 0x75)
+            {
+                giIndent++;
+                AmliPostContext->DataResult->DataValue = Add2Ptr(AmliPostContext->DataResult->DataValue, 1);
+                giIndent--;
+            }
+            else
+            {
+                giIndent++;
+                AmliPostContext->DataResult->DataValue = Add2Ptr(AmliPostContext->DataResult->DataValue, 1);
+                giIndent--;
+            }
+
+            if (InStatus == STATUS_SUCCESS)
+            {
+                InStatus = WriteObject(AmliContext, AmliPostContext->Data2, AmliPostContext->DataResult);
+
+                if (InStatus != 0x8004 && AmliPostContext == AmliContext->LocalHeap.HeapEnd)
+                    PopFrame(AmliContext);
+            }
+            else
+            {
+                PopFrame(AmliContext);
+            }
+        }
+        else
+        {
+            DPRINT1("Buffer: object %X is not integer type '%s'\n", AmliPostContext->DataResult, GetObjectTypeName(AmliPostContext->DataResult->DataType));
+            ASSERT(FALSE);
+            FreeDataBuffs(DataResult, 1);
+            InStatus = STATUS_ACPI_INVALID_OBJTYPE;
+            PopFrame(AmliContext);
+        }
+    }
+    else if (Stage == 1)
+    {
+        ;
+    }
+    else
+    {
+        PopFrame(AmliContext);
+    }
+
+    giIndent--;
+
+    return InStatus;
 }
 
 /* TERM HANDLERS ************************************************************/
@@ -5703,8 +5767,22 @@ PushPost(
     _In_ PVOID Data2,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_POST_CONTEXT PostContext;
+    NTSTATUS Status;
+
+    giIndent++;
+
+    Status = PushFrame(AmliContext, 'TSOP', sizeof(*PostContext), PostCallBack, (PVOID *)&PostContext);
+    if (Status == STATUS_SUCCESS)
+    {
+        PostContext->Data1 = Data1;
+        PostContext->Data2 = Data2;
+        PostContext->DataResult = DataResult;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
