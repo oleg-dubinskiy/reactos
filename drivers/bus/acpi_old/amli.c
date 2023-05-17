@@ -5736,8 +5736,30 @@ __cdecl
 DequeueAndReadyContext(
     _Out_ PAMLI_LIST* OutListWaiters)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PAMLI_CONTEXT AmliContext = NULL;
+    PAMLI_LIST Entry;
+
+    giIndent++;
+
+    AcquireMutex(&gReadyQueue.Mutex);
+
+    Entry = ListRemoveHead(OutListWaiters);
+    if (Entry)
+    {
+        AmliContext = CONTAINING_RECORD(Entry, AMLI_CONTEXT, QueueList);
+
+        ASSERT(AmliContext->Signature == 'TXTC');//SIG_CTXT
+        ASSERT(AmliContext->QueueLists == OutListWaiters);
+
+        AmliContext->QueueLists = NULL;
+        InsertReadyQueue(AmliContext, TRUE);
+    }
+
+    ReleaseMutex(&gReadyQueue.Mutex);
+
+    giIndent--;
+
+    return AmliContext;
 }
 
 NTSTATUS
