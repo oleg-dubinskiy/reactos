@@ -5731,14 +5731,69 @@ AcquireASLMutex(
     return Status;
 }
 
+PAMLI_CONTEXT
+__cdecl
+DequeueAndReadyContext(
+    _Out_ PAMLI_LIST* OutListWaiters)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
 NTSTATUS
 __cdecl
 ReleaseASLMutex(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_MUTEX_OBJECT AmliMutex)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_RESOURCE AmliResource;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    giIndent++;
+
+    if (!AmliMutex->OwnedCounter)
+    {
+        DPRINT1("ReleaseASLMutex: Mutex is not owned\n");
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_MUTEX_NOT_OWNED;
+        goto Exit;
+    }
+
+    AmliResource = AmliMutex->Owner;
+
+    if (!AmliResource || AmliResource->ContextOwner != AmliContext)
+    {
+        DPRINT1("ReleaseASLMutex: Mutex is owned by a different owner\n");
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_MUTEX_NOT_OWNER;
+    }
+
+    if (AmliMutex->SyncLevel > AmliContext->SyncLevel)
+    {
+        DPRINT1("ReleaseASLMutex: invalid sync level %X, CurrentLevel %X\n", AmliMutex->SyncLevel, AmliContext->SyncLevel);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_MUTEX_LEVEL;
+    }
+
+    AmliContext->SyncLevel = AmliMutex->SyncLevel;
+
+    AmliMutex->OwnedCounter--;
+    if (AmliMutex->OwnedCounter)
+        goto Exit;
+
+    ListRemoveEntry(&AmliResource->List, &AmliContext->ResourcesList);
+    HeapFree(AmliResource);
+
+    gdwcCRObjs--;
+    AmliMutex->Owner = NULL;
+
+    DequeueAndReadyContext(&AmliMutex->ListWaiters);
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 
 VOID
@@ -5847,7 +5902,89 @@ __cdecl
 FreeNameSpaceObjects(
     _In_ PAMLI_NAME_SPACE_OBJECT InputNsObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_NAME_SPACE_OBJECT ParentNsObject;
+    PAMLI_NAME_SPACE_OBJECT NextNsObject;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+
+    giIndent++;
+
+    NsObject = InputNsObject;
+
+    if (!InputNsObject)
+    {
+        ASSERT(InputNsObject != NULL);
+        goto Exit;
+    }
+
+    while (TRUE)
+    {
+        while (NsObject->FirstChild)
+            NsObject = NsObject->FirstChild;
+
+        if (!NsObject->Parent || NsObject->Parent->FirstChild == (PAMLI_NAME_SPACE_OBJECT)NsObject->List.Next)
+            NextNsObject = NULL;
+        else
+            NextNsObject = (PAMLI_NAME_SPACE_OBJECT)NsObject->List.Next;
+
+        ParentNsObject = NsObject->Parent;
+
+        giIndent++;
+
+        ASSERT(NsObject->FirstChild == NULL);
+
+        if (NsObject->ObjData.DataType == 0xA)
+        {
+            DPRINT1("FreeNameSpaceObjects: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (NsObject->Parent)
+        {
+            ListRemoveEntry(&NsObject->List, (PAMLI_LIST *)&NsObject->Parent->FirstChild);
+        }
+        else
+        {
+            ASSERT(NsObject == gpnsNameSpaceRoot);
+            gpnsNameSpaceRoot = NULL;
+        }
+
+        FreeDataBuffs(&NsObject->ObjData, 1);
+
+        if (NsObject->RefCount)
+        {
+            DPRINT1("FreeNameSpaceObjects: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else
+        {
+            HeapFree(NsObject);
+            gdwcNSObjs--;
+        }
+
+        giIndent--;
+
+        if (NsObject == InputNsObject)
+            break;
+
+        if (NextNsObject)
+        {
+            NsObject = NextNsObject;
+            continue;
+        }
+
+        if (ParentNsObject)
+        {
+            NsObject = ParentNsObject;
+            continue;
+        }
+
+        ASSERT(ParentNsObject != NULL);
+        break;
+    }
+
+Exit:
+
+    giIndent--;
 }
 
 VOID
