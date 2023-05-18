@@ -4120,8 +4120,42 @@ NTSTATUS __cdecl Wait(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT Te
 }
 NTSTATUS __cdecl While(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    giIndent++;
+
+    Status = ValidateArgTypes(TermContext->DataArgs, "I");
+    if (Status != STATUS_SUCCESS)
+    {
+        giIndent--;
+        return Status;
+    }
+
+    if (TermContext->DataArgs->DataValue)
+    {
+        Status = PushScope(AmliContext,
+                           AmliContext->Op,
+                           TermContext->OpEnd,
+                           TermContext->Op,
+                           AmliContext->Scope,
+                           AmliContext->Owner,
+                           AmliContext->HeapCurrent,
+                           TermContext->DataResult);
+
+        if (Status == STATUS_SUCCESS)
+        {
+            DPRINT("While: AmliContext %X, Op %X, TermContext %X\n", AmliContext, AmliContext->Op, TermContext);
+            *(PULONG)(Add2Ptr(AmliContext->LocalHeap.HeapEnd, sizeof(AMLI_SCOPE))) |= 2;//?
+        }
+    }
+    else
+    {
+        AmliContext->Op = TermContext->OpEnd;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 #endif
 
