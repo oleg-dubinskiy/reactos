@@ -3245,8 +3245,33 @@ NTSTATUS __cdecl CreateWordField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM
 }
 NTSTATUS __cdecl DerefOf(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_OBJECT_DATA DataArgs;
+    USHORT DataType;
+    NTSTATUS Status;
+
+    giIndent++;
+
+    Status = ValidateArgTypes(TermContext->DataArgs, "R");
+    if (Status == STATUS_SUCCESS)
+    {
+        DataArgs = TermContext->DataArgs;
+        DataType = DataArgs->DataType;
+
+        if (DataType == 0x80)
+        {
+            DataArgs = &GetBaseObject(DataArgs->Alias)->ObjData;
+        }
+        else if (DataType == 0x81)
+        {
+            DataArgs = GetBaseData(DataArgs->DataAlias);
+        }
+
+        Status = ReadObject(AmliContext, DataArgs, TermContext->DataResult);
+    }
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl Device(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
