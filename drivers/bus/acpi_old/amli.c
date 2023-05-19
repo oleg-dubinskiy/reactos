@@ -3578,8 +3578,95 @@ NTSTATUS __cdecl IncDec(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT 
 }
 NTSTATUS __cdecl Index(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_BUFF_FIELD_OBJECT BuffFieldObj;
+    PAMLI_PACKAGE_OBJECT PackageObject;
+    PAMLI_OBJECT_DATA DataObj;
+    ULONG ByteOffset;
+    ULONG idx;
+    USHORT DataType;
+    NTSTATUS Status;
+
+    giIndent++;
+
+    Status = ValidateArgTypes(TermContext->DataArgs, "CI");
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("Index: Status %X\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    Status = ValidateTarget((TermContext->DataArgs + 2), 0x85, &DataObj);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("Index: Status %X\n", Status);
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    DataType = TermContext->DataArgs[0].DataType;
+    if (DataType == 4)
+    {
+        PackageObject = TermContext->DataArgs->DataBuff;
+        idx = (ULONG)TermContext->DataArgs[1].DataValue;
+
+        if (idx < PackageObject->Elements)
+        {
+            TermContext->DataResult->DataType = 0x81;
+            TermContext->DataResult->DataValue = (PVOID)&PackageObject->Data[idx];
+
+            Status = WriteObject(AmliContext, DataObj, TermContext->DataResult);
+        }
+        else
+        {
+            DPRINT1("Index: index out-of-bound (idx %X, max %X)\n", idx, PackageObject->Elements);
+            ASSERT(FALSE);
+            Status = STATUS_ACPI_INVALID_INDEX;
+        }
+
+        goto Exit;
+    }
+
+    ASSERT(DataType == 3);//OBJTYPE_BUFFDATA
+
+    if ((ULONG)TermContext->DataArgs[1].DataValue >= TermContext->DataArgs->DataLen)
+    {
+        DPRINT1("Index: index out-of-bound (idx %X, max %X)\n", TermContext->DataArgs[1].DataValue, TermContext->DataArgs->DataLen);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_INDEX;
+        goto Exit;
+    }
+
+    TermContext->DataResult->DataType = 0xE;
+    TermContext->DataResult->DataLen = 0x18;
+
+    gdwcBFObjs++;
+
+    TermContext->DataResult->DataBuff = HeapAlloc(AmliContext->HeapCurrent, 'DFBH', TermContext->DataResult->DataLen);
+    if (!TermContext->DataResult->DataBuff)
+    {
+        DPRINT1("Index: failed to allocate buffer field object\n");
+        ASSERT(FALSE);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    ByteOffset = (ULONG)TermContext->DataArgs[1].DataValue;
+
+    BuffFieldObj = TermContext->DataResult->DataBuff;
+    BuffFieldObj->FieldDesc.StartBitPos = 0;
+    BuffFieldObj->FieldDesc.ByteOffset = ByteOffset;
+    BuffFieldObj->FieldDesc.NumBits = 8;
+    BuffFieldObj->DataBuff = TermContext->DataArgs->DataBuff;
+    BuffFieldObj->BuffLen = TermContext->DataArgs->DataLen;
+
+    Status = WriteObject(AmliContext, DataObj, TermContext->DataResult);
+
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl IndexField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
