@@ -490,6 +490,8 @@ PCHAR ObjTags[5] = {
     "_TZ"   // Thermal Zone
 };
 
+extern KSPIN_LOCK AcpiDeviceTreeLock;
+
 /* STRING FUNCTIONS *********************************************************/
 
 ULONG
@@ -4705,8 +4707,28 @@ NTAPI
 OSPowerFindPowerInfo(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PDEVICE_EXTENSION DeviceExtension;
+    PACPI_POWER_INFO PowerInfo;
+    KIRQL OldIrql;
+
+    ASSERT(NsObject != NULL);
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &OldIrql);
+
+    DeviceExtension = NsObject->Context;
+    if (!DeviceExtension)
+    {
+        KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
+        return NULL;
+    }
+
+    ASSERT(DeviceExtension->Signature == '_SGP');//ACPI_SIGNATURE
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
+
+    PowerInfo = &DeviceExtension->PowerInfo;
+
+    return PowerInfo;
 }
 
 NTSTATUS
