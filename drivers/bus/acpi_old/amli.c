@@ -4257,7 +4257,7 @@ NTSTATUS __cdecl While(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT T
         if (Status == STATUS_SUCCESS)
         {
             DPRINT("While: AmliContext %X, Op %X, TermContext %X\n", AmliContext, AmliContext->Op, TermContext);
-            *(PULONG)(Add2Ptr(AmliContext->LocalHeap.HeapEnd, sizeof(AMLI_SCOPE))) |= 2;//?
+            *(PUCHAR)(Add2Ptr(AmliContext->LocalHeap.HeapEnd, 0xA)) |= 2;//?
         }
     }
     else
