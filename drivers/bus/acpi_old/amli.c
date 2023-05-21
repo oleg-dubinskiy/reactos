@@ -1996,8 +1996,39 @@ ReadBuffField(
     _In_ PAMLI_FIELD_DESCRIPTOR FieldDesc,
     _Out_ ULONG* OutData)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG Stage;
+    ULONG AccSize;
+    int MaskBits;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    Stage = (FieldDesc->FieldFlags & 0xF);
+
+    if (Stage >= 1 && Stage <= 3)
+        AccSize = (1 << (Stage - 1));
+    else
+        AccSize = 1;
+
+    giIndent++;
+
+    if (BufferFieldObj->BuffLen < (FieldDesc->ByteOffset + AccSize))
+    {
+        DPRINT1("ReadBuffField: offset exceeding buffer size (Offset %X, BuffSize %X, AccSize %X\n", FieldDesc->ByteOffset, BufferFieldObj->BuffLen, AccSize);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_INDEX;
+    }
+    else
+    {
+        if (FieldDesc->NumBits < 0x20)
+            MaskBits = (1 << FieldDesc->NumBits);
+        else
+            MaskBits = 0;
+
+        *OutData = ReadSystemMem(&BufferFieldObj->DataBuff[FieldDesc->ByteOffset], AccSize, ((MaskBits - 1) << FieldDesc->StartBitPos));
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
