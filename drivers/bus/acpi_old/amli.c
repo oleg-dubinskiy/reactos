@@ -4700,6 +4700,15 @@ HeapFindFirstFit(
     return RetHeader;
 }
 
+PACPI_POWER_INFO
+NTAPI
+OSPowerFindPowerInfo(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
 NTSTATUS
 __cdecl
 InternalOpRegionHandler(
@@ -4707,13 +4716,63 @@ InternalOpRegionHandler(
     _In_ PAMLI_NAME_SPACE_OBJECT BaseObj,
     _In_ PVOID Addr,
     _In_ ULONG AccSize,
-    _In_ ULONG* OutValue,
+    _Out_ ULONG *OutValue,
     _In_ PAMLI_REGION_HANDLER Handler,
     _In_ PVOID Callback,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PINTERNAL_OP_REGION_HANDLER RegionHandler;
+    PAMLI_NAME_SPACE_OBJECT RegionObject;
+    PACPI_POWER_INFO PowerInfo;
+    NTSTATUS Status;
+
+    DPRINT("InternalOpRegionHandler: OpRegion Access on region %X device %X\n", BaseObj, BaseObj->Parent);
+
+    RegionObject = BaseObj->Parent;
+    if (!RegionObject)
+    {
+        DPRINT1("InternalOpRegionHandler: STATUS_UNSUCCESSFUL\n");
+        ASSERT(FALSE);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    if (RegionObject->ObjData.DataType != 6)
+    {
+        DPRINT1("InternalOpRegionHandler: STATUS_UNSUCCESSFUL\n");
+        ASSERT(FALSE);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    PowerInfo = OSPowerFindPowerInfo(RegionObject);
+    if (!PowerInfo)
+    {
+        DPRINT1("InternalOpRegionHandler: STATUS_UNSUCCESSFUL\n");
+        ASSERT(FALSE);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    DPRINT("InternalOpRegionHandler: %X\n", PowerInfo->Context);
+
+    if (!Handler)
+    {
+        DPRINT1("InternalOpRegionHandler: STATUS_UNSUCCESSFUL\n");
+        ASSERT(FALSE);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    if (!Handler->CallBack)
+    {
+        DPRINT1("InternalOpRegionHandler: STATUS_UNSUCCESSFUL\n");
+        ASSERT(FALSE);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    RegionHandler = Handler->CallBack;
+    Status = RegionHandler(AccType, BaseObj, (ULONG)Addr, AccSize, OutValue, Handler->CallBackContext, Callback, Context);
+
+    DPRINT("InternalOpRegionHandler: ret Status %X\n", Status);
+ 
+    return Status;
 }
 
 NTSTATUS

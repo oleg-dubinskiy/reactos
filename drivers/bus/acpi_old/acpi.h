@@ -113,6 +113,7 @@ typedef struct _ACPI_DEVICE_POWER_NODE
 
 typedef struct _ACPI_POWER_INFO
 {
+    PVOID Context;
     DEVICE_POWER_STATE DevicePowerMatrix[7];
     SYSTEM_POWER_STATE SystemWakeLevel;
     DEVICE_POWER_STATE DeviceWakeLevel;
