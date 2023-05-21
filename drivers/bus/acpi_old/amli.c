@@ -3060,7 +3060,7 @@ ProcessIncDec(
             else
             {
                 giIndent++;
-                AmliPostContext->DataResult->DataValue = Add2Ptr(AmliPostContext->DataResult->DataValue, 1);
+                AmliPostContext->DataResult->DataValue = Add2Ptr(AmliPostContext->DataResult->DataValue, -1);
                 giIndent--;
             }
 
