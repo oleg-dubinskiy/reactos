@@ -419,6 +419,23 @@ typedef struct _AMLI_POST_CONTEXT
     PAMLI_OBJECT_DATA DataResult;
 } AMLI_POST_CONTEXT, *PAMLI_POST_CONTEXT;
 
+typedef struct _ACPI_PCI_CONFIG_CONTEXT
+{
+    ULONG Type;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    ULONG Offset;
+    ULONG Length;
+    PVOID Buffer;
+    PVOID Handler;
+    PVOID Callback;
+    PVOID Context;
+    PAMLI_NAME_SPACE_OBJECT ParentNsObject;
+    ULONG Flags;
+    LONG RefCount;
+    ULONG SlotNumber;
+    UCHAR BusNumber;
+} ACPI_PCI_CONFIG_CONTEXT, *PACPI_PCI_CONFIG_CONTEXT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1

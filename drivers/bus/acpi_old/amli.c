@@ -4307,19 +4307,56 @@ NTSTATUS __cdecl While(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT T
 /* PCI HANDLER FUNCTIONS ****************************************************/
 
 NTSTATUS
- __cdecl
- PciConfigSpaceHandler(
-    _In_ int Param1,
-    _In_ int Param2,
-    _In_ int Param3,
-    _In_ int Param4,
-    _In_ int Param5,
-    _In_ int Param6,
-    _In_ int Param7,
-    _In_ int Param8)
+__cdecl
+PciConfigSpaceHandlerWorker(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsParent,
+    _In_ NTSTATUS InStatus,
+    _In_ ULONG Param3,
+    _In_ PACPI_PCI_CONFIG_CONTEXT PciCfgContext)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+PciConfigSpaceHandler(
+    _In_ ULONG AccType,
+    _In_ PAMLI_NAME_SPACE_OBJECT BaseObj,
+    _In_ ULONG Offset,
+    _In_ ULONG Length,
+    _In_ PVOID Buffer,
+    _In_ PAMLI_REGION_HANDLER Handler,
+    _In_ PVOID Callback,
+    _In_ PVOID Context)
+{
+    PACPI_PCI_CONFIG_CONTEXT ConfigCtx;
+    NTSTATUS Status;
+
+    ConfigCtx = ExAllocatePoolWithTag(NonPagedPool, sizeof(*ConfigCtx), 'FpcA');
+    if (!ConfigCtx)
+    {
+        DPRINT1("PciConfigSpaceHandler: Allocate failed %X\n");
+        ASSERT(FALSE);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(ConfigCtx, sizeof(*ConfigCtx));
+
+    ConfigCtx->Type = AccType;
+    ConfigCtx->Buffer = Buffer;
+    ConfigCtx->Length = Length;
+    ConfigCtx->Offset = Offset;
+    ConfigCtx->NsObject = BaseObj;
+    ConfigCtx->ParentNsObject = BaseObj->Parent;
+    ConfigCtx->Handler = Handler;
+    ConfigCtx->Callback = Callback;
+    ConfigCtx->Context = Context;
+    ConfigCtx->RefCount = -1;
+
+    Status = PciConfigSpaceHandlerWorker(BaseObj->Parent, STATUS_SUCCESS, 0, ConfigCtx);
+
+    return Status;
 }
 
 /* FUNCTIONS ****************************************************************/
