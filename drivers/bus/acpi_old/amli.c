@@ -8060,7 +8060,15 @@ FreeMem(
     _In_ PVOID P,
     _Out_ ULONG* OutMemObjs)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    if (*OutMemObjs)
+    {
+        ExFreePool(P);
+        --*OutMemObjs;
+        return;
+    }
+
+    DPRINT1("FreeMem: Unbalanced MemFree\n");
+    ASSERT(FALSE);
 }
 
 VOID
