@@ -8087,7 +8087,44 @@ AsyncCallBack(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PAMLI_FN_ASYNC_CALLBACK CallBack;
+    PAMLI_OBJECT_DATA DataCallBack;
+    PVOID CallBackContext;
+
+    if (AmliContext->NestedContext)
+    {
+        NsObject = AmliContext->NestedContext->Object;
+        CallBack = AmliContext->NestedContext->AsyncCallBack;
+        DataCallBack = AmliContext->NestedContext->DataCallBack;
+        CallBackContext = AmliContext->NestedContext->Context;
+    }
+    else
+    {
+        NsObject = AmliContext->NsObject;
+        CallBack = AmliContext->AsyncCallBack;
+        DataCallBack = AmliContext->DataCallBack;
+        CallBackContext = AmliContext->CallBackContext;
+    }
+
+    giIndent++;
+
+    if (CallBack == EvalMethodComplete)
+    {
+        DPRINT1("AsyncCallBack: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (InStatus == 0x8003)
+    {
+        ASSERT(AmliContext->Flags & 0x100);//CTXTF_ASYNC_EVAL
+        RestartContext(AmliContext, FALSE);
+    }
+    else if (CallBack)
+    {
+        CallBack(NsObject, InStatus, DataCallBack, CallBackContext);
+    }
+
+    giIndent--;
 }
 
 NTSTATUS

@@ -711,4 +711,11 @@ ReadObject(
     _In_ PAMLI_OBJECT_DATA DataResult
 );
 
+NTSTATUS
+__cdecl
+RestartContext(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ BOOLEAN IsDelayExecute
+);
+
 /* EOF */
