@@ -69,6 +69,7 @@ ULONG gdwcBFObjs;
 ULONG gdwcRSObjs;
 BOOLEAN g_AmliHookEnabled;
 BOOLEAN gInitTime;
+BOOLEAN IsWritedLog = FALSE;
 
 #if 1
 AMLI_TERM atAlias        = { "Alias",            0x06,       "NN",     1, 0,    NULL, NULL, Alias };
@@ -488,6 +489,14 @@ PCHAR ObjTags[5] = {
     "_SB",  // System bus tree
     "_SI",  // System Indicators
     "_TZ"   // Thermal Zone
+};
+
+USHORT PciOpRegionDisallowedRanges[4][2] =
+{
+    { 0x0000, 0x002B },
+    { 0x0030, 0x003B },
+    { 0x0100, 0xFFFF },
+    { 0x0000, 0x0000 }
 };
 
 extern KSPIN_LOCK AcpiDeviceTreeLock;
@@ -4307,6 +4316,18 @@ NTSTATUS __cdecl While(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT T
 /* PCI HANDLER FUNCTIONS ****************************************************/
 
 NTSTATUS
+NTAPI
+GetOpRegionScope(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
 __cdecl
 PciConfigSpaceHandlerWorker(
     _In_ PAMLI_NAME_SPACE_OBJECT NsParent,
@@ -4314,8 +4335,199 @@ PciConfigSpaceHandlerWorker(
     _In_ ULONG Param3,
     _In_ PACPI_PCI_CONFIG_CONTEXT PciCfgContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PDEVICE_EXTENSION DeviceExtension;
+    PBUS_INTERFACE_STANDARD Interface;
+    ULONG TotalLength;
+    ULONG Length;
+    ULONG Offset;
+    ULONG Size;
+    ULONG ix;
+    USHORT RangeStart;
+    KIRQL OldIrql;
+    BOOLEAN IsNotSuccess = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("PciConfigSpaceHandlerWorker: %p, %X, %X, %p\n", NsParent, InStatus, Param3, PciCfgContext);
+
+    InterlockedIncrement(&PciCfgContext->RefCount);
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        RtlFillMemory(PciCfgContext->Buffer, PciCfgContext->Length, 0xFF);
+        IsNotSuccess = TRUE;
+        Status = STATUS_SUCCESS;
+        goto Finish;
+    }
+
+    NsObject = PciCfgContext->NsObject;
+
+    if (!NsObject->Context && !(PciCfgContext->Flags & 0x1000))
+    {
+        PciCfgContext->Flags |= 0x1000;
+
+        Status = GetOpRegionScope(NsObject, PciConfigSpaceHandlerWorker, PciCfgContext, &NsObject->Context);
+        if (Status == STATUS_PENDING)
+            return STATUS_PENDING;
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("PciConfigSpaceHandlerWorker: Status %X\n", Status);
+            RtlFillMemory(PciCfgContext->Buffer, PciCfgContext->Length, 0xFF);
+            Status = STATUS_SUCCESS;
+            goto Finish;
+        }
+    }
+
+    PciCfgContext->ParentNsObject = PciCfgContext->NsObject->Context;
+
+    DeviceExtension = PciCfgContext->ParentNsObject->Context;
+    if (!DeviceExtension)
+    {
+        RtlFillMemory(PciCfgContext->Buffer, PciCfgContext->Length, 0xFF);
+        Status = STATUS_SUCCESS;
+        goto Finish;
+    }
+
+    Interface = DeviceExtension->Filter.Interface;
+
+    ASSERT(Interface ? (Interface->Size == sizeof(BUS_INTERFACE_STANDARD)) : TRUE);
+
+    if (!Interface && !(PciCfgContext->Flags & 0x100))
+    {
+        DPRINT("PciConfigSpaceHandlerWorker: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    Status = STATUS_SUCCESS;
+
+    OldIrql = KeGetCurrentIrql();
+
+    if (PciCfgContext->Type == 0)
+    {
+        if (Interface)
+        {
+            if (OldIrql < DISPATCH_LEVEL)
+                KeRaiseIrql(DISPATCH_LEVEL, &OldIrql);
+
+            Size = Interface->GetBusData(Interface->Context,
+                                         0,
+                                         PciCfgContext->Buffer,
+                                         PciCfgContext->Offset,
+                                         PciCfgContext->Length);
+            if (OldIrql < DISPATCH_LEVEL)
+                KeLowerIrql(OldIrql);
+        }
+        else
+        {
+            Size = HalGetBusDataByOffset(PCIConfiguration,
+                                         PciCfgContext->BusNumber,
+                                         PciCfgContext->SlotNumber,
+                                         PciCfgContext->Buffer,
+                                         PciCfgContext->Offset,
+                                         PciCfgContext->Length);
+        }
+
+        if (!Size)
+            RtlFillMemory(PciCfgContext->Buffer, PciCfgContext->Length, 0xFF);
+    }
+    else if (PciCfgContext->Type == 1)
+    {
+        Offset = PciCfgContext->Offset;
+        TotalLength = 0;
+        ix = 0;
+
+        while (PciOpRegionDisallowedRanges[ix][1])
+        {
+            RangeStart = PciOpRegionDisallowedRanges[ix][0];
+
+            if (Offset < RangeStart)
+            {
+                Length = (PciCfgContext->Offset + PciCfgContext->Length - Offset);
+
+                if (Length >= RangeStart - Offset)
+                    Length = RangeStart - Offset;
+
+                if (Interface)
+                {
+                    if (OldIrql < DISPATCH_LEVEL)
+                        KeRaiseIrql(DISPATCH_LEVEL, &OldIrql);
+
+                    Interface->SetBusData(Interface->Context,
+                                          0,
+                                          (PVOID)((ULONG_PTR)PciCfgContext->Buffer + (Offset - PciCfgContext->Offset) * 4),
+                                          Offset,
+                                          Length);
+
+                    if (OldIrql < DISPATCH_LEVEL)
+                        KeLowerIrql(OldIrql);
+                }
+                else
+                {
+                    HalSetBusDataByOffset(PCIConfiguration,
+                                          PciCfgContext->BusNumber,
+                                          PciCfgContext->SlotNumber,
+                                          (PVOID)((ULONG_PTR)PciCfgContext->Buffer + (Offset - PciCfgContext->Offset) * 4),
+                                          Offset,
+                                          Length);
+                }
+
+                TotalLength += Length;
+            }
+
+            Offset = (PciOpRegionDisallowedRanges[ix][1] + 1);
+
+            if (Offset < PciCfgContext->Offset)
+                Offset = PciCfgContext->Offset;
+
+            if (Offset >= (PciCfgContext->Offset + PciCfgContext->Length))
+                break;
+
+            ix++;
+        }
+
+        if (!TotalLength)
+        {
+            if (!IsWritedLog)
+            {
+                DPRINT("PciConfigSpaceHandlerWorker: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            RtlFillMemory(PciCfgContext->Buffer, PciCfgContext->Length, 0xFF);
+            IsNotSuccess = TRUE;
+        }
+    }
+    else
+    {
+        RtlFillMemory(PciCfgContext->Buffer, PciCfgContext->Length, 0xFF);
+        Status = STATUS_NOT_IMPLEMENTED;
+    }
+
+Finish:
+
+    if (PciCfgContext->RefCount)
+    {
+        DPRINT("PciConfigSpaceHandlerWorker: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (!NT_SUCCESS(Status) || IsNotSuccess)
+    {
+        CHAR NameNsObject[8] = {0};
+        CHAR NameParentNsObject[8] = {0};
+
+        RtlCopyMemory(NameNsObject, ACPIAmliNameObject(PciCfgContext->NsObject), sizeof(NameNsObject));
+
+        if (PciCfgContext->ParentNsObject)
+            RtlCopyMemory(NameParentNsObject, ACPIAmliNameObject(PciCfgContext->ParentNsObject), sizeof(NameParentNsObject));
+
+        DPRINT("PciConfigSpaceHandlerWorker: Op Region '%s' failed (parent PCI device was '%s')\n", NameNsObject, NameParentNsObject);
+    }
+
+    ExFreePool(PciCfgContext);
+
+    return Status;
 }
 
 NTSTATUS

@@ -498,6 +498,12 @@ OSQueueWorkItem(
     _In_ PWORK_QUEUE_ITEM WorkQueueItem
 );
 
+PCHAR
+NTAPI
+ACPIAmliNameObject(
+    _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject
+);
+
 /* dispatch.c */
 NTSTATUS
 NTAPI
