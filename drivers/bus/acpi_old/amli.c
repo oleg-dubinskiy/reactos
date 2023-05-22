@@ -4316,6 +4316,18 @@ NTSTATUS __cdecl While(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT T
 /* PCI HANDLER FUNCTIONS ****************************************************/
 
 NTSTATUS
+__cdecl
+GetOpRegionScopeWorker(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ ULONG Param3,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
 NTAPI
 GetOpRegionScope(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
@@ -4323,8 +4335,28 @@ GetOpRegionScope(
     _In_ PVOID CallBackContext,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PGET_OP_REGION_SCOPE OpRegScopeCtx;
+    NTSTATUS Status;
+
+    OpRegScopeCtx = ExAllocatePoolWithTag(NonPagedPool, sizeof(*OpRegScopeCtx), 'FpcA');
+    if (!OpRegScopeCtx)
+    {
+        DPRINT1("GetOpRegionScope: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(OpRegScopeCtx, sizeof(*OpRegScopeCtx));
+
+    OpRegScopeCtx->NsObject = NsObject;
+    OpRegScopeCtx->ParentNsObject = NsObject->Parent;
+    OpRegScopeCtx->CallBack = CallBack;
+    OpRegScopeCtx->CallBackContext = CallBackContext;
+    OpRegScopeCtx->Context = Context;
+    OpRegScopeCtx->RefCount = -1;
+
+    Status = GetOpRegionScopeWorker(NsObject, STATUS_SUCCESS, 0, OpRegScopeCtx);
+
+    return Status;
 }
 
 NTSTATUS

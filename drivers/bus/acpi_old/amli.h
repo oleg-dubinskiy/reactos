@@ -436,6 +436,19 @@ typedef struct _ACPI_PCI_CONFIG_CONTEXT
     UCHAR BusNumber;
 } ACPI_PCI_CONFIG_CONTEXT, *PACPI_PCI_CONFIG_CONTEXT;
 
+typedef struct _GET_OP_REGION_SCOPE
+{
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PAMLI_NAME_SPACE_OBJECT ParentNsObject;
+    ULONG Flags;
+    BOOLEAN IsPciDeviceValue;
+    UCHAR Pad[3];
+    LONG RefCount;
+    PVOID CallBack;
+    PVOID CallBackContext;
+    PVOID Context;
+} GET_OP_REGION_SCOPE, *PGET_OP_REGION_SCOPE;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1
