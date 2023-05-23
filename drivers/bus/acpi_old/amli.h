@@ -449,6 +449,21 @@ typedef struct _GET_OP_REGION_SCOPE
     PVOID Context;
 } GET_OP_REGION_SCOPE, *PGET_OP_REGION_SCOPE;
 
+typedef struct _IS_PCI_DEVICE_CONTEXT
+{
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    ULONG Flags;
+    PVOID UniqueId;
+    PVOID HardwareId;
+    PVOID CompatibleId;
+    BOOLEAN IsPciDeviceValue;
+    UCHAR Pad[3];
+    LONG RefCount;
+    PVOID CallBack;
+    PVOID CallBackContext;
+    BOOLEAN* OutIsPciDevice;
+} IS_PCI_DEVICE_CONTEXT, *PIS_PCI_DEVICE_CONTEXT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1

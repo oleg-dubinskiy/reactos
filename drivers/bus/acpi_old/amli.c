@@ -4316,6 +4316,18 @@ NTSTATUS __cdecl While(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT T
 /* PCI HANDLER FUNCTIONS ****************************************************/
 
 NTSTATUS
+__cdecl
+IsPciDeviceWorker(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ ULONG Param3,
+    _In_ PVOID context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
 NTAPI
 IsPciDevice(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
@@ -4323,8 +4335,43 @@ IsPciDevice(
     _In_ PGET_OP_REGION_SCOPE CallBackContext,
     _Out_ BOOLEAN* OutIsPciDevice)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIS_PCI_DEVICE_CONTEXT Context;
+    NTSTATUS Status;
+
+    DPRINT("IsPciDevice: %p\n", NsObject);
+
+    DeviceExtension = NsObject->Context;
+
+    if (DeviceExtension)
+    {
+        ASSERT(DeviceExtension->Signature == '_SGP');//ACPI_SIGNATURE
+
+        if ((DeviceExtension->Flags & 0x100000000) || (DeviceExtension->Flags & 0x2000000))
+        {
+            *OutIsPciDevice = TRUE;
+            return STATUS_SUCCESS;
+        }
+    }
+
+    Context = ExAllocatePoolWithTag(NonPagedPool, sizeof(*Context), 'FpcA');
+    if (!Context)
+    {
+        DPRINT1("IsPciDevice: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(Context, sizeof(*Context));
+
+    Context->NsObject = NsObject;
+    Context->CallBack = CallBack;
+    Context->CallBackContext = CallBackContext;
+    Context->OutIsPciDevice = OutIsPciDevice;
+    Context->RefCount = -1;
+
+    Status = IsPciDeviceWorker(NsObject, STATUS_SUCCESS, 0, Context);
+
+    return Status;
 }
 
 NTSTATUS
