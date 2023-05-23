@@ -3239,8 +3239,33 @@ NTSTATUS __cdecl Concat(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT 
 }
 NTSTATUS __cdecl CondRefOf(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_OBJECT_DATA DataObj;
+    NTSTATUS Status;
+  
+    DPRINT("CondRefOf: AmliContext %X, Op %X, TermContext %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    Status = ValidateTarget((TermContext->DataArgs + 1), 0x87, &DataObj);
+    if (Status == STATUS_SUCCESS)
+    {
+        TermContext->DataResult->DataType = 1;
+
+        if (TermContext->DataArgs->DataType == 0x80 ||
+            TermContext->DataArgs->DataType == 0x81)
+        {
+            TermContext->DataResult->DataValue = (PVOID)(-1);
+            Status = WriteObject(AmliContext, DataObj, TermContext->DataArgs);
+        }
+        else
+        {
+            TermContext->DataResult->DataValue = NULL;
+        }
+    }
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl CreateBitField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
