@@ -584,6 +584,19 @@ ACPIBuildSynchronizationRequest(
     _In_ BOOLEAN IsAddDpc
 );
 
+NTSTATUS
+NTAPI
+ACPIGet(
+    _In_ PVOID Context,
+    _In_ ULONG NameSeg,
+    _In_ ULONG Flags,
+    _In_ PVOID SimpleArgumentBuff,
+    _In_ ULONG SimpleArgumentSize,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext,
+    _Out_ PVOID* OutDataBuff,
+    _Out_ ULONG* OutDataLen);
+
 /* registry.c */
 VOID
 NTAPI

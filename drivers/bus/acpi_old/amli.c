@@ -4321,10 +4321,132 @@ IsPciDeviceWorker(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
     _In_ NTSTATUS InStatus,
     _In_ ULONG Param3,
-    _In_ PVOID context)
+    _In_ PVOID InContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIS_PCI_DEVICE_CONTEXT Context = InContext;
+
+    DPRINT("IsPciDeviceWorker: %p, %X, %X, %p\n", NsObject, InStatus, Param3, Context);
+
+    InterlockedIncrement(&Context->RefCount);
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("IsPciDeviceWorker: InStatus %X\n", InStatus);
+        *Context->OutIsPciDevice = FALSE;
+        goto Exit;
+    }
+
+    if (Context->NsObject->ObjData.DataType != 6)
+    {
+        *Context->OutIsPciDevice = FALSE;
+        goto Exit;
+    }
+
+    if (!(Context->Flags & 1))
+    {
+        Context->Flags |= 1;
+        Context->HardwareId = NULL;
+
+        if (ACPIAmliGetNamedChild(Context->NsObject, 'DIH_'))    // Device ID
+        {
+            InStatus = ACPIGet(Context->NsObject, 'DIH_', 0x58080206, NULL, 0, IsPciDeviceWorker, Context, &Context->HardwareId, NULL);
+
+            if (InStatus == STATUS_PENDING)
+                return STATUS_PENDING;
+
+            if (!NT_SUCCESS(InStatus))
+            {
+                DPRINT1("IsPciDeviceWorker: InStatus %X\n", InStatus);
+                *Context->OutIsPciDevice = FALSE;
+                goto Exit;
+            }
+        }
+    }
+
+    if (Context->HardwareId)
+    {
+        if (strstr(Context->HardwareId, "PNP0A03"))
+        {
+            *Context->OutIsPciDevice = TRUE;
+            goto Exit;
+        }
+
+        ExFreePool(Context->HardwareId);
+        Context->HardwareId = NULL;
+    }
+
+    if (!(Context->Flags & 0x80))
+    {
+        Context->Flags |= 0x80;
+        Context->CompatibleId = NULL;
+
+        if (ACPIAmliGetNamedChild(Context->NsObject, 'DIC_'))
+        {
+            DPRINT1("IsPciDeviceWorker: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    if (Context->CompatibleId)
+    {
+        if (strstr(Context->CompatibleId, "PNP0A03"))
+        {
+            *Context->OutIsPciDevice = TRUE;
+            goto Exit;
+        }
+
+        ExFreePool(Context->CompatibleId);
+        Context->CompatibleId = NULL;
+    }
+
+    if (!(Context->Flags & 8))
+    {
+        Context->Flags |= 8;
+
+        InStatus = ACPIGet(Context->NsObject, 'RDA_', 0x48040402, NULL, 0, IsPciDeviceWorker, Context, &Context->UniqueId, NULL);
+        if (InStatus == STATUS_PENDING)
+            return STATUS_PENDING;
+
+        if (!NT_SUCCESS(InStatus))
+        {
+            DPRINT1("IsPciDeviceWorker: InStatus %X\n", InStatus);
+            *Context->OutIsPciDevice = FALSE;
+            goto Exit;
+        }
+    }
+
+    if (Context->Flags & 0x20)
+        goto Exit;
+
+    Context->Flags |= 0x20;
+    Context->IsPciDeviceValue = FALSE;
+
+    DPRINT1("IsPciDeviceWorker: FIXME\n");
+    ASSERT(FALSE);
+
+Exit:
+
+    if (Context->IsPciDeviceValue)
+        *Context->OutIsPciDevice = Context->IsPciDeviceValue;
+
+    if (InStatus == STATUS_OBJECT_NAME_NOT_FOUND)
+        InStatus = STATUS_SUCCESS;
+
+    if (Context->RefCount)
+    {
+        DPRINT1("IsPciDeviceWorker: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (Context->HardwareId)
+        ExFreePool(Context->HardwareId);
+
+    if (Context->CompatibleId)
+        ExFreePool(Context->CompatibleId);
+
+    ExFreePool(Context);
+
+    return InStatus;
 }
 
 NTSTATUS
