@@ -3820,8 +3820,28 @@ Exit:
 }
 NTSTATUS __cdecl LNot(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    giIndent++;
+
+    Status = ValidateArgTypes(TermContext->DataArgs, "I");
+    if (Status == STATUS_SUCCESS)
+    {
+        giIndent++;
+
+        TermContext->DataResult->DataType = 1;
+
+        if (TermContext->DataArgs->DataValue)
+            TermContext->DataResult->DataValue = NULL;
+        else
+            TermContext->DataResult->DataValue = (PVOID)(-1);
+
+        giIndent--;
+    }
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl Load(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
