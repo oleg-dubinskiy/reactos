@@ -4316,6 +4316,18 @@ NTSTATUS __cdecl While(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT T
 /* PCI HANDLER FUNCTIONS ****************************************************/
 
 NTSTATUS
+NTAPI
+IsPciDevice(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PVOID CallBack,
+    _In_ PGET_OP_REGION_SCOPE CallBackContext,
+    _Out_ BOOLEAN* OutIsPciDevice)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
 __cdecl
 GetOpRegionScopeWorker(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
@@ -4323,8 +4335,65 @@ GetOpRegionScopeWorker(
     _In_ ULONG Param3,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PGET_OP_REGION_SCOPE RegionScope = Context;
+    NTSTATUS Status = InStatus;
+
+    DPRINT("GetOpRegionScopeWorker: %p, %X, %X, %p\n", NsObject, InStatus, Param3, RegionScope);
+
+    ASSERT(RegionScope);
+    InterlockedIncrement(&RegionScope->RefCount);
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("GetOpRegionScopeWorker: InStatus %X\n", InStatus);
+        goto Exit;
+    }
+
+    while (RegionScope->ParentNsObject)
+    {
+        if (RegionScope->ParentNsObject->Parent == RegionScope->ParentNsObject)
+            break;
+
+        if (!(RegionScope->Flags & 0x800))
+        {
+            RegionScope->Flags |= 0x800;
+
+            Status = IsPciDevice(RegionScope->ParentNsObject, GetOpRegionScopeWorker, RegionScope, &RegionScope->IsPciDeviceValue);
+            if (Status == STATUS_PENDING)
+                return STATUS_PENDING;
+
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("GetOpRegionScopeWorker: Status %X\n", Status);
+                goto Exit;
+            }
+        }
+
+        RegionScope->Flags &= ~0x800;
+
+        if (RegionScope->IsPciDeviceValue)
+        {
+            *(PAMLI_NAME_SPACE_OBJECT *)RegionScope->Context = RegionScope->ParentNsObject;
+            Status = STATUS_SUCCESS;
+            goto Exit;
+        }
+
+        RegionScope->ParentNsObject = RegionScope->ParentNsObject->Parent;
+    }
+
+    Status = STATUS_NOT_FOUND;
+
+Exit:
+
+    if (RegionScope->RefCount)
+    {
+        DPRINT1("GetOpRegionScopeWorker: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    ExFreePool(RegionScope);
+
+    return Status;
 }
 
 NTSTATUS
