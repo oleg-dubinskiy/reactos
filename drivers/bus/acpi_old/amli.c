@@ -3830,8 +3830,83 @@ NTSTATUS __cdecl Load(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT Te
 }
 NTSTATUS __cdecl LogOp2(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    BOOLEAN Result;
+    NTSTATUS Status;
+
+    DPRINT("LogOp2: AmliContext %X, Op %X, TermContext %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    Status = ValidateArgTypes(TermContext->DataArgs, "II");
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("LogOp2: Status %X\n", Status);
+        goto Exit;
+    }
+
+    Result = FALSE;
+
+    switch (TermContext->AmliTerm->Opcode)
+    {
+        case 0x90:
+        {
+            giIndent++;
+            Result = (TermContext->DataArgs[0].DataValue && TermContext->DataArgs[1].DataValue);
+            giIndent--;
+
+            DPRINT1("LogOp2: LAnd %X, Result %X\n", 0, Result);
+            break;
+        }
+        case 0x91:
+        {
+            giIndent++;
+            Result = (TermContext->DataArgs[0].DataValue || TermContext->DataArgs[1].DataValue);
+            giIndent--;
+
+            DPRINT1("LogOp2: LOr %X, Result %X\n", 0, Result);
+            break;
+        }
+        case 0x93:
+        {
+            giIndent++;
+            Result = (TermContext->DataArgs[0].DataValue == TermContext->DataArgs[1].DataValue);
+            giIndent--;
+
+            DPRINT1("LogOp2: LEqual %X, Result %X\n", 0, Result);
+            break;
+        }
+        case 0x94:
+        {
+            giIndent++;
+            Result = (TermContext->DataArgs[0].DataValue > TermContext->DataArgs[1].DataValue);
+            giIndent--;
+
+            DPRINT1("LogOp2: LGreater %X, Result %X\n", 0, Result);
+            break;
+        }
+        case 0x95:
+        {
+            giIndent++;
+            Result = (TermContext->DataArgs[0].DataValue < TermContext->DataArgs[1].DataValue);
+            giIndent--;
+
+            DPRINT1("LogOp2: LLess %X, Result %X\n", 0, Result);
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+
+    TermContext->DataResult->DataType = 1;
+    TermContext->DataResult->DataValue = (Result == TRUE ? (PVOID)(-1) : NULL);
+ 
+Exit:
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl Match(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
