@@ -6484,7 +6484,28 @@ AMLIFreeDataBuffs(
     _In_ PAMLI_OBJECT_DATA Data,
     _In_ ULONG Count)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    DPRINT("AMLIFreeDataBuffs: Data %X, Count %X\n", Data, Count);
+
+    giIndent++;
+
+    ASSERT(Data != NULL);
+    ASSERT(Count > 0);
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIFreeDataBuffs: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    FreeDataBuffs(Data, Count);
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIFreeDataBuffs: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    giIndent--;
 }
 
 NTSTATUS
