@@ -67,6 +67,7 @@ ULONG gdwcPRObjs;
 ULONG gdwcPCObjs;
 ULONG gdwcBFObjs;
 ULONG gdwcRSObjs;
+ULONG gdwHighestOSVerQueried;
 BOOLEAN g_AmliHookEnabled;
 BOOLEAN gInitTime;
 BOOLEAN IsWritedLog = FALSE;
@@ -4174,8 +4175,63 @@ Exit:
 }
 NTSTATUS __cdecl OSInterface(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    CHAR Windows2000[13] = "Windows 2000";
+    CHAR Windows2001[13] = "Windows 2001";
+    CHAR Windows2001Sp1[17] = "Windows 2001 SP1";
+    CHAR Windows2001_1[15] = "Windows 2001.1";
+    CHAR Windows2001Sp2[17] = "Windows 2001 SP2";
+    CHAR Windows2001_1S[19] = "Windows 2001.1 SP1";
+    PCHAR OsVerionsList[6];
+    ULONG ix = 0;
+    NTSTATUS Status;
+
+    OsVerionsList[0] = Windows2000;
+    OsVerionsList[1] = Windows2001;
+    OsVerionsList[2] = Windows2001Sp1;
+    OsVerionsList[3] = Windows2001_1;
+    OsVerionsList[4] = Windows2001Sp2;
+    OsVerionsList[5] = Windows2001_1S;
+
+    DPRINT("OSInterface: AmliContext %X, Op %X, TermContext %X, Querying for '%s'\n", AmliContext, AmliContext->Op, TermContext, TermContext->DataArgs->DataBuff);
+
+    giIndent++;
+
+    Status = ValidateArgTypes(TermContext->DataArgs, "A");
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("OSInterface: AmliContext Status %X\n", Status);
+        goto Finish;
+    }
+
+    Status = ValidateArgTypes(TermContext->DataArgs->DataAlias, "Z");
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT1("OSInterface: AmliContext Status %X\n", Status);
+        goto Finish;
+    }
+
+    TermContext->DataResult->DataType = 1;
+    TermContext->DataResult->DataValue = 0;
+
+    while (StrCmp(OsVerionsList[ix], TermContext->DataArgs->DataAlias->DataBuff, 0xFFFFFFFF, 0))
+    {
+        ix++;
+        if (ix >= 6)
+            goto Finish;
+    }
+
+    TermContext->DataResult->DataValue = (PVOID)(-1);
+
+    Status = STATUS_SUCCESS;
+
+    if (gdwHighestOSVerQueried < ix)
+        gdwHighestOSVerQueried = ix;
+
+Finish:
+
+    giIndent--;
+
+    return Status;
 }
 NTSTATUS __cdecl Package(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
