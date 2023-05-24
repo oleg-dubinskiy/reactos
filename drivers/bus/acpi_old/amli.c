@@ -3576,7 +3576,7 @@ NTSTATUS __cdecl IfElse(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT 
     PUCHAR OpEnd;
     PUCHAR Op;
     PUCHAR OpcodeRet;
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
 
     DPRINT("IfElse: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
 
@@ -3606,7 +3606,7 @@ NTSTATUS __cdecl IfElse(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT 
 
         if (OpEnd >= TermContext->ScopeEnd || *OpEnd != 0xA1)
         {
-            Status = STATUS_SUCCESS;
+            OpcodeRet = NULL;
         }
         else
         {
