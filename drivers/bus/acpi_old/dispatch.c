@@ -1160,7 +1160,7 @@ ACPIBuildProcessRunMethodPhaseRunMethod(
         ArgsCount = 2;
     }
 
-    BuildRequest->BuildReserved2 = (ULONG)NsObject;
+    BuildRequest->ChildObject = NsObject;
 
     Status = AMLIAsyncEvalObject(NsObject, NULL, ArgsCount, AmliData, (PVOID)ACPIBuildCompleteMustSucceed, BuildRequest);
 
@@ -1321,8 +1321,74 @@ NTAPI
 ACPIBuildProcessDevicePhaseAdrOrHid(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension = BuildRequest->DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT ChildObject;
+    PAMLI_NAME_SPACE_OBJECT HidChild;
+    PAMLI_NAME_SPACE_OBJECT AdrChild;
+    PAMLI_NAME_SPACE_OBJECT UidChild;
+    PVOID CallBack;
+    PCHAR* IdString;
+    ULONG NameSeg;
+    ULONG Flags;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBuildProcessDevicePhaseAdrOrHid: %p\n", BuildRequest);
+
+    HidChild = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'DIH_');
+    if (!HidChild)
+    {
+        ChildObject = AdrChild = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'RDA_');
+
+        if (!AdrChild)
+        {
+            DPRINT("ACPIBuildProcessDevicePhaseAdrOrHid: KeBugCheckEx(..)\n");
+            ASSERT(FALSE);
+            KeBugCheckEx(0xA5, 0xD, (ULONG_PTR)DeviceExtension, 'RDA_', 0);
+        }
+
+        NameSeg = 'RDA_';
+        Flags = 0x40040402;
+        IdString = &DeviceExtension->DeviceID;
+        CallBack = ACPIBuildCompleteMustSucceed;
+
+        BuildRequest->BuildReserved1 = 4;
+        BuildRequest->ChildObject = AdrChild;
+
+        goto Finish;
+    }
+
+    ChildObject = UidChild = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'DIU_');
+    if (UidChild)
+    {
+        NameSeg = 'DIU_';
+        Flags = 0x50080086;
+        IdString = &DeviceExtension->InstanceID;
+        CallBack = ACPIBuildCompleteMustSucceed;
+
+        BuildRequest->BuildReserved1 = 6;
+        BuildRequest->ChildObject = UidChild;
+
+        goto Finish;
+    }
+
+    NameSeg = 'DIH_';
+    Flags = 0x50080026;
+    IdString = &DeviceExtension->DeviceID;
+    CallBack = ACPIBuildCompleteMustSucceed;
+
+    BuildRequest->BuildReserved1 = 5;
+    BuildRequest->ChildObject = HidChild;
+
+Finish:
+
+    Status = ACPIGet(DeviceExtension, NameSeg, Flags, NULL, 0, CallBack, BuildRequest, (PVOID *)IdString, NULL);
+
+    if (Status == STATUS_PENDING)
+        Status = STATUS_SUCCESS;
+    else
+        ACPIBuildCompleteMustSucceed(ChildObject, Status, 0, BuildRequest);
+
+    return Status;
 }
 
 NTSTATUS
