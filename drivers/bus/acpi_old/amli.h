@@ -464,6 +464,22 @@ typedef struct _IS_PCI_DEVICE_CONTEXT
     BOOLEAN* OutIsPciDevice;
 } IS_PCI_DEVICE_CONTEXT, *PIS_PCI_DEVICE_CONTEXT;
 
+typedef struct _ACPI_PCI_ADDRESS_DATA
+{
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    UCHAR* OutBusNumber;
+    PCI_SLOT_NUMBER* OutSlotNumber;
+    UCHAR ParentBusNumber;
+    UCHAR Pad[3];
+    PCI_SLOT_NUMBER ParentSlotNumber;
+    ULONG Flags;
+    ULONG PciAddress;
+    ULONG BaseBusNumber;
+    LONG RefCount;
+    PVOID CallBack;
+    PVOID CallBackContext;
+} ACPI_PCI_ADDRESS_DATA, *PACPI_PCI_ADDRESS_DATA;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1

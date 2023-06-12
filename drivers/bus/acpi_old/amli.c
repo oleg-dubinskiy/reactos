@@ -5035,6 +5035,18 @@ Finish:
 
 NTSTATUS
 NTAPI
+GetPciAddressWorker(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ ULONG Param3,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 GetPciAddress(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
     _In_ PCHAR CompletionRoutine,
@@ -5042,8 +5054,28 @@ GetPciAddress(
     _Out_ UCHAR* OutBusNumber,
     _Out_ PCI_SLOT_NUMBER* OutSlotNumber)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_PCI_ADDRESS_DATA WorkerContext;
+    NTSTATUS Status;
+
+    ASSERT(CompletionRoutine);
+
+    WorkerContext = ExAllocatePoolWithTag(NonPagedPool, sizeof(*WorkerContext), 'FpcA');
+    if (!WorkerContext)
+    {
+        DPRINT1("GetPciAddress: Allocate failed %X\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(WorkerContext, sizeof(*WorkerContext));
+
+    WorkerContext->NsObject = NsObject;
+    WorkerContext->OutBusNumber = OutBusNumber;
+    WorkerContext->OutSlotNumber = OutSlotNumber;
+    WorkerContext->CallBack = CompletionRoutine;
+    WorkerContext->CallBackContext = Context;
+    WorkerContext->RefCount = -1;
+
+    Status = GetPciAddressWorker(NsObject, STATUS_SUCCESS, 0, WorkerContext);
+    return Status;
 }
 
 NTSTATUS
