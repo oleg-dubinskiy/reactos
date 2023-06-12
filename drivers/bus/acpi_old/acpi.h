@@ -342,9 +342,24 @@ typedef struct _ACPI_BUILD_REQUEST
     PAMLI_NAME_SPACE_OBJECT ChildObject;
     PVOID CallBack;
     PVOID CallBackContext;
-    PLIST_ENTRY ListHead1;
-    PVOID Context;
-    ULONG BuildReserved4;
+    union
+    {
+        struct
+        {
+            PLIST_ENTRY ListHead;
+            PVOID Context;
+            ULONG Reserved1;
+        } Synchronize;
+        struct
+        {
+            AMLI_OBJECT_DATA Data;
+        } Device;
+        struct
+        {
+            PVOID Context;
+            ULONG Flags;
+        } RunMethod;
+    };
     PLIST_ENTRY ListHeadForInsert;
 } ACPI_BUILD_REQUEST, *PACPI_BUILD_REQUEST;
 

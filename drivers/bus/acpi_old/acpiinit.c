@@ -1310,18 +1310,18 @@ ACPIBuildRunMethodRequest(
     _In_ PVOID CallBack,
     _In_ PVOID CallBackContext,
     _In_ PVOID Context,
-    _In_ ULONG Param5,
+    _In_ ULONG Flags,
     _In_ BOOLEAN IsInsertDpc)
 {
-    PACPI_BUILD_REQUEST BuildRequest;
     PACPI_BUILD_REQUEST RunMethodRequest;
+    PACPI_BUILD_REQUEST SynchronizationRequest;
 
-    DPRINT("ACPIBuildRunMethodRequest: %p, %X, %X\n", DeviceExtension, Param5, IsInsertDpc);
+    DPRINT("ACPIBuildRunMethodRequest: %p, %X, %X\n", DeviceExtension, Flags, IsInsertDpc);
 
     ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
 
-    BuildRequest = ExAllocateFromNPagedLookasideList(&BuildRequestLookAsideList);
-    if (!BuildRequest)
+    RunMethodRequest = ExAllocateFromNPagedLookasideList(&BuildRequestLookAsideList);
+    if (!RunMethodRequest)
     {
         if (!CallBack)
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -1334,10 +1334,10 @@ ACPIBuildRunMethodRequest(
 
     if (CallBack)
     {
-        RunMethodRequest = ExAllocateFromNPagedLookasideList(&BuildRequestLookAsideList);
-        if (!RunMethodRequest)
+        SynchronizationRequest = ExAllocateFromNPagedLookasideList(&BuildRequestLookAsideList);
+        if (!SynchronizationRequest)
         {
-            ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, BuildRequest);
+            ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, RunMethodRequest);
 
             DPRINT1("ACPIBuildRunMethodRequest: FIXME\n");
             ASSERT(FALSE);
@@ -1352,13 +1352,13 @@ ACPIBuildRunMethodRequest(
 
     if (!DeviceExtension->ReferenceCount)
     {
-        ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, BuildRequest);
+        ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, RunMethodRequest);
 
         if (CallBack)
         {
             DPRINT1("ACPIBuildRunMethodRequest: FIXME\n");
             ASSERT(FALSE);
-            ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, RunMethodRequest);
+            ExFreeToNPagedLookasideList(&BuildRequestLookAsideList, SynchronizationRequest);
         }
 
         DPRINT1("ACPIBuildRunMethodRequest: STATUS_DEVICE_REMOVED\n");
@@ -1370,41 +1370,42 @@ ACPIBuildRunMethodRequest(
     if (CallBack)
         InterlockedIncrement(&DeviceExtension->ReferenceCount);
 
-    RtlZeroMemory(BuildRequest, sizeof(ACPI_BUILD_REQUEST));
+    RtlZeroMemory(RunMethodRequest, sizeof(ACPI_BUILD_REQUEST));
 
-    BuildRequest->Signature = '_SGP';
-    BuildRequest->Status = STATUS_SUCCESS;
-    BuildRequest->Flags = 0x100C;
-    BuildRequest->DeviceExtension = DeviceExtension;
-    BuildRequest->ListHead1 = Context;
-    BuildRequest->ListHeadForInsert = &AcpiBuildRunMethodList;
-    BuildRequest->WorkDone = 3;
-    BuildRequest->Context = (PVOID)Param5;
+    RunMethodRequest->Signature = '_SGP';
+    RunMethodRequest->Status = STATUS_SUCCESS;
+    RunMethodRequest->Flags = 0x100C;
+    RunMethodRequest->DeviceExtension = DeviceExtension;
+    RunMethodRequest->ListHeadForInsert = &AcpiBuildRunMethodList;
+    RunMethodRequest->WorkDone = 3;
+    RunMethodRequest->RunMethod.Context = Context;
+    RunMethodRequest->RunMethod.Flags = Flags;
 
     if (CallBack)
     {
-        RtlZeroMemory(RunMethodRequest, sizeof(ACPI_BUILD_REQUEST));
+        RtlZeroMemory(SynchronizationRequest, sizeof(ACPI_BUILD_REQUEST));
 
-        RunMethodRequest->Signature = '_SGP';
-        RunMethodRequest->Status = STATUS_SUCCESS;
-        RunMethodRequest->Flags = 0x100A;
-        RunMethodRequest->DeviceExtension = DeviceExtension;
-        RunMethodRequest->CallBack = CallBack;
-        RunMethodRequest->CallBackContext = CallBackContext;
-        RunMethodRequest->ListHead1 = &AcpiBuildRunMethodList;
-        RunMethodRequest->ListHeadForInsert = &AcpiBuildSynchronizationList;
-        RunMethodRequest->WorkDone = 3;
-        RunMethodRequest->Context = Context;
-        RunMethodRequest->BuildReserved1 = 0;
-        RunMethodRequest->BuildReserved4 = 1;
+        SynchronizationRequest->Signature = '_SGP';
+        SynchronizationRequest->Status = STATUS_SUCCESS;
+        SynchronizationRequest->Flags = 0x100A;
+        SynchronizationRequest->DeviceExtension = DeviceExtension;
+        SynchronizationRequest->CallBack = CallBack;
+        SynchronizationRequest->CallBackContext = CallBackContext;
+        SynchronizationRequest->ListHeadForInsert = &AcpiBuildSynchronizationList;
+        SynchronizationRequest->WorkDone = 3;
+        SynchronizationRequest->BuildReserved1 = 0;
+
+        SynchronizationRequest->Synchronize.ListHead = &AcpiBuildRunMethodList;
+        SynchronizationRequest->Synchronize.Context = Context;
+        SynchronizationRequest->Synchronize.Reserved1 = 1;
     }
 
     KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
 
-    InsertTailList(&AcpiBuildQueueList, &BuildRequest->Link);
+    InsertTailList(&AcpiBuildQueueList, &RunMethodRequest->Link);
 
     if (CallBack)
-        InsertTailList(&AcpiBuildQueueList, &RunMethodRequest->Link);
+        InsertTailList(&AcpiBuildQueueList, &SynchronizationRequest->Link);
 
     if (IsInsertDpc && !AcpiBuildDpcRunning)
         KeInsertQueueDpc(&AcpiBuildDpc, NULL, NULL);

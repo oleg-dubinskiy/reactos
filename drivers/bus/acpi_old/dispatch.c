@@ -1012,7 +1012,6 @@ ACPIBuildProcessRunMethodPhaseCheckSta(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
     PDEVICE_EXTENSION DeviceExtension;
-    ULONG Flags; // ?
     NTSTATUS Status = STATUS_SUCCESS;
 
     DPRINT("ACPIBuildProcessRunMethodPhaseCheckSta: %p\n", BuildRequest);
@@ -1027,8 +1026,7 @@ ACPIBuildProcessRunMethodPhaseCheckSta(
         return Status;
     }
 
-    Flags = (ULONG)BuildRequest->Context;
-    if ( !(Flags & 1))
+    if (!(BuildRequest->RunMethod.Flags & 1))
     {
         ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
         return Status;
@@ -1059,14 +1057,11 @@ ACPIBuildProcessRunMethodPhaseCheckBridge(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
     PDEVICE_EXTENSION DeviceExtension = BuildRequest->DeviceExtension;
-    ULONG Flags;
     NTSTATUS Status = STATUS_SUCCESS;
 
     DPRINT("ACPIBuildProcessRunMethodPhaseCheckBridge: %p\n", BuildRequest);
 
-    Flags = (ULONG)BuildRequest->Context;
-
-    if ((Flags & 1) && (DeviceExtension->Flags & 2))
+    if ((BuildRequest->RunMethod.Flags & 1) && (DeviceExtension->Flags & 2))
     {
         BuildRequest->BuildReserved1 = 0;
         ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
@@ -1075,7 +1070,7 @@ ACPIBuildProcessRunMethodPhaseCheckBridge(
 
     BuildRequest->BuildReserved1 = 5;
 
-    if (!(Flags & 0x40))
+    if (!(BuildRequest->RunMethod.Flags & 0x40))
     {
         ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
         return Status;
@@ -1104,12 +1099,11 @@ ACPIBuildProcessRunMethodPhaseRunMethod(
     AMLI_OBJECT_DATA amliData[2];
     PAMLI_OBJECT_DATA AmliData = NULL;
     ULONG ArgsCount = 0;
-    ULONG flags;
     NTSTATUS Status = STATUS_SUCCESS;
 
     DPRINT("ACPIBuildProcessRunMethodPhaseRunMethod: %p\n", BuildRequest);
 
-    if (!(((ULONG)BuildRequest->Context & 0x40) == 0) && BuildRequest->ListHeadForInsert)
+    if (!((BuildRequest->RunMethod.Flags & 0x40) == 0) && BuildRequest->ListHeadForInsert)
     {
         DPRINT("ACPIBuildProcessRunMethodPhaseRunMethod: Is PCI-PCI bridge\n");
         BuildRequest->BuildReserved1 = 0;
@@ -1118,19 +1112,19 @@ ACPIBuildProcessRunMethodPhaseRunMethod(
 
     BuildRequest->BuildReserved1 = 6;
 
-    NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, (ULONG)BuildRequest->ListHead1);//?
+    NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, (ULONG)BuildRequest->RunMethod.Context);//?
     if (!NsObject)
     {
         goto Exit;
     }
 
-    if ((ULONG)BuildRequest->Context & 2)
+    if (BuildRequest->RunMethod.Flags & 2)
     {
         if ((ACPIInternalUpdateFlags(DeviceExtension, 0x0020000000000000, FALSE) >> 0x20) & 0x200000)
             goto Exit;
     }
 
-    else if ((ULONG)BuildRequest->Context & 8)
+    else if (BuildRequest->RunMethod.Flags & 8)
     {
         if (!DeviceExtension->PowerInfo.WakeSupportCount)
             goto Exit;
@@ -1143,10 +1137,9 @@ ACPIBuildProcessRunMethodPhaseRunMethod(
         AmliData = amliData;
         ArgsCount = 1;
     }
-    else if ((ULONG)BuildRequest->Context & 0x30)
+    else if (BuildRequest->RunMethod.Flags & 0x30)
     {
-        flags = ((ULONG)BuildRequest->Context | 0x40);
-        BuildRequest->Context = (PVOID)flags;
+        BuildRequest->RunMethod.Flags |= 0x40;
 
         RtlZeroMemory(amliData, sizeof(amliData));
 
@@ -1154,7 +1147,7 @@ ACPIBuildProcessRunMethodPhaseRunMethod(
         amliData[0].DataValue = (PVOID)2;
 
         amliData[1].DataType = 1;
-        amliData[1].DataValue = (PVOID)(((ULONG)(UCHAR)flags >> 4) & 1);
+        amliData[1].DataValue = (((BuildRequest->RunMethod.Flags & 0x10) == 0x10) ? (PVOID)1 : (PVOID)0);
 
         AmliData = amliData;
         ArgsCount = 2;
@@ -1270,22 +1263,19 @@ ACPIBuildProcessRunMethodPhaseRecurse(
 {
     PDEVICE_EXTENSION DeviceExtension;
     ACPI_EXT_LIST_ENUM_DATA ExtList;
-    ULONG flags;
     BOOLEAN Result;
     NTSTATUS Status = STATUS_SUCCESS;
 
     DPRINT("ACPIBuildProcessRunMethodPhaseRecurse: %p\n", BuildRequest);
 
-    flags = (ULONG)BuildRequest->Context;
-
     BuildRequest->BuildReserved1 = 0;
 
-    if (!(flags & 4))
+    if (!(BuildRequest->RunMethod.Flags & 4))
         goto Finish;
 
     ExtList.List = &BuildRequest->DeviceExtension->ChildDeviceList;
     ExtList.SpinLock = &AcpiDeviceTreeLock;
-    ExtList.Offset = FIELD_OFFSET(DEVICE_EXTENSION, SiblingDeviceList);//0x148
+    ExtList.Offset = FIELD_OFFSET(DEVICE_EXTENSION, SiblingDeviceList);
     ExtList.ExtListEnum2 = 2;
 
     DeviceExtension = ACPIExtListStartEnum(&ExtList);
@@ -1294,7 +1284,13 @@ ACPIBuildProcessRunMethodPhaseRecurse(
          Result;
          Result = ACPIExtListTestElement(&ExtList, NT_SUCCESS(Status)))
     {
-        Status = ACPIBuildRunMethodRequest(DeviceExtension, NULL, NULL, BuildRequest->ListHead1, flags, FALSE);
+        Status = ACPIBuildRunMethodRequest(DeviceExtension,
+                                           NULL,
+                                           NULL,
+                                           BuildRequest->RunMethod.Context,
+                                           BuildRequest->RunMethod.Flags,
+                                           FALSE);
+
         DeviceExtension = ACPIExtListEnumNext(&ExtList);
     }
 
@@ -1761,8 +1757,31 @@ NTAPI
 ACPIBuildProcessSynchronizationList(
     _In_ PLIST_ENTRY SynchronizationList)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_BUILD_REQUEST BuildRequest;
+    PLIST_ENTRY Entry;
+    BOOLEAN Result = TRUE;
+
+    DPRINT("ACPIBuildProcessSynchronizationList: %p\n", SynchronizationList);
+
+    Entry = SynchronizationList->Flink;
+    while (Entry != SynchronizationList)
+    {
+        BuildRequest = CONTAINING_RECORD(Entry, ACPI_BUILD_REQUEST, Link);
+
+        Entry = Entry->Flink;
+
+        if (!IsListEmpty(BuildRequest->Synchronize.ListHead))
+        {
+            Result = FALSE;
+            continue;
+        }
+
+        DPRINT("ACPIBuildProcessSynchronizationList(%4s) = STATUS_SUCCESS\n", &BuildRequest->Synchronize.Context);
+
+        ACPIBuildProcessGenericComplete(BuildRequest);
+    }
+
+    return (Result ? STATUS_SUCCESS : STATUS_PENDING);
 }
 
 NTSTATUS
@@ -2104,7 +2123,7 @@ ACPIBuildSynchronizationRequest(
     BuildRequest->Status = 0;
     BuildRequest->CallBack = CallBack;
     BuildRequest->CallBackContext = Event;
-    BuildRequest->ListHead1 = BuildDeviceList;
+    BuildRequest->Synchronize.ListHead = BuildDeviceList;
     BuildRequest->ListHeadForInsert = &AcpiBuildSynchronizationList;
 
     KeReleaseSpinLock(&AcpiDeviceTreeLock, DeviceTreeIrql);
