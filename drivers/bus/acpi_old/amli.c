@@ -3149,8 +3149,18 @@ ProcessEvalObj(
     _In_ PAMLI_POST_CONTEXT AmliPostContext,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("ProcessEvalObj: %X, %X, %X, %X\n", AmliContext, AmliContext->Op, AmliPostContext, InStatus);
+
+    giIndent++;
+
+    ASSERT(AmliPostContext->FrameHeader.Signature == 'TSOP');//SIG_POST
+    PopFrame(AmliContext);
+
+    giIndent--;
+
+    DPRINT("ProcessEvalObj: ret %X\n", InStatus);
+
+    return InStatus;
 }
 
 /* TERM HANDLERS ************************************************************/
