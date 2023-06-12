@@ -375,6 +375,52 @@ Finish:
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+ACPIGetConvertToAddress(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ ULONG GetFlags,
+    _Out_ PVOID* OutDataBuff,
+    _Out_ ULONG* OutDataLen)
+{
+    PVOID DataBuff;
+
+    DPRINT("ACPIGetConvertToAddress: %p\n", DeviceExtension);
+
+    ASSERT(OutDataBuff != NULL);
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x2000000000000000))
+    {
+        DataBuff = DeviceExtension->DeviceID;
+        goto Finish;
+    }
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIGetConvertToAddress: InStatus %X\n", InStatus);
+        return InStatus;
+    }
+
+    if (AmliData->DataType != 1)
+    {
+        DPRINT1("ACPIGetConvertToAddress: STATUS_ACPI_INVALID_DATA. DataType %X\n", AmliData->DataType);
+        return STATUS_ACPI_INVALID_DATA;
+    }
+
+    DataBuff = AmliData->DataValue;
+
+Finish:
+
+    *OutDataBuff = DataBuff;
+
+    if (OutDataLen)
+        *OutDataLen = 4;
+
+    return STATUS_SUCCESS;
+}
+
 VOID
 __cdecl
 ACPIGetWorkerForInteger(
