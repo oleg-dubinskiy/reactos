@@ -4759,8 +4759,8 @@ Exit:
 
     if (RegionScope->RefCount)
     {
-        DPRINT1("GetOpRegionScopeWorker: FIXME\n");
-        ASSERT(FALSE);
+        PAMLI_FN_ASYNC_CALLBACK CallBack = RegionScope->CallBack;
+        CallBack(RegionScope->NsObject, Status, 0, RegionScope->CallBackContext);
     }
 
     ExFreePool(RegionScope);
