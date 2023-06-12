@@ -487,8 +487,12 @@ ACPIGetWorkerForInteger(
 
     if (Flags & 0x400)
     {
-        DPRINT("ACPIGetWorkerForInteger: FIXME\n");
-        ASSERT(FALSE);
+        Status = ACPIGetConvertToAddress(AcpiGetContext->DeviceExtension,
+                                         InStatus,
+                                         AmliData,
+                                         Flags,
+                                         AcpiGetContext->OutDataBuff,
+                                         AcpiGetContext->OutDataLen);
         goto Finish;
     }
 
@@ -1808,10 +1812,7 @@ ACPIBuildDeviceDpc(
         }
 
         if (!IsListEmpty(&AcpiBuildDeviceList))
-        {
-            DPRINT1("ACPIBuildDeviceDpc: FIXME\n");
-            ASSERT(FALSE);
-        }
+            Status = ACPIBuildProcessGenericList(&AcpiBuildDeviceList, AcpiBuildDeviceDispatch);
 
         if (!IsListEmpty(&AcpiBuildThermalZoneList))
         {
