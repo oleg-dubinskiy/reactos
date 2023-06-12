@@ -98,6 +98,33 @@ PACPI_BUILD_DISPATCH AcpiBuildRunMethodDispatch[] =
     ACPIBuildProcessRunMethodPhaseRecurse
 };
 
+PACPI_BUILD_DISPATCH AcpiBuildDeviceDispatch[] =
+{
+    ACPIBuildProcessGenericComplete,
+    NULL,
+    ACPIBuildProcessDeviceFailure,
+    ACPIBuildProcessDevicePhaseAdrOrHid,
+    ACPIBuildProcessDevicePhaseAdr,
+    ACPIBuildProcessDevicePhaseHid,
+    ACPIBuildProcessDevicePhaseUid,
+    ACPIBuildProcessDevicePhaseCid,
+    ACPIBuildProcessDevicePhaseSta,
+    ACPIBuildProcessDeviceGenericEvalStrict,
+    ACPIBuildProcessDevicePhaseEjd,
+    ACPIBuildProcessDeviceGenericEvalStrict,
+    ACPIBuildProcessDevicePhasePrw,
+    ACPIBuildProcessDeviceGenericEvalStrict,
+    ACPIBuildProcessDevicePhasePr0,
+    ACPIBuildProcessDeviceGenericEvalStrict,
+    ACPIBuildProcessDevicePhasePr1,
+    ACPIBuildProcessDeviceGenericEvalStrict,
+    ACPIBuildProcessDevicePhasePr2,
+    ACPIBuildProcessDeviceGenericEvalStrict,
+    ACPIBuildProcessDevicePhaseCrs,
+    ACPIBuildProcessDeviceGenericEval,
+    ACPIBuildProcessDevicePhasePsc
+};
+
 extern NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
 extern KSPIN_LOCK AcpiDeviceTreeLock;
 extern KSPIN_LOCK AcpiBuildQueueLock;
@@ -1262,6 +1289,150 @@ Finish:
     DPRINT("ACPIBuildProcessRunMethodPhaseRecurse: ret Status %X\n", Status);
 
     return Status;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDeviceFailure(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhaseAdrOrHid(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhaseAdr(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhaseHid(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhaseUid(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhaseCid(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhaseSta(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDeviceGenericEvalStrict(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhaseEjd(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhasePrw(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhasePr0(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhasePr1(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhasePr2(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhaseCrs(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDeviceGenericEval(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhasePsc(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 VOID

@@ -551,6 +551,23 @@ NTSTATUS NTAPI ACPIBuildProcessRunMethodPhaseCheckBridge(_In_ PACPI_BUILD_REQUES
 NTSTATUS NTAPI ACPIBuildProcessRunMethodPhaseRunMethod(_In_ PACPI_BUILD_REQUEST BuildRequest);
 NTSTATUS NTAPI ACPIBuildProcessRunMethodPhaseRecurse(_In_ PACPI_BUILD_REQUEST BuildRequest);
 
+NTSTATUS NTAPI ACPIBuildProcessDeviceFailure(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhaseAdrOrHid(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhaseAdr(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhaseHid(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhaseUid(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhaseCid(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhaseSta(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDeviceGenericEvalStrict(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhaseEjd(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhasePrw(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhasePr0(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhasePr1(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhasePr2(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhaseCrs(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDeviceGenericEval(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessDevicePhasePsc(_In_ PACPI_BUILD_REQUEST BuildRequest);
+
 ULONGLONG
 NTAPI
 ACPIInternalUpdateFlags(
