@@ -769,4 +769,13 @@ RunContext(
     _In_ PAMLI_CONTEXT AmliContext
 );
 
+NTSTATUS
+NTAPI
+IsPciDevice(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext,
+    _Out_ BOOLEAN* OutIsPciDevice
+);
+
 /* EOF */

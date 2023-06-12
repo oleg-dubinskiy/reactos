@@ -4608,8 +4608,15 @@ IsPciDeviceWorker(
     Context->Flags |= 0x20;
     Context->IsPciDeviceValue = FALSE;
 
-    DPRINT1("IsPciDeviceWorker: FIXME\n");
-    ASSERT(FALSE);
+    InStatus = IsPciDevice(Context->NsObject->Parent, IsPciDeviceWorker, Context, &Context->IsPciDeviceValue);
+    if (InStatus == STATUS_PENDING)
+        return STATUS_PENDING;
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("IsPciDeviceWorker: InStatus %X\n", InStatus);
+        *Context->OutIsPciDevice = FALSE;
+    }
 
 Exit:
 
@@ -4621,8 +4628,8 @@ Exit:
 
     if (Context->RefCount)
     {
-        DPRINT1("IsPciDeviceWorker: FIXME\n");
-        ASSERT(FALSE);
+        PAMLI_FN_ASYNC_CALLBACK CallBack = Context->CallBack;
+        CallBack(Context->NsObject, InStatus, 0, Context->CallBackContext);
     }
 
     if (Context->HardwareId)
@@ -4641,7 +4648,7 @@ NTAPI
 IsPciDevice(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
     _In_ PVOID CallBack,
-    _In_ PGET_OP_REGION_SCOPE CallBackContext,
+    _In_ PVOID CallBackContext,
     _Out_ BOOLEAN* OutIsPciDevice)
 {
     PDEVICE_EXTENSION DeviceExtension;
@@ -4651,7 +4658,6 @@ IsPciDevice(
     DPRINT("IsPciDevice: %p\n", NsObject);
 
     DeviceExtension = NsObject->Context;
-
     if (DeviceExtension)
     {
         ASSERT(DeviceExtension->Signature == '_SGP');//ACPI_SIGNATURE
