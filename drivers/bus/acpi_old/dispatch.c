@@ -508,6 +508,29 @@ Finish:
 }
 
 VOID
+NTAPI
+ACPIAmliDoubleToName(
+    _In_ PCHAR DataBuff,
+    _In_ ULONG Index,
+    _In_ BOOLEAN IsNameID)
+{
+    PCHAR Name = DataBuff;
+
+    DPRINT("ACPIAmliDoubleToName: %X, %X, %X\n", DataBuff, Index, IsNameID);
+
+    if (IsNameID)
+        *DataBuff++ = '*';
+
+    *DataBuff++ = (((Index >> 2) & 0x1F) + 0x40);
+    *DataBuff++ = (((Index >> 0xD) & 7) + (8 * ((Index & 3) + 8)));
+    *DataBuff = (((Index & 0x1F00) >> 8) + 0x40);
+
+    sprintf((DataBuff + 1), "%02X%02X", (int)((Index & 0x00FF0000) >> 16), (int)(Index >> 24));
+
+    DPRINT("ACPIAmliDoubleToName: '%s'\n", Name);
+}
+
+VOID
 __cdecl
 ACPIGetWorkerForString(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
