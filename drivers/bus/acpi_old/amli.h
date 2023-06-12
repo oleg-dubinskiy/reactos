@@ -215,7 +215,7 @@ typedef struct _AMLI_MUTEX
     UCHAR Pad[3];
 } AMLI_MUTEX, *PAMLI_MUTEX;
 
-typedef VOID (__cdecl* PAMLI_FN_PAUSE_CALLBACK)(PVOID Context);
+typedef VOID (__cdecl* PAMLI_FN_CALLBACK)(PVOID Context);
 
 typedef struct _AMLI_CONTEXT_QUEUE
 {
@@ -225,7 +225,7 @@ typedef struct _AMLI_CONTEXT_QUEUE
     PAMLI_LIST List;
     ULONG TimeSliceLength;
     ULONG TimeSliceInterval;
-    PAMLI_FN_PAUSE_CALLBACK PauseCallback;
+    PAMLI_FN_CALLBACK PauseCallback;
     PVOID CallbackContext;
     AMLI_MUTEX Mutex;
     KTIMER Timer;
@@ -432,7 +432,7 @@ typedef struct _ACPI_PCI_CONFIG_CONTEXT
     PAMLI_NAME_SPACE_OBJECT ParentNsObject;
     ULONG Flags;
     LONG RefCount;
-    ULONG SlotNumber;
+    PCI_SLOT_NUMBER SlotNumber;
     UCHAR BusNumber;
 } ACPI_PCI_CONFIG_CONTEXT, *PACPI_PCI_CONFIG_CONTEXT;
 
@@ -776,6 +776,16 @@ IsPciDevice(
     _In_ PVOID CallBack,
     _In_ PVOID CallBackContext,
     _Out_ BOOLEAN* OutIsPciDevice
+);
+
+NTSTATUS
+NTAPI
+GetPciAddress(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PCHAR CompletionRoutine,
+    _In_ PVOID Context,
+    _Out_ UCHAR* OutBusNumber,
+    _Out_ PCI_SLOT_NUMBER* OutSlotNumber
 );
 
 /* EOF */

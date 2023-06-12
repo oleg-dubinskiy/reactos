@@ -4287,7 +4287,7 @@ NTSTATUS __cdecl Package(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT
 
     TermContext->DataResult->DataType = 4;
 
-    memset(PackageObject, 0, TermContext->DataResult->DataLen);
+    RtlZeroMemory(PackageObject, TermContext->DataResult->DataLen);
 
     TermContext->DataResult->DataBuff = PackageObject;
     PackageObject->Elements = (UCHAR)(ULONG)TermContext->DataArgs[0].DataValue;
@@ -4868,8 +4868,25 @@ PciConfigSpaceHandlerWorker(
 
     if (!Interface && !(PciCfgContext->Flags & 0x100))
     {
-        DPRINT("PciConfigSpaceHandlerWorker: FIXME\n");
-        ASSERT(FALSE);
+        NTSTATUS status;
+
+        PciCfgContext->Flags |= 0x100;
+
+        status = GetPciAddress(PciCfgContext->ParentNsObject,
+                               (PVOID)PciConfigSpaceHandlerWorker,
+                               PciCfgContext,
+                               &PciCfgContext->BusNumber,
+                               &PciCfgContext->SlotNumber);
+
+        if (status == STATUS_PENDING)
+            return STATUS_PENDING;
+
+        if (!NT_SUCCESS(status))
+        {
+            RtlFillMemory(PciCfgContext->Buffer, PciCfgContext->Length, 0xFF);
+            Status = STATUS_SUCCESS;
+            goto Finish;
+        }
     }
 
     Status = STATUS_SUCCESS;
@@ -4895,7 +4912,7 @@ PciConfigSpaceHandlerWorker(
         {
             Size = HalGetBusDataByOffset(PCIConfiguration,
                                          PciCfgContext->BusNumber,
-                                         PciCfgContext->SlotNumber,
+                                         PciCfgContext->SlotNumber.u.AsULONG,
                                          PciCfgContext->Buffer,
                                          PciCfgContext->Offset,
                                          PciCfgContext->Length);
@@ -4939,7 +4956,7 @@ PciConfigSpaceHandlerWorker(
                 {
                     HalSetBusDataByOffset(PCIConfiguration,
                                           PciCfgContext->BusNumber,
-                                          PciCfgContext->SlotNumber,
+                                          PciCfgContext->SlotNumber.u.AsULONG,
                                           (PVOID)((ULONG_PTR)PciCfgContext->Buffer + (Offset - PciCfgContext->Offset) * 4),
                                           Offset,
                                           Length);
@@ -4981,8 +4998,8 @@ Finish:
 
     if (PciCfgContext->RefCount)
     {
-        DPRINT("PciConfigSpaceHandlerWorker: FIXME\n");
-        ASSERT(FALSE);
+        PAMLI_FN_CALLBACK CallBack = PciCfgContext->Callback;
+        CallBack(PciCfgContext->Context);
     }
 
     if (!NT_SUCCESS(Status) || IsNotSuccess)
@@ -5001,6 +5018,19 @@ Finish:
     ExFreePool(PciCfgContext);
 
     return Status;
+}
+
+NTSTATUS
+NTAPI
+GetPciAddress(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PCHAR CompletionRoutine,
+    _In_ PVOID Context,
+    _Out_ UCHAR* OutBusNumber,
+    _Out_ PCI_SLOT_NUMBER* OutSlotNumber)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 NTSTATUS
