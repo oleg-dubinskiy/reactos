@@ -3142,6 +3142,17 @@ ProcessIncDec(
     return InStatus;
 }
 
+NTSTATUS
+__cdecl
+ProcessEvalObj(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_POST_CONTEXT AmliPostContext,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* TERM HANDLERS ************************************************************/
 
 #if 1
@@ -9446,7 +9457,7 @@ NTSTATUS
 __cdecl
 AsyncEvalObject(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
-    _In_ PAMLI_OBJECT_DATA DataResult,
+    _In_ PVOID DataResult,
     _In_ ULONG ArgsCount,
     _In_ PAMLI_OBJECT_DATA DataArgs,
     _In_ PAMLI_FN_ASYNC_CALLBACK InAsyncCallBack,
@@ -9485,8 +9496,26 @@ AsyncEvalObject(
 
     if (NsObject->ObjData.DataType != 8)
     {
-        DPRINT1("AsyncEvalObject: Status %X\n", Status);
-        ASSERT(FALSE);
+        Status = PushPost(AmliContext, ProcessEvalObj, NsObject, 0, &AmliContext->Result);
+        if (Status != STATUS_SUCCESS)
+        {
+            DPRINT1("AsyncEvalObject: Status %X\n", Status);
+            ASSERT(FALSE);
+            FreeContext(AmliContext);
+            goto Exit;
+        }
+
+        Status = ReadObject(AmliContext, &NsObject->ObjData, &AmliContext->Result);
+        if (Status == 0x8004)
+        {
+            DPRINT1("AsyncEvalObject: Status %X\n", Status);
+            ASSERT(FALSE);
+            FreeContext(AmliContext);
+            goto Exit;
+        }
+
+        Status = RestartContext(AmliContext, FALSE);
+        goto Exit;
     }
 
     Status = PushCall(AmliContext, NsObject, &AmliContext->Result);
@@ -9494,6 +9523,8 @@ AsyncEvalObject(
     {
         DPRINT1("AsyncEvalObject: Status %X\n", Status);
         ASSERT(FALSE);
+        FreeContext(AmliContext);
+        goto Exit;
     }
 
     AmliCall = AmliContext->LocalHeap.HeapEnd;
