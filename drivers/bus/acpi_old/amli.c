@@ -6287,11 +6287,34 @@ InitMutex(
 }
 
 VOID
+__cdecl
+DispatchCtxtQueue(
+    _In_ PAMLI_CONTEXT_QUEUE Queue)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
 NTAPI
 StartTimeSlicePassive(
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_CONTEXT_QUEUE Queue = Context;
+
+    DPRINT("StartTimeSlicePassive: Queue %X\n", Queue);
+
+    giIndent++;
+
+    AcquireMutex(&Queue->Mutex);
+
+    Queue->Flags &= ~2;
+
+    if (Queue->List && !Queue->Thread && !(Queue->Flags & 8))
+        DispatchCtxtQueue(Queue);
+
+    ReleaseMutex(&Queue->Mutex);
+
+    giIndent--;
 }
 
 VOID
