@@ -694,8 +694,10 @@ ACPIGetWorkerForString(
     _In_ PVOID Context)
 {
     PACPI_GET_CONTEXT AcpiGetContext = Context;
+    PDEVICE_EXTENSION DeviceExtension;
     PAMLI_FN_ASYNC_CALLBACK CallBack;
     PVOID* OutDataBuff;
+    PULONG OutDataLen;
     ULONG GetFlags;
     KIRQL Irql;
     BOOLEAN IsSuccess = FALSE;
@@ -723,7 +725,9 @@ ACPIGetWorkerForString(
         goto Finish;
     }
 
+    OutDataLen = AcpiGetContext->OutDataLen;
     GetFlags = AcpiGetContext->Flags;
+    DeviceExtension = AcpiGetContext->DeviceExtension;
 
     if (GetFlags & 0x10)
     {
@@ -783,8 +787,7 @@ ACPIGetWorkerForString(
     }
     else if (GetFlags & 0x0200)
     {
-        DPRINT1("ACPIGetWorkerForString: FIXME\n");
-        ASSERT(FALSE);
+        Status = ACPIGetConvertToPnpID(DeviceExtension, InStatus, AmliData, GetFlags, OutDataBuff, OutDataLen);
     }
     else if (GetFlags & 0x0100)
     {
