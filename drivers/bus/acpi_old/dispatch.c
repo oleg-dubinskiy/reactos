@@ -530,6 +530,121 @@ ACPIAmliDoubleToName(
     DPRINT("ACPIAmliDoubleToName: '%s'\n", Name);
 }
 
+NTSTATUS
+NTAPI
+ACPIGetConvertToPnpID(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ ULONG GetFlags,
+    _Out_ PVOID* OutDataBuff,
+    _Out_ ULONG* OutDataLen)
+{
+    PCHAR DataBuff;
+    PCHAR IdString;
+    POOL_TYPE PoolType;
+    ULONG DataLen;
+
+    DPRINT("ACPIGetConvertToPnpID: GetFlags %X\n", GetFlags);
+
+    if (GetFlags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000800000000000))
+    {
+        DataLen = (strlen(DeviceExtension->DeviceID) - 3);
+
+        DataBuff = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+        if (!DataBuff)
+        {
+            DPRINT1("ACPIGetConvertToPnpID: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlZeroMemory(DataBuff, DataLen);
+
+        sprintf(DataBuff, "*%s", (DeviceExtension->Address + 5));
+        goto Exit;
+    }
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000004000000000))
+    {
+        DataLen = 0xE;
+
+        DataBuff = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+        if (!DataBuff)
+        {
+            DPRINT1("ACPIGetConvertToPnpID: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlZeroMemory(DataBuff, DataLen);
+
+        sprintf(DataBuff, "*%s", "PciBarTarget");
+        goto Exit;
+    }
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIGetConvertToPnpID: InStatus %X\n", InStatus);
+        return InStatus;
+    }
+
+    if (AmliData->DataType == 1)
+    {
+        DataLen = 9;
+
+        DataBuff = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+        if (!DataBuff)
+        {
+            DPRINT1("ACPIGetConvertToPnpID: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlZeroMemory(DataBuff, DataLen);
+
+        ACPIAmliDoubleToName(DataBuff, (ULONG)AmliData->DataValue, TRUE);
+        goto Exit;
+    }
+    else if (AmliData->DataType == 2)
+    {
+        IdString = AmliData->DataBuff;
+
+        if (*IdString == '*')
+            IdString++;
+
+        DataLen = (strlen(IdString) + 2);
+
+        DataBuff = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+        if (!DataBuff)
+        {
+            DPRINT1("ACPIGetConvertToPnpID: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlZeroMemory(DataBuff, DataLen);
+
+        sprintf(DataBuff, "*%s", IdString);
+        goto Exit;
+    }
+    else
+    {
+        DPRINT1("ACPIGetConvertToPnpID: AmliData->DataType %X\n", AmliData->DataType);
+        return STATUS_ACPI_INVALID_DATA;
+    }
+
+Exit:
+
+    *OutDataBuff = DataBuff;
+
+    if (OutDataLen)
+        *OutDataLen = DataLen;
+
+    return STATUS_SUCCESS;
+}
+
 VOID
 __cdecl
 ACPIGetWorkerForString(
