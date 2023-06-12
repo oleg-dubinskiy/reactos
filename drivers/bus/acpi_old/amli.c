@@ -6291,7 +6291,56 @@ __cdecl
 DispatchCtxtQueue(
     _In_ PAMLI_CONTEXT_QUEUE Queue)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_CONTEXT AmliContext;
+    PAMLI_LIST Entry;
+    PKTIMER Timer;
+    LARGE_INTEGER DueTime;
+    ULONG TimeSlice;
+
+    DPRINT("DispatchCtxtQueue: Queue %X\n", Queue);
+
+    giIndent++;
+
+    ASSERT((Queue->List != NULL) && (Queue->Thread == NULL));
+
+    TimeSlice = Queue->TimeSliceLength;
+    Queue->Flags &= ~1;
+    Timer = &Queue->Timer;
+
+    DueTime.QuadPart = (-10000 * TimeSlice);
+    KeSetTimer(&Queue->Timer, DueTime, &Queue->DpcExpireTimeSlice);
+
+    for (Entry = ListRemoveHead(&Queue->List);
+         Entry;
+         Entry = ListRemoveHead(&Queue->List))
+    {
+        AmliContext = CONTAINING_RECORD(Entry, AMLI_CONTEXT, QueueList);
+
+        ASSERT(AmliContext->QueueLists == &Queue->List);
+
+        AmliContext->QueueLists = NULL;
+        AmliContext->Flags &= ~0x40;
+
+        RunContext(AmliContext);
+    }
+
+    if (Queue->List)
+    {
+        if (!(Queue->Flags & 2))
+        {
+            DueTime.QuadPart = (-10000 * Queue->TimeSliceInterval);
+            KeSetTimer(Timer, DueTime, &Queue->DpcStartTimeSlice);
+        }
+    }
+    else
+    {
+        KeCancelTimer(Timer);
+        Queue->Flags &= ~1;
+    }
+
+    giIndent--;
+
+    DPRINT("DispatchCtxtQueue: exit\n");
 }
 
 VOID

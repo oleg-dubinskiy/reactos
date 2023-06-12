@@ -763,4 +763,10 @@ RestartContext(
     _In_ BOOLEAN IsDelayExecute
 );
 
+NTSTATUS
+__cdecl
+RunContext(
+    _In_ PAMLI_CONTEXT AmliContext
+);
+
 /* EOF */
