@@ -1859,7 +1859,20 @@ __cdecl
 RestartCtxtCallback(
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_CONTEXT_DATA contextData = Context;
+    PAMLI_CONTEXT AmliContext;
+
+    AmliContext = CONTAINING_RECORD(contextData, AMLI_CONTEXT, ContextData);
+
+    giIndent++;
+
+    ASSERT(AmliContext->Signature == 'TXTC');//SIG_CTXT
+
+    //FIXME LogSchedEvent(..)
+
+    RestartContext(AmliContext, (~(AmliContext->Flags >> 8) & 1));//FIXME
+
+    giIndent--;
 }
 
 NTSTATUS
