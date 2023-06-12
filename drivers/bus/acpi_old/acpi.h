@@ -568,6 +568,10 @@ NTSTATUS NTAPI ACPIBuildProcessDevicePhaseCrs(_In_ PACPI_BUILD_REQUEST BuildRequ
 NTSTATUS NTAPI ACPIBuildProcessDeviceGenericEval(_In_ PACPI_BUILD_REQUEST BuildRequest);
 NTSTATUS NTAPI ACPIBuildProcessDevicePhasePsc(_In_ PACPI_BUILD_REQUEST BuildRequest);
 
+NTSTATUS NTAPI ACPIBuildProcessPowerResourceFailure(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessPowerResourcePhase0(_In_ PACPI_BUILD_REQUEST BuildRequest);
+NTSTATUS NTAPI ACPIBuildProcessPowerResourcePhase1(_In_ PACPI_BUILD_REQUEST BuildRequest);
+
 ULONGLONG
 NTAPI
 ACPIInternalUpdateFlags(

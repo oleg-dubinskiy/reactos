@@ -125,6 +125,15 @@ PACPI_BUILD_DISPATCH AcpiBuildDeviceDispatch[] =
     ACPIBuildProcessDevicePhasePsc
 };
 
+PACPI_BUILD_DISPATCH AcpiBuildPowerResourceDispatch[] =
+{
+    ACPIBuildProcessGenericComplete,
+    NULL,
+    ACPIBuildProcessPowerResourceFailure,
+    ACPIBuildProcessPowerResourcePhase0,
+    ACPIBuildProcessPowerResourcePhase1
+};
+
 extern NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
 extern KSPIN_LOCK AcpiDeviceTreeLock;
 extern KSPIN_LOCK AcpiBuildQueueLock;
@@ -1430,6 +1439,33 @@ NTSTATUS
 NTAPI
 ACPIBuildProcessDevicePhasePsc(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessPowerResourceFailure(
+    _In_ PACPI_BUILD_REQUEST Entry)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessPowerResourcePhase0(
+    _In_ PACPI_BUILD_REQUEST Entry)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessPowerResourcePhase1(
+    _In_ PACPI_BUILD_REQUEST Entry)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
