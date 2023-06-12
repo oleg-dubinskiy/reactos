@@ -501,6 +501,7 @@ USHORT PciOpRegionDisallowedRanges[4][2] =
 };
 
 extern KSPIN_LOCK AcpiDeviceTreeLock;
+extern PPM_DISPATCH_TABLE PmHalDispatchTable;
 
 /* STRING FUNCTIONS *********************************************************/
 
@@ -5041,8 +5042,150 @@ GetPciAddressWorker(
     _In_ ULONG Param3,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_PM_DISPATCH_TABLE HalAcpiDispatchTable = (PVOID)PmHalDispatchTable;
+    PACPI_PCI_ADDRESS_DATA PciAddressData = Context;
+    PAMLI_NAME_SPACE_OBJECT PciNsObject;
+    PCI_COMMON_CONFIG PciBuffer;
+    UCHAR HeaderType;
+    BOOLEAN IsChild = TRUE;
+
+    ASSERT(Context);
+
+    InterlockedIncrement(&PciAddressData->RefCount);
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("GetPciAddressWorker: InStatus %X\n", InStatus);
+        goto Finish;
+    }
+
+    if (!(PciAddressData->Flags & 8))
+    {
+        PciAddressData->Flags |= 8;
+
+        InStatus = ACPIGet(PciAddressData->NsObject,
+                           'RDA_',
+                           0x48040402,
+                           NULL,
+                           0,
+                           GetPciAddressWorker,
+                           PciAddressData,
+                           (PVOID *)&PciAddressData->PciAddress,
+                           NULL);
+
+        if (InStatus == STATUS_PENDING)
+            return InStatus;
+
+        if (!NT_SUCCESS(InStatus))
+        {
+            DPRINT1("GetPciAddressWorker: InStatus %X\n", InStatus);
+            goto Finish;
+        }
+    }
+
+    if (!(PciAddressData->Flags & 0x100))
+    {
+        PciAddressData->OutSlotNumber->u.bits.FunctionNumber = (PciAddressData->PciAddress & 0x07);
+        PciAddressData->OutSlotNumber->u.bits.DeviceNumber = ((PciAddressData->PciAddress >> 16) & 0x1F);
+
+        PciAddressData->Flags |= 0x100;
+    }
+
+    *PciAddressData->OutBusNumber = 0;
+
+    PciNsObject = PciAddressData->NsObject;
+    if (ACPIAmliGetNamedChild(PciNsObject, 'DIH_') == NULL)
+    {
+        PciNsObject = PciAddressData->NsObject->Parent;
+        IsChild = (ACPIAmliGetNamedChild(PciNsObject, 'DIH_') != NULL);
+    }
+
+    if (!IsChild)
+    {
+        if (!(PciAddressData->Flags & 0x20))
+        {
+            PciAddressData->Flags |= 0x20;
+
+            InStatus = GetPciAddress(PciNsObject,
+                                     (PVOID)GetPciAddressWorker,
+                                     PciAddressData,
+                                     &PciAddressData->ParentBusNumber,
+                                     &PciAddressData->ParentSlotNumber);
+
+            if (InStatus == STATUS_PENDING)
+                return STATUS_PENDING;
+
+            if (!NT_SUCCESS(InStatus))
+            {
+                DPRINT1("GetPciAddressWorker: InStatus %X\n", InStatus);
+                goto Finish;
+            }
+        }
+
+        if (HalGetBusDataByOffset(PCIConfiguration,
+                                  PciAddressData->ParentBusNumber,
+                                  PciAddressData->ParentSlotNumber.u.AsULONG,
+                                  &PciBuffer,
+                                  0,
+                                  0x40));
+        {
+            HeaderType = (PciBuffer.HeaderType & 0x7F);
+            if (HeaderType == 1 || HeaderType == 2)
+                *PciAddressData->OutBusNumber = PciBuffer.u.type1.SecondaryBus;
+        }
+
+        InStatus = STATUS_SUCCESS;
+        goto Finish;
+    }
+
+    if (!ACPIAmliGetNamedChild(PciNsObject, 'NBB_'))
+    {
+        *PciAddressData->OutBusNumber = 0;
+        InStatus = STATUS_SUCCESS;
+        goto Finish;
+    }
+
+    if (!(PciAddressData->Flags & 0x2000))
+    {
+        PciAddressData->Flags |= 0x2000;
+
+        InStatus = ACPIGet(PciNsObject,
+                           'NBB_',
+                           0x48040002,
+                           NULL,
+                           0,
+                           GetPciAddressWorker,
+                           PciAddressData,
+                           (PVOID *)&PciAddressData->BaseBusNumber,
+                           NULL);
+
+        if (InStatus == STATUS_PENDING)
+            return STATUS_PENDING;
+
+        if (!NT_SUCCESS(InStatus))
+        {
+            DPRINT1("GetPciAddressWorker: InStatus %X\n", InStatus);
+            goto Finish;
+        }
+    }
+
+    ASSERT(PciAddressData->BaseBusNumber <= 0xFF);
+    *PciAddressData->OutBusNumber = (UCHAR)(PciAddressData->BaseBusNumber);
+
+    HalAcpiDispatchTable->HalSetMaxLegacyPciBusNumber(PciAddressData->BaseBusNumber);
+
+    InStatus = STATUS_SUCCESS;
+
+Finish:
+
+    if (PciAddressData->RefCount)
+    {
+        PAMLI_FN_ASYNC_CALLBACK CallBack = PciAddressData->CallBack;
+        CallBack(NsObject, InStatus, NULL, PciAddressData->CallBackContext);
+    }
+
+    ExFreePool(PciAddressData);
+    return InStatus;
 }
 
 NTSTATUS
