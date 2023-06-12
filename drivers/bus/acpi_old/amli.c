@@ -6287,6 +6287,36 @@ InitMutex(
 }
 
 VOID
+NTAPI
+StartTimeSlice(
+    _In_ PKDPC Dpc,
+    _In_ PVOID DeferredContext,
+    _In_ PVOID SystemArgument1,
+    _In_ PVOID SystemArgument2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+ExpireTimeSlice(
+    _In_ PKDPC Dpc,
+    _In_ PVOID DeferredContext,
+    _In_ PVOID SystemArgument1,
+    _In_ PVOID SystemArgument2)
+{
+    PAMLI_CONTEXT_QUEUE Queue = DeferredContext;
+
+    DPRINT("ExpireTimeSlice: %X, %X, %X, %X\n", Dpc, DeferredContext, SystemArgument1, SystemArgument2);
+
+    giIndent++;
+    Queue->Flags |= 1;
+    giIndent--;
+
+    //DPRINT("ExpireTimeSlice!\n");
+}
+
+VOID
 __cdecl
 DispatchCtxtQueue(
     _In_ PAMLI_CONTEXT_QUEUE Queue)
@@ -9734,6 +9764,9 @@ AMLIInitialize(
         InitializeMutex(&gmutCtxtList);
         InitializeMutex(&gmutOwnerList);
         InitializeMutex(&gmutSleep);
+
+        KeInitializeDpc(&gReadyQueue.DpcStartTimeSlice, StartTimeSlice, &gReadyQueue);
+        KeInitializeDpc(&gReadyQueue.DpcExpireTimeSlice, ExpireTimeSlice, &gReadyQueue);
 
         DPRINT("AMLIInitialize: FIXME - initialize DPC and timer\n");
         //ASSERT(FALSE);
