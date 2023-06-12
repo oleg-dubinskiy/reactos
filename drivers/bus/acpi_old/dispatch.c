@@ -507,6 +507,141 @@ Finish:
     ExFreePool(AcpiGetContext);
 }
 
+VOID
+__cdecl
+ACPIGetWorkerForString(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ PVOID Context)
+{
+    PACPI_GET_CONTEXT AcpiGetContext = Context;
+    PAMLI_FN_ASYNC_CALLBACK CallBack;
+    PVOID* OutDataBuff;
+    ULONG GetFlags;
+    KIRQL Irql;
+    BOOLEAN IsSuccess = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("ACPIGetWorkerForString: %p\n", AcpiGetContext, AcpiGetContext->Flags);
+
+    if (NT_SUCCESS(InStatus))
+        IsSuccess = TRUE;
+
+    ASSERT(AcpiGetContext->OutDataBuff != NULL);
+
+    OutDataBuff = AcpiGetContext->OutDataBuff;
+    if (!OutDataBuff)
+    {
+        DPRINT1("ACPIGetWorkerForString: STATUS_INSUFFICIENT_RESOURCES\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Finish;
+    }
+
+    if (AmliData->DataType == 2 && (!AmliData->DataBuff || !AmliData->DataLen))
+    {
+        DPRINT1("ACPIGetWorkerForString: STATUS_ACPI_INVALID_DATA\n");
+        Status = STATUS_ACPI_INVALID_DATA;
+        goto Finish;
+    }
+
+    GetFlags = AcpiGetContext->Flags;
+
+    if (GetFlags & 0x10)
+    {
+        if (GetFlags & 0x20)
+        {
+            DPRINT1("ACPIGetWorkerForString: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else if (GetFlags & 0x40)
+        {
+            DPRINT1("ACPIGetWorkerForString: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else if (!(GetFlags & 0x80))
+        {
+            if (GetFlags & 0x0200)
+            {
+                DPRINT1("ACPIGetWorkerForString: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else if (GetFlags & 0x0100)
+            {
+                DPRINT1("ACPIGetWorkerForString: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else if (GetFlags & 0x2000)
+            {
+                DPRINT1("ACPIGetWorkerForString: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+                DPRINT1("ACPIGetWorkerForString: FIXME\n");
+                ASSERT(FALSE);
+            }
+        }
+        else
+        {
+            DPRINT1("ACPIGetWorkerForString: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else if (GetFlags & 0x20)
+    {
+        DPRINT1("ACPIGetWorkerForString: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (GetFlags & 0x40)
+    {
+        DPRINT1("ACPIGetWorkerForString: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (GetFlags & 0x80)
+    {
+        DPRINT1("ACPIGetWorkerForString: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (GetFlags & 0x0200)
+    {
+        DPRINT1("ACPIGetWorkerForString: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (GetFlags & 0x0100)
+    {
+        DPRINT1("ACPIGetWorkerForString: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        DPRINT1("ACPIGetWorkerForString: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+Finish:
+
+    AcpiGetContext->Status = Status;
+
+    if (IsSuccess)
+        AMLIFreeDataBuffs(AmliData, 1);
+
+    if (GetFlags & 0x20000000)
+        return;
+
+    if (AcpiGetContext->CallBack)
+    {
+        CallBack = AcpiGetContext->CallBack;
+        CallBack(NsObject, Status, NULL, AcpiGetContext->CallBackContext);
+    }
+
+    KeAcquireSpinLock(&AcpiGetLock, &Irql);
+    RemoveEntryList(&AcpiGetContext->List);
+    KeReleaseSpinLock(&AcpiGetLock, Irql);
+
+    ExFreePool(AcpiGetContext);
+}
+
 NTSTATUS
 NTAPI
 ACPIGet(
@@ -570,8 +705,7 @@ ACPIGet(
     }
     else if ((Flags & 0x1F0000) == 0x80000)
     {
-        DPRINT1("ACPIGet: FIXME\n");
-        ASSERT(FALSE);
+        Worker = ACPIGetWorkerForString;
     }
     else if ((Flags & 0x1F0000) == 0x100000)
     {
