@@ -58,6 +58,7 @@ KSPIN_LOCK AcpiBuildQueueLock;
 KSPIN_LOCK ACPIWorkerSpinLock;
 KSPIN_LOCK AcpiPowerQueueLock;
 KSPIN_LOCK AcpiGetLock;
+KSPIN_LOCK AcpiPowerLock;
 KEVENT ACPIWorkToDoEvent;
 KEVENT ACPITerminateEvent;
 LIST_ENTRY ACPIDeviceWorkQueue;
@@ -82,6 +83,7 @@ extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 extern PACPI_INFORMATION AcpiInformation;
 extern PAMLI_NAME_SPACE_OBJECT ProcessorList[0x20];
 extern ANSI_STRING AcpiProcessorString;
+extern ULONG AcpiOverrideAttributes;
 
 /* ACPI TABLES FUNCTIONS ****************************************************/
 
@@ -2192,6 +2194,9 @@ DriverEntry(
     else
         AcpiRegistryPath.MaximumLength = 0;
 
+    if ((AcpiOverrideAttributes & 4) && KeQueryActiveProcessors() == 1)
+        AcpiOverrideAttributes &= ~4;
+
     ACPIInitReadRegistryKeys();
 
     KeInitializeDpc(&AcpiBuildDpc, ACPIBuildDeviceDpc, NULL);
@@ -2200,6 +2205,7 @@ DriverEntry(
     KeInitializeSpinLock(&AcpiBuildQueueLock);
     KeInitializeSpinLock(&AcpiPowerQueueLock);
     KeInitializeSpinLock(&AcpiGetLock);
+    KeInitializeSpinLock(&AcpiPowerLock);
 
     InitializeListHead(&AcpiBuildDeviceList);
     InitializeListHead(&AcpiBuildSynchronizationList);

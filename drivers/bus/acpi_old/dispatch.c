@@ -161,6 +161,11 @@ PACPI_BUILD_DISPATCH AcpiBuildPowerResourceDispatch[] =
     ACPIBuildProcessPowerResourcePhase1
 };
 
+SYSTEM_POWER_STATE SystemPowerStateTranslation[6] =
+{
+    1, 2, 3, 4, 5, 6
+};
+
 extern NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
 extern KSPIN_LOCK AcpiDeviceTreeLock;
 extern KSPIN_LOCK AcpiBuildQueueLock;
@@ -181,6 +186,11 @@ extern BOOLEAN AcpiBuildDpcRunning;
 extern BOOLEAN AcpiBuildWorkDone;
 extern PRSDTINFORMATION RsdtInformation;
 extern PDEVICE_EXTENSION RootDeviceExtension;
+extern ULONG AcpiOverrideAttributes;
+extern KSPIN_LOCK AcpiPowerLock;
+extern PUCHAR GpeEnable;
+extern PUCHAR GpeWakeHandler;
+extern PUCHAR GpeSpecialHandler;
 
 /* FUNCTIOS *****************************************************************/
 
@@ -1897,11 +1907,131 @@ Finish:
 
 NTSTATUS
 NTAPI
-ACPIBuildProcessDevicePhasePrw(
-    _In_ PACPI_BUILD_REQUEST BuildRequest)
+ACPIBuildDevicePowerNodes(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PAMLI_OBJECT_DATA Data,
+    _In_ ULONG Phase)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhasePrw(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    PAMLI_PACKAGE_OBJECT DataBuff;
+    AMLI_OBJECT_DATA data;
+    SYSTEM_POWER_STATE SystemPowerState;
+    SYSTEM_POWER_STATE SystemWakeLevel;
+    ULONG Idx;
+    ULONG Mask;
+    BOOLEAN IsOverride = FALSE;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIBuildProcessDevicePhasePrw: BuildRequest %X\n", BuildRequest);
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+    BuildRequest->BuildReserved1 = 0xD;
+
+    DeviceExtension->PowerInfo.PowerObject[0] = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'WSP_');
+
+    if (!BuildRequest->ChildObject)
+        goto Finish;
+
+    if ((AcpiOverrideAttributes & 8) && !(DeviceExtension->Flags & 0x0000000800000000))
+        IsOverride = TRUE;
+
+    if (BuildRequest->Device.Data.DataType != 4) // Package
+    {
+        DPRINT1("ACPIBuildProcessDevicePhasePrw: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0xA5, 9, (ULONG_PTR)DeviceExtension, (ULONG_PTR)BuildRequest->ChildObject, BuildRequest->Device.Data.DataType);
+    }
+
+    Status = ACPIBuildDevicePowerNodes(DeviceExtension, BuildRequest->ChildObject, &BuildRequest->Device.Data, 0);
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiPowerLock);
+
+    DataBuff = BuildRequest->Device.Data.DataBuff;
+
+    if (DataBuff->Data[0].DataType != 1) // Integer
+    {
+        DPRINT1("ACPIBuildProcessDevicePhasePrw: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0xA5, 4, (ULONG_PTR)DeviceExtension, (ULONG_PTR)BuildRequest->ChildObject, DataBuff->Data[0].DataType);
+    }
+
+    if (DataBuff->Data[1].DataType != 1) // Integer
+    {
+        DPRINT1("ACPIBuildProcessDevicePhasePrw: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0xA5, 4, (ULONG_PTR)DeviceExtension, (ULONG_PTR)BuildRequest->ChildObject, DataBuff->Data[1].DataType);
+    }
+
+    if (!IsOverride)
+    {
+        DeviceExtension->PowerInfo.WakeBit = (ULONG)DataBuff->Data[0].DataValue;
+
+        SystemPowerState = (ULONG)DataBuff->Data[1].DataValue;
+
+        if (SystemPowerState < PowerSystemShutdown)
+            SystemWakeLevel = SystemPowerStateTranslation[SystemPowerState];
+        else
+            SystemWakeLevel = 0;
+
+        DeviceExtension->PowerInfo.SystemWakeLevel = SystemWakeLevel;
+
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0000000000010000, FALSE);
+    }
+
+    KeReleaseSpinLockFromDpcLevel(&AcpiPowerLock);
+
+    Idx = (((ULONG)DataBuff->Data[0].DataValue & 0xFF) / 8);
+    Mask = (1 << (((ULONG)DataBuff->Data[0].DataValue & 0xFF) % 8));
+
+    KeAcquireSpinLockAtDpcLevel(&GpeTableLock);
+
+    if (GpeEnable[Idx] & Mask)
+    {
+        if (!(DeviceExtension->Flags & 0x0000000800000000))
+        {
+            if (!(GpeSpecialHandler[Idx] & Mask))
+                GpeWakeHandler[Idx] |= Mask;
+        }
+        else
+        {
+            GpeSpecialHandler[Idx] |= Mask;
+
+            if (GpeWakeHandler[Idx] & Mask)
+                GpeWakeHandler[Idx] &= ~Mask;
+        }
+    }
+
+    KeReleaseSpinLockFromDpcLevel(&GpeTableLock);
+
+    AMLIFreeDataBuffs(&BuildRequest->Device.Data, 1);
+
+    if (DeviceExtension->PowerInfo.PowerObject[0])
+    {
+        RtlZeroMemory(&data, sizeof(data));
+
+        data.DataType = 1;
+        data.DataValue = 0;
+
+        AMLIAsyncEvalObject(DeviceExtension->PowerInfo.PowerObject[0], NULL, 1, &data, NULL, NULL);
+    }
+
+Finish:
+
+    DPRINT("ACPIBuildProcessDevicePhasePrw: Status %X\n", Status);
+
+    ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+
+    return Status;
 }
 
 NTSTATUS
