@@ -37,6 +37,33 @@ KSPIN_LOCK NotifyHandlerLock;
 KSPIN_LOCK GpeTableLock;
 BOOLEAN AcpiSystemInitialized;
 
+ULONG AcpiBuildDevicePowerNameLookup[] =
+{
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    '_EJD',
+    0,
+    '_PRW',
+    0,
+    '_PR0',
+    0,
+    '_PR1',
+    0,
+    '_PR2',
+    0,
+    '_CRS',
+    0,
+    '_PSC',
+    0
+};
+
 PDRIVER_DISPATCH ACPIDispatchFdoPnpTable[] =
 {
     NULL,
@@ -1685,8 +1712,50 @@ NTAPI
 ACPIBuildProcessDeviceGenericEvalStrict(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT ChildObject;
+    ULONG NameSeg;
+    ULONG Idx;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBuildProcessDeviceGenericEvalStrict: BuildRequest %X\n", BuildRequest);
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+
+    RtlZeroMemory(&BuildRequest->Device.Data, sizeof(BuildRequest->Device.Data));
+
+    Idx = BuildRequest->BuildReserved0;
+    NameSeg = AcpiBuildDevicePowerNameLookup[Idx];
+    BuildRequest->BuildReserved1 = (Idx + 1);
+
+    ChildObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, NameSeg);
+    BuildRequest->ChildObject = ChildObject;
+
+    if (ChildObject)
+    {
+        Status = AMLIAsyncEvalObject(ChildObject,
+                                     &BuildRequest->Device.Data,
+                                     0,
+                                     NULL,
+                                     (PVOID)ACPIBuildCompleteMustSucceed,
+                                     BuildRequest);
+    }
+    else
+    {
+        Status = STATUS_SUCCESS;
+    }
+
+    DPRINT("ACPIBuildProcessDeviceGenericEvalStrict: Phase%X Status = %X\n", (BuildRequest->BuildReserved0 - 3), Status);
+
+    if (Status != STATUS_PENDING)
+    {
+        ACPIBuildCompleteMustSucceed(BuildRequest->ChildObject,
+                                     Status,
+                                     (ULONG)&BuildRequest->Device.Data,
+                                     BuildRequest);
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
