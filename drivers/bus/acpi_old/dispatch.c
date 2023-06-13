@@ -1515,8 +1515,42 @@ NTAPI
 ACPIBuildProcessDevicePhaseUid(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT NsChild;
+    NTSTATUS Status;
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+
+    ACPIInternalUpdateFlags(BuildRequest->DeviceExtension, 0x0000400000000000, FALSE);
+
+    NsChild = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'DIH_');
+    if (!NsChild)
+    {
+        DPRINT1("ACPIBuildProcessDevicePhaseUid: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0xA5, 0xD, (ULONG_PTR)DeviceExtension, 'DIH_', 0);
+    }
+
+    BuildRequest->BuildReserved1 = 5;
+
+    Status = ACPIGet(DeviceExtension,
+                     'DIH_',
+                     0x50080026,
+                     NULL,
+                     0,
+                     ACPIBuildCompleteMustSucceed,
+                     BuildRequest,
+                     (PVOID *)&DeviceExtension->DeviceID,
+                     NULL);
+
+    DPRINT("ACPIBuildProcessDevicePhaseUid: Status %X\n", Status);
+
+    if (Status == STATUS_PENDING)
+        Status = STATUS_SUCCESS;
+    else
+        ACPIBuildCompleteMustSucceed(NsChild, Status, 0, BuildRequest);
+
+    return Status;
 }
 
 NTSTATUS
