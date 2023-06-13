@@ -1811,7 +1811,22 @@ ACPIBuildCompleteGeneric(
     _In_ ULONG Param3,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_BUILD_REQUEST BuildRequest = Context;
+    LONG ExChange;
+
+    DPRINT("ACPIBuildCompleteGeneric: BuildRequest %X\n", BuildRequest);
+
+    ExChange = BuildRequest->BuildReserved1;
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIBuildCompleteGeneric: InStatus %X\n", InStatus);
+        BuildRequest->Status = InStatus;
+    }
+
+    BuildRequest->BuildReserved1 = 2;
+
+    ACPIBuildCompleteCommon(&BuildRequest->WorkDone, ExChange);
 }
 
 NTSTATUS
