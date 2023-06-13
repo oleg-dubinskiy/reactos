@@ -1760,12 +1760,27 @@ ACPIBuildProcessDeviceGenericEvalStrict(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+ACPIDockGetDockObject(
+    _In_ PAMLI_NAME_SPACE_OBJECT ScopeObject,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutNsObject)
+{
+    return AMLIGetNameSpaceObject("_DCK", ScopeObject, OutNsObject, 1);
+}
+
 BOOLEAN
 NTAPI
 ACPIDockIsDockDevice(
     _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_NAME_SPACE_OBJECT dummy;
+
+    if (NT_SUCCESS(ACPIDockGetDockObject(AcpiObject, &dummy)))
+    {
+        return TRUE;
+    }
+
     return FALSE;
 }
 
