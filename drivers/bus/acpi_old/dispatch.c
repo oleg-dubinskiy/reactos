@@ -166,6 +166,11 @@ SYSTEM_POWER_STATE SystemPowerStateTranslation[6] =
     1, 2, 3, 4, 5, 6
 };
 
+DEVICE_POWER_STATE DevicePowerStateTranslation[4] =
+{
+    1, 2, 3, 4
+};
+
 extern NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
 extern KSPIN_LOCK AcpiDeviceTreeLock;
 extern KSPIN_LOCK AcpiBuildQueueLock;
@@ -2201,11 +2206,128 @@ Exit:
 
 NTSTATUS
 NTAPI
-ACPIBuildProcessDevicePhasePsc(
-    _In_ PACPI_BUILD_REQUEST BuildRequest)
+ACPIDeviceInternalDelayedDeviceRequest(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ DEVICE_POWER_STATE DeviceState,
+    _In_ PVOID CallBack,
+    _In_ PIRP Irp)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessDevicePhasePsc(
+    _In_ PACPI_BUILD_REQUEST BuildRequest)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    PACPI_DEVICE_POWER_NODE* PowerNodes;
+    PACPI_DEVICE_POWER_NODE powerNode;
+    DEVICE_POWER_STATE* OutDevicePowerMatrix;
+    SYSTEM_POWER_STATE systemState = 2;
+    DEVICE_POWER_STATE deviceState;
+    DEVICE_POWER_STATE State;
+    NTSTATUS Status;
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+    BuildRequest->BuildReserved1 = 0;
+
+    DeviceExtension->PowerInfo.PowerObject[4] = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, '3SP_');
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiPowerLock);
+
+    OutDevicePowerMatrix = &DeviceExtension->PowerInfo.DevicePowerMatrix[2];
+    do
+    {
+        deviceState = 1;
+        PowerNodes = &DeviceExtension->PowerInfo.PowerNode[1];
+
+        while (TRUE)
+        {
+            powerNode = *PowerNodes;
+            if (powerNode)
+            {
+                do
+                {
+                    if (powerNode->SystemState < systemState)
+                        break;
+
+                    powerNode = powerNode->Next;
+                }
+                while (powerNode);
+
+                if (!powerNode)
+                    break;
+            }
+
+            deviceState++;
+            PowerNodes++;
+
+            if (deviceState > 3)
+                goto Next;
+        }
+
+        DPRINT("ACPIBuildProcessDevicePhasePsc: D%X <-> S%X\n", (deviceState - 1), (systemState - 1));
+
+        *OutDevicePowerMatrix = deviceState;
+Next:
+        systemState++;
+        OutDevicePowerMatrix++;
+    }
+    while (systemState <= 5);
+
+    DeviceExtension->PowerInfo.DeviceWakeLevel = DeviceExtension->PowerInfo.DevicePowerMatrix[DeviceExtension->PowerInfo.SystemWakeLevel];
+
+    KeReleaseSpinLockFromDpcLevel(&AcpiPowerLock);
+
+    State = 1;
+
+    if (DeviceExtension->Flags & 0x0000000080000000)
+    {
+        State = 4;
+        goto Finish;
+    }
+
+    if (!BuildRequest->ChildObject)
+    {
+        goto Finish;
+    }
+
+    if (!NT_SUCCESS(BuildRequest->Status))
+    {
+        goto Finish;
+    }
+
+    if (DeviceExtension->Flags & 0x0000000000080000)
+    {
+        AMLIFreeDataBuffs(&BuildRequest->Device.Data, 1);
+        DeviceExtension->PowerInfo.PowerState = 1;
+        goto Finish;
+    }
+
+    if (BuildRequest->Device.Data.DataType != 1)
+    {
+        DPRINT1("ACPIBuildProcessDevicePhasePsc: KeBugCheckEx()\n");
+        KeBugCheckEx(0xA5, 8, (ULONG_PTR)DeviceExtension, (ULONG_PTR)BuildRequest->ChildObject, BuildRequest->Device.Data.DataType);
+    }
+
+    if ((ULONG)BuildRequest->Device.Data.DataValue < 4)
+        State = DevicePowerStateTranslation[(ULONG)BuildRequest->Device.Data.DataValue];
+    else
+        State = 0;
+
+    AMLIFreeDataBuffs(&BuildRequest->Device.Data, 1);
+
+Finish:
+
+    Status = ACPIDeviceInternalDelayedDeviceRequest(DeviceExtension, State, NULL, NULL);
+
+    DPRINT("ACPIBuildProcessDevicePhasePsc: Status %X\n", Status);
+
+    ACPIBuildCompleteGeneric(NULL, Status, 0, BuildRequest);
+
+    return Status;
 }
 
 NTSTATUS

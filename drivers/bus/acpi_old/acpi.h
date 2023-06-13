@@ -107,6 +107,7 @@ typedef struct _ACPI_HAL_DISPATCH_TABLE
 typedef struct _ACPI_DEVICE_POWER_NODE
 {
     struct _ACPI_DEVICE_POWER_NODE* Next;
+    SYSTEM_POWER_STATE SystemState;
     struct _DEVICE_EXTENSION* DeviceExtension;
     LIST_ENTRY DevicePowerListEntry;
 } ACPI_DEVICE_POWER_NODE, *PACPI_DEVICE_POWER_NODE;
