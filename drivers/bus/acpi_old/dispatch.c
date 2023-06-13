@@ -1497,8 +1497,32 @@ NTAPI
 ACPIBuildProcessDevicePhaseAdr(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+
+    ACPIInternalUpdateFlags(BuildRequest->DeviceExtension, 0x0000100000000000, FALSE);
+    BuildRequest->BuildReserved1 = 8;
+
+    Status = ACPIGet(DeviceExtension,
+                     'ATS_',
+                     0x40040802,
+                     NULL,
+                     0,
+                     ACPIBuildCompleteMustSucceed,
+                     BuildRequest,
+                     (PVOID *)&BuildRequest->ListHeadForInsert,
+                     NULL);
+
+    DPRINT("ACPIBuildProcessDevicePhaseAdr: Status %X\n", Status);
+
+    if (Status == STATUS_PENDING)
+        Status = STATUS_SUCCESS;
+    else
+        ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+
+    return Status;
 }
 
 NTSTATUS
