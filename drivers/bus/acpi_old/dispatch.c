@@ -1586,13 +1586,30 @@ ACPIBuildProcessDevicePhaseCid(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+VOID
+NTAPI
+ACPIDetectDuplicateHID(
+    _In_ PDEVICE_EXTENSION DeviceExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 ACPIBuildProcessDevicePhaseSta(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+
+    DPRINT("ACPIBuildProcessDevicePhaseSta: BuildRequest %X\n", BuildRequest);
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+    BuildRequest->BuildReserved1 = 9;
+
+    ACPIDetectDuplicateHID(DeviceExtension);
+    ACPIBuildCompleteMustSucceed(NULL, STATUS_SUCCESS, 0, BuildRequest);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
