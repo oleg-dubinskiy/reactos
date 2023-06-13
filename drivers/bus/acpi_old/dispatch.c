@@ -187,9 +187,14 @@ extern LIST_ENTRY AcpiBuildThermalZoneList;
 extern LIST_ENTRY AcpiPowerDelayedQueueList;
 extern LIST_ENTRY AcpiGetListEntry;
 extern LIST_ENTRY AcpiUnresolvedEjectList;
+extern LIST_ENTRY AcpiPowerSynchronizeList;
+extern LIST_ENTRY AcpiPowerQueueList;
 extern KDPC AcpiBuildDpc;
+extern KDPC AcpiPowerDpc;
 extern BOOLEAN AcpiBuildDpcRunning;
 extern BOOLEAN AcpiBuildWorkDone;
+extern BOOLEAN AcpiPowerWorkDone;
+extern BOOLEAN AcpiPowerDpcRunning;
 extern PRSDTINFORMATION RsdtInformation;
 extern PDEVICE_EXTENSION RootDeviceExtension;
 extern ULONG AcpiOverrideAttributes;
@@ -2207,12 +2212,50 @@ Exit:
 
 VOID
 NTAPI
+ACPIDevicePowerDpc(
+    _In_ PKDPC Dpc,
+    _In_ PVOID DeferredContext,
+    _In_ PVOID SystemArgument1,
+    _In_ PVOID SystemArgument2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
 ACPIDeviceInternalQueueRequest(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PACPI_POWER_REQUEST Request,
     _In_ ULONG Flags)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    if (Flags & 0x100)
+    {
+        InsertHeadList(&AcpiPowerSynchronizeList, &Request->ListEntry);
+    }
+    else if (IsListEmpty(&DeviceExtension->PowerInfo.PowerRequestListEntry))
+    {
+        InsertTailList(&DeviceExtension->PowerInfo.PowerRequestListEntry, &Request->SerialListEntry);
+
+        if (Flags & 1)
+        {
+            InsertTailList(&AcpiPowerDelayedQueueList, &Request->ListEntry);
+        }
+        else
+        {
+            InsertTailList(&AcpiPowerQueueList, &Request->ListEntry);
+        }
+    }
+    else
+    {
+        InsertTailList(&DeviceExtension->PowerInfo.PowerRequestListEntry, &Request->SerialListEntry);
+    }
+
+    AcpiPowerWorkDone = TRUE;
+
+    if ((Flags & 1) || AcpiPowerDpcRunning)
+        return;
+
+    KeInsertQueueDpc(&AcpiPowerDpc, NULL, NULL);
 }
 
 NTSTATUS

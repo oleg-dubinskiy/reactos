@@ -35,6 +35,7 @@ PDEVICE_EXTENSION RootDeviceExtension;
 PRSDTINFORMATION RsdtInformation;
 WORK_QUEUE_ITEM ACPIWorkItem;
 KDPC AcpiBuildDpc;
+KDPC AcpiPowerDpc;
 PVOID ACPIThread;
 
 PUCHAR GpeEnable;
@@ -74,11 +75,15 @@ LIST_ENTRY AcpiBuildThermalZoneList;
 LIST_ENTRY AcpiPowerDelayedQueueList;
 LIST_ENTRY AcpiGetListEntry;
 LIST_ENTRY AcpiUnresolvedEjectList;
+LIST_ENTRY AcpiPowerSynchronizeList;
+LIST_ENTRY AcpiPowerQueueList;
 LONG AcpiTableDelta = 0;
 BOOLEAN AcpiLoadSimulatorTable = TRUE;
 BOOLEAN AcpiBuildDpcRunning;
 BOOLEAN AcpiBuildFixedButtonEnumerated;
 BOOLEAN AcpiBuildWorkDone;
+BOOLEAN AcpiPowerWorkDone;
+BOOLEAN AcpiPowerDpcRunning;
 
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 extern PACPI_INFORMATION AcpiInformation;
@@ -2201,6 +2206,7 @@ DriverEntry(
     ACPIInitReadRegistryKeys();
 
     KeInitializeDpc(&AcpiBuildDpc, ACPIBuildDeviceDpc, NULL);
+    KeInitializeDpc(&AcpiPowerDpc, ACPIDevicePowerDpc, NULL);
 
     KeInitializeSpinLock(&AcpiDeviceTreeLock);
     KeInitializeSpinLock(&AcpiBuildQueueLock);
@@ -2217,9 +2223,13 @@ DriverEntry(
     InitializeListHead(&AcpiPowerDelayedQueueList);
     InitializeListHead(&AcpiGetListEntry);
     InitializeListHead(&AcpiUnresolvedEjectList);
+    InitializeListHead(&AcpiPowerSynchronizeList);
+    InitializeListHead(&AcpiPowerQueueList);
 
     AcpiBuildFixedButtonEnumerated = FALSE;
     AcpiBuildWorkDone = FALSE;
+    AcpiPowerWorkDone = FALSE;
+    AcpiPowerDpcRunning = FALSE;
 
     ExInitializeNPagedLookasideList(&DeviceExtensionLookAsideList, NULL, NULL, 0, sizeof(DEVICE_EXTENSION), 'DpcA', 0x40);
     ExInitializeNPagedLookasideList(&BuildRequestLookAsideList, NULL, NULL, 0, sizeof(ACPI_BUILD_REQUEST), 'DpcA', 0x38);

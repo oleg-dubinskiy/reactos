@@ -799,6 +799,15 @@ ACPIGet(
     _Out_ PVOID* OutDataBuff,
     _Out_ ULONG* OutDataLen);
 
+VOID
+NTAPI
+ACPIDevicePowerDpc(
+    _In_ PKDPC Dpc,
+    _In_ PVOID DeferredContext,
+    _In_ PVOID SystemArgument1,
+    _In_ PVOID SystemArgument2
+);
+
 /* registry.c */
 VOID
 NTAPI
