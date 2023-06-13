@@ -95,6 +95,16 @@ typedef enum
     Invalid = 0x5,
 } ACPI_DEVICE_STATE;
 
+typedef enum
+{
+    AcpiPowerRequestDevice = 0x0,
+    AcpiPowerRequestSystem = 0x1,
+    AcpiPowerRequestWaitWake = 0x2,
+    AcpiPowerRequestWarmEject = 0x3,
+    AcpiPowerRequestSynchronize = 0x4,
+    AcpiPowerRequestMaximum = 0x5,
+} ACPI_POWER_REQUEST_TYPE;
+
 typedef struct _ACPI_HAL_DISPATCH_TABLE
 {
     ULONG Signature;

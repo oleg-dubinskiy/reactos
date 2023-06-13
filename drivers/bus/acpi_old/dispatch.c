@@ -2206,14 +2206,39 @@ Exit:
 
 NTSTATUS
 NTAPI
+ACPIDeviceInitializePowerRequest(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ POWER_STATE State,
+    _In_ PVOID CallBack,
+    _In_ PVOID Context,
+    _In_ POWER_ACTION ShutdownType,
+    _In_ ACPI_POWER_REQUEST_TYPE RequestType,
+    _In_ ULONG Flags)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPIDeviceInternalDelayedDeviceRequest(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ DEVICE_POWER_STATE DeviceState,
     _In_ PVOID CallBack,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    POWER_STATE PowerState;
+    NTSTATUS Status;
+
+    DPRINT("ACPIDeviceInternalDelayedDeviceRequest: Irp %p, Transition to D%X\n", Irp, (DeviceState - 1));
+
+    PowerState.DeviceState = DeviceState;
+
+    Status = ACPIDeviceInitializePowerRequest(DeviceExtension, PowerState, CallBack, Irp, 0, 0, 9);
+    if (Status == STATUS_MORE_PROCESSING_REQUIRED)
+        Status = STATUS_PENDING;
+
+    return Status;
 }
 
 NTSTATUS
