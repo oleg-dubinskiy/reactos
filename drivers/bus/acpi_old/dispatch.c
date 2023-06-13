@@ -685,6 +685,112 @@ Exit:
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+ACPIGetConvertToInstanceID(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ ULONG GetFlags,
+    _Out_ PVOID* OutDataBuff,
+    _Out_ ULONG* OutDataLen)
+{
+    PVOID DataBuff;
+    POOL_TYPE PoolType;
+    ULONG DataLen;
+
+    DPRINT("ACPIGetConvertToInstanceID: GetFlags %X\n", GetFlags);
+
+    if (GetFlags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    if (!(GetFlags & 0x8000000) && (DeviceExtension->Flags & 0x0001000000000000))
+    {
+        DataLen = (strlen(DeviceExtension->InstanceID) + 1);
+
+        DataBuff = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+        if (!DataBuff)
+        {
+            DPRINT1("ACPIGetConvertToInstanceID: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        //RtlZeroMemory(DataBuff, DataLen);
+        RtlCopyMemory(DataBuff, AmliData->DataBuff, DataLen);
+
+        goto Finish;
+    }
+
+    if (!(GetFlags & 0x8000000) && (DeviceExtension->Flags & 0x0000004000000000))
+    {
+        DataLen = 9;
+
+        DataBuff = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+        if (!DataBuff)
+        {
+            DPRINT1("ACPIGetConvertToInstanceID: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlZeroMemory(DataBuff, DataLen);
+        sprintf(DataBuff, "%lx", (ULONG)DeviceExtension->Address);
+
+        goto Finish;
+    }
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIGetConvertToInstanceID: InStatus %X\n", InStatus);
+        return InStatus;
+    }
+
+    if (AmliData->DataType == 1)
+    {
+        DataLen = 9;
+
+        DataBuff = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+        if (!DataBuff)
+        {
+            DPRINT1("ACPIGetConvertToInstanceID: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlZeroMemory(DataBuff, DataLen);
+        sprintf(DataBuff, "%lx", (ULONG)AmliData->DataValue);
+
+        goto Finish;
+    }
+
+    if (AmliData->DataType != 2)
+    {
+        DPRINT1("ACPIGetConvertToInstanceID: STATUS_ACPI_INVALID_DATA\n");
+        return STATUS_ACPI_INVALID_DATA;
+    }
+
+    DataLen = (strlen(AmliData->DataBuff) + 1);
+
+    DataBuff = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+    if (!DataBuff)
+    {
+        DPRINT1("ACPIGetConvertToInstanceID: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    //RtlZeroMemory(DataBuff, DataLen);
+    RtlCopyMemory(DataBuff, AmliData->DataBuff, DataLen);
+
+Finish:
+
+    *OutDataBuff = DataBuff;
+
+    if (OutDataLen)
+        *OutDataLen = DataLen;
+
+    return STATUS_SUCCESS;
+}
+
 VOID
 __cdecl
 ACPIGetWorkerForString(
@@ -782,8 +888,7 @@ ACPIGetWorkerForString(
     }
     else if (GetFlags & 0x80)
     {
-        DPRINT1("ACPIGetWorkerForString: FIXME\n");
-        ASSERT(FALSE);
+        Status = ACPIGetConvertToInstanceID(DeviceExtension, InStatus, AmliData, GetFlags, OutDataBuff, OutDataLen);
     }
     else if (GetFlags & 0x0200)
     {
