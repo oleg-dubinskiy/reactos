@@ -122,6 +122,62 @@ typedef struct _ACPI_DEVICE_POWER_NODE
     LIST_ENTRY DevicePowerListEntry;
 } ACPI_DEVICE_POWER_NODE, *PACPI_DEVICE_POWER_NODE;
 
+typedef struct _ACPI_POWER_REQUEST
+{
+    LIST_ENTRY ListEntry;
+    LIST_ENTRY SerialListEntry;
+    ULONG Signature;
+    struct _DEVICE_EXTENSION* DeviceExtension;
+    ACPI_POWER_REQUEST_TYPE RequestType;
+    CHAR FailedOnce;
+    union
+    {
+        struct
+        {
+            ULONG Flags;
+            DEVICE_POWER_STATE DevicePowerState;
+        } DevicePowerRequest;
+        struct
+        {
+            SYSTEM_POWER_STATE SystemPowerState;
+            POWER_ACTION SystemPowerAction;
+        } SystemPowerRequest;
+        struct
+        {
+            ULONG Flags;
+            SYSTEM_POWER_STATE SystemPowerState;
+        } WaitWakeRequest;
+        struct
+        {
+            ULONG Flags;
+            SYSTEM_POWER_STATE EjectPowerState;
+        } EjectPowerRequest;
+        struct
+        {
+            ULONG Flags;
+        } SynchronizePowerRequest;
+        struct
+        {
+            ULONG Delayed : 1;
+            ULONG NoQueue : 1;
+            ULONG LockDevice : 1;
+            ULONG UnlockDevice : 1;
+            ULONG LockHiber : 1;
+            ULONG UnlockHiber : 1;
+            ULONG HasCancel : 1;
+            ULONG UpdateProfile : 1;
+            ULONG SyncQueue : 1;
+            ULONG Reserved : 23;
+        } UFlags;
+    } u;
+    VOID (NTAPI* CallBack)(VOID);
+    PVOID Context;
+    LONG WorkDone;
+    ULONG NextWorkDone;
+    AMLI_NAME_SPACE_OBJECT ResultData;
+    NTSTATUS Status;
+} ACPI_POWER_REQUEST, *PACPI_POWER_REQUEST;
+
 typedef struct _ACPI_POWER_INFO
 {
     PVOID Context;
@@ -333,6 +389,7 @@ typedef struct _DEVICE_EXTENSION
     PCM_RESOURCE_LIST ResourceList;
     LONG OutstandingIrpCount;
     LONG ReferenceCount;
+    LONG HibernatePathCount;
     PKEVENT RemoveEvent;
     PAMLI_NAME_SPACE_OBJECT AcpiObject;
     PDEVICE_OBJECT DeviceObject;

@@ -172,6 +172,7 @@ DEVICE_POWER_STATE DevicePowerStateTranslation[4] =
 };
 
 extern NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
+extern NPAGED_LOOKASIDE_LIST RequestLookAsideList;
 extern KSPIN_LOCK AcpiDeviceTreeLock;
 extern KSPIN_LOCK AcpiBuildQueueLock;
 extern KSPIN_LOCK AcpiPowerQueueLock;
@@ -2204,6 +2205,16 @@ Exit:
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+ACPIDeviceInternalQueueRequest(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PACPI_POWER_REQUEST Request,
+    _In_ ULONG Flags)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 ACPIDeviceInitializePowerRequest(
@@ -2215,8 +2226,100 @@ ACPIDeviceInitializePowerRequest(
     _In_ ACPI_POWER_REQUEST_TYPE RequestType,
     _In_ ULONG Flags)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_POWER_REQUEST Request;
+    KIRQL OldIrql;
+
+    Request = ExAllocateFromNPagedLookasideList(&RequestLookAsideList);
+    if (!Request)
+    {
+        if (CallBack)
+        {
+            DPRINT1("ACPIDeviceInitializePowerRequest: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        return STATUS_MORE_PROCESSING_REQUIRED;
+    }
+
+    RtlZeroMemory(Request, sizeof(*Request));
+
+    Request->Status = STATUS_SUCCESS;
+    Request->CallBack = CallBack;
+    Request->Context = Context;
+    Request->Signature = '_SGP';
+    Request->DeviceExtension = DeviceExtension;
+    Request->WorkDone = 3;
+    Request->RequestType = RequestType;
+
+    InitializeListHead(&Request->ListEntry);
+    InitializeListHead(&Request->SerialListEntry);
+
+    KeAcquireSpinLock(&AcpiPowerQueueLock, &OldIrql);
+
+    if (RequestType == AcpiPowerRequestDevice)
+    {
+        if (InterlockedCompareExchange(&DeviceExtension->HibernatePathCount, 0, 0))
+        {
+            if (ShutdownType == PowerActionHibernate)
+            {
+                if (State.SystemState == 4)
+                    Flags |= 0x10;
+            }
+            else if (State.SystemState == 1)
+            {
+                Flags |= 0x20;
+            }
+        }
+
+        Request->u.DevicePowerRequest.DevicePowerState = State.DeviceState;
+        Request->u.DevicePowerRequest.Flags = Flags;
+
+        if (State.DeviceState > DeviceExtension->PowerInfo.PowerState)
+        {
+            if (DeviceExtension->DeviceObject)
+                PoSetPowerState(DeviceExtension->DeviceObject, DevicePowerState, State);
+        }
+
+        goto Finish;
+    }
+
+    if (RequestType == AcpiPowerRequestSystem)
+    {
+        Request->u.DevicePowerRequest.Flags = State.SystemState;
+        Request->u.SystemPowerRequest.SystemPowerAction = ShutdownType;
+        goto Finish;
+    }
+
+    if (RequestType == AcpiPowerRequestWaitWake)
+    {
+        Request->u.DevicePowerRequest.DevicePowerState = State.DeviceState;
+        Request->u.DevicePowerRequest.Flags = Flags;
+
+        KeReleaseSpinLock(&AcpiPowerQueueLock, OldIrql);
+
+        DPRINT1("ACPIDeviceInitializePowerRequest: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (RequestType == AcpiPowerRequestWarmEject)
+    {
+        Request->u.DevicePowerRequest.DevicePowerState = State.DeviceState;
+    }
+    else if (RequestType == AcpiPowerRequestSynchronize)
+    {
+        Request->u.DevicePowerRequest.Flags = Flags;
+    }
+
+Finish:
+
+    if (!(Flags & 2))
+    {
+        ACPIDeviceInternalQueueRequest(DeviceExtension, Request, Flags);
+    }
+
+    KeReleaseSpinLock(&AcpiPowerQueueLock, OldIrql);
+
+    return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
 NTSTATUS

@@ -53,6 +53,7 @@ PUCHAR GpeMap;
 
 NPAGED_LOOKASIDE_LIST DeviceExtensionLookAsideList;
 NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
+NPAGED_LOOKASIDE_LIST RequestLookAsideList;
 KSPIN_LOCK AcpiDeviceTreeLock;
 KSPIN_LOCK AcpiBuildQueueLock;
 KSPIN_LOCK ACPIWorkerSpinLock;
@@ -2222,6 +2223,7 @@ DriverEntry(
 
     ExInitializeNPagedLookasideList(&DeviceExtensionLookAsideList, NULL, NULL, 0, sizeof(DEVICE_EXTENSION), 'DpcA', 0x40);
     ExInitializeNPagedLookasideList(&BuildRequestLookAsideList, NULL, NULL, 0, sizeof(ACPI_BUILD_REQUEST), 'DpcA', 0x38);
+    ExInitializeNPagedLookasideList(&RequestLookAsideList, NULL, NULL, 0, sizeof(ACPI_POWER_REQUEST), 'PpcA', 0xCC);
 
     ACPIInitializeWorker();
 
