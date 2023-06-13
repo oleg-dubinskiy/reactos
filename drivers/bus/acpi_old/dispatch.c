@@ -2039,8 +2039,33 @@ NTAPI
 ACPIBuildProcessDevicePhasePr0(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+    BuildRequest->BuildReserved1 = 0x0F;
+
+    DeviceExtension->PowerInfo.PowerObject[1] = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, '0SP_');
+
+    if (BuildRequest->ChildObject)
+    {
+        if (BuildRequest->Device.Data.DataType != 4)
+        {
+            DPRINT1("ACPIBuildProcessDevicePhasePr0: KeBugCheckEx()\n");
+            ASSERT(FALSE);
+            KeBugCheckEx(0xA5, 9, (ULONG_PTR)DeviceExtension, (ULONG_PTR)BuildRequest->ChildObject, BuildRequest->Device.Data.DataType);
+        }
+
+        Status = ACPIBuildDevicePowerNodes(DeviceExtension, BuildRequest->ChildObject, &BuildRequest->Device.Data, 1);
+
+        AMLIFreeDataBuffs(&BuildRequest->Device.Data, 1);
+    }
+
+    DPRINT("ACPIBuildProcessDevicePhasePr0: Status %X\n", Status);
+
+    ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+
+    return Status;
 }
 
 NTSTATUS
