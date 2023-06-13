@@ -1587,11 +1587,79 @@ ACPIBuildProcessDevicePhaseCid(
 }
 
 VOID
+__cdecl
+ACPIExtListExitEnumEarly(
+    _In_ PACPI_EXT_LIST_ENUM_DATA ExtList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
 NTAPI
 ACPIDetectDuplicateHID(
     _In_ PDEVICE_EXTENSION DeviceExtension)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PDEVICE_EXTENSION Extension;
+    ACPI_EXT_LIST_ENUM_DATA ExtList;
+
+    DPRINT("ACPIDetectDuplicateHID: DeviceExtension %X\n", DeviceExtension);
+
+    if (!DeviceExtension->ParentExtension)
+        return;
+
+    if ((DeviceExtension->Flags & 0x0000000000000001) ||
+        (DeviceExtension->Flags & 0x0002000000000002) ||
+        !(DeviceExtension->Flags & 0x0000A00000000000))
+    {
+        return;
+    }
+
+    ExtList.List = &DeviceExtension->ParentExtension->ChildDeviceList;
+    ExtList.Offset = FIELD_OFFSET(DEVICE_EXTENSION, SiblingDeviceList);
+    ExtList.SpinLock = &AcpiDeviceTreeLock;
+    ExtList.ExtListEnum2 = 2;
+
+    Extension = ACPIExtListStartEnum(&ExtList);
+
+    while (ACPIExtListTestElement(&ExtList, TRUE))
+    {
+        if (!Extension)
+        {
+            ACPIExtListExitEnumEarly(&ExtList);
+            return;
+        }
+
+        if (Extension == DeviceExtension)
+            goto Next;
+
+        if ((Extension->Flags & 0x0000000000000001) ||
+            (Extension->Flags & 0x0002000000000002) ||
+            (Extension->Flags & 0x0000080000000000) ||
+            !(Extension->Flags & 0x0000A00000000000))
+        {
+            goto Next;
+        }
+
+        if (!strstr(Extension->DeviceID, DeviceExtension->DeviceID))
+            goto Next;
+
+        if (!(Extension->Flags & 0x0001400000000000) || !(DeviceExtension->Flags & 0x0001400000000000))
+        {
+            DPRINT1("ACPIDetectDuplicateHID: matches with %X\n", Extension);
+            ASSERT(FALSE);
+            KeBugCheckEx(0xA5, 0xD, (ULONG_PTR)DeviceExtension, 'DIU_', 0);
+        }
+
+        if (!strcmp(Extension->InstanceID, DeviceExtension->InstanceID))
+        {
+            DPRINT1("ACPIDetectDuplicateHID: has _UID match with %X\n\t\tContact the Machine Vendor to get this problem fixed\n", Extension);
+            ASSERT(FALSE);
+            KeBugCheckEx(0xA5, 0xD, (ULONG_PTR)DeviceExtension, 'DIU_', 1);
+        }
+
+Next:
+        Extension = ACPIExtListEnumNext(&ExtList);
+    }
 }
 
 NTSTATUS
