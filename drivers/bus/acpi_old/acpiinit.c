@@ -71,6 +71,7 @@ LIST_ENTRY AcpiBuildPowerResourceList;
 LIST_ENTRY AcpiBuildThermalZoneList;
 LIST_ENTRY AcpiPowerDelayedQueueList;
 LIST_ENTRY AcpiGetListEntry;
+LIST_ENTRY AcpiUnresolvedEjectList;
 LONG AcpiTableDelta = 0;
 BOOLEAN AcpiLoadSimulatorTable = TRUE;
 BOOLEAN AcpiBuildDpcRunning;
@@ -2208,6 +2209,7 @@ DriverEntry(
     InitializeListHead(&AcpiBuildThermalZoneList);
     InitializeListHead(&AcpiPowerDelayedQueueList);
     InitializeListHead(&AcpiGetListEntry);
+    InitializeListHead(&AcpiUnresolvedEjectList);
 
     AcpiBuildFixedButtonEnumerated = FALSE;
     AcpiBuildWorkDone = FALSE;

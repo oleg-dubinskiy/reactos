@@ -175,10 +175,12 @@ extern LIST_ENTRY AcpiBuildPowerResourceList;
 extern LIST_ENTRY AcpiBuildThermalZoneList;
 extern LIST_ENTRY AcpiPowerDelayedQueueList;
 extern LIST_ENTRY AcpiGetListEntry;
+extern LIST_ENTRY AcpiUnresolvedEjectList;
 extern KDPC AcpiBuildDpc;
 extern BOOLEAN AcpiBuildDpcRunning;
 extern BOOLEAN AcpiBuildWorkDone;
 extern PRSDTINFORMATION RsdtInformation;
+extern PDEVICE_EXTENSION RootDeviceExtension;
 
 /* FUNCTIOS *****************************************************************/
 
@@ -1745,7 +1747,7 @@ ACPIBuildProcessDeviceGenericEvalStrict(
         Status = STATUS_SUCCESS;
     }
 
-    DPRINT("ACPIBuildProcessDeviceGenericEvalStrict: Phase%X Status = %X\n", (BuildRequest->BuildReserved0 - 3), Status);
+    DPRINT("ACPIBuildProcessDeviceGenericEvalStrict: Phase%X, Status %X\n", (BuildRequest->BuildReserved0 - 3), Status);
 
     if (Status != STATUS_PENDING)
     {
@@ -1758,13 +1760,109 @@ ACPIBuildProcessDeviceGenericEvalStrict(
     return STATUS_SUCCESS;
 }
 
+BOOLEAN
+NTAPI
+ACPIDockIsDockDevice(
+    _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+PDEVICE_EXTENSION
+NTAPI
+ACPIDockFindCorrespondingDock(
+    _In_ PDEVICE_EXTENSION DeviceExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildDockExtension(
+    _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject,
+    _In_ PDEVICE_EXTENSION rootDeviceExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+__cdecl
+ACPIBuildCompleteGeneric(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ ULONG Param3,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 ACPIBuildProcessDevicePhaseEjd(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBuildProcessDevicePhaseEjd: BuildRequest %X\n", BuildRequest);
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+
+    if ((DeviceExtension->Flags & 0000000000000002) || !(DeviceExtension->Flags & 0x0000000004000000))
+        BuildRequest->BuildReserved1 = 0x0B;
+    else
+        BuildRequest->BuildReserved1 = 0x13;
+
+    if (BuildRequest->ChildObject)
+    {
+        AMLIFreeDataBuffs(&BuildRequest->Device.Data, TRUE);
+
+        ExInterlockedInsertTailList(&AcpiUnresolvedEjectList, &DeviceExtension->EjectDeviceList, &AcpiDeviceTreeLock);
+
+        if (DeviceExtension->DebugFlags & 1)
+        {
+            DPRINT1("ACPIBuildProcessDevicePhaseEjd: Ejector already found\n");
+        }
+        else
+        {
+            DeviceExtension->DebugFlags |= 1;
+        }
+    }
+
+    if (!ACPIDockIsDockDevice(DeviceExtension->AcpiObject))
+    {
+        Status = STATUS_SUCCESS;
+        goto Finish;
+    }
+
+    if (!AcpiInformation->Dockable)
+    {
+        DPRINT1("ACPIBuildProcessDevicePhaseEjd: BIOS BUG - DOCK bit not set\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0xA5, 0xC, (ULONG_PTR)DeviceExtension, (ULONG_PTR)BuildRequest->ChildObject, 0);
+    }
+
+    if (ACPIDockFindCorrespondingDock(DeviceExtension))
+    {
+        DPRINT1("ACPIBuildProcessDevicePhaseEjd: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0xA5, 0xC, (ULONG_PTR)DeviceExtension, (ULONG_PTR)BuildRequest->ChildObject, 1);
+    }
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiDeviceTreeLock);
+    Status = ACPIBuildDockExtension(DeviceExtension->AcpiObject, RootDeviceExtension);
+    KeReleaseSpinLockFromDpcLevel(&AcpiDeviceTreeLock);
+
+Finish:
+
+    DPRINT("ACPIBuildProcessDevicePhaseEjd: Status %X\n", Status);
+
+    ACPIBuildCompleteGeneric(NULL, Status, 0, BuildRequest);
+
+    return Status;
 }
 
 NTSTATUS

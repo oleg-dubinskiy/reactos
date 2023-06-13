@@ -291,8 +291,9 @@ typedef struct _DEVICE_EXTENSION
         } UFlags;
     };
     ULONG Signature;
+    ULONG DebugFlags;
     PIRP_DISPATCH_TABLE DispatchTable;
-    union                                                   // +0014  +020 // 
+    union
     {
         FDO_DEVICE_EXTENSION Fdo;
         PDO_DEVICE_EXTENSION Pdo;
