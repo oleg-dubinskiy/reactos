@@ -2164,8 +2164,39 @@ NTAPI
 ACPIBuildProcessDeviceGenericEval(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    ULONG NameSeg;
+    ULONG Idx;
+    NTSTATUS Status;
+
+    RtlZeroMemory(&BuildRequest->Device.Data, sizeof(BuildRequest->Device.Data));
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+    Idx = BuildRequest->BuildReserved0;
+    NameSeg = AcpiBuildDevicePowerNameLookup[Idx];
+    BuildRequest->BuildReserved1 = (Idx + 1);
+
+    BuildRequest->ChildObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, NameSeg);
+    if (!BuildRequest->ChildObject)
+    {
+        Status = STATUS_SUCCESS;
+
+        ACPIBuildCompleteGeneric(BuildRequest->ChildObject, Status, (ULONG)&BuildRequest->Device.Data, BuildRequest);
+        goto Exit;
+    }
+
+    Status = AMLIAsyncEvalObject(BuildRequest->ChildObject, &BuildRequest->Device.Data, 0, NULL, (PVOID)ACPIBuildCompleteGeneric, BuildRequest);
+    if (Status != STATUS_PENDING)
+    {
+        ACPIBuildCompleteGeneric(BuildRequest->ChildObject, Status, (ULONG)&BuildRequest->Device.Data, BuildRequest);
+        goto Exit;
+    }
+
+Exit:
+
+    DPRINT("ACPIBuildProcessDeviceGenericEval: Phase%X, Status %X\n", (BuildRequest->BuildReserved0 - 3), Status);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
