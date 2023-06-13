@@ -2110,8 +2110,44 @@ NTAPI
 ACPIBuildProcessDevicePhasePr2(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+
+    DeviceExtension->PowerInfo.PowerObject[3] = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, '2SP_');
+
+    if (!DeviceExtension->PowerInfo.PowerObject[3])
+        DeviceExtension->PowerInfo.PowerObject[3] = DeviceExtension->PowerInfo.PowerObject[2];
+
+    if (BuildRequest->ChildObject)
+    {
+        if (BuildRequest->Device.Data.DataType != 4)
+        {
+            DPRINT1("ACPIBuildProcessDevicePhasePr2: KeBugCheckEx()\n");
+            ASSERT(FALSE);
+            KeBugCheckEx(0xA5, 9, (ULONG_PTR)DeviceExtension, (ULONG_PTR)BuildRequest->ChildObject, BuildRequest->Device.Data.DataType);
+        }
+
+        Status = ACPIBuildDevicePowerNodes(DeviceExtension, BuildRequest->ChildObject, &BuildRequest->Device.Data, 3);
+        AMLIFreeDataBuffs(&BuildRequest->Device.Data, 1);
+    }
+
+    if (DeviceExtension->Flags & 2)
+    {
+        BuildRequest->ChildObject = NULL;
+        BuildRequest->BuildReserved1 = 0x16;
+    }
+    else
+    {
+        BuildRequest->BuildReserved1 = 0x15;
+    }
+
+    DPRINT("ACPIBuildProcessDevicePhasePr2: Status %X\n", Status);
+
+    ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+
+    return Status;
 }
 
 NTSTATUS
