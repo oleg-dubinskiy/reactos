@@ -819,6 +819,25 @@ ACPIDevicePowerDpc(
     _In_ PVOID SystemArgument2
 );
 
+VOID
+NTAPI
+ACPIBuildProcessQueueList(
+    VOID
+);
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessGenericList(
+    _In_ PLIST_ENTRY GenericList,
+    _In_ PACPI_BUILD_DISPATCH* BuildDispatch
+);
+
+NTSTATUS
+NTAPI
+ACPIBuildProcessSynchronizationList(
+    _In_ PLIST_ENTRY SynchronizationList
+);
+
 /* registry.c */
 VOID
 NTAPI

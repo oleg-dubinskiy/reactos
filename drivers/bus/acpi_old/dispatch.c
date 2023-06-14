@@ -2725,7 +2725,104 @@ ACPIDevicePowerDpc(
     _In_ PVOID SystemArgument1,
     _In_ PVOID SystemArgument2)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    NTSTATUS Status;
+
+    DPRINT("ACPIDevicePowerDpc: AcpiBuildDpcRunning %X\n", AcpiBuildDpcRunning);
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
+
+    if (AcpiBuildDpcRunning)
+    {
+        KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+        DPRINT("ACPIDevicePowerDpc: AcpiBuildDpcRunning %X\n", AcpiBuildDpcRunning);
+        return;
+    }
+
+    AcpiBuildDpcRunning = TRUE;
+
+    do
+    {
+        AcpiBuildWorkDone = FALSE;
+
+        if (!IsListEmpty(&AcpiBuildQueueList))
+            ACPIBuildProcessQueueList();
+
+        KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+
+        if (!IsListEmpty(&AcpiBuildRunMethodList))
+        {
+            Status = ACPIBuildProcessGenericList(&AcpiBuildRunMethodList,AcpiBuildRunMethodDispatch);
+
+            KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
+
+            if (Status == STATUS_PENDING)
+            {
+                DPRINT("ACPIDevicePowerDpc: continue Status == STATUS_PENDING\n");
+                continue;
+            }
+
+            if (!IsListEmpty(&AcpiBuildQueueList))
+            {
+                AcpiBuildWorkDone = TRUE;
+                continue;
+            }
+
+            KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+        }
+
+        if (!IsListEmpty(&AcpiBuildOperationRegionList))
+        {
+            DPRINT1("ACPIDevicePowerDpc: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!IsListEmpty(&AcpiBuildPowerResourceList))
+        {
+            DPRINT1("ACPIDevicePowerDpc: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!IsListEmpty(&AcpiBuildDeviceList))
+        {
+            DPRINT1("ACPIDevicePowerDpc: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!IsListEmpty(&AcpiBuildThermalZoneList))
+        {
+            DPRINT1("ACPIDevicePowerDpc: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (IsListEmpty(&AcpiBuildDeviceList) &&
+            IsListEmpty(&AcpiBuildOperationRegionList) &&
+            IsListEmpty(&AcpiBuildPowerResourceList) &&
+            IsListEmpty(&AcpiBuildRunMethodList) &&
+            IsListEmpty(&AcpiBuildThermalZoneList))
+        {
+            KeAcquireSpinLockAtDpcLevel(&AcpiPowerQueueLock);
+
+            if (!IsListEmpty(&AcpiPowerDelayedQueueList))
+            {
+                DPRINT1("ACPIDevicePowerDpc: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            KeReleaseSpinLockFromDpcLevel(&AcpiPowerQueueLock);
+        }
+
+        if (!IsListEmpty(&AcpiBuildSynchronizationList))
+            Status = ACPIBuildProcessSynchronizationList(&AcpiBuildSynchronizationList);
+
+        KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
+    }
+    while (AcpiBuildWorkDone);
+
+    AcpiBuildDpcRunning = FALSE;
+
+    KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+
+    DPRINT("ACPIDevicePowerDpc: exit (%p)\n", Dpc);
 }
 
 VOID
