@@ -3574,7 +3574,9 @@ ACPIDevicePowerNotifyEvent(
     _In_ PVOID Context,
     _In_ ULONG Param3)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PRKEVENT Event = Context;
+    DPRINT("ACPIDevicePowerNotifyEvent: %p, %p, %X\n", Param1, Context, Param3);
+    KeSetEvent(Event, 0, FALSE);
 }
 
 NTSTATUS
