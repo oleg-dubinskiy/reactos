@@ -2063,8 +2063,58 @@ NTAPI
 ACPIBuildProcessDevicePhaseCid(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PCHAR Cid;
+    ULONG ix;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+
+    for (Cid = BuildRequest->DataBuff; Cid && *Cid; )
+    {
+        Cid += strlen(Cid);
+
+        if (!Cid[1])
+            break;
+
+        *Cid = ' ';
+    }
+
+    Cid = BuildRequest->DataBuff;
+
+    for (ix = 0; AcpiInternalDeviceFlagTable[ix].StringId; ix++)
+    {
+        if (strstr(Cid, AcpiInternalDeviceFlagTable[ix].StringId))
+        {
+            ACPIInternalUpdateFlags(DeviceExtension, AcpiInternalDeviceFlagTable[ix].Flags, FALSE);
+            break;
+        }
+    }
+
+    if (Cid)
+        ExFreePool(Cid);
+
+    BuildRequest->BuildReserved1 = 8;
+
+    Status = ACPIGet(DeviceExtension,
+                     'ATS_',
+                     0x40040802,
+                     NULL,
+                     0,
+                     ACPIBuildCompleteMustSucceed,
+                     BuildRequest,
+                     &BuildRequest->DataBuff,
+                     NULL);
+
+    DPRINT("ACPIBuildProcessDevicePhaseCid: Status %X\n", Status);
+
+    if (Status != STATUS_PENDING)
+    {
+        ACPIBuildCompleteMustSucceed(NULL, Status, 0, BuildRequest);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 VOID
