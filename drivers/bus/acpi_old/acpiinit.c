@@ -90,6 +90,7 @@ extern PACPI_INFORMATION AcpiInformation;
 extern PAMLI_NAME_SPACE_OBJECT ProcessorList[0x20];
 extern ANSI_STRING AcpiProcessorString;
 extern ULONG AcpiOverrideAttributes;
+extern KSPIN_LOCK GpeTableLock;
 
 /* ACPI TABLES FUNCTIONS ****************************************************/
 
@@ -1235,7 +1236,27 @@ ACPITableLoadCallBack(
     _In_ PVOID Param2,
     _In_ NTSTATUS Param3)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    DPRINT("ACPITableLoadCallBack: %p\n", DeviceExtension);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiDeviceTreeLock);
+    KeAcquireSpinLockAtDpcLevel(&GpeTableLock);
+
+    DPRINT("ACPITableLoadCallBack: FIXME ACPIGpeBuildWakeMasks()\n");
+
+    KeReleaseSpinLockFromDpcLevel(&GpeTableLock);
+    KeReleaseSpinLockFromDpcLevel(&AcpiDeviceTreeLock);
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiPowerQueueLock);
+
+    if (!IsListEmpty(&AcpiPowerDelayedQueueList))
+    {
+        DPRINT1("ACPITableLoadCallBack: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseSpinLockFromDpcLevel(&AcpiPowerQueueLock);
 }
 
 USHORT
