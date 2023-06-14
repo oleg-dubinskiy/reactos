@@ -246,6 +246,32 @@ extern PUCHAR GpeSpecialHandler;
 
 /* FUNCTIOS *****************************************************************/
 
+VOID
+NTAPI
+ACPIInternalMoveList(
+    _In_ PLIST_ENTRY List1,
+    _In_ PLIST_ENTRY List2)
+{
+    PLIST_ENTRY Flink1;
+    PLIST_ENTRY Blink1;
+    PLIST_ENTRY Blink2;
+
+    Flink1 = List1->Flink;
+
+    if (!IsListEmpty(List1))
+    {
+        Blink1 = List1->Blink;
+        Blink2 = List2->Blink;
+
+        Blink1->Flink = List2;
+        List2->Blink = Blink1;
+        Flink1->Blink = Blink2;
+        Blink2->Flink = Flink1;
+
+        InitializeListHead(List1);
+    }
+}
+
 PDEVICE_EXTENSION
 NTAPI
 ACPIInternalGetDeviceExtension(
@@ -3387,8 +3413,10 @@ ACPIBuildDeviceDpc(
 
             if (!IsListEmpty(&AcpiPowerDelayedQueueList))
             {
-                DPRINT1("ACPIBuildDeviceDpc: FIXME\n");
-                ASSERT(FALSE);
+                ACPIInternalMoveList(&AcpiPowerDelayedQueueList, &AcpiPowerQueueList);
+
+                if (!AcpiPowerDpcRunning)
+                    KeInsertQueueDpc(&AcpiPowerDpc, NULL, NULL);
             }
 
             KeReleaseSpinLockFromDpcLevel(&AcpiPowerQueueLock);
