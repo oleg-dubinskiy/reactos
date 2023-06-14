@@ -5271,8 +5271,30 @@ EvalPackageElement(
     _In_ ULONG Index,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    DPRINT("EvalPackageElement: %X, %X, %X\n", PackageObject, Index, DataResult);
+
+    giIndent++;
+
+    ASSERT(DataResult != NULL);
+
+    if (Index < PackageObject->Elements)
+    {
+        Status = DupObjData(gpheapGlobal, DataResult, &PackageObject->Data[Index]);
+    }
+    else
+    {
+        DPRINT1("EvalPackageElement: STATUS_ACPI_INVALID_INDEX (%X, %X)\n", Index, PackageObject->Elements);
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_INDEX;
+    }
+
+    giIndent--;
+
+    DPRINT("EvalPackageElement: %X, '%s', %X, %X, %X\n", Status, GetObjectTypeName(DataResult->DataType), DataResult->DataValue, DataResult->DataLen, DataResult->DataBuff);
+
+    return Status;
 }
 
 NTSTATUS
