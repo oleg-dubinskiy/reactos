@@ -7523,7 +7523,19 @@ EvalMethodComplete(
     _In_ NTSTATUS InStatus,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PSYNC_EVAL_CONTEXT SeContext = Context;
+
+    DPRINT("EvalMethodComplete: %X, %X, %X\n", AmliContext, InStatus, SeContext);
+
+    giIndent++;
+
+    SeContext->RetStatus = InStatus;
+    SeContext->AmliContext = AmliContext;
+    KeSetEvent(&SeContext->Event, 0, FALSE);
+
+    giIndent--;
+
+    DPRINT("EvalMethodComplete!\n");
 }
 
 NTSTATUS
