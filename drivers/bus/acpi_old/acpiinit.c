@@ -1939,6 +1939,17 @@ OSNotifyFatalError(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+/* ACPI ARBITER ROUTINES *****************************************************/
+
+NTSTATUS
+NTAPI
+AcpiInitIrqArbiter(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* INIT DRIVER ROUTINES *****************************************************/
 
 NTSTATUS

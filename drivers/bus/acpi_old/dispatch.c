@@ -4213,12 +4213,41 @@ ACPIInitialize(
 
 NTSTATUS
 NTAPI
+NotifyHalWithMachineStates(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIInternalRegisterPowerCallBack(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PCALLBACK_FUNCTION CallbackFunction)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+ACPIRootPowerCallBack(
+    _In_ PVOID CallbackContext,
+    _In_ PVOID Argument1,
+    _In_ PVOID Argument2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
 ACPIInitStartACPI(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
     PDEVICE_EXTENSION DeviceExtension;
     KEVENT Event;
     KIRQL DeviceTreeIrql;
+    KIRQL PowerQueueIrql;
     NTSTATUS Status;
 
     DPRINT("ACPIInitStartACPI: DeviceObject %p\n", DeviceObject);
@@ -4251,9 +4280,20 @@ ACPIInitStartACPI(
 
     DPRINT("ACPIInitStartACPI: Status %X\n", Status);
 
-    DPRINT1("ACPIInitStartACPI: FIXME\n");
-    ASSERT(FALSE);
+    NotifyHalWithMachineStates();
 
+    ACPIInternalRegisterPowerCallBack(DeviceExtension, ACPIRootPowerCallBack);
+
+    KeAcquireSpinLock(&AcpiPowerQueueLock, &PowerQueueIrql);
+    if (!AcpiPowerDpcRunning)
+        KeInsertQueueDpc(&AcpiPowerDpc, NULL, NULL);
+    KeReleaseSpinLock(&AcpiPowerQueueLock, PowerQueueIrql);
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &DeviceTreeIrql);
+    AcpiSystemInitialized = TRUE;
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, DeviceTreeIrql);
+
+    AcpiInitIrqArbiter(DeviceObject);
 
     return STATUS_SUCCESS;
 }

@@ -696,6 +696,12 @@ ACPIAmliNameObject(
     _In_ PAMLI_NAME_SPACE_OBJECT AcpiObject
 );
 
+NTSTATUS
+NTAPI
+AcpiInitIrqArbiter(
+    _In_ PDEVICE_OBJECT DeviceObject
+);
+
 /* dispatch.c */
 NTSTATUS
 NTAPI
