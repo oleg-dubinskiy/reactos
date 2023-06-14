@@ -1024,8 +1024,47 @@ ACPIGetConvertToString(
     _In_  PVOID* OutDataBuff,
     _In_  ULONG* OutDataLen)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PVOID DataBuff;
+    POOL_TYPE PoolType;
+    ULONG DataLen;
+    NTSTATUS Status = InStatus;
+
+    if (GetFlags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIGetConvertToString: Status %X\n", Status);
+        return Status;
+    }
+
+    if (AmliData->DataType != 2)
+    {
+        DPRINT1("ACPIGetConvertToString: STATUS_INSUFFICIENT_RESOURCES\n");
+        ASSERT(FALSE);
+        return STATUS_ACPI_INVALID_DATA;
+    }
+
+    DataLen = (strlen(AmliData->DataBuff) + 1);
+
+    DataBuff = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+    if (!DataBuff)
+    {
+        DPRINT1("ACPIGetConvertToString: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    //RtlZeroMemory(DataBuff, DataLen);
+
+    RtlCopyMemory(DataBuff, AmliData->DataBuff, DataLen);
+
+    *OutDataBuff = DataBuff;
+
+    if (OutDataLen)
+        *OutDataLen = DataLen;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -1183,7 +1222,7 @@ Exit:
     for (ix = 0; ix < Count; ix++)
     {
         if (buffer1[ix])
-            ExFreePoolWithTag(buffer1[ix], 'MpcA');
+            ExFreePool(buffer1[ix]);
     }
 
     ExFreePoolWithTag(buffer2, 'MpcA');
