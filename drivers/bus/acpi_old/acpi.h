@@ -433,7 +433,11 @@ typedef struct _ACPI_BUILD_REQUEST
             ULONG Flags;
         } RunMethod;
     };
-    PLIST_ENTRY ListHeadForInsert;
+    union
+    {
+        PLIST_ENTRY ListHeadForInsert;
+        PVOID DataBuff;
+    };
 } ACPI_BUILD_REQUEST, *PACPI_BUILD_REQUEST;
 
 typedef struct _ACPI_EXT_LIST_ENUM_DATA
@@ -446,6 +450,13 @@ typedef struct _ACPI_EXT_LIST_ENUM_DATA
     ULONG Offset;
     ULONG ExtListEnum2;
 } ACPI_EXT_LIST_ENUM_DATA, *PACPI_EXT_LIST_ENUM_DATA;
+
+typedef struct _ACPI_INTERNAL_DEVICE_FLAG
+{
+    PCHAR StringId;
+    //UCHAR Pad[4];
+    ULONGLONG Flags;
+} ACPI_INTERNAL_DEVICE_FLAG, *PACPI_INTERNAL_DEVICE_FLAG;
 
 typedef struct _HALP_STATE_DATA {
     UCHAR Data0;

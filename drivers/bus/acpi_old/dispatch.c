@@ -37,6 +37,47 @@ KSPIN_LOCK NotifyHandlerLock;
 KSPIN_LOCK GpeTableLock;
 BOOLEAN AcpiSystemInitialized;
 
+ACPI_INTERNAL_DEVICE_FLAG AcpiInternalDeviceFlagTable[] =
+{
+    {"CPQB01D", 0x0000000080000000},
+    {"IBM3760", 0x0000000080000000},
+    {"ACPI0006", 0x0000002000120000},
+    {"PNP0000", 0x0010000200300000},
+    {"PNP0001", 0x0010000200300000},
+    {"PNP0002", 0x0010000000300000},
+    {"PNP0003", 0x0010000200300000},
+    {"PNP0004", 0x0010000200300000},
+    {"PNP0100", 0x0010000000300000},
+    {"PNP0101", 0x0010000000300000},
+    {"PNP0102", 0x0010000000300000},
+    {"PNP0200", 0x0010000000300000},
+    {"PNP0201", 0x0010000000300000},
+    {"PNP0202", 0x0010000000300000},
+    {"PNP0500", 0x0000000004000000},
+    {"PNP0501", 0x0000000004000000},
+    {"PNP0800", 0x0010000000300000},
+    {"PNP0A00", 0x0000000000800000},
+    {"PNP0A03", 0x0000000002000000},
+    {"PNP0A05", 0x0000000001120000},
+    {"PNP0A06", 0x0000000001120000},
+    {"PNP0B00", 0x0010000800320000},
+    {"PNP0C00", 0x0010000040300000},
+    {"PNP0C01", 0x0010000040300000},
+    {"PNP0C02", 0x0010000040300000},
+    {"PNP0C04", 0x0010000000300000},
+    {"PNP0C05", 0x0010000000300000},
+    {"PNP0C09", 0x0000000000200000},
+    {"PNP0C0B", 0x0010000000320000},
+    {"PNP0C0C", 0x0010000800360000},
+    {"PNP0C0D", 0x0010000800360000},
+    {"PNP0C0E", 0x0010000800360000},
+    {"PNP0C0F", 0x0000000010100001},
+    {"PNP0C80", 0x0000008000000000},
+    {"PNP8294", 0x0000000004000000},
+    {"TOS6200", 0x0000000000020000},
+    {NULL, 0}
+};
+
 ULONG AcpiBuildDevicePowerNameLookup[] =
 {
     0,
@@ -1711,8 +1752,51 @@ NTAPI
 ACPIBuildProcessDevicePhaseHid(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT NsObject = NULL;
+    PDEVICE_EXTENSION DeviceExtension;
+    ULONG Flags;
+    ULONG NameSeg;
+    ULONG ix;
+    BOOLEAN IsMatch = FALSE;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DeviceExtension = BuildRequest->DeviceExtension;
+
+    for (ix = 0; AcpiInternalDeviceFlagTable[ix].StringId; ix++)
+    {
+        if (strstr(DeviceExtension->DeviceID, AcpiInternalDeviceFlagTable[ix].StringId))
+        {
+            ACPIInternalUpdateFlags(DeviceExtension, AcpiInternalDeviceFlagTable[ix].Flags, FALSE);
+            IsMatch = TRUE;
+            break;
+        }
+    }
+
+    ACPIInternalUpdateFlags(DeviceExtension, 0x0000200000000000, FALSE);
+
+    NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'DIC_');
+    if (!NsObject || IsMatch)
+    {
+        NameSeg = 'ATS_';
+        BuildRequest->BuildReserved1 = 8;
+        Flags = 0x40040802;
+    }
+    else
+    {
+        NameSeg = 'DIC_';
+        BuildRequest->BuildReserved1 = 7;
+        Flags = 0x50080107;
+    }
+
+    Status = ACPIGet(DeviceExtension, NameSeg, Flags, NULL, 0, ACPIBuildCompleteMustSucceed, BuildRequest, &BuildRequest->DataBuff, NULL);
+    if (Status == STATUS_PENDING)
+        return STATUS_SUCCESS;
+
+    ACPIBuildCompleteMustSucceed(NsObject, Status, 0, BuildRequest);
+
+    DPRINT("ACPIBuildProcessDevicePhaseHid: Status %X\n", Status);
+
+    return Status;
 }
 
 NTSTATUS
