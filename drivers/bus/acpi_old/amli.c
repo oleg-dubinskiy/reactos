@@ -5272,8 +5272,68 @@ SyncEvalObject(
     _In_ ULONG ArgsCount,
     _In_ PAMLI_OBJECT_DATA DataArgs)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    SYNC_EVAL_CONTEXT SeContext;
+    NTSTATUS Status;
+
+    DPRINT("SyncEvalObject: '%s', %X, %X, %X\n", GetObjectPath(NsObject), DataResult, ArgsCount, DataArgs);
+
+    giIndent++;
+
+    KeInitializeEvent(&SeContext.Event, SynchronizationEvent, 0);
+
+    if (KeGetCurrentThread() == gReadyQueue.Thread)
+    {
+        if (gReadyQueue.CurrentContext->Flags & 0x100)
+        {
+            DPRINT1("SyncEvalObject: cannot nest a SyncEval on an async. context\n");
+            ASSERT(FALSE);
+            Status = 0xC0140006;
+        }
+        else
+        {
+            DPRINT1("SyncEvalObject: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else
+    {
+        //LogSchedEvent(..);
+        Status = AsyncEvalObject(NsObject, DataResult, ArgsCount, DataArgs, (PVOID)EvalMethodComplete, &SeContext, 0);
+    }
+
+    if (KeGetCurrentIrql() < DISPATCH_LEVEL)
+    {
+        NTSTATUS status;
+
+        while (Status == 0x8004)
+        {
+            status = KeWaitForSingleObject(&SeContext.Event, Executive, KernelMode, FALSE, NULL);
+
+            if (status != STATUS_SUCCESS)
+            {
+                DPRINT1("SyncEvalObject: object synchronization failed (%X)\n", status);
+                ASSERT(FALSE);
+            }
+            else
+            {
+                if (SeContext.RetStatus == 0x8003)
+                    Status = RestartContext(SeContext.AmliContext, 0);
+                else
+                    Status = SeContext.RetStatus;
+            }
+        }
+    }
+    else if (Status == 0x8004)
+    {
+        DPRINT1("SyncEvalObject: object '%s' being evaluated at IRQL >= DISPATCH_LEVEL\n", GetObjectPath(NsObject));
+        ASSERT(FALSE);
+    }
+
+    giIndent--;
+
+    DPRINT("SyncEvalObject: ret %X\n", Status);
+
+    return Status;
 }
 
 NTSTATUS
@@ -7459,9 +7519,8 @@ Exit:
 VOID
 __cdecl
 EvalMethodComplete(
-    _In_ PAMLI_NAME_SPACE_OBJECT Object,
+    _In_ PAMLI_CONTEXT AmliContext,
     _In_ NTSTATUS InStatus,
-    _In_ PAMLI_OBJECT_DATA Data,
     _In_ PVOID Context)
 {
     UNIMPLEMENTED_DBGBREAK();
@@ -9450,7 +9509,7 @@ AsyncCallBack(
 
     giIndent++;
 
-    if (CallBack == EvalMethodComplete)
+    if (CallBack == (PVOID)EvalMethodComplete)
     {
         DPRINT1("AsyncCallBack: FIXME\n");
         ASSERT(FALSE);

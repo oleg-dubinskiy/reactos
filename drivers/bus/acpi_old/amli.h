@@ -480,6 +480,13 @@ typedef struct _ACPI_PCI_ADDRESS_DATA
     PVOID CallBackContext;
 } ACPI_PCI_ADDRESS_DATA, *PACPI_PCI_ADDRESS_DATA;
 
+typedef struct _SYNC_EVAL_CONTEXT
+{
+    NTSTATUS RetStatus;
+    PAMLI_CONTEXT AmliContext;
+    KEVENT Event;
+} SYNC_EVAL_CONTEXT, *PSYNC_EVAL_CONTEXT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1
@@ -819,6 +826,26 @@ AMLIEvalNameSpaceObject(
     _Out_ AMLI_OBJECT_DATA* DataResult,
     _In_ ULONG ArgsCount,
     _In_ PAMLI_OBJECT_DATA DataArgs
+);
+
+NTSTATUS
+__cdecl
+AsyncEvalObject(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PVOID DataResult,
+    _In_ ULONG ArgsCount,
+    _In_ PAMLI_OBJECT_DATA DataArgs,
+    _In_ PAMLI_FN_ASYNC_CALLBACK InAsyncCallBack,
+    _In_ PVOID CallBackContext,
+    _In_ BOOLEAN IsAsync
+);
+
+VOID
+__cdecl
+EvalMethodComplete(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ NTSTATUS InStatus,
+    _In_ PVOID Context
 );
 
 /* EOF */
