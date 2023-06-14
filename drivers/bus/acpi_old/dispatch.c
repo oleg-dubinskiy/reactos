@@ -4335,8 +4335,31 @@ ACPIInternalRegisterPowerCallBack(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PCALLBACK_FUNCTION CallbackFunction)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PCALLBACK_OBJECT CallbackObject;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    UNICODE_STRING NameString;
+    NTSTATUS Status;
+
+    if (DeviceExtension->Flags & 0x4000000000000000)
+        return STATUS_SUCCESS;
+
+    ACPIInternalUpdateFlags(DeviceExtension, 0x4000000000000000, FALSE);
+
+    RtlInitUnicodeString( &NameString, L"\\Callback\\PowerState" );
+
+    InitializeObjectAttributes(&ObjectAttributes, &NameString, (OBJ_PERMANENT | OBJ_CASE_INSENSITIVE), NULL, NULL);
+
+    Status = ExCreateCallback(&CallbackObject, &ObjectAttributes, FALSE, TRUE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInternalRegisterPowerCallBack: Failed to register callback %X", Status);
+        ACPIInternalUpdateFlags(DeviceExtension, 0x4000000000000000, TRUE);
+        return STATUS_SUCCESS;
+    }
+
+    ExRegisterCallback(CallbackObject, CallbackFunction, DeviceExtension);
+
+    return Status;
 }
 
 VOID
