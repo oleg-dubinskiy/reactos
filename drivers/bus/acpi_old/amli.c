@@ -5266,6 +5266,18 @@ PciConfigSpaceHandler(
 
 NTSTATUS
 __cdecl
+SyncEvalObject(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PAMLI_OBJECT_DATA DataResult,
+    _In_ ULONG ArgsCount,
+    _In_ PAMLI_OBJECT_DATA DataArgs)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 EvalPackageElement(
     _In_ PAMLI_PACKAGE_OBJECT PackageObject,
     _In_ ULONG Index,
@@ -6420,8 +6432,54 @@ AMLIEvalNameSpaceObject(
     _In_ ULONG ArgsCount,
     _In_ PAMLI_OBJECT_DATA DataArgs)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT BaseObject;
+    NTSTATUS Status;
+
+    DPRINT("AMLIEvalNameSpaceObject: '%s', %X, %X, %X\n", GetObjectPath(NsObject), DataResult, ArgsCount, DataArgs);
+
+    giIndent++;
+
+    ASSERT(NsObject != NULL);
+    ASSERT((ArgsCount == 0) || (DataArgs != NULL));
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIEvalNameSpaceObject: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (NsObject->ObjData.Flags & 4)
+    {
+        DPRINT1("AMLIEvalNameSpaceObject: NsObject is no longer valid\n");
+        ASSERT(FALSE);
+        Status = 0xC000000E;
+        goto Exit;
+    }
+
+    if (DataResult)
+        RtlZeroMemory(DataResult, sizeof(*DataResult));
+
+    BaseObject = GetBaseObject(NsObject);
+
+    DPRINT("AMLIEvalNameSpaceObject: %p, 's'\n", KeGetCurrentThread(), GetObjectPath(BaseObject));
+
+    Status = SyncEvalObject(BaseObject, DataResult, ArgsCount, DataArgs);
+    if (Status == 0x8004)
+        Status = STATUS_PENDING;
+
+Exit:
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIEvalNameSpaceObject: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    giIndent--;
+
+    DPRINT("AMLIEvalNameSpaceObject: ret %X\n", Status);
+
+    return Status;
 }
 
 NTSTATUS
