@@ -841,6 +841,138 @@ Finish:
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+ACPIGetProcessorID(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_  PAMLI_OBJECT_DATA AmliData,
+    _In_  ULONG GetFlags,
+    _In_  PVOID* OutDataBuff,
+    _In_  ULONG* OutDataLen)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIGetConvertToDeviceID(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_  PAMLI_OBJECT_DATA AmliData,
+    _In_  ULONG GetFlags,
+    _In_  PVOID* OutDataBuff,
+    _In_  ULONG* OutDataLen)
+{
+    PCHAR deviceID;
+    PCHAR IdString;
+    POOL_TYPE PoolType;
+    ULONG DataLen;
+
+    DPRINT("ACPIGetConvertToDeviceID: GetFlags %X\n", GetFlags);
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000001000000000))
+        return ACPIGetProcessorID(DeviceExtension, InStatus, AmliData, GetFlags, OutDataBuff, OutDataLen);
+
+    if (GetFlags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    if (!(GetFlags & 0x08000000))
+    {
+        if (DeviceExtension->Flags & 0x0000800000000000)
+        {
+            DataLen = strlen(DeviceExtension->DeviceID);
+            DataLen++;
+
+            deviceID = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+            if (!deviceID)
+            {
+                DPRINT1("ACPIGetConvertToDeviceID: STATUS_INSUFFICIENT_RESOURCES\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            //RtlZeroMemory(deviceID, DataLen);
+
+            RtlCopyMemory(deviceID, DeviceExtension->DeviceID, DataLen);
+
+            goto Finish;
+        }
+
+        if (DeviceExtension->Flags & 0x0000004000000000)
+        {
+            DataLen = 0x12;
+
+            deviceID = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+            if (!deviceID)
+            {
+                DPRINT1("ACPIGetConvertToDeviceID: STATUS_INSUFFICIENT_RESOURCES\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            RtlZeroMemory(deviceID, DataLen);
+
+            strncpy(deviceID, "ACPI\\PciBarTarget", (DataLen - 1));
+            goto Finish;
+        }
+    }
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIGetConvertToDeviceID: InStatus %X\n", InStatus);
+        return InStatus;
+    }
+
+    if (AmliData->DataType == 1)
+    {
+        DataLen = 0xD;
+
+        deviceID = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+        if (!deviceID)
+        {
+            DPRINT1("ACPIGetConvertToDeviceID: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(deviceID, DataLen);
+
+        sprintf(deviceID, "ACPI\\");
+        ACPIAmliDoubleToName((deviceID + 5), (ULONG)AmliData->DataValue, FALSE);
+
+        goto Finish;
+    }
+
+    if (AmliData->DataType != 2)
+    {
+        DPRINT1("ACPIGetConvertToDeviceID: STATUS_ACPI_INVALID_DATA\n");
+        return STATUS_ACPI_INVALID_DATA;
+    }
+
+    IdString = AmliData->DataBuff;
+    if (*IdString == '*')
+        IdString++;
+
+    DataLen = (strlen(IdString) + 6);
+
+    deviceID = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+    if (!deviceID)
+    {
+        DPRINT1("ACPIGetConvertToDeviceID: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(deviceID, DataLen);
+
+    sprintf(deviceID, "ACPI\\%s", IdString);
+
+Finish:
+
+    *OutDataBuff = deviceID;
+
+    if (OutDataLen)
+        *OutDataLen = DataLen;
+
+    return STATUS_SUCCESS;
+}
+
 VOID
 __cdecl
 ACPIGetWorkerForString(
@@ -928,8 +1060,7 @@ ACPIGetWorkerForString(
     }
     else if (GetFlags & 0x20)
     {
-        DPRINT1("ACPIGetWorkerForString: FIXME\n");
-        ASSERT(FALSE);
+        Status = ACPIGetConvertToDeviceID(DeviceExtension, InStatus, AmliData, GetFlags, OutDataBuff, OutDataLen);
     }
     else if (GetFlags & 0x40)
     {
