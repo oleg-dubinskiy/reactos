@@ -5264,6 +5264,17 @@ PciConfigSpaceHandler(
 
 /* FUNCTIONS ****************************************************************/
 
+NTSTATUS
+__cdecl
+AMLIEvalPackageElement(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ ULONG Index,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 PAMLI_TERM
 __cdecl
 FindOpcodeTerm(
@@ -6291,6 +6302,18 @@ AMLIGetNameSpaceObject(
     giIndent--;
 
     return Status;
+}
+
+NTSTATUS
+__cdecl
+AMLIEvalNameSpaceObject(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _Out_ AMLI_OBJECT_DATA* DataResult,
+    _In_ ULONG ArgsCount,
+    _In_ PAMLI_OBJECT_DATA DataArgs)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 NTSTATUS

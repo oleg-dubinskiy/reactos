@@ -35,6 +35,8 @@ PPM_DISPATCH_TABLE PmHalDispatchTable;
 PACPI_INFORMATION AcpiInformation;
 KSPIN_LOCK NotifyHandlerLock;
 KSPIN_LOCK GpeTableLock;
+ULONG AcpiSupportedSystemStates;
+ULONG InterruptModel;
 BOOLEAN AcpiSystemInitialized;
 
 ACPI_INTERNAL_DEVICE_FLAG AcpiInternalDeviceFlagTable[] =
@@ -210,6 +212,15 @@ SYSTEM_POWER_STATE SystemPowerStateTranslation[6] =
 DEVICE_POWER_STATE DevicePowerStateTranslation[4] =
 {
     1, 2, 3, 4
+};
+
+PCHAR StateName[] =
+{
+    "\\_S1",
+    "\\_S2",
+    "\\_S3",
+    "\\_S4",
+    "\\_S5"
 };
 
 extern NPAGED_LOOKASIDE_LIST BuildRequestLookAsideList;
@@ -4215,8 +4226,107 @@ NTSTATUS
 NTAPI
 NotifyHalWithMachineStates(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_PM_DISPATCH_TABLE HalAcpiDispatchTable = (PVOID)PmHalDispatchTable;
+    PAMLI_NAME_SPACE_OBJECT NsObject = NULL;
+    PHALP_STATE_DATA StateData = NULL;
+    AMLI_OBJECT_DATA DataArgs;
+    SYSTEM_POWER_STATE State;
+    ULONG ix;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    for (ix = 0; ix < 32; ix++)
+    {
+        if (!ProcessorList[ix])
+            break;
+    }
+
+    DPRINT("NotifyHalWithMachineStates: Number of processors - %X\n", ix);
+
+    StateData = ExAllocatePoolWithTag(NonPagedPool, (5 * sizeof(*StateData)), 'MpcA');
+    if (!StateData)
+    {
+        DPRINT1("NotifyHalWithMachineStates: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (AcpiOverrideAttributes & 4)
+    {
+        DPRINT1("NotifyHalWithMachineStates: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    AcpiSupportedSystemStates = 0x62;
+
+    State = 2;
+
+    for (ix = 0; ix < 5; ix++, State++)
+    {
+        if ((State == 2 && (AcpiOverrideAttributes & 0x10)) ||
+            (State == 3 && (AcpiOverrideAttributes & 0x20)) ||
+            (State == 4 && (AcpiOverrideAttributes & 0x40)))
+        {
+            DPRINT("NotifyHalWithMachineStates: SleepState '%s' disabled due to override\n", StateName[ix]);
+            ASSERT(FALSE);
+
+            continue;
+        }
+
+        Status = AMLIGetNameSpaceObject(StateName[ix], NULL, &NsObject, 0);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT("NotifyHalWithMachineStates: SleepState '%s' not supported\n", StateName[ix]);
+            //ASSERT(FALSE);
+
+            StateData[ix].Data0 = 0;
+
+            DPRINT("NotifyHalWithMachineStates: FIXME ZwPowerInformation(SystemPowerLoggingEntry)\n");
+            continue;
+        }
+
+        DPRINT("NotifyHalWithMachineStates: FIXME (check override State)\n");
+
+        AcpiSupportedSystemStates |= (1 << State);
+        StateData[ix].Data0 = 1;
+
+        AMLIEvalPackageElement(NsObject, 0, &DataArgs);
+        StateData[ix].Data1 = (UCHAR)(ULONG)DataArgs.DataValue;
+        AMLIFreeDataBuffs(&DataArgs, 1);
+
+        AMLIEvalPackageElement(NsObject, 1, &DataArgs);
+        StateData[ix].Data2 = (UCHAR)(ULONG)DataArgs.DataValue;
+        AMLIFreeDataBuffs(&DataArgs, 1);
+    }
+
+    HalAcpiDispatchTable->HalAcpiMachineStateInit(0, StateData, &InterruptModel);
+
+    ExFreePoolWithTag(StateData, 'MpcA');
+
+    if (!InterruptModel)
+        return Status;
+
+    Status = AMLIGetNameSpaceObject("\\_PIC", NULL, &NsObject, 0);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("NotifyHalWithMachineStates: Status %X\n", Status);
+        return Status;
+    }
+
+    RtlZeroMemory(&DataArgs, sizeof(DataArgs));
+
+    DataArgs.DataValue = (PVOID)InterruptModel;
+    DataArgs.DataType = 1;
+
+    Status = AMLIEvalNameSpaceObject(NsObject, NULL, 1, &DataArgs);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("NotifyHalWithMachineStates: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0xA5, 0x2001, InterruptModel, Status, (ULONG_PTR)NsObject);
+    }
+
+    return Status;
 }
 
 NTSTATUS

@@ -804,4 +804,21 @@ GetPciAddress(
     _Out_ PCI_SLOT_NUMBER* OutSlotNumber
 );
 
+NTSTATUS
+__cdecl
+AMLIEvalPackageElement(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ ULONG Index,
+    _In_ PAMLI_OBJECT_DATA DataResult
+);
+
+NTSTATUS
+__cdecl
+AMLIEvalNameSpaceObject(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _Out_ AMLI_OBJECT_DATA* DataResult,
+    _In_ ULONG ArgsCount,
+    _In_ PAMLI_OBJECT_DATA DataArgs
+);
+
 /* EOF */
