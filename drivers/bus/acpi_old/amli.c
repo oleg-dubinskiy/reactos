@@ -5266,13 +5266,99 @@ PciConfigSpaceHandler(
 
 NTSTATUS
 __cdecl
-AMLIEvalPackageElement(
-    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+EvalPackageElement(
+    _In_ PAMLI_PACKAGE_OBJECT PackageObject,
     _In_ ULONG Index,
     _In_ PAMLI_OBJECT_DATA DataResult)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
+AMLIEvalPackageElement(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ ULONG Index,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    PAMLI_NAME_SPACE_OBJECT BaseObject;
+    PAMLI_OBJECT_DATA PackageData = NULL;
+    AMLI_OBJECT_DATA data;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("AMLIEvalPackageElement: '%s', %X, %X\n", GetObjectPath(NsObject), Index, DataResult);
+
+    giIndent++;
+
+    ASSERT(NsObject != NULL);
+    ASSERT(DataResult != NULL);
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIEvalPackageElement: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (NsObject->ObjData.Flags & 4)
+    {
+        DPRINT1("AMLIEvalPackageElement: NsObject is no longer valid\n");
+        ASSERT(FALSE);
+        Status = STATUS_NO_SUCH_DEVICE;
+        goto Exit;
+    }
+
+    RtlZeroMemory(DataResult, sizeof(*DataResult));
+    RtlZeroMemory(&data, sizeof(data));
+
+    BaseObject = GetBaseObject(NsObject);
+
+    DPRINT("AMLIEvalPackageElement: %p, '%s', %X)\n", KeGetCurrentThread(), GetObjectPath(BaseObject), Index);
+
+    if (BaseObject->ObjData.DataType == 8)//Method
+    {
+        DPRINT1("AMLIEvalPackageElement: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (BaseObject->ObjData.DataType == 4)
+    {
+        PackageData = &BaseObject->ObjData;
+    }
+    else
+    {
+        DPRINT1("AMLIEvalPackageElement: object is not a method or package '%s'\n", GetObjectTypeName(BaseObject->ObjData.DataType));
+        ASSERT(FALSE);
+    }
+
+    if (Status == STATUS_SUCCESS)
+        Status = EvalPackageElement(PackageData->DataBuff, Index, DataResult);
+
+    FreeDataBuffs(&data, 1);
+
+    if (Status == 0x8004)
+    {
+        Status = STATUS_PENDING;
+        goto Exit;
+    }
+
+    if (Status == STATUS_SUCCESS)
+    {
+        ASSERT((DataResult->DataBuff == NULL) || !(DataResult->Flags & 1));//DATAF_BUFF_ALIAS
+    }
+
+Exit:
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIEvalPackageElement: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    giIndent--;
+
+    DPRINT("AMLIEvalPackageElement: ret %X\n", Status);
+
+    return Status;
 }
 
 PAMLI_TERM
