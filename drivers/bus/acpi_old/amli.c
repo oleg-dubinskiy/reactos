@@ -9511,8 +9511,8 @@ AsyncCallBack(
 
     if (CallBack == (PVOID)EvalMethodComplete)
     {
-        DPRINT1("AsyncCallBack: FIXME\n");
-        ASSERT(FALSE);
+        //LogSchedEvent(..);
+        EvalMethodComplete(AmliContext, InStatus, CallBackContext);
     }
     else if (InStatus == 0x8003)
     {
