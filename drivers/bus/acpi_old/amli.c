@@ -1876,6 +1876,47 @@ RestartCtxtCallback(
     giIndent--;
 }
 
+VOID
+__cdecl
+QueueContext(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ USHORT Timeout,
+    _Inout_ PAMLI_LIST* OutList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+PAMLI_CONTEXT
+__cdecl
+DequeueAndReadyContext(
+    _Out_ PAMLI_LIST* OutListWaiters)
+{
+    PAMLI_CONTEXT AmliContext = NULL;
+    PAMLI_LIST Entry;
+
+    giIndent++;
+
+    AcquireMutex(&gReadyQueue.Mutex);
+
+    Entry = ListRemoveHead(OutListWaiters);
+    if (Entry)
+    {
+        AmliContext = CONTAINING_RECORD(Entry, AMLI_CONTEXT, QueueList);
+
+        ASSERT(AmliContext->Signature == 'TXTC');//SIG_CTXT
+        ASSERT(AmliContext->QueueLists == OutListWaiters);
+
+        AmliContext->QueueLists = NULL;
+        InsertReadyQueue(AmliContext, TRUE);
+    }
+
+    ReleaseMutex(&gReadyQueue.Mutex);
+
+    giIndent--;
+
+    return AmliContext;
+}
+
 NTSTATUS
 __cdecl
 WriteCookAccess(
@@ -1883,8 +1924,142 @@ WriteCookAccess(
     _In_ PAMLI_WRITE_COOK_ACCESS WrCookAcc,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PINTERNAL_OP_REGION_HANDLER IntRegionHandler;
+    PAMLI_OP_REGION_OBJECT OpRegionObj;
+    LONG RegionBusy;
+    ULONG Stage;
+    KIRQL Irql;
+
+    if (InStatus != STATUS_SUCCESS)
+        Stage = 3;
+    else
+        Stage = (WrCookAcc->FrameHeader.Flags & 0xF);
+
+    OpRegionObj = WrCookAcc->BaseObj->ObjData.DataBuff;
+
+    DPRINT("WriteCookAccess: %X, %X, %X, %X\n", Stage, AmliContext, WrCookAcc, InStatus);
+
+    giIndent++;
+
+    ASSERT(WrCookAcc->FrameHeader.Signature == 'ACRW');//SIG_WRCOOKACC
+
+    if (Stage == 0)
+    {
+        if (!WrCookAcc->IsReadBeforeWrite)
+        {
+            WrCookAcc->FrameHeader.Flags += 2;
+            goto Stage2;
+        }
+
+        KeAcquireSpinLock(&OpRegionObj->ListLock, &Irql);
+
+        RegionBusy = InterlockedExchange(&OpRegionObj->RegionBusy, 1);
+        if (RegionBusy)
+            QueueContext(AmliContext, 0xFFFF, &OpRegionObj->ListWaiters);
+
+        KeReleaseSpinLock(&OpRegionObj->ListLock, Irql);
+
+        if (RegionBusy)
+        {
+            InStatus = 0x8004;
+            goto Exit;
+        }
+
+        WrCookAcc->FrameHeader.Flags++;
+
+        ASSERT(!(AmliContext->Flags & 8));//CTXTF_READY
+
+        IntRegionHandler = WrCookAcc->RsAccess->CookAccessHandler;
+
+        InStatus = IntRegionHandler(0,
+                                    WrCookAcc->BaseObj,
+                                    (ULONG)WrCookAcc->Addr,
+                                    WrCookAcc->Size,
+                                    &WrCookAcc->Data,
+                                    WrCookAcc->RsAccess->CookAccessParam,
+                                    RestartCtxtCallback,
+                                    &AmliContext->ContextData);
+
+        if (InStatus == STATUS_PENDING)
+        {
+            InStatus = 0x8004;
+            goto Exit;
+        }
+
+        if (InStatus != STATUS_SUCCESS)
+        {
+            DPRINT1("WriteCookAccess: RegionSpace %X read handler returned error %X", OpRegionObj->RegionSpace, InStatus);
+            ASSERT(FALSE);
+            InStatus = STATUS_ACPI_RS_ACCESS;
+            goto Exit;
+        }
+
+        goto Stage1;
+    }
+
+    if (Stage == 1)
+    {
+Stage1:
+        WrCookAcc->Value |= (WrCookAcc->Data & ~WrCookAcc->DataMask);
+        WrCookAcc->FrameHeader.Flags++;
+        goto Stage2;
+    }
+
+    if (Stage == 2)
+    {
+Stage2:
+        WrCookAcc->FrameHeader.Flags++;
+
+        ASSERT(!(AmliContext->Flags & 8));//CTXTF_READY
+
+        IntRegionHandler = WrCookAcc->RsAccess->CookAccessHandler;
+
+        InStatus = IntRegionHandler(1,
+                                    WrCookAcc->BaseObj,
+                                    (ULONG)WrCookAcc->Addr,
+                                    WrCookAcc->Size,
+                                    &WrCookAcc->Value,
+                                    WrCookAcc->RsAccess->CookAccessParam,
+                                    RestartCtxtCallback,
+                                    &AmliContext->ContextData);
+
+        if (InStatus == STATUS_PENDING)
+        {
+            InStatus = 0x8004;
+            goto Exit;
+        }
+
+        if (InStatus != STATUS_SUCCESS)
+        {
+            DPRINT1("WriteCookAccess: RegionSpace %X read handler returned error %X", OpRegionObj->RegionSpace, InStatus);
+            ASSERT(FALSE);
+            InStatus = STATUS_ACPI_RS_ACCESS;
+            goto Exit;
+        }
+
+        goto Stage3;
+    }
+
+    if (Stage == 3)
+    {
+Stage3:
+        if (WrCookAcc->IsReadBeforeWrite)
+        {
+            KeAcquireSpinLock(&OpRegionObj->ListLock, &Irql);
+            DequeueAndReadyContext(&OpRegionObj->ListWaiters);
+            InterlockedExchange(&OpRegionObj->RegionBusy, 0);
+            KeReleaseSpinLock(&OpRegionObj->ListLock, Irql);
+        }
+
+        PopFrame(AmliContext);
+        goto Exit;
+    }
+
+Exit:
+
+    giIndent--;
+
+    return InStatus;
 }
 
 NTSTATUS
@@ -7449,37 +7624,6 @@ AcquireASLMutex(
     giIndent--;
 
     return Status;
-}
-
-PAMLI_CONTEXT
-__cdecl
-DequeueAndReadyContext(
-    _Out_ PAMLI_LIST* OutListWaiters)
-{
-    PAMLI_CONTEXT AmliContext = NULL;
-    PAMLI_LIST Entry;
-
-    giIndent++;
-
-    AcquireMutex(&gReadyQueue.Mutex);
-
-    Entry = ListRemoveHead(OutListWaiters);
-    if (Entry)
-    {
-        AmliContext = CONTAINING_RECORD(Entry, AMLI_CONTEXT, QueueList);
-
-        ASSERT(AmliContext->Signature == 'TXTC');//SIG_CTXT
-        ASSERT(AmliContext->QueueLists == OutListWaiters);
-
-        AmliContext->QueueLists = NULL;
-        InsertReadyQueue(AmliContext, TRUE);
-    }
-
-    ReleaseMutex(&gReadyQueue.Mutex);
-
-    giIndent--;
-
-    return AmliContext;
 }
 
 NTSTATUS
