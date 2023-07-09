@@ -2107,7 +2107,48 @@ NTAPI
 MakeTempVectorCountsPermanent(
     VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_PM_DISPATCH_TABLE HalAcpiDispatchTable = (PVOID)PmHalDispatchTable;
+    PACPI_VECTOR_BLOCK HashEntry;
+    ULONG CurrentVector;
+    ULONG jx;
+    ULONG ix;
+
+    PAGED_CODE();
+    DPRINT("MakeTempVectorCountsPermanent()\n");
+
+    for (ix = 0; ix < 0x3E; ix += 2)
+    {
+        HashEntry = &IrqHashTable[ix];
+
+StartHash:
+
+        for (jx = 0; jx < 2; jx++)
+        {
+            CurrentVector = HashEntry->Entry.Vector;
+
+            if (HashEntry->Chain.Token == 'WWWW')
+            {
+                HashEntry = HashEntry->Chain.Next;
+                goto StartHash;
+            }
+
+            if (CurrentVector == 'XXXX')
+                break;
+
+            if ((HashEntry->Entry.Count + HashEntry->Entry.TempCount) != 0)
+            {
+                if (!HashEntry->Entry.Count || HashEntry->Entry.TempFlags != HashEntry->Entry.Flags)
+                {
+                    HalAcpiDispatchTable->HalSetVectorState(CurrentVector, HashEntry->Entry.TempFlags);
+                }
+            }
+
+            HashEntry->Entry.Flags = HashEntry->Entry.TempFlags;
+            HashEntry->Entry.Count += HashEntry->Entry.TempCount;
+
+            HashEntry++;
+        }
+    }
 }
 
 NTSTATUS
