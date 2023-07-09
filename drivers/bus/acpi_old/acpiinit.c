@@ -1950,6 +1950,52 @@ OSNotifyFatalError(
 
 /* ACPI ARBITER ROUTINES *****************************************************/
 
+PACPI_VECTOR_BLOCK
+NTAPI
+HashVector(
+    _In_ ULONG Vector)
+{
+    PACPI_VECTOR_BLOCK VectorBlock;
+    ULONG CurrentVector;
+    ULONG ix;
+
+    PAGED_CODE();
+    DPRINT("HashVector: Vector %X\n", Vector);
+
+    VectorBlock = &IrqHashTable[2 * (Vector % 0x1F)];
+
+    while (TRUE)
+    {
+        for (ix = 0; ix < 2; ix++)
+        {
+            CurrentVector = VectorBlock->Entry.Vector;
+
+            if (VectorBlock->Chain.Token == 'WWWW')
+                break;
+
+            if (CurrentVector == Vector)
+                return VectorBlock;
+
+            if (CurrentVector == 'XXXX')
+                return NULL;
+
+            if (ix == 1)
+                return NULL;
+
+            VectorBlock++;
+        }
+
+        ASSERT(VectorBlock->Chain.Token == 'WWWW');//TOKEN_VALUE
+
+        VectorBlock = VectorBlock->Chain.Next;
+    }
+
+    DPRINT1("HashVector: FIXME\n");
+    ASSERT(FALSE);
+
+    return NULL;
+}
+
 NTSTATUS
 NTAPI
 LookupIsaVectorOverride(
@@ -1961,13 +2007,99 @@ LookupIsaVectorOverride(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+NTAPI
+AddVectorToTable(
+    _In_ ULONG Vector,
+    _In_ UCHAR Count,
+    _In_ UCHAR TempCount,
+    _In_ UCHAR Flags)
+{
+    PACPI_VECTOR_BLOCK VectorBlock;
+    PACPI_VECTOR_BLOCK NewEntries;
+    ULONG ix;
+
+    PAGED_CODE();
+    DPRINT("AddVectorToTable: %X, %X, %X, %X\n", Vector, Count, TempCount, Flags);
+
+    ASSERT((Flags & 0xF8) == 0);// ~(VECTOR_MODE | VECTOR_POLARITY | VECTOR_TYPE)
+
+    for (VectorBlock = &IrqHashTable[2 * (Vector % 0x1F)];
+         ;
+         VectorBlock = VectorBlock->Chain.Next)
+    {
+        for (ix = 0; ix < 2; ix++, VectorBlock++)
+        {
+            if (VectorBlock->Entry.Vector == 'WWWW')
+                break;
+
+            if (VectorBlock->Entry.Vector == 'XXXX')
+            {
+                VectorBlock->Entry.Vector = Vector;
+                VectorBlock->Entry.Count = Count;
+                VectorBlock->Entry.TempCount = TempCount;
+                VectorBlock->Entry.Flags = Flags;
+                VectorBlock->Entry.TempFlags = Flags;
+
+                return STATUS_SUCCESS;
+            }
+
+            if (ix == 1)
+            {
+                NewEntries = ExAllocatePoolWithTag(PagedPool, (2 * sizeof(ACPI_VECTOR_BLOCK)), 'ApcA');
+                if (!NewEntries)
+                {
+                    DPRINT1("AddVectorToTable: STATUS_INSUFFICIENT_RESOURCES (%X)\n", (2 * sizeof(ACPI_VECTOR_BLOCK)));
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                RtlFillMemory(NewEntries, (2 * sizeof(ACPI_VECTOR_BLOCK)), 'XX');
+                RtlMoveMemory(NewEntries, VectorBlock, sizeof(*VectorBlock));
+
+                VectorBlock->Chain.Next = NewEntries;
+                VectorBlock->Entry.Vector = 'WWWW';
+
+                break;
+            }
+        }
+    }
+
+    DPRINT1("AddVectorToTable: FIXME\n");
+    ASSERT(FALSE);
+
+    return STATUS_UNSUCCESSFUL;
+}
+
 VOID
 NTAPI
 ReferenceVector(
     _In_ ULONG Vector,
     _In_ UCHAR Flags)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_VECTOR_BLOCK VectorBlock;
+
+    PAGED_CODE();
+
+    ASSERT((Flags & 0xF8) == 0);// ~(VECTOR_MODE | VECTOR_POLARITY | VECTOR_TYPE)
+
+    VectorBlock = HashVector(Vector);
+
+    DPRINT("ReferenceVector: Flags %X, Vector %X (%X-%X)\n", Flags, Vector, 
+           (VectorBlock ? VectorBlock->Entry.Count : 0), (VectorBlock ? VectorBlock->Entry.TempCount : 0));
+
+    if (!VectorBlock)
+    {
+        AddVectorToTable(Vector, 0, 1, Flags);
+        return;
+    }
+
+    if ((VectorBlock->Entry.TempCount + VectorBlock->Entry.Count) == 0)
+        VectorBlock->Entry.TempFlags = Flags;
+
+    VectorBlock->Entry.TempCount++;
+
+    ASSERT(Flags == VectorBlock->Entry.TempFlags);
+    ASSERT(VectorBlock->Entry.Count <= 0xFF);
 }
 
 VOID
