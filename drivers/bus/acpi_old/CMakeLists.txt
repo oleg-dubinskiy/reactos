@@ -1,4 +1,8 @@
 
+include_directories(
+    ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/arbiter
+    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers)
+
 list(APPEND ACPI_SOURCE
     acpiinit.c
     amli.c

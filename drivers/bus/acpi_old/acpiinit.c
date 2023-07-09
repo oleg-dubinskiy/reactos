@@ -34,6 +34,9 @@ FAST_IO_DISPATCH ACPIFastIoDispatch;
 PDEVICE_EXTENSION RootDeviceExtension;
 PRSDTINFORMATION RsdtInformation;
 WORK_QUEUE_ITEM ACPIWorkItem;
+ARBITER_INSTANCE AcpiArbiter;
+PDEVICE_OBJECT AcpiArbiterDeviceObject;
+PACPI_VECTOR_BLOCK IrqHashTable;
 KDPC AcpiBuildDpc;
 KDPC AcpiPowerDpc;
 PVOID ACPIThread;
@@ -78,12 +81,16 @@ LIST_ENTRY AcpiUnresolvedEjectList;
 LIST_ENTRY AcpiPowerSynchronizeList;
 LIST_ENTRY AcpiPowerQueueList;
 LONG AcpiTableDelta = 0;
+ULONG AcpiSciVector;
+ULONG AcpiIrqDistributionDisposition;
+UCHAR AcpiIrqDefaultBootConfig;
 BOOLEAN AcpiLoadSimulatorTable = TRUE;
 BOOLEAN AcpiBuildDpcRunning;
 BOOLEAN AcpiBuildFixedButtonEnumerated;
 BOOLEAN AcpiBuildWorkDone;
 BOOLEAN AcpiPowerWorkDone;
 BOOLEAN AcpiPowerDpcRunning;
+BOOLEAN AcpiArbCardbusPresent;
 
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 extern PACPI_INFORMATION AcpiInformation;
@@ -91,6 +98,8 @@ extern PAMLI_NAME_SPACE_OBJECT ProcessorList[0x20];
 extern ANSI_STRING AcpiProcessorString;
 extern ULONG AcpiOverrideAttributes;
 extern KSPIN_LOCK GpeTableLock;
+extern PPM_DISPATCH_TABLE PmHalDispatchTable;
+extern ULONG InterruptModel;
 
 /* ACPI TABLES FUNCTIONS ****************************************************/
 
@@ -1943,11 +1952,423 @@ OSNotifyFatalError(
 
 NTSTATUS
 NTAPI
-AcpiInitIrqArbiter(
-    _In_ PDEVICE_OBJECT DeviceObject)
+LookupIsaVectorOverride(
+    _In_ ULONG IntVector,
+    _Out_ ULONG* OutGlobalVector,
+    _Out_ UCHAR* OutFlags)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+ReferenceVector(
+    _In_ ULONG Vector,
+    _In_ UCHAR Flags)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+MakeTempVectorCountsPermanent(
+    VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+DisableLinkNodesAsync(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PVOID Callback,
+    _In_ PVOID InContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+__cdecl
+AmlisuppCompletePassive(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ ULONG Param3,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+AcpiArbUnpackRequirement(
+    _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor,
+    _Out_ PULONGLONG OutMinimumAddress,
+    _Out_ PULONGLONG OutMaximumAddress,
+    _Out_ PULONG OutLength,
+    _Out_ PULONG OutAlignment)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbPackResource(
+    _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor,
+    _In_ ULONGLONG Start,
+    _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbUnpackResource(
+    _In_ PCM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor,
+    _Out_ PULONGLONG Start,
+    _Out_ PULONG OutLength)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+LONG
+NTAPI
+AcpiArbScoreRequirement(
+    _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+BOOLEAN
+NTAPI
+AcpiArbFindSuitableRange(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_ALLOCATION_STATE ArbState)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbTestAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PLIST_ENTRY ArbitrationList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbBootAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PLIST_ENTRY ArbitrationList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbRetestAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PLIST_ENTRY ArbitrationList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbRollbackAllocation(
+    _In_ PARBITER_INSTANCE Arbiter)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbCommitAllocation(
+    _In_ PARBITER_INSTANCE Arbiter)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+AcpiArbAddAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_ALLOCATION_STATE ArbState)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+AcpiArbBacktrackAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_ALLOCATION_STATE ArbState)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+AcpiArbPreprocessEntry(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_ALLOCATION_STATE ArbState)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/*  Not correct yet, FIXME! */
+NTSTATUS
+NTAPI
+AcpiArbOverrideConflict(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PVOID Param2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbQueryConflict(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIO_RESOURCE_DESCRIPTOR ConflictingResource,
+    _Out_ ULONG* OutConflictCount,
+    _Out_ PARBITER_CONFLICT_INFO* OutConflicts)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+BOOLEAN
+NTAPI
+AcpiArbGetNextAllocationRange(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_ALLOCATION_STATE ArbState)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+NTSTATUS
+NTAPI
+AcpiInitIrqArbiter(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PACPI_PM_DISPATCH_TABLE HalAcpiDispatchTable = (PVOID)PmHalDispatchTable;
+    PKEY_VALUE_PARTIAL_INFORMATION_ALIGN64 RegistryValue = NULL;
+    PARBITER_EXTENSION ArbiterExtension;
+    PDEVICE_EXTENSION DeviceExtension;
+    ACPI_WAIT_CONTEXT WaitContext;
+    PCI_COMMON_CONFIG PciConfig;
+    PCI_SLOT_NUMBER SlotNumber;
+    UNICODE_STRING NameString;
+    HANDLE Handle = NULL;
+    ULONG Device;
+    ULONG Function;
+    ULONG Vector;
+    UCHAR Flags;
+    UCHAR SubordinateBus;
+    UCHAR BusNumber;
+    BOOLEAN IsNotFound;
+    BOOLEAN IsBootConfig;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("AcpiInitIrqArbiter: DeviceObject %p\n", DeviceObject);
+
+    ArbiterExtension = ExAllocatePoolWithTag(NonPagedPool, sizeof(*ArbiterExtension), 'ApcA');
+    if (!ArbiterExtension)
+    {
+        DPRINT1("AcpiInitIrqArbiter: STATUS_INSUFFICIENT_RESOURCES (%X)\n", sizeof(*ArbiterExtension));
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(ArbiterExtension, sizeof(*ArbiterExtension));
+
+    InitializeListHead(&ArbiterExtension->LinkNodeHead);
+    AcpiArbiter.Extension = ArbiterExtension;
+
+    AcpiArbiterDeviceObject = DeviceObject;
+
+    AcpiArbiter.UnpackRequirement = AcpiArbUnpackRequirement;
+    AcpiArbiter.PackResource = AcpiArbPackResource;
+    AcpiArbiter.UnpackResource = AcpiArbUnpackResource;
+    AcpiArbiter.ScoreRequirement = AcpiArbScoreRequirement;
+    AcpiArbiter.FindSuitableRange = AcpiArbFindSuitableRange;
+    AcpiArbiter.TestAllocation = AcpiArbTestAllocation;
+    AcpiArbiter.BootAllocation = AcpiArbBootAllocation;
+    AcpiArbiter.RetestAllocation = AcpiArbRetestAllocation;
+    AcpiArbiter.RollbackAllocation = AcpiArbRollbackAllocation;
+    AcpiArbiter.CommitAllocation = AcpiArbCommitAllocation;
+    AcpiArbiter.AddAllocation = AcpiArbAddAllocation;
+    AcpiArbiter.BacktrackAllocation = AcpiArbBacktrackAllocation;
+    AcpiArbiter.PreprocessEntry = AcpiArbPreprocessEntry;
+    AcpiArbiter.OverrideConflict = AcpiArbOverrideConflict;
+    AcpiArbiter.QueryConflict = AcpiArbQueryConflict;
+    AcpiArbiter.GetNextAllocationRange = AcpiArbGetNextAllocationRange;
+
+    IrqHashTable = ExAllocatePoolWithTag(PagedPool, (0x3E * sizeof(ACPI_VECTOR_BLOCK)), 'ApcA');
+    if (!IrqHashTable)
+    {
+        DPRINT1("AcpiInitIrqArbiter: STATUS_INSUFFICIENT_RESOURCES (%X)\n", (0x3E * sizeof(ACPI_VECTOR_BLOCK)));
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto ErrorExit;
+    }
+    RtlFillMemory(IrqHashTable, (0x3E * sizeof(ACPI_VECTOR_BLOCK)), 'X'); // FIXME
+
+    Status = ArbInitializeArbiterInstance(&AcpiArbiter, DeviceObject, CmResourceTypeInterrupt, L"ACPI_IRQ", L"Root", NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("AcpiInitIrqArbiter: Status %X\n", Status);
+        Status = STATUS_UNSUCCESSFUL;
+        goto ErrorExit;
+    }
+
+    Vector = AcpiInformation->FixedACPIDescTable->sci_int_vector;
+    Flags = 3;
+
+    LookupIsaVectorOverride(Vector, &Vector, &Flags);
+
+    DeviceExtension = DeviceObject->DeviceExtension;
+    RtlAddRange(AcpiArbiter.Allocation, Vector, Vector, 0, 2, NULL, DeviceExtension->PhysicalDeviceObject);
+
+    ReferenceVector(Vector, Flags);
+    AcpiSciVector = Vector;
+
+    MakeTempVectorCountsPermanent();
+
+    KeInitializeEvent(&WaitContext.Event, SynchronizationEvent, 0);
+    WaitContext.Status = STATUS_UNSUCCESSFUL;
+
+    Status = DisableLinkNodesAsync(DeviceExtension->AcpiObject, AmlisuppCompletePassive, &WaitContext);
+    if (Status == STATUS_PENDING)
+        KeWaitForSingleObject(&WaitContext, Executive, KernelMode, FALSE, NULL);
+
+    IsBootConfig = FALSE;
+    IsNotFound = FALSE;
+
+    BusNumber = 0;
+    SubordinateBus = 0;
+
+    do
+    {
+        SlotNumber.u.AsULONG = 0;
+        Device = 0;
+
+        do
+        {
+            Function = 0;
+
+            while (TRUE)
+            {
+                SlotNumber.u.bits.DeviceNumber = Device;
+                SlotNumber.u.bits.FunctionNumber = Function;
+
+                HalAcpiDispatchTable->HalPciInterfaceReadConfig(NULL, BusNumber, SlotNumber, &PciConfig, 0, 0x40);
+
+                if (PciConfig.VendorID == -1)
+                    break;
+
+                if (PciConfig.HeaderType & 0x7F)
+                {
+                    if (SubordinateBus <= PciConfig.u.type1.SubordinateBus)
+                        SubordinateBus = PciConfig.u.type1.SubordinateBus;
+
+                    if ((PciConfig.HeaderType & 0x7F) == 2)
+                        AcpiArbCardbusPresent = TRUE;
+                }
+                else if (PciConfig.u.type0.InterruptPin &&
+                         PciConfig.u.type0.InterruptLine &&
+                         PciConfig.u.type0.InterruptLine < 0xFF)
+                {
+                    if (!IsBootConfig)
+                    {
+                        AcpiIrqDefaultBootConfig = PciConfig.u.type0.InterruptLine;
+                        IsBootConfig = TRUE;
+                    }
+                    else if (PciConfig.u.type0.InterruptLine != AcpiIrqDefaultBootConfig)
+                    {
+                        IsNotFound = TRUE;
+                        break;
+                    }
+                }
+
+                if (PciConfig.HeaderType & 0x80 || Function)
+                {
+                    Function++;
+                    if (Function < 8)
+                        continue;
+                }
+
+                break;
+            }
+
+            Device++;
+        }
+        while (Device < 0x20);
+
+        BusNumber++;
+    }
+    while (SubordinateBus != BusNumber);
+
+    if (!IsBootConfig || IsNotFound || !AcpiArbCardbusPresent)
+        AcpiIrqDefaultBootConfig = 0;
+
+    RtlInitUnicodeString(&NameString, L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\ACPI\\Parameters");
+
+    Status = OSOpenUnicodeHandle(&NameString, NULL, &Handle);
+    if (!NT_SUCCESS(Status))
+        return STATUS_SUCCESS;
+
+    Status = OSGetRegistryValue(Handle, L"IRQDistribution", (PVOID *)&RegistryValue);
+    if (NT_SUCCESS(Status))
+    {
+        if (RegistryValue->DataLength && RegistryValue->Type == 4)
+            AcpiIrqDistributionDisposition = *(PULONG)&RegistryValue->Data[0];
+
+        ExFreePoolWithTag(RegistryValue, 'SpcA');
+    }
+
+    Status = OSGetRegistryValue(Handle, L"ForcePCIBootConfig", (PVOID *)&RegistryValue);
+    if (NT_SUCCESS(Status))
+    {
+        if (RegistryValue->DataLength && RegistryValue->Type == 4)
+            AcpiIrqDefaultBootConfig = RegistryValue->Data[0];
+
+        ExFreePoolWithTag(RegistryValue, 'SpcA');
+    }
+
+    OSCloseHandle(Handle);
+    return STATUS_SUCCESS;
+
+ErrorExit:
+
+    ExFreePoolWithTag(ArbiterExtension, 'ApcA');
+
+    if (IrqHashTable)
+        ExFreePoolWithTag(IrqHashTable, 'ApcA');
+
+    if (Handle)
+        OSCloseHandle(Handle);
+
+    if (RegistryValue)
+        ExFreePoolWithTag(RegistryValue, 'SpcA');
+
+    return Status;
 }
 
 /* INIT DRIVER ROUTINES *****************************************************/

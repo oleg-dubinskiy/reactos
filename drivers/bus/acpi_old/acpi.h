@@ -8,8 +8,10 @@
 #ifndef _ACPI_H_
 #define _ACPI_H_
 
-#include <ntddk.h>
+#include <ntifs.h>
 #include <drivers/acpi/acpi.h> //sdk/include/reactos/drivers/acpi/acpi.h
+#include <ndk/rtlfuncs.h>
+#include <arbiter.h>           //sdk/lib/drivers/arbiter/arbiter.h
 #include <stdio.h>
 #include "amli.h"
 
@@ -458,7 +460,16 @@ typedef struct _ACPI_INTERNAL_DEVICE_FLAG
     ULONGLONG Flags;
 } ACPI_INTERNAL_DEVICE_FLAG, *PACPI_INTERNAL_DEVICE_FLAG;
 
-typedef struct _HALP_STATE_DATA {
+typedef struct _ACPI_WAIT_CONTEXT
+{
+    KEVENT Event;
+    NTSTATUS Status;
+} ACPI_WAIT_CONTEXT, *PACPI_WAIT_CONTEXT;
+
+/* PM_DISPATCH STRUCTURES ***************************************************/
+
+typedef struct _HALP_STATE_DATA
+{
     UCHAR Data0;
     UCHAR Data1;
     UCHAR Data2;
@@ -550,6 +561,37 @@ typedef struct _ACPI_PM_DISPATCH_TABLE
     PHAL_SET_MAX_LEGACY_PCI_BUS_NUMBER HalSetMaxLegacyPciBusNumber; // HaliSetMaxLegacyPciBusNumber
     PHAL_IS_VECTOR_VALID HalIsVectorValid;                          // HaliIsVectorValid
 } ACPI_PM_DISPATCH_TABLE, *PACPI_PM_DISPATCH_TABLE;
+
+/* ARBITER STRUCTURES *******************************************************/
+
+typedef struct _ACPI_VECTOR_BLOCK
+{
+    union
+    {
+        struct
+        {
+            ULONG Vector;
+            UCHAR Count;
+            UCHAR TempCount;
+            UCHAR Flags;
+            UCHAR TempFlags;
+        } Entry;
+        struct
+        {
+            ULONG Token;
+            struct _ACPI_VECTOR_BLOCK* Next;
+        } Chain;
+    };
+} ACPI_VECTOR_BLOCK, *PACPI_VECTOR_BLOCK;
+
+typedef struct _ARBITER_EXTENSION
+{
+    LIST_ENTRY LinkNodeHead;
+    PAMLI_NAME_SPACE_OBJECT CurrentLinkNode;
+    PINT_ROUTE_INTERFACE_STANDARD InterruptRouting;
+    ULONG LastPciIrqIndex;
+    ULONGLONG LastPciIrq[0xA];
+} ARBITER_EXTENSION, *PARBITER_EXTENSION;
 
 /* FUNCTIONS ****************************************************************/
 
