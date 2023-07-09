@@ -1878,6 +1878,17 @@ RestartCtxtCallback(
 
 NTSTATUS
 __cdecl
+WriteCookAccess(
+    _In_ PAMLI_CONTEXT AmliContext,
+    _In_ PAMLI_WRITE_COOK_ACCESS WrCookAcc,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 AccessBaseField(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_NAME_SPACE_OBJECT BaseObj,
@@ -1887,6 +1898,7 @@ AccessBaseField(
 {
     PINTERNAL_OP_REGION_HANDLER IntRegionHandler;
     PAMLI_OP_REGION_OBJECT OpRegionObj;
+    PAMLI_WRITE_COOK_ACCESS WrCookAcc;
     PAMLI_RS_ACCESS_HANDLER RsAccess;
     PVOID Addr;
     ULONG DataSize;
@@ -1972,7 +1984,7 @@ AccessBaseField(
 
     if (!RsAccess || !RsAccess->CookAccessHandler)
     {
-        DPRINT1("AccessBaseField: AccessBaseField: no handler for RegionSpace %x\n", OpRegionObj->RegionSpace);
+        DPRINT1("AccessBaseField: no handler for RegionSpace %X\n", OpRegionObj->RegionSpace);
         Status = STATUS_ACPI_INVALID_REGION;
         goto Exit;
     }
@@ -2005,7 +2017,17 @@ AccessBaseField(
     }
     else
     {
-        ASSERT(FALSE);
+        Status = PushFrame(AmliContext, 'ACRW', sizeof(*WrCookAcc), WriteCookAccess, (PVOID *)&WrCookAcc);
+        if (Status == STATUS_SUCCESS)
+        {
+            WrCookAcc->BaseObj = BaseObj;
+            WrCookAcc->RsAccess = RsAccess;
+            WrCookAcc->Addr = Addr;
+            WrCookAcc->Size = AccSize;
+            WrCookAcc->Value = *OutData;
+            WrCookAcc->DataMask = DataMask;
+            WrCookAcc->IsReadBeforeWrite = IsReadBeforeWrite;
+        }
     }
 
 Exit:

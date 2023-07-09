@@ -500,6 +500,20 @@ typedef struct _DISABLE_LINK_NODES_CONTEXT
     PVOID Context;
 } DISABLE_LINK_NODES_CONTEXT, *PDISABLE_LINK_NODES_CONTEXT;
 
+typedef struct _AMLI_WRITE_COOK_ACCESS
+{
+    AMLI_FRAME_HEADER FrameHeader;
+    PAMLI_NAME_SPACE_OBJECT BaseObj;
+    PAMLI_RS_ACCESS_HANDLER RsAccess;
+    PVOID Addr;
+    ULONG Size;
+    ULONG Value;
+    ULONG DataMask;
+    ULONG Data;
+    BOOLEAN IsReadBeforeWrite;
+    UCHAR Pad1[3];
+} AMLI_WRITE_COOK_ACCESS, *PAMLI_WRITE_COOK_ACCESS;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1
