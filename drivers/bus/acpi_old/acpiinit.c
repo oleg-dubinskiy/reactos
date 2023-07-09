@@ -2152,14 +2152,47 @@ StartHash:
 }
 
 NTSTATUS
+__cdecl
+DisableLinkNodesAsyncWorker(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ ULONG Param3,
+    _In_ PVOID InContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
 NTAPI
 DisableLinkNodesAsync(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
     _In_ PVOID Callback,
     _In_ PVOID InContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDISABLE_LINK_NODES_CONTEXT Context;
+    NTSTATUS Status;
+
+    DPRINT("DisableLinkNodesAsync: NsObject %X\n", NsObject);
+
+    Context = ExAllocatePoolWithTag(NonPagedPool, sizeof(*Context), 'ApcA');
+    if (!Context)
+    {
+        DPRINT1("DisableLinkNodesAsync: STATUS_INSUFFICIENT_RESOURCES (%X)\n", sizeof(*Context));
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(Context, sizeof(*Context));
+
+    Context->NsObject = NsObject;
+    Context->Type = 0;
+    Context->Callback = Callback;
+    Context->Context = InContext;
+    Context->RefCount = -1;
+
+    Status = DisableLinkNodesAsyncWorker(NsObject, STATUS_SUCCESS, 0, Context);
+
+    return Status;
 }
 
 VOID

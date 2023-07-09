@@ -487,6 +487,19 @@ typedef struct _SYNC_EVAL_CONTEXT
     KEVENT Event;
 } SYNC_EVAL_CONTEXT, *PSYNC_EVAL_CONTEXT;
 
+typedef struct _DISABLE_LINK_NODES_CONTEXT
+{
+    ULONG Type;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PVOID DataBuff;
+    ULONG Unknown1;
+    PAMLI_NAME_SPACE_OBJECT ChildNsObject;
+    ULONG Unknown2;
+    LONG RefCount;
+    PVOID Callback;
+    PVOID Context;
+} DISABLE_LINK_NODES_CONTEXT, *PDISABLE_LINK_NODES_CONTEXT;
+
 /* FUNCTIONS ****************************************************************/
 
 #if 1
