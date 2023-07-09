@@ -2009,8 +2009,19 @@ AcpiArbUnpackRequirement(
     _Out_ PULONG OutLength,
     _Out_ PULONG OutAlignment)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAGED_CODE();
+    DPRINT("AcpiArbUnpackRequirement: [%p] %I64X, %I64X, %X\n", IoDescriptor, IoDescriptor->u.Generic.MinimumAddress.QuadPart,
+           IoDescriptor->u.Generic.MaximumAddress.QuadPart, IoDescriptor->u.Generic.Length);
+
+    ASSERT(IoDescriptor);
+    ASSERT(IoDescriptor->Type == CmResourceTypeInterrupt);
+
+    *OutMinimumAddress = IoDescriptor->u.Port.Length;
+    *OutMaximumAddress = IoDescriptor->u.Dma.MaximumChannel;
+    *OutLength = 1;
+    *OutAlignment = 1;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
