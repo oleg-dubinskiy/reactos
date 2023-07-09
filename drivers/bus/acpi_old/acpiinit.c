@@ -2159,8 +2159,103 @@ DisableLinkNodesAsyncWorker(
     _In_ ULONG Param3,
     _In_ PVOID InContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDISABLE_LINK_NODES_CONTEXT Context = InContext;
+    PAMLI_NAME_SPACE_OBJECT Child;
+    PAMLI_NAME_SPACE_OBJECT Current;
+    PCHAR IdString;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    ASSERT(Context);
+
+    InterlockedIncrement(&Context->RefCount);
+
+    while (Context->Type == 0)
+    {
+        Context->Type = 1;
+
+        Status = ACPIGet(Context->NsObject, 'DIH_', 0x58080206, NULL, 0, DisableLinkNodesAsyncWorker, Context, &Context->DataBuff, NULL);
+        if (Status == STATUS_PENDING)
+            return STATUS_PENDING;
+
+        if (NT_SUCCESS(Status))
+            break;
+
+        Context->Type = 3;
+    }
+
+    if (Context->Type == 1)
+    {
+        Context->Type = 3;
+
+        IdString = Context->DataBuff;
+        if (!IdString || !strstr(IdString, "PNP0C0F"))
+            goto Type3;
+
+        Child = ACPIAmliGetNamedChild(Context->NsObject, 'SID_');
+        if (!Child)
+        {
+            DPRINT1("DisableLinkNodesAsyncWorker: KeBugCheckEx(..)\n");
+            KeBugCheckEx(0xA5, 0x10006, (ULONG_PTR)Context->NsObject, 0, 0);
+        }
+
+        Context->Type = 2;
+
+        Status = AMLIAsyncEvalObject(Child, NULL, 0, NULL, (PVOID)DisableLinkNodesAsyncWorker, Context);
+        if (Status == STATUS_PENDING)
+            return STATUS_PENDING;
+
+        if (NT_SUCCESS(Status))
+            goto Finish;
+
+        goto Type3;
+    }
+    else if (Context->Type == 3)
+    {
+Type3:
+        Context->ChildNsObject = Context->NsObject->FirstChild;
+        if (!Context->ChildNsObject)
+        {
+            Status = STATUS_SUCCESS;
+            goto Finish;
+        }
+
+        Context->Type = 4;
+        goto Type4;
+    }
+    else if (Context->Type == 4)
+    {
+Type4:
+        while (Context->ChildNsObject)
+        {
+            Current = Context->ChildNsObject;
+
+            if (Current->Parent && (ULONG_PTR)Current->Parent->FirstChild != (ULONG_PTR)Current->List.Next)
+                Context->ChildNsObject = (PAMLI_NAME_SPACE_OBJECT)Current->List.Next;
+            else
+                Context->ChildNsObject = NULL;
+
+            if (Current->ObjData.DataType == 6)
+                Status = DisableLinkNodesAsync(Current, DisableLinkNodesAsyncWorker, (PVOID)Context);
+
+            if (Status == STATUS_PENDING)
+                return STATUS_PENDING;
+        }
+    }
+
+Finish:
+
+    if (Context->RefCount)
+    {
+        PAMLI_FN_ASYNC_CALLBACK CallBack = Context->Callback;
+        CallBack(Context->NsObject, Status, 0, Context->Context);
+    }
+
+    if (Context->DataBuff)
+        ExFreePool(Context->DataBuff);
+
+    ExFreePool(Context);
+
+    return Status;
 }
 
 NTSTATUS

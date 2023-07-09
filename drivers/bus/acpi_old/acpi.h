@@ -744,6 +744,14 @@ AcpiInitIrqArbiter(
     _In_ PDEVICE_OBJECT DeviceObject
 );
 
+NTSTATUS
+NTAPI
+DisableLinkNodesAsync(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PVOID Callback,
+    _In_ PVOID WaitContext
+);
+
 /* dispatch.c */
 NTSTATUS
 NTAPI
