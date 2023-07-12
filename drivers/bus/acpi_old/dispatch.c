@@ -3808,12 +3808,87 @@ ACPIRootIrpQueryInterface(
 
 NTSTATUS
 NTAPI
+ACPISystemPowerProcessSxD(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_POWER_STATE PowerMatrix,
+    _Out_ BOOLEAN* OutMatchFound)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPISystemPowerProcessRootMapping(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_POWER_STATE PowerMatrix)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPISystemPowerInitializeRootMapping(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PDEVICE_CAPABILITIES Capabilities)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_POWER_STATE OutDeviceState;
+    DEVICE_POWER_STATE deviceStates[7];
+    ULONG ix;
+    KIRQL Irql;
+    BOOLEAN dummyMatchFound;
+    NTSTATUS Status;
+
+    if (DeviceExtension->Flags & 0x0400000000000000)
+        goto Finish;
+
+    if (DeviceExtension->DeviceState != Started)
+        goto Finish;
+
+    RtlCopyMemory(deviceStates, DeviceExtension->PowerInfo.DevicePowerMatrix, sizeof(deviceStates));
+
+    deviceStates[1] = PowerDeviceD0;
+    OutDeviceState = &Capabilities->DeviceState[2];
+
+    ix = 2;
+    do
+    {
+        if (*OutDeviceState)
+            deviceStates[ix] = *OutDeviceState;
+        ix++;
+        OutDeviceState++;
+    }
+    while (ix <= 6);
+
+    Status = ACPISystemPowerProcessSxD(DeviceExtension, deviceStates, &dummyMatchFound);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPISystemPowerInitializeRootMapping: Status %X\n", Status);
+        return Status;
+    }
+
+    if (deviceStates[6] == PowerDeviceUnspecified)
+        deviceStates[6] = PowerDeviceD3;
+
+    Status = ACPISystemPowerProcessRootMapping(DeviceExtension, deviceStates);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPISystemPowerInitializeRootMapping: Status %X\n", Status);
+        goto Finish;
+    }
+
+    ACPIInternalUpdateFlags(DeviceExtension, 0x0400000000000000, FALSE);
+
+    KeAcquireSpinLock(&AcpiPowerLock, &Irql);
+    RtlCopyMemory(DeviceExtension->PowerInfo.DevicePowerMatrix, deviceStates, sizeof(DeviceExtension->PowerInfo.DevicePowerMatrix));
+    KeReleaseSpinLock(&AcpiPowerLock, Irql);
+
+Finish:
+
+    RtlCopyMemory(Capabilities->DeviceState, DeviceExtension->PowerInfo.DevicePowerMatrix, sizeof(Capabilities->DeviceState));
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
