@@ -3911,12 +3911,58 @@ ACPISystemPowerProcessSxD(
 
 NTSTATUS
 NTAPI
+ACPISystemPowerDetermineSupportedDeviceStates(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ SYSTEM_POWER_STATE SystemState,
+    _Out_ DEVICE_POWER_STATE* OutSupportedDeviceStates)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPISystemPowerProcessRootMapping(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PDEVICE_POWER_STATE PowerMatrix)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    SYSTEM_POWER_STATE SystemState;
+    DEVICE_POWER_STATE DeviceState;
+    DEVICE_POWER_STATE SupportedDeviceStates;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    SystemState = PowerSystemSleeping1;
+    do
+    {
+        if ((1 << SystemState) & AcpiSupportedSystemStates)
+        {
+            SupportedDeviceStates = 0x10;
+
+            Status = ACPISystemPowerDetermineSupportedDeviceStates(DeviceExtension, SystemState, &SupportedDeviceStates);
+            if (NT_SUCCESS(Status))
+            {
+                for (DeviceState = PowerMatrix[SystemState]; DeviceState <= PowerDeviceD3; DeviceState++)
+                {
+                    if ((1 << DeviceState) & SupportedDeviceStates)
+                    {
+                        PowerMatrix[SystemState] = DeviceState;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                DPRINT1("ACPISystemPowerProcessRootMapping: Cannot determine D state for S%x - %X\n", (SystemState - 1), Status);
+                PowerMatrix[SystemState] = PowerDeviceD3;
+            }
+        }
+        SystemState++;
+    }
+    while (SystemState <= PowerSystemShutdown);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
