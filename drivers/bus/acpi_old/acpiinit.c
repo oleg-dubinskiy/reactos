@@ -2298,7 +2298,12 @@ AmlisuppCompletePassive(
     _In_ ULONG Param3,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_WAIT_CONTEXT WaitContext = Context;
+
+    ASSERT(WaitContext);
+
+    WaitContext->Status = InStatus;
+    KeSetEvent(&WaitContext->Event, 0, FALSE);
 }
 
 NTSTATUS
