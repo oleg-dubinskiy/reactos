@@ -107,6 +107,17 @@ ULONG AcpiBuildDevicePowerNameLookup[] =
     0
 };
 
+ULONG AcpiSxDMethodTable[] =
+{
+    'DWS_',
+    'D0S_',
+    'D1S_',
+    'D2S_',
+    'D3S_',
+    'D4S_',
+    'D5S_'
+};
+
 PDRIVER_DISPATCH ACPIDispatchFdoPnpTable[] =
 {
     NULL,
@@ -3813,8 +3824,46 @@ ACPISystemPowerGetSxD(
     _In_ SYSTEM_POWER_STATE SystemState,
     _Out_ DEVICE_POWER_STATE* OutDeviceState)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DEVICE_POWER_STATE DeviceState = PowerDeviceUnspecified;
+    ULONG DataBuff;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    *OutDeviceState = PowerDeviceUnspecified;
+
+    if ((DeviceExtension->Flags & 0x0008000000000000) ||
+        (DeviceExtension->Flags & 0x0002000000000000))
+    {
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
+    Status = ACPIGet(DeviceExtension, AcpiSxDMethodTable[SystemState], 0x20040002, NULL, 0, NULL, NULL, (PVOID *)&DataBuff, NULL);
+    if (NT_SUCCESS(Status))
+    {
+        if (DataBuff < 4)
+            DeviceState = DevicePowerStateTranslation[DataBuff];
+
+        *OutDeviceState = DeviceState;
+
+        return Status;
+    }
+
+    if (Status != STATUS_OBJECT_NAME_NOT_FOUND)
+    {
+        DPRINT1("ACPISystemPowerGetSxD: Cannot run _S%cD - %X\n", (SystemState ? ((SystemState - 1) + '0') : 'w'), Status);
+        return Status;
+    }
+
+    if (SystemState == PowerSystemSleeping1 &&
+        (DeviceExtension->Flags & 0x0000A00000000000) &&
+        (DeviceExtension->Flags & 0x0000000002000000))
+    {
+        *OutDeviceState = PowerDeviceD1;
+        Status = STATUS_SUCCESS;
+    }
+
+    return Status;
 }
 
 NTSTATUS
