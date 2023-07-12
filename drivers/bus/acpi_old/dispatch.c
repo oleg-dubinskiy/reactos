@@ -3909,6 +3909,16 @@ ACPISystemPowerProcessSxD(
     return STATUS_SUCCESS;
 }
 
+SYSTEM_POWER_STATE
+NTAPI
+ACPISystemPowerDetermineSupportedSystemState(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ DEVICE_POWER_STATE DeviceState)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 NTAPI
 ACPISystemPowerDetermineSupportedDeviceStates(
@@ -3916,8 +3926,74 @@ ACPISystemPowerDetermineSupportedDeviceStates(
     _In_ SYSTEM_POWER_STATE SystemState,
     _Out_ DEVICE_POWER_STATE* OutSupportedDeviceStates)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ACPI_EXT_LIST_ENUM_DATA ExtList;
+    SYSTEM_POWER_STATE systemState;
+    DEVICE_POWER_STATE DeviceState;
+    PDEVICE_EXTENSION Extension;
+    KIRQL Irql;
+    BOOLEAN Result;
+    NTSTATUS Status;
+
+    ASSERT(SystemState >= PowerSystemWorking && SystemState <= PowerSystemShutdown);
+    ASSERT(OutSupportedDeviceStates != NULL);
+
+    ExtList.List = &DeviceExtension->ChildDeviceList;
+    ExtList.SpinLock = &AcpiDeviceTreeLock;
+    ExtList.Offset = FIELD_OFFSET(DEVICE_EXTENSION, SiblingDeviceList);
+    ExtList.ExtListEnum2 = 1;
+
+    Extension = ACPIExtListStartEnum(&ExtList);
+
+    for (Result = ACPIExtListTestElement(&ExtList, TRUE);
+         Result;
+         Result = ACPIExtListTestElement(&ExtList, NT_SUCCESS(Status)))
+    {
+        Status = ACPISystemPowerDetermineSupportedDeviceStates(Extension, SystemState, OutSupportedDeviceStates);
+        if (!NT_SUCCESS(Status))
+        {
+            Extension = ACPIExtListEnumNext(&ExtList);
+            continue;
+        }
+
+        Status = ACPISystemPowerGetSxD(Extension, SystemState, &DeviceState);
+        if (NT_SUCCESS(Status))
+        {
+            *OutSupportedDeviceStates |= (1 << DeviceState);
+            DPRINT("ACPISystemPowerDetermineSupportedDeviceStates: S%x->D%x\n", (SystemState - 1), (DeviceState - 1));
+            Extension = ACPIExtListEnumNext(&ExtList);
+            continue;
+        }
+
+        if (Status != STATUS_OBJECT_NAME_NOT_FOUND)
+        {
+            DPRINT("ACPISystemPowerDetermineSupportedDeviceStates: Status %X\n", Status);
+            Extension = ACPIExtListEnumNext(&ExtList);
+            continue;
+        }
+
+        Status = STATUS_SUCCESS;
+
+        KeAcquireSpinLock(&AcpiPowerLock, &Irql);
+        DeviceState = PowerDeviceD0;
+
+        do
+        {
+            systemState = ACPISystemPowerDetermineSupportedSystemState(Extension, DeviceState);
+            if (systemState >= SystemState)
+            {
+                *OutSupportedDeviceStates |= (1 << DeviceState);
+                DPRINT("ACPISystemPowerDetermineSupportedDeviceStates: PR%X maps to S%X, so S%X->D%X\n", (DeviceState - 1), (systemState - 1), (SystemState - 1), (DeviceState - 1));
+            }
+
+            DeviceState++;
+        }
+        while (DeviceState <= PowerDeviceD2);
+
+        KeReleaseSpinLock(&AcpiPowerLock, Irql);
+        Extension = ACPIExtListEnumNext(&ExtList);
+     }
+ 
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
