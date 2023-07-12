@@ -5191,8 +5191,9 @@ PciConfigSpaceHandlerWorker(
         {
             if (!IsWritedLog)
             {
-                DPRINT("PciConfigSpaceHandlerWorker: FIXME\n");
-                ASSERT(FALSE);
+                DPRINT("PciConfigSpaceHandlerWorker: FIXME ACPIWriteEventLogEntry()\n");
+                //ASSERT(FALSE);
+                IsWritedLog = TRUE;
             }
 
             RtlFillMemory(PciCfgContext->Buffer, PciCfgContext->Length, 0xFF);
