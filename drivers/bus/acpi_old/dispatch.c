@@ -3808,13 +3808,56 @@ ACPIRootIrpQueryInterface(
 
 NTSTATUS
 NTAPI
+ACPISystemPowerGetSxD(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ SYSTEM_POWER_STATE SystemState,
+    _Out_ DEVICE_POWER_STATE* OutDeviceState)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPISystemPowerProcessSxD(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PDEVICE_POWER_STATE PowerMatrix,
     _Out_ BOOLEAN* OutMatchFound)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    SYSTEM_POWER_STATE SystemState;
+    DEVICE_POWER_STATE DeviceState;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    ASSERT(OutMatchFound);
+    *OutMatchFound = FALSE;
+
+    for (SystemState = PowerSystemWorking; SystemState < PowerSystemMaximum; SystemState++)
+    {
+        if (!(AcpiSupportedSystemStates & (1 << SystemState)))
+        {
+            PowerMatrix[SystemState] = PowerDeviceUnspecified;
+            continue;
+        }
+
+        Status = ACPISystemPowerGetSxD(DeviceExtension, SystemState, &DeviceState);
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+            continue;
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPISystemPowerProcessSxD: Cannot Evaluate _SxD (%X)\n", Status);
+            continue;
+        }
+
+        *OutMatchFound = TRUE;
+
+        if (DeviceState > PowerMatrix[SystemState])
+            PowerMatrix[SystemState] = DeviceState;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
