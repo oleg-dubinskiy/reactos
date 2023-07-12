@@ -3808,12 +3808,75 @@ ACPIRootIrpQueryInterface(
 
 NTSTATUS
 NTAPI
+ACPISystemPowerInitializeRootMapping(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_CAPABILITIES Capabilities)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPIRootIrpQueryCapabilities(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_CAPABILITIES Capabilities;
+    PIO_STACK_LOCATION IoStack;
+    KEVENT Event;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    DPRINT("ACPIRootIrpQueryCapabilities: %p (%p), %p\n", DeviceObject, DeviceExtension, Irp);
+
+    KeInitializeEvent(&Event, SynchronizationEvent, 0);
+
+    IoCopyCurrentIrpStackLocationToNext(Irp);
+    IoSetCompletionRoutine(Irp, ACPIRootIrpCompleteRoutine, &Event, TRUE, TRUE, TRUE);
+
+    Status = IoCallDriver(DeviceExtension->TargetDeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = Irp->IoStatus.Status;
+    }
+
+    if (NT_SUCCESS(Status))
+    {
+        IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+        Capabilities = IoStack->Parameters.DeviceCapabilities.Capabilities;
+
+        Capabilities->LockSupported = 0;
+        Capabilities->EjectSupported = 0;
+        Capabilities->Removable = 0;
+        Capabilities->UniqueID = 1;
+        Capabilities->RawDeviceOK = 0;
+        Capabilities->SurpriseRemovalOK = 0;
+
+        Capabilities->UINumber = 0xFFFFFFFF;
+        Capabilities->Address = 0xFFFFFFFF;
+
+        Capabilities->SystemWake = 0;
+        Capabilities->DeviceWake = 0;
+
+        Status = ACPISystemPowerInitializeRootMapping(DeviceExtension, Capabilities);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIRootIrpQueryCapabilities: %p (%p), %p - %X\n", DeviceObject, DeviceExtension, Irp, Status);
+        }
+    }
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    DPRINT("ACPIRootIrpQueryCapabilities: %p (%p), %p - %X\n", DeviceObject, DeviceExtension, Irp, Status);
+
+    return Status;
 }
 
 NTSTATUS
