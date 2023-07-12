@@ -1820,13 +1820,22 @@ ACPIExtListTestElement(
     return Result;
 }
 
+VOID
+NTAPI
+ACPIInitDeleteDeviceExtension(
+    _In_ PDEVICE_EXTENSION DeviceExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 PDEVICE_EXTENSION
 __cdecl
 ACPIExtListEnumNext(
     _In_ PACPI_EXT_LIST_ENUM_DATA ExtList)
 {
-    PDEVICE_EXTENSION DeviceExtension;
     PLIST_ENTRY List;
+    LONG RefCount;
+    KIRQL OldIrql;
     BOOLEAN Result;
 
     //DPRINT("ACPIExtListEnumNext: %p\n", ExtList);
@@ -1841,10 +1850,22 @@ ACPIExtListEnumNext(
         return (Result ? NULL : ExtList->DeviceExtension);
     }
 
-    DPRINT1("ACPIExtListEnumNext: FIXME\n");
-    ASSERT(FALSE);
+    KeAcquireSpinLock(ExtList->SpinLock, &OldIrql);
+    ExtList->Irql = OldIrql;
 
-    return DeviceExtension;
+    RefCount = InterlockedDecrement(&ExtList->DeviceExtension->ReferenceCount);
+
+    ASSERT(!ACPIExtListIsFinished(ExtList));
+
+    List = Add2Ptr(ExtList->DeviceExtension, ExtList->Offset);
+    ExtList->DeviceExtension = (PDEVICE_EXTENSION)((ULONG_PTR)List->Flink - ExtList->Offset);
+
+    if (!RefCount)
+        ACPIInitDeleteDeviceExtension(ExtList->DeviceExtension);
+
+    Result = ACPIExtListIsFinished(ExtList);
+
+    return (Result ? NULL : ExtList->DeviceExtension);
 }
 
 NTSTATUS
