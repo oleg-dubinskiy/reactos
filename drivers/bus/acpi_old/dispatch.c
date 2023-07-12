@@ -3915,8 +3915,35 @@ ACPISystemPowerDetermineSupportedSystemState(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ DEVICE_POWER_STATE DeviceState)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    SYSTEM_POWER_STATE RetState = PowerSystemMaximum;
+    PACPI_DEVICE_POWER_NODE Node;
+  
+    if (DeviceState == PowerDeviceD3)
+    {
+        RetState = PowerDeviceUnspecified;
+        return RetState;
+    }
+
+    Node = DeviceExtension->PowerInfo.PowerNode[DeviceState];
+    if (!Node)
+    {
+        RetState = PowerDeviceUnspecified;
+        return RetState;
+    }
+
+    do
+    {
+        if (Node->SystemState < RetState)
+            RetState = Node->SystemState;
+
+        Node = Node->Next;
+    }
+    while (Node);
+
+    if (RetState == PowerSystemMaximum)
+        RetState = PowerDeviceUnspecified;
+
+    return RetState;
 }
 
 NTSTATUS
