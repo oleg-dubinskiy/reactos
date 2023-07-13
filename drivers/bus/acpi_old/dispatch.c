@@ -3820,13 +3820,60 @@ ACPIRootIrpStopDevice(
 
 NTSTATUS
 NTAPI
+ACPIDetectPdoDevices(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Out_ PDEVICE_RELATIONS* OutDeviceRelation)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDetectDockDevices(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _Out_ PDEVICE_RELATIONS* OutDeviceRelation)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPIRootIrpQueryBusRelations(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp,
     _Out_ PDEVICE_RELATIONS* OutDeviceRelation)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIRootIrpQueryBusRelations: %p, %p\n", DeviceObject, Irp);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if (!DeviceExtension->AcpiObject)
+    {
+        DPRINT1("ACPIRootIrpQueryBusRelations: STATUS_INVALID_PARAMETER\n");
+        ASSERT(DeviceExtension->AcpiObject != NULL);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = ACPIDetectPdoDevices(DeviceObject, OutDeviceRelation);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIRootIrpQueryBusRelations: Status %X\n", Status);
+        return Status;
+    }
+
+    Status = ACPIDetectDockDevices(DeviceExtension, OutDeviceRelation);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIRootIrpQueryBusRelations: Status %X\n", Status);
+    }
+
+    return Status;
 }
 
 NTSTATUS
