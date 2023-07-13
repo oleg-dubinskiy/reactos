@@ -3820,12 +3820,97 @@ ACPIRootIrpStopDevice(
 
 NTSTATUS
 NTAPI
+ACPIRootIrpQueryBusRelations(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _Out_ PDEVICE_RELATIONS* OutDeviceRelation)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDetectFilterDevices(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PDEVICE_RELATIONS DeviceRelation)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPIRootIrpQueryDeviceRelations(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_RELATIONS DeviceRelation;
+    PIO_STACK_LOCATION IoStack;
+    KEVENT Event;
+    BOOLEAN IsBusRelations = FALSE;
+    NTSTATUS status;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIRootIrpQueryDeviceRelations: %p, %p\n", DeviceObject, Irp);
+
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+    DeviceRelation = (PDEVICE_RELATIONS)Irp->IoStatus.Information;
+
+    if (IoStack->Parameters.QueryDeviceRelations.Type == BusRelations)
+    {
+        IsBusRelations = TRUE;
+        Status = ACPIRootIrpQueryBusRelations(DeviceObject, Irp, &DeviceRelation);
+    }
+    else
+    {
+        DPRINT1("ACPIRootIrpQueryDeviceRelations: Unhandled Type %X\n", IoStack->Parameters.QueryDeviceRelations.Type);
+        Status = STATUS_NOT_SUPPORTED;
+    }
+
+    if (NT_SUCCESS(Status))
+    {
+        Irp->IoStatus.Status = Status;
+        Irp->IoStatus.Information = (ULONG_PTR)DeviceRelation;
+    }
+    else if (Status != STATUS_NOT_SUPPORTED && !DeviceRelation)
+    {
+        DPRINT1("ACPIRootIrpQueryDeviceRelations: Status %X\n", Status);
+
+        Irp->IoStatus.Status = Status;
+        Irp->IoStatus.Information = 0;
+
+        IoCompleteRequest(Irp, 0);
+        return Status;
+    }
+
+    KeInitializeEvent(&Event, SynchronizationEvent, 0);
+
+    IoCopyCurrentIrpStackLocationToNext(Irp);
+    IoSetCompletionRoutine(Irp, ACPIRootIrpCompleteRoutine, &Event, TRUE, TRUE, TRUE);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    Status = IoCallDriver(DeviceExtension->TargetDeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = Irp->IoStatus.Status;
+    }
+
+    DeviceRelation = (PDEVICE_RELATIONS)Irp->IoStatus.Information;
+
+    if ((NT_SUCCESS(Status) || Status == STATUS_NOT_SUPPORTED) && IsBusRelations)
+    {
+        status = ACPIDetectFilterDevices(DeviceObject, DeviceRelation);
+        DPRINT("ACPIRootIrpQueryDeviceRelations: Status %X, status %X\n", Status, status);
+    }
+
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS
