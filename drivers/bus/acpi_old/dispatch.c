@@ -3818,14 +3818,232 @@ ACPIRootIrpStopDevice(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+VOID
+NTAPI
+ACPIBuildMissingChildren(
+    _In_ PDEVICE_EXTENSION DeviceExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildFlushQueue(
+    _In_ PDEVICE_EXTENSION DeviceExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+BOOLEAN
+NTAPI
+ACPIDetectPdoMatch(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_RELATIONS DeviceRelation)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildPdo(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_OBJECT InPdo,
+    _In_ BOOLEAN IsFilterDO)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 NTAPI
 ACPIDetectPdoDevices(
     _In_ PDEVICE_OBJECT DeviceObject,
     _Out_ PDEVICE_RELATIONS* OutDeviceRelation)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_EXTENSION Extension;
+    PDEVICE_RELATIONS InDeviceRelation = NULL;
+    PDEVICE_RELATIONS DeviceRelation;
+    PLIST_ENTRY Head;
+    PLIST_ENTRY Entry;
+    LONG RefCount;
+    ULONG dummyData;
+    ULONG count = 0;
+    ULONG Size;
+    ULONG ix;
+    KIRQL Irql;
+    NTSTATUS Status;
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if (OutDeviceRelation && *OutDeviceRelation)
+    {
+        InDeviceRelation = *OutDeviceRelation;
+        count = InDeviceRelation->Count;
+    }
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
+
+    if (DeviceExtension->Flags & 0x0000020000000000)
+    {
+        DPRINT1("ACPIDetectPdoDevices: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+    Status = ACPIBuildFlushQueue(DeviceExtension);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIDetectPdoDevices: Status %X\n", Status);
+        return Status;
+    }
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
+
+    if (IsListEmpty(&DeviceExtension->ChildDeviceList))
+    {
+        DPRINT1("ACPIDetectPdoDevices: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    Head = &DeviceExtension->ChildDeviceList;
+    Extension = CONTAINING_RECORD(DeviceExtension->ChildDeviceList.Flink, DEVICE_EXTENSION, SiblingDeviceList);
+
+    while (TRUE)
+    {
+        InterlockedIncrement(&Extension->ReferenceCount);
+
+        KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+        if (!Extension)
+            break;
+
+        ACPIInternalUpdateFlags(Extension, 0x100, FALSE);
+
+        Status = ACPIGet(Extension, 'ATS_', 0x20040802, NULL, 0, NULL, NULL, (PVOID *)&dummyData, NULL);
+        if (NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIDetectPdoDevices: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
+        RefCount = InterlockedDecrement(&Extension->ReferenceCount);
+
+        Entry = Extension->SiblingDeviceList.Flink;
+        if (Entry == Head)
+        {
+            if (!RefCount)
+                ACPIInitDeleteDeviceExtension(Extension);
+
+            KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+            break;
+        }
+
+        Extension = CONTAINING_RECORD(Entry, DEVICE_EXTENSION, SiblingDeviceList);
+
+        if (!RefCount)
+        {
+            DPRINT1("ACPIDetectPdoDevices: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    if (InDeviceRelation)
+    {
+        if (count == InDeviceRelation->Count)
+            return STATUS_SUCCESS;
+    }
+    else if (!count)
+    {
+        return STATUS_SUCCESS;
+    }
+
+    Size = ((count + 1) * 4);
+
+    DeviceRelation = ExAllocatePoolWithTag(NonPagedPool, Size, 'DpcA');
+    if (!DeviceRelation)
+    {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(DeviceRelation, Size);
+
+    if (InDeviceRelation)
+    {
+        DPRINT1("ACPIDetectPdoDevices: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        ix = 0;
+    }
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
+
+    if (IsListEmpty(Head))
+    {
+        KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+        ExFreePoolWithTag(DeviceRelation, 'DpcA');
+        return STATUS_SUCCESS;
+    }
+
+    Extension = CONTAINING_RECORD(Head->Flink, DEVICE_EXTENSION, SiblingDeviceList);
+
+    while (Extension)
+    {
+        if (Extension->Flags & 0x0000000000000020)
+        {
+            if (Extension->DeviceObject)
+            {
+                if (!(Extension->Flags & 0x0002000000000002))
+                {
+                    DPRINT1("ACPIDetectPdoDevices: FIXME\n");
+                    ASSERT(FALSE);
+                }
+            }
+        }
+
+        if (count == ix)
+            break;
+
+        if (Extension->SiblingDeviceList.Flink == &DeviceExtension->ChildDeviceList)
+            break;
+
+        Extension = CONTAINING_RECORD(Extension->SiblingDeviceList.Flink, DEVICE_EXTENSION, SiblingDeviceList);
+    }
+
+    count = ix;
+    DeviceRelation->Count = count;
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+    if (InDeviceRelation)
+        ix = InDeviceRelation->Count;
+    else
+        ix = 0;
+
+    for (; ix < count; ix++)
+    {
+        Status = ObReferenceObjectByPointer(DeviceRelation->Objects[ix], 0, NULL, KernelMode);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIDetectPdoDevices: Status %X\n", Status);
+            DPRINT1("ACPIDetectPdoDevices: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    if (InDeviceRelation)
+        ExFreePoolWithTag(*OutDeviceRelation, 'DpcA');
+
+    *OutDeviceRelation = DeviceRelation;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
