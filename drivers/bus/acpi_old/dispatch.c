@@ -3846,14 +3846,43 @@ ACPIBuildFlushQueue(
     return Status;
 }
 
+NTSTATUS
+NTAPI
+ACPIDetectCouldExtensionBeInRelation(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_RELATIONS DeviceRelation,
+    _In_ BOOLEAN Param3,
+    _In_ BOOLEAN Param4,
+    _Out_ PDEVICE_OBJECT* OutPdoObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 BOOLEAN
 NTAPI
 ACPIDetectPdoMatch(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PDEVICE_RELATIONS DeviceRelation)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PDEVICE_OBJECT DeviceObject = NULL;
+    BOOLEAN Result;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    if (!(DeviceExtension->Flags & 0x0000000000000008) ||
+        (DeviceExtension->Flags & 0x0200000000000000) ||
+        DeviceExtension->DeviceObject)
+    {
+        return TRUE;
+    }
+
+    Status = ACPIDetectCouldExtensionBeInRelation(DeviceExtension, DeviceRelation, FALSE, TRUE, &DeviceObject);
+
+    Result = (DeviceObject || !NT_SUCCESS(Status));
+
+    return Result;
 }
 
 NTSTATUS
@@ -3938,8 +3967,22 @@ ACPIDetectPdoDevices(
         Status = ACPIGet(Extension, 'ATS_', 0x20040802, NULL, 0, NULL, NULL, (PVOID *)&dummyData, NULL);
         if (NT_SUCCESS(Status))
         {
-            DPRINT1("ACPIDetectPdoDevices: FIXME\n");
-            ASSERT(FALSE);
+            if (!(Extension->Flags & 0x0002000000000002)) 
+            {
+                if (ACPIDetectPdoMatch(Extension, InDeviceRelation))
+                {
+                    if ((Extension->Flags & 0x0000000000000020) && Extension->DeviceObject)
+                    {
+                        DPRINT1("ACPIDetectPdoDevices: FIXME\n");
+                        ASSERT(FALSE);
+                    }
+                }
+                else
+                {
+                    DPRINT1("ACPIDetectPdoDevices: FIXME\n");
+                    ASSERT(FALSE);
+                }
+            }
         }
 
         KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
