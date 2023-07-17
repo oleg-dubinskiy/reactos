@@ -3831,8 +3831,19 @@ NTAPI
 ACPIBuildFlushQueue(
     _In_ PDEVICE_EXTENSION DeviceExtension)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    KEVENT Event;
+    NTSTATUS Status;
+
+    KeInitializeEvent(&Event, SynchronizationEvent, 0);
+
+    Status = ACPIBuildSynchronizationRequest(DeviceExtension, ACPIDevicePowerNotifyEvent, &Event, &AcpiBuildDeviceList, TRUE);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = STATUS_SUCCESS;
+    }
+
+    return Status;
 }
 
 BOOLEAN
