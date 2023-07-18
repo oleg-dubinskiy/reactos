@@ -3855,8 +3855,90 @@ ACPIDetectCouldExtensionBeInRelation(
     _In_ BOOLEAN Param4,
     _Out_ PDEVICE_OBJECT* OutPdoObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    UNICODE_STRING HardwareId;
+    ULONG HardwareAddress;
+    ULONG ix;
+    BOOLEAN IsSuccess = FALSE;
+    BOOLEAN IsAdr = FALSE;
+    BOOLEAN IsHid = FALSE;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIDetectCouldExtensionBeInRelation: %p, %X, %X\n", DeviceExtension, Param3, Param4);
+
+    ASSERT(OutPdoObject != NULL);
+
+    if (!OutPdoObject)
+    {
+        DPRINT1("ACPIDetectCouldExtensionBeInRelation: STATUS_INVALID_PARAMETER_1\n");
+        return STATUS_INVALID_PARAMETER_1;
+    }
+
+    *OutPdoObject = NULL;
+
+    RtlZeroMemory(&HardwareId, sizeof(UNICODE_STRING));
+
+    if (Param3 && !(DeviceExtension->Flags & 0x0000100000000000))
+    {
+        DPRINT1("ACPIDetectCouldExtensionBeInRelation: STATUS_OBJECT_NAME_NOT_FOUND\n");
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
+    if (Param4 &&
+        (!DeviceExtension->DeviceID || !(DeviceExtension->Flags & 0x0000200000000000)))
+    {
+        DPRINT1("ACPIDetectCouldExtensionBeInRelation: STATUS_OBJECT_NAME_NOT_FOUND\n");
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
+    if (!DeviceRelation || !DeviceRelation->Count)
+        return STATUS_SUCCESS;
+
+    if (DeviceExtension->Flags & 0x2000100000000000)
+    {
+        IsAdr = TRUE;
+        Status = ACPIGet(DeviceExtension, 'RDA_', 0x20040402, NULL, 0, NULL, NULL, (PVOID *)&HardwareAddress, NULL);
+    }
+
+    if (DeviceExtension->Flags & 0x0000A00000000000)
+    {
+        Status = ACPIGet(DeviceExtension, 'DIH_', 0x20080216, NULL, 0, NULL, NULL, (PVOID *)&HardwareId.Buffer, (ULONG *)&HardwareId.Length);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIDetectCouldExtensionBeInRelation: Status %X\n", Status);
+            return Status;
+        }
+
+        HardwareId.MaximumLength = HardwareId.Length;
+        IsHid = TRUE;
+    }
+
+    for (ix = 0; ix < DeviceRelation->Count; ix++)
+    {
+        IsSuccess = FALSE;
+
+        if (IsHid)
+        {
+            DPRINT1("ACPIDetectCouldExtensionBeInRelation: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!IsSuccess && !IsAdr)
+            continue;
+
+        if (IsAdr)
+        {
+            IsSuccess = FALSE;
+
+            DPRINT1("ACPIDetectCouldExtensionBeInRelation: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        *OutPdoObject = DeviceRelation->Objects[ix];
+        break;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 BOOLEAN
@@ -3915,6 +3997,7 @@ ACPIDetectPdoDevices(
     ULONG Size;
     ULONG ix;
     KIRQL Irql;
+    BOOLEAN IsFound;
     NTSTATUS Status;
 
     DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
@@ -3979,8 +4062,14 @@ ACPIDetectPdoDevices(
                 }
                 else
                 {
-                    DPRINT1("ACPIDetectPdoDevices: FIXME\n");
-                    ASSERT(FALSE);
+                    IsFound = FALSE;
+
+                    if (!(DeviceExtension->Flags & 0x10))
+                        IsFound = TRUE;
+
+                    Status = ACPIBuildPdo(DeviceObject->DriverObject, Extension, DeviceExtension->PhysicalDeviceObject, IsFound);
+                    if (NT_SUCCESS(Status))
+                        count++;
                 }
             }
         }
