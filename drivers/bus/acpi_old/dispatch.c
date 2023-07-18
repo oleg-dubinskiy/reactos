@@ -31,6 +31,7 @@
 PAMLI_NAME_SPACE_OBJECT ProcessorList[0x20];
 ACPI_INTERFACE_STANDARD ACPIInterfaceTable;
 ACPI_HAL_DISPATCH_TABLE AcpiHalDispatchTable;
+PDEVICE_OBJECT FixedButtonDeviceObject;
 PPM_DISPATCH_TABLE PmHalDispatchTable;
 PACPI_INFORMATION AcpiInformation;
 KSPIN_LOCK NotifyHandlerLock;
@@ -147,6 +148,35 @@ PDRIVER_DISPATCH ACPIDispatchFdoPnpTable[] =
     ACPIDispatchForwardIrp
 };
 
+PDRIVER_DISPATCH ACPIDispatchPdoPnpTable[] =
+{
+    NULL,
+    ACPIBusIrpQueryRemoveOrStopDevice,
+    ACPIBusIrpRemoveDevice,
+    ACPIBusIrpCancelRemoveOrStopDevice,
+    ACPIBusIrpStopDevice,
+    ACPIBusIrpQueryRemoveOrStopDevice,
+    ACPIBusIrpCancelRemoveOrStopDevice,
+    ACPIBusIrpQueryDeviceRelations,
+    ACPIBusIrpQueryInterface,
+    ACPIBusIrpQueryCapabilities,
+    ACPIBusIrpQueryResources,
+    ACPIBusIrpQueryResourceRequirements,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpEject,
+    ACPIBusIrpSetLock,
+    ACPIBusIrpQueryId,
+    ACPIBusIrpQueryPnpDeviceState,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpDeviceUsageNotification,
+    ACPIBusIrpSurpriseRemoval,
+    ACPIBusIrpUnhandled
+};
+
 PDRIVER_DISPATCH ACPIDispatchFdoPowerTable[] =
 {
     ACPIWakeWaitIrp,
@@ -154,6 +184,15 @@ PDRIVER_DISPATCH ACPIDispatchFdoPowerTable[] =
     ACPIRootIrpSetPower,
     ACPIRootIrpQueryPower,
     ACPIDispatchForwardPowerIrp
+};
+
+PDRIVER_DISPATCH ACPIDispatchBusPowerTable[] =
+{
+    ACPIWakeWaitIrp,
+    ACPIDispatchPowerIrpUnhandled,
+    ACPIBusIrpSetPower,
+    ACPIBusIrpQueryPower,
+    ACPIDispatchPowerIrpUnhandled
 };
 
 IRP_DISPATCH_TABLE AcpiFdoIrpDispatch =
@@ -165,6 +204,18 @@ IRP_DISPATCH_TABLE AcpiFdoIrpDispatch =
     ACPIDispatchFdoPowerTable,
     ACPIDispatchWmiLog,
     ACPIDispatchForwardIrp,
+    NULL
+};
+
+IRP_DISPATCH_TABLE AcpiPdoIrpDispatch =
+{
+    ACPIDispatchIrpInvalid,
+    ACPIIrpDispatchDeviceControl,
+    ACPIBusIrpStartDevice,
+    ACPIDispatchPdoPnpTable,
+    ACPIDispatchBusPowerTable,
+    ACPIBusIrpUnhandled,
+    ACPIDispatchIrpInvalid,
     NULL
 };
 
@@ -213,6 +264,379 @@ PACPI_BUILD_DISPATCH AcpiBuildPowerResourceDispatch[] =
     ACPIBuildProcessPowerResourceFailure,
     ACPIBuildProcessPowerResourcePhase0,
     ACPIBuildProcessPowerResourcePhase1
+};
+
+PDRIVER_DISPATCH ACPIDispatchBusFilterPnpTable[] =
+{
+    NULL,
+    ACPIBusIrpQueryRemoveOrStopDevice,
+    ACPIBusIrpRemoveDevice,
+    ACPIBusIrpCancelRemoveOrStopDevice,
+    ACPIBusIrpStopDevice,
+    ACPIBusIrpQueryRemoveOrStopDevice,
+    ACPIBusIrpCancelRemoveOrStopDevice,
+    ACPIBusIrpQueryDeviceRelations,
+    ACPIBusIrpQueryInterface,
+    ACPIBusIrpQueryCapabilities,
+    ACPIBusIrpQueryResources,
+    ACPIBusIrpQueryResourceRequirements,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpEject,
+    ACPIBusIrpSetLock,
+    ACPIBusIrpQueryId,
+    ACPIBusIrpQueryPnpDeviceState,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpDeviceUsageNotification,
+    ACPIBusIrpSurpriseRemoval,
+    ACPIBusIrpUnhandled
+};
+
+IRP_DISPATCH_TABLE AcpiGenericBusIrpDispatch =
+{
+    ACPIDispatchIrpInvalid,
+    ACPIDispatchIrpInvalid,
+    ACPIBusIrpStartDevice,
+    ACPIDispatchBusFilterPnpTable,
+    ACPIDispatchBusPowerTable,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchIrpInvalid,
+    NULL
+};
+
+PDRIVER_DISPATCH ACPIDispatchInternalDevicePnpTable[] =
+{
+    NULL,
+    ACPIBusIrpQueryRemoveOrStopDevice,
+    ACPIBusIrpRemoveDevice,
+    ACPIBusIrpCancelRemoveOrStopDevice,
+    ACPIBusIrpStopDevice,
+    ACPIBusIrpQueryRemoveOrStopDevice,
+    ACPIBusIrpCancelRemoveOrStopDevice,
+    ACPIInternalDeviceQueryDeviceRelations,
+    ACPIBusIrpQueryInterface,
+    ACPIInternalDeviceQueryCapabilities,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpQueryId,
+    ACPIBusIrpQueryPnpDeviceState,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpDeviceUsageNotification,
+    ACPIBusIrpSurpriseRemoval,
+    ACPIBusIrpUnhandled
+};
+
+PDRIVER_DISPATCH ACPIDispatchInternalDevicePowerTable[] =
+{
+    ACPIDispatchPowerIrpInvalid,
+    ACPIDispatchPowerIrpUnhandled,
+    ACPIDispatchPowerIrpSuccess,
+    ACPIDispatchPowerIrpSuccess,
+    ACPIDispatchPowerIrpUnhandled,
+};
+
+IRP_DISPATCH_TABLE AcpiFixedButtonIrpDispatch =
+{
+    ACPIDispatchIrpSuccess,
+    ACPIButtonDeviceControl,
+    ACPIButtonStartDevice,
+    ACPIDispatchInternalDevicePnpTable,
+    ACPIDispatchInternalDevicePowerTable,
+    ACPIBusIrpUnhandled,
+    ACPIDispatchIrpInvalid,
+    NULL
+};
+
+PDRIVER_DISPATCH ACPIDispatchRawDevicePnpTable[] =
+{
+    NULL,
+    ACPIBusIrpQueryRemoveOrStopDevice,
+    ACPIBusIrpRemoveDevice,
+    ACPIBusIrpCancelRemoveOrStopDevice,
+    ACPIBusIrpStopDevice,
+    ACPIBusIrpQueryRemoveOrStopDevice,
+    ACPIBusIrpCancelRemoveOrStopDevice,
+    ACPIInternalDeviceQueryDeviceRelations,
+    ACPIBusIrpQueryInterface,
+    ACPIInternalDeviceQueryCapabilities,
+    ACPIBusIrpQueryResources,
+    ACPIBusIrpQueryResourceRequirements,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpSetLock,
+    ACPIBusIrpQueryId,
+    ACPIBusIrpQueryPnpDeviceState,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpDeviceUsageNotification,
+    ACPIBusIrpSurpriseRemoval,
+    ACPIBusIrpUnhandled
+};
+
+IRP_DISPATCH_TABLE AcpiRawDeviceIrpDispatch =
+{
+    ACPIDispatchIrpInvalid,
+    ACPIDispatchIrpInvalid,
+    ACPIBusIrpStartDevice,
+    ACPIDispatchRawDevicePnpTable,
+    ACPIDispatchBusPowerTable,
+    ACPIBusIrpUnhandled,
+    ACPIDispatchIrpInvalid,
+    NULL
+};
+
+PDRIVER_DISPATCH ACPIDispatchEIOBusPnpTable[] =
+{
+    NULL,
+    ACPIBusIrpQueryRemoveOrStopDevice,
+    ACPIBusIrpRemoveDevice,
+    ACPIBusIrpCancelRemoveOrStopDevice,
+    ACPIBusIrpStopDevice,
+    ACPIBusIrpQueryRemoveOrStopDevice,
+    ACPIBusIrpCancelRemoveOrStopDevice,
+    ACPIBusIrpQueryDeviceRelations,
+    ACPIBusIrpQueryInterface,
+    ACPIBusIrpQueryCapabilities,
+    ACPIBusIrpQueryResources,
+    ACPIBusIrpQueryResourceRequirements,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpEject,
+    ACPIBusIrpSetLock,
+    ACPIBusIrpQueryId,
+    ACPIBusIrpQueryPnpDeviceState,
+    ACPIBusIrpQueryBusInformation,
+    ACPIBusIrpDeviceUsageNotification,
+    ACPIBusIrpSurpriseRemoval,
+    ACPIBusIrpUnhandled
+};
+
+IRP_DISPATCH_TABLE AcpiEIOBusIrpDispatch =
+{
+    ACPIDispatchIrpInvalid,
+    ACPIDispatchIrpInvalid,
+    ACPIBusIrpStartDevice,
+    ACPIDispatchEIOBusPnpTable,
+    ACPIDispatchBusPowerTable,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchIrpInvalid,
+    NULL
+};
+
+IRP_DISPATCH_TABLE AcpiRealTimeClockIrpDispatch =
+{
+    ACPIDispatchIrpSuccess,
+    ACPIDispatchIrpInvalid,
+    ACPIInternalDeviceClockIrpStartDevice,
+    ACPIDispatchRawDevicePnpTable,
+    ACPIDispatchBusPowerTable,
+    ACPIBusIrpUnhandled,
+    ACPIDispatchIrpInvalid,
+    NULL
+};
+
+IRP_DISPATCH_TABLE AcpiFanIrpDispatch =
+{
+    ACPIDispatchIrpSuccess,
+    ACPIDispatchIrpInvalid,
+    ACPIThermalFanStartDevice,
+    ACPIDispatchRawDevicePnpTable,
+    ACPIDispatchInternalDevicePowerTable,
+    ACPIBusIrpUnhandled,
+    ACPIDispatchIrpInvalid,
+    NULL
+};
+
+PDRIVER_DISPATCH ACPIDispatchButtonPowerTable[] =
+{
+    ACPIWakeWaitIrp,
+    ACPIDispatchPowerIrpUnhandled,
+    ACPICMButtonSetPower,
+    ACPIDispatchPowerIrpSuccess,
+    ACPIDispatchPowerIrpUnhandled,
+};
+
+IRP_DISPATCH_TABLE AcpiPowerButtonIrpDispatch =
+{
+    ACPIDispatchIrpSuccess,
+    ACPIButtonDeviceControl,
+    ACPICMPowerButtonStart,
+    ACPIDispatchInternalDevicePnpTable,
+    ACPIDispatchButtonPowerTable,
+    ACPIBusIrpUnhandled,
+    ACPIDispatchIrpInvalid,
+    NULL
+};
+
+PDRIVER_DISPATCH ACPIDispatchLidPowerTable[] =
+{
+    ACPIWakeWaitIrp,
+    ACPIDispatchPowerIrpUnhandled,
+    ACPICMLidSetPower,
+    ACPIDispatchPowerIrpSuccess,
+    ACPIDispatchPowerIrpUnhandled,
+};
+
+IRP_DISPATCH_TABLE AcpiLidIrpDispatch =
+{
+    ACPIDispatchIrpSuccess,
+    ACPIButtonDeviceControl,
+    ACPICMLidStart,
+    ACPIDispatchInternalDevicePnpTable,
+    ACPIDispatchLidPowerTable,
+    ACPIBusIrpUnhandled,
+    ACPIDispatchIrpInvalid,
+    ACPICMLidWorker
+};
+
+IRP_DISPATCH_TABLE AcpiSleepButtonIrpDispatch =
+{
+    ACPIDispatchIrpSuccess,
+    ACPIButtonDeviceControl,
+    ACPICMSleepButtonStart,
+    ACPIDispatchInternalDevicePnpTable,
+    ACPIDispatchButtonPowerTable,
+    ACPIBusIrpUnhandled,
+    ACPIDispatchIrpInvalid,
+    NULL
+};
+
+IRP_DISPATCH_TABLE AcpiBusFilterIrpDispatchSucceedCreate =
+{
+    ACPIDispatchIrpSuccess,
+    ACPIIrpDispatchDeviceControl,
+    ACPIBusIrpStartDevice,
+    ACPIDispatchBusFilterPnpTable,
+    ACPIDispatchBusPowerTable,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchForwardIrp,
+    NULL
+};
+
+PDRIVER_DISPATCH ACPIDispatchDockPnpTable[] =
+{
+    NULL,
+    ACPIDispatchIrpSuccess,
+    ACPIDockIrpRemoveDevice,
+    ACPIDispatchIrpSuccess,
+    ACPIDispatchIrpSuccess,
+    ACPIDispatchIrpSuccess,
+    ACPIDispatchIrpSuccess,
+    ACPIDockIrpQueryDeviceRelations,
+    ACPIDockIrpQueryInterface,
+    ACPIDockIrpQueryCapabilities,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIBusIrpUnhandled,
+    ACPIDockIrpEject,
+    ACPIDockIrpSetLock,
+    ACPIDockIrpQueryID,
+    ACPIDockIrpQueryPnpDeviceState,
+    ACPIBusIrpUnhandled,
+    ACPIDispatchIrpInvalid,
+    ACPIDispatchIrpSuccess,
+    ACPIBusIrpUnhandled
+};
+
+PDRIVER_DISPATCH ACPIDispatchDockPowerTable[] =
+{
+    ACPIDispatchPowerIrpInvalid,
+    ACPIDispatchPowerIrpUnhandled,
+    ACPIDockIrpSetPower,
+    ACPIDockIrpQueryPower,
+    ACPIDispatchPowerIrpUnhandled,
+};
+
+IRP_DISPATCH_TABLE AcpiDockPdoIrpDispatch =
+{
+    ACPIDispatchIrpInvalid,
+    ACPIIrpDispatchDeviceControl,
+    ACPIDockIrpStartDevice,
+    ACPIDispatchDockPnpTable,
+    ACPIDispatchDockPowerTable,
+    ACPIBusIrpUnhandled,
+    ACPIDispatchIrpInvalid,
+    NULL
+};
+
+IRP_DISPATCH_TABLE AcpiThermalZoneIrpDispatch =
+{
+    ACPIDispatchIrpSuccess,
+    ACPIThermalDeviceControl,
+    ACPIThermalStartDevice,
+    ACPIDispatchPdoPnpTable,
+    ACPIDispatchBusPowerTable,
+    ACPIThermalWmi,
+    ACPIDispatchIrpInvalid,
+    ACPIThermalWorker
+};
+
+IRP_DISPATCH_TABLE AcpiProcessorIrpDispatch =
+{
+    ACPIDispatchIrpInvalid,
+    ACPIProcessorDeviceControl,
+    ACPIProcessorStartDevice,
+    ACPIDispatchRawDevicePnpTable,
+    ACPIDispatchBusPowerTable,
+    ACPIBusIrpUnhandled,
+    ACPIDispatchIrpInvalid,
+    NULL
+};
+
+ACPI_INTERNAL_DEVICE AcpiInternalDeviceTable[] =
+{
+    {"ACPI0006", &AcpiGenericBusIrpDispatch},
+    {"FixedButton", &AcpiFixedButtonIrpDispatch},
+    {"PNP0000", &AcpiRawDeviceIrpDispatch},
+    {"PNP0001", &AcpiRawDeviceIrpDispatch},
+    {"PNP0002", &AcpiRawDeviceIrpDispatch},
+    {"PNP0003", &AcpiRawDeviceIrpDispatch},
+    {"PNP0004", &AcpiRawDeviceIrpDispatch},
+    {"PNP0100", &AcpiRawDeviceIrpDispatch},
+    {"PNP0101", &AcpiRawDeviceIrpDispatch},
+    {"PNP0102", &AcpiRawDeviceIrpDispatch},
+    {"PNP0200", &AcpiRawDeviceIrpDispatch},
+    {"PNP0201", &AcpiRawDeviceIrpDispatch},
+    {"PNP0202", &AcpiRawDeviceIrpDispatch},
+    {"PNP0800", &AcpiRawDeviceIrpDispatch},
+    {"PNP0A05", &AcpiGenericBusIrpDispatch},
+    {"PNP0A06", &AcpiEIOBusIrpDispatch},
+    {"PNP0B00", &AcpiRealTimeClockIrpDispatch},
+    {"PNP0C00", &AcpiRawDeviceIrpDispatch},
+    {"PNP0C01", &AcpiRawDeviceIrpDispatch},
+    {"PNP0C02", &AcpiRawDeviceIrpDispatch},
+    {"PNP0C04", &AcpiRawDeviceIrpDispatch},
+    {"PNP0C05", &AcpiRawDeviceIrpDispatch},
+    {"PNP0C0B", &AcpiFanIrpDispatch},
+    {"PNP0C0C", &AcpiPowerButtonIrpDispatch},
+    {"PNP0C0D", &AcpiLidIrpDispatch},
+    {"PNP0C0E", &AcpiSleepButtonIrpDispatch},
+    {"SNY5001", &AcpiBusFilterIrpDispatchSucceedCreate},
+    {"IBM0062", &AcpiBusFilterIrpDispatchSucceedCreate},
+    {"DockDevice", &AcpiDockPdoIrpDispatch},
+    {"ThermalZone", &AcpiThermalZoneIrpDispatch},
+    {"Processor", &AcpiProcessorIrpDispatch},
+    {NULL, NULL}
 };
 
 SYSTEM_POWER_STATE SystemPowerStateTranslation[6] =
@@ -3975,8 +4399,90 @@ ACPIBuildPdo(
     _In_ PDEVICE_OBJECT InPdo,
     _In_ BOOLEAN IsFilterDO)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_OBJECT FilterDO = NULL;
+    PDEVICE_OBJECT Pdo = NULL;
+    ULONG ix;
+    KIRQL Irql;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBuildPdo: %p, %p, %X\n", DeviceExtension, InPdo, IsFilterDO);
+
+    Status = IoCreateDevice(DriverObject, 0, NULL, FILE_DEVICE_ACPI, FILE_AUTOGENERATED_DEVICE_NAME, FALSE, &Pdo);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBuildPdo: Status %X\n", Status);
+        return Status;
+    }
+
+    if (IsFilterDO)
+    {
+        if (!(DeviceExtension->Flags & 0x0000000000100000))
+        {
+            FilterDO = IoGetAttachedDeviceReference(InPdo);
+            if (!FilterDO)
+            {
+                DPRINT1("ACPIBuildPdo: STATUS_NO_SUCH_DEVICE\n");
+                IoDeleteDevice(Pdo);
+                return STATUS_NO_SUCH_DEVICE;
+            }
+        }
+        else
+        {
+            IsFilterDO = FALSE;
+        }
+    }
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
+
+    Pdo->DeviceExtension = DeviceExtension;
+    DeviceExtension->DeviceObject = Pdo;
+    DeviceExtension->PhysicalDeviceObject = Pdo;
+
+    InterlockedIncrement(&DeviceExtension->ReferenceCount);
+
+    ACPIInternalUpdateFlags(DeviceExtension, 0x00000000000001FF, TRUE);
+    ACPIInternalUpdateFlags(DeviceExtension, 0x0000000000000020, FALSE);
+
+    DeviceExtension->PreviousState = DeviceExtension->DeviceState;
+    DeviceExtension->DeviceState = 0;
+    DeviceExtension->DispatchTable = &AcpiPdoIrpDispatch;
+
+    if (IsFilterDO)
+    {
+        DPRINT1("ACPIBuildPdo: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (DeviceExtension->Flags & 0x0000001000000000)
+    {
+        DPRINT1("ACPIBuildPdo: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (DeviceExtension->Flags & 0x0000200000000000)
+    {
+        ASSERT(DeviceExtension->DeviceID);
+
+        for (ix = 0; AcpiInternalDeviceTable[ix].StringId; ix++)
+        {
+            if (strstr(DeviceExtension->DeviceID, AcpiInternalDeviceTable[ix].StringId))
+            {
+                DeviceExtension->DispatchTable = AcpiInternalDeviceTable[ix].DispatchTable;
+                break;
+            }
+        }
+    }
+
+    if ((DeviceExtension->Flags & 0x0000000000040000) && (DeviceExtension->Flags & 0x0008000000000000))
+        FixedButtonDeviceObject = Pdo;
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+    Pdo->Flags &= ~DO_DEVICE_INITIALIZING;
+
+    if (DeviceExtension->Flags & 0x0010000000000000)
+        Pdo->Flags |= 8;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -4761,6 +5267,642 @@ ACPIRootIrpQueryPower(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+/* PDO PNP FUNCTIOS *********************************************************/
+
+NTSTATUS
+NTAPI
+ACPIBusIrpQueryRemoveOrStopDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpRemoveDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpCancelRemoveOrStopDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpStopDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpQueryDeviceRelations(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpQueryInterface(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIInternalSendSynchronousIrp(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIO_STACK_LOCATION InIoStack,
+    _In_ ULONG_PTR* OutInformation)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIInternalGetDeviceCapabilities(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PDEVICE_CAPABILITIES Capabilities)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDevicePowerDetermineSupportedDeviceStates(
+     _In_ PDEVICE_EXTENSION DeviceExtension,
+     _In_ ULONG* OutSupportedPrStates,
+     _In_ ULONG* OutSupportedPsStates)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+DEVICE_POWER_STATE
+NTAPI
+ACPISystemPowerDetermineSupportedDeviceWakeState(
+     _In_ PDEVICE_EXTENSION DeviceExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return 0;
+}
+
+NTSTATUS
+NTAPI
+ACPISystemPowerUpdateWakeCapabilitiesForPDOs(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_CAPABILITIES Capabilities,
+    _In_ PDEVICE_CAPABILITIES OutCapabilities,
+    _In_ DEVICE_POWER_STATE* States,
+    _In_ ULONG* OutParam5,
+    _In_ SYSTEM_POWER_STATE* OutParam6,
+    _In_ DEVICE_POWER_STATE* OutParam7,
+    _In_ DEVICE_POWER_STATE* OutParam8)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPISystemPowerUpdateWakeCapabilities(
+     _In_ PDEVICE_EXTENSION DeviceExtension,
+     _In_ PDEVICE_CAPABILITIES Capabilities,
+     _In_ DEVICE_CAPABILITIES *OutCapabilities,
+     _In_ DEVICE_POWER_STATE *States,
+     _In_ ULONG* Param5,
+     _In_ SYSTEM_POWER_STATE* Param6,
+     _In_ DEVICE_POWER_STATE* Param7,
+     _In_ DEVICE_POWER_STATE* Param8)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPISystemPowerUpdateDeviceCapabilities(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_CAPABILITIES Capabilities,
+    _In_ DEVICE_CAPABILITIES* OutCapabilities)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPISystemPowerQueryDeviceCapabilities(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_CAPABILITIES Capabilities)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusAndFilterIrpQueryCapabilities(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ ULONG Param3,
+    _In_ BOOLEAN Param4)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIIrpInvokeDispatchRoutine(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ ULONG Param3,
+    _In_ PVOID Callback,
+    _In_ BOOLEAN Param5,
+    _In_ BOOLEAN Param6)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpQueryCapabilities(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpQueryResources(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpQueryResourceRequirements(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpEject(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpSetLock(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpQueryId(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpQueryPnpDeviceState(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpQueryBusInformation(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpDeviceUsageNotification(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpSurpriseRemoval(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* PDO Power FUNCTIOS *******************************************************/
+
+NTSTATUS
+NTAPI
+ACPIDispatchPowerIrpUnhandled(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpSetPower(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpQueryPower(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* Internal Device FUNCTIOS *************************************************/
+
+NTSTATUS
+NTAPI
+ACPIInternalDeviceQueryDeviceRelations(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIInternalDeviceQueryCapabilities(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIInternalDeviceClockIrpStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* Internal Device Power FUNCTIOS *******************************************/
+
+NTSTATUS
+NTAPI
+ACPIDispatchPowerIrpInvalid(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDispatchPowerIrpSuccess(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* Fixed Button FUNCTIOS ****************************************************/
+
+NTSTATUS
+NTAPI
+ACPIButtonDeviceControl(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIButtonStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPICMPowerButtonStart(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPICMButtonSetPower(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPICMSleepButtonStart(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* Thermal Device FUNCTIOS **************************************************/
+
+NTSTATUS
+NTAPI
+ACPIThermalFanStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIThermalDeviceControl(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIThermalStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIThermalWmi(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+ACPIThermalWorker(
+    _In_ struct _DEVICE_EXTENSION* DeviceExtension,
+    _In_ ULONG Param2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+/* Lid FUNCTIOS **************************************************************/
+
+NTSTATUS
+NTAPI
+ACPICMLidStart(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPICMLidSetPower(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+ACPICMLidWorker(
+    _In_ struct _DEVICE_EXTENSION* DeviceExtension,
+    _In_ ULONG Param2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+/* Dock Pdo FUNCTIOS ********************************************************/
+
+NTSTATUS
+NTAPI
+ACPIDockIrpStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDockIrpRemoveDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDockIrpQueryDeviceRelations(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDockIrpQueryInterface(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDockIrpQueryCapabilities(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDockIrpEject(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDockIrpSetLock(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDockIrpQueryID(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDockIrpQueryPnpDeviceState(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDockIrpSetPower(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDockIrpQueryPower(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* Processor Device FUNCTIOS ************************************************/
+
+NTSTATUS
+NTAPI
+ACPIProcessorDeviceControl(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIProcessorStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /* IRP dispatch FUNCTIOS ****************************************************/
 
 ULONG
@@ -5445,6 +6587,36 @@ ACPIDispatchWmiLog(
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDispatchIrpInvalid(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpUnhandled(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    IoCompleteRequest(Irp, 0);
+    return Irp->IoStatus.Status;
 }
 
 /* FUNCTIOS *****************************************************************/

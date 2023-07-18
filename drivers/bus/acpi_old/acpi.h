@@ -460,6 +460,12 @@ typedef struct _ACPI_INTERNAL_DEVICE_FLAG
     ULONGLONG Flags;
 } ACPI_INTERNAL_DEVICE_FLAG, *PACPI_INTERNAL_DEVICE_FLAG;
 
+typedef struct _ACPI_INTERNAL_DEVICE
+{
+    PCHAR StringId;
+    PIRP_DISPATCH_TABLE DispatchTable;
+} ACPI_INTERNAL_DEVICE, *PACPI_INTERNAL_DEVICE;
+
 typedef struct _ACPI_WAIT_CONTEXT
 {
     KEVENT Event;
@@ -788,10 +794,73 @@ NTSTATUS NTAPI ACPIRootIrpQueryInterface(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS NTAPI ACPIRootIrpQueryCapabilities(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS NTAPI ACPIFilterIrpDeviceUsageNotification(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
+NTSTATUS NTAPI ACPIDispatchIrpInvalid(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpStartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpUnhandled(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
+NTSTATUS NTAPI ACPIBusIrpQueryRemoveOrStopDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpRemoveDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpCancelRemoveOrStopDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpStopDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpQueryDeviceRelations(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpQueryInterface(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpQueryCapabilities(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpQueryResources(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpQueryResourceRequirements(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpEject(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpSetLock(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpQueryId(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpQueryPnpDeviceState(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpQueryBusInformation(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpDeviceUsageNotification(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpSurpriseRemoval(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
 NTSTATUS NTAPI ACPIWakeWaitIrp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS NTAPI ACPIDispatchForwardPowerIrp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS NTAPI ACPIRootIrpSetPower(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS NTAPI ACPIRootIrpQueryPower(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
+NTSTATUS NTAPI ACPIDispatchPowerIrpUnhandled(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpSetPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIBusIrpQueryPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
+NTSTATUS NTAPI ACPIInternalDeviceQueryDeviceRelations(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIInternalDeviceQueryCapabilities(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIInternalDeviceClockIrpStartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
+NTSTATUS NTAPI ACPIDispatchPowerIrpInvalid(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIDispatchPowerIrpSuccess(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
+NTSTATUS NTAPI ACPIButtonDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIButtonStartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPICMPowerButtonStart(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPICMButtonSetPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPICMSleepButtonStart(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
+NTSTATUS NTAPI ACPIThermalFanStartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIThermalDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIThermalStartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIThermalWmi(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+VOID NTAPI ACPIThermalWorker(_In_ struct _DEVICE_EXTENSION* DeviceExtension, _In_ ULONG Param2);
+
+NTSTATUS NTAPI ACPICMLidStart(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPICMLidSetPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+VOID NTAPI ACPICMLidWorker(_In_ struct _DEVICE_EXTENSION* DeviceExtension, _In_ ULONG Param2);
+
+NTSTATUS NTAPI ACPIDockIrpStartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIDockIrpRemoveDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIDockIrpQueryDeviceRelations(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIDockIrpQueryInterface(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIDockIrpQueryCapabilities(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIDockIrpEject(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIDockIrpSetLock(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIDockIrpQueryID(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIDockIrpQueryPnpDeviceState(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIDockIrpSetPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIDockIrpQueryPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
+NTSTATUS NTAPI ACPIProcessorDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIProcessorStartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
 
 NTSTATUS NTAPI ACPIBuildProcessGenericComplete(_In_ PACPI_BUILD_REQUEST BuildRequest);
 NTSTATUS NTAPI ACPIBuildProcessRunMethodPhaseCheckSta(_In_ PACPI_BUILD_REQUEST BuildRequest);
