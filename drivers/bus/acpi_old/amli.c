@@ -9869,8 +9869,9 @@ InsertReadyQueue(
 
     if (IsDelayExecute)
     {
-        DPRINT("InsertReadyQueue: FIXME AsyncCallBack()\n");
-        ASSERT(FALSE);
+        ReleaseMutex(&gReadyQueue.Mutex);
+        AsyncCallBack(AmliContext, 0x8003);
+        AcquireMutex(&gReadyQueue.Mutex);
         goto Exit;
     }
 
