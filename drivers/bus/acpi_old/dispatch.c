@@ -2000,8 +2000,7 @@ ACPIGet(
     }
     else
     {
-        DPRINT1("ACPIGet: FIXME (%p)\n", DataArgs);
-        ASSERT(FALSE);
+        Status = AMLIEvalNameSpaceObject(NsObject, &AcpiGetContext->DataResult, ArgsCount, DataArgs);
     }
 
 Finish:
