@@ -4650,8 +4650,9 @@ ACPIDetectPdoDevices(
             {
                 if (!(Extension->Flags & 0x0002000000000002))
                 {
-                    DPRINT1("ACPIDetectPdoDevices: FIXME\n");
-                    ASSERT(FALSE);
+                    DeviceRelation->Objects[ix] = Extension->DeviceObject;
+                    ACPIInternalUpdateFlags(Extension, 0x0000000000000100, TRUE);
+                    ix++;
                 }
             }
         }
