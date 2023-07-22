@@ -4891,12 +4891,113 @@ ACPIRootIrpQueryBusRelations(
 
 NTSTATUS
 NTAPI
+ACPIDetectFilterMatch(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_RELATIONS DeviceRelation,
+    _Out_ PDEVICE_OBJECT* OutPdo)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPIDetectFilterDevices(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PDEVICE_RELATIONS DeviceRelation)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_EXTENSION ChildDeviceExtension;
+    PDEVICE_OBJECT PhysicalDeviceObject = NULL;
+    PLIST_ENTRY Entry;
+    PVOID dummy;
+    LONG RefCount;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("ACPIDetectFilterDevices: %p, %p\n", DeviceObject, DeviceRelation);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &OldIrql);
+
+    if (DeviceExtension->Flags & 0x0000020000000000)
+    {
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0000020000000000, TRUE);
+        ACPIBuildMissingChildren(DeviceExtension);
+    }
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
+
+    Status = ACPIBuildFlushQueue(DeviceExtension);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIDetectFilterDevices: Status %X\n", Status);
+        return Status;
+    }
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &OldIrql);
+
+    if (IsListEmpty(&DeviceExtension->ChildDeviceList))
+    {
+        KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
+        return STATUS_SUCCESS;
+    }
+
+    ChildDeviceExtension = CONTAINING_RECORD(DeviceExtension->ChildDeviceList.Flink, DEVICE_EXTENSION, SiblingDeviceList);
+    InterlockedIncrement(&ChildDeviceExtension->ReferenceCount);
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
+
+    while (ChildDeviceExtension)
+    {
+        Status = ACPIGet(ChildDeviceExtension, 'ATS_', 0x20040802, NULL, 0, NULL, NULL, &dummy, NULL);
+
+        if (NT_SUCCESS(Status) && !(ChildDeviceExtension->Flags & 0x0002000000000002))
+        {
+            Status = ACPIDetectFilterMatch(ChildDeviceExtension, DeviceRelation, &PhysicalDeviceObject);
+
+            if (NT_SUCCESS(Status))
+            {
+                if (PhysicalDeviceObject)
+                {
+                    DPRINT1("ACPIDetectFilterDevices: FIXME\n");
+                    ASSERT(FALSE);
+                }
+            }
+            else
+            {
+                DPRINT1("ACPIDetectFilterDevices: Status %X\n", Status);
+            }
+        }
+
+        KeAcquireSpinLock(&AcpiDeviceTreeLock, &OldIrql);
+
+        RefCount = InterlockedDecrement(&ChildDeviceExtension->ReferenceCount);
+
+        if (ChildDeviceExtension->SiblingDeviceList.Flink == &DeviceExtension->ChildDeviceList)
+        {
+            if (!RefCount)
+                ACPIInitDeleteDeviceExtension(ChildDeviceExtension);
+
+            KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
+
+            break;
+        }
+
+        ChildDeviceExtension = CONTAINING_RECORD(ChildDeviceExtension->SiblingDeviceList.Flink, DEVICE_EXTENSION, SiblingDeviceList);
+
+        if (!RefCount)
+        {
+            Entry = RemoveTailList(&ChildDeviceExtension->SiblingDeviceList);
+            ACPIInitDeleteDeviceExtension(CONTAINING_RECORD(Entry, DEVICE_EXTENSION, SiblingDeviceList));
+        }
+
+        InterlockedIncrement(&ChildDeviceExtension->ReferenceCount);
+        KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
