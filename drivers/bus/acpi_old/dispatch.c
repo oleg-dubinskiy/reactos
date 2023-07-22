@@ -4896,8 +4896,42 @@ ACPIDetectFilterMatch(
     _In_ PDEVICE_RELATIONS DeviceRelation,
     _Out_ PDEVICE_OBJECT* OutPdo)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG ix;
+
+    PAGED_CODE();
+    DPRINT("ACPIDetectFilterMatch: %p, %p\n", DeviceExtension, DeviceRelation);
+
+    ASSERT(OutPdo != NULL);
+
+    if (!OutPdo)
+    {
+        DPRINT1("ACPIDetectFilterMatch: STATUS_INVALID_PARAMETER_1\n");
+        return STATUS_INVALID_PARAMETER_1;
+    }
+
+    *OutPdo = NULL;
+
+    if ((DeviceExtension->Flags & 0x0000000000000008) &&
+        !(DeviceExtension->Flags & 0x0200000000000000) &&
+        !DeviceExtension->DeviceObject)
+    {
+        DPRINT1("ACPIDetectFilterMatch: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (!DeviceRelation)
+        return STATUS_SUCCESS;
+
+    if (!DeviceRelation->Count)
+        return STATUS_SUCCESS;
+
+    for (ix = 0; ix < DeviceRelation->Count; ix++)
+    {
+        if (DeviceExtension->PhysicalDeviceObject == DeviceRelation->Objects[ix])
+            ACPIInternalUpdateFlags(DeviceExtension, 0x0000000000000100, TRUE);
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
