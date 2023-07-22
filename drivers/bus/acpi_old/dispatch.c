@@ -4701,8 +4701,154 @@ ACPIDetectDockDevices(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _Out_ PDEVICE_RELATIONS* OutDeviceRelation)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION ProviderExtension;
+    PDEVICE_RELATIONS OldDeviceRelation;
+    PDEVICE_RELATIONS NewDeviceRelation = NULL;
+    PDEVICE_OBJECT PrevDeviceObject;
+    ACPI_EXT_LIST_ENUM_DATA ExtList;
+    PVOID dummy;
+    ULONG DeviceCount;
+    ULONG count = 0;
+    ULONG ix = 0;
+    ULONG Size;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIDetectDockDevices: DeviceExtension %p\n", DeviceExtension);
+
+    if (OutDeviceRelation && *OutDeviceRelation)
+    {
+        OldDeviceRelation = *OutDeviceRelation;
+        DeviceCount = OldDeviceRelation->Count;
+    }
+    else
+    {
+        OldDeviceRelation = NULL;
+        DeviceCount = 0;
+    }
+
+    ExtList.List = &DeviceExtension->ChildDeviceList;
+    ExtList.SpinLock = &AcpiDeviceTreeLock;
+    ExtList.Offset = FIELD_OFFSET(DEVICE_EXTENSION, SiblingDeviceList);
+    ExtList.ExtListEnum2 = 1;
+
+    ProviderExtension = ACPIExtListStartEnum(&ExtList);
+
+    while (ACPIExtListTestElement(&ExtList, NT_SUCCESS(Status)))
+    {
+        if (!ProviderExtension)
+        {
+            ACPIExtListExitEnumEarly(&ExtList);
+            break;
+        }
+
+        if (ProviderExtension->Flags & 0x0200000000000000)
+        {
+            Status = ACPIGet(ProviderExtension, 'ATS_', 0x20040802, NULL, 0, NULL, NULL, &dummy, NULL);
+
+            if (!(ProviderExtension->Flags & 0x0002000000000002))
+            {
+                if (!ProviderExtension->DeviceObject)
+                {
+                    Status = ACPIBuildPdo(DeviceExtension->DeviceObject->DriverObject,
+                                          ProviderExtension,
+                                          DeviceExtension->DeviceObject,
+                                          FALSE);
+
+                    if (!NT_SUCCESS(Status))
+                    {
+                        DPRINT1("ACPIDetectDockDevices: Status %X\n", Status);
+                        ASSERT(ProviderExtension->DeviceObject == NULL);
+                    }
+                }
+
+                if (ProviderExtension->DeviceObject)
+                {
+                    DPRINT1("ACPIDetectDockDevices: FIXME\n");
+                    ASSERT(FALSE);
+                }
+            }
+        }
+
+        ProviderExtension = ACPIExtListEnumNext(&ExtList);
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIDetectDockDevices: Status %X\n", Status);
+        return Status;
+    }
+
+    if (OldDeviceRelation && OldDeviceRelation->Count == DeviceCount)
+        return STATUS_SUCCESS;
+
+    if (!OldDeviceRelation && !DeviceCount)
+        return STATUS_SUCCESS;
+
+    Size = ((DeviceCount + 1) * 4);
+
+    NewDeviceRelation = ExAllocatePoolWithTag(NonPagedPool, Size, 'DpcA');
+    if (!NewDeviceRelation)
+    {
+        DPRINT1("ACPIDetectDockDevices: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(NewDeviceRelation, Size);
+
+    if (OldDeviceRelation)
+    {
+        RtlCopyMemory(NewDeviceRelation->Objects, OldDeviceRelation->Objects, (OldDeviceRelation->Count * 4));
+        count = OldDeviceRelation->Count;
+    }
+
+    ExtList.List = &DeviceExtension->ChildDeviceList;
+    ExtList.SpinLock = &AcpiDeviceTreeLock;
+    ExtList.Offset = FIELD_OFFSET(DEVICE_EXTENSION, SiblingDeviceList);
+    ExtList.ExtListEnum2 = 2;
+
+    ProviderExtension = ACPIExtListStartEnum(&ExtList);
+
+    while (ACPIExtListTestElement(&ExtList, (DeviceCount != count)))
+    {
+        if (!(ProviderExtension->Flags & 0x0002000000000002) &&
+            (ProviderExtension->Flags & 0x0200000000000000) &&
+            ProviderExtension->DeviceObject)
+        {
+            NewDeviceRelation->Objects[count] = ProviderExtension->PhysicalDeviceObject;
+            count++;
+        }
+
+        ProviderExtension = ACPIExtListEnumNext(&ExtList);
+    }
+
+    DeviceCount = count;
+    NewDeviceRelation->Count = DeviceCount;
+
+    if (OldDeviceRelation)
+        ix = OldDeviceRelation->Count;
+    else
+        ix = 0;
+
+    for (; ix < DeviceCount; ix++)
+    {
+        Status = ObReferenceObjectByPointer(NewDeviceRelation->Objects[ix], 0, NULL, KernelMode);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIDetectDockDevices: Status %X\n", Status);
+
+            NewDeviceRelation->Count--;
+
+            PrevDeviceObject = NewDeviceRelation->Objects[NewDeviceRelation->Count];
+            NewDeviceRelation->Objects[NewDeviceRelation->Count] = NewDeviceRelation->Objects[ix];
+            NewDeviceRelation->Objects[ix] = PrevDeviceObject;
+        }
+    }
+
+    if (OldDeviceRelation)
+        ExFreePool(*OutDeviceRelation);
+
+    *OutDeviceRelation = NewDeviceRelation;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
