@@ -5869,8 +5869,51 @@ ACPIIrpInvokeDispatchRoutine(
     _In_ BOOLEAN Param5,
     _In_ BOOLEAN Param6)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIIrpInvokeDispatchRoutine: %p, %p, %X, %X, %X\n", DeviceObject, Irp, Param3, Param5, Param6);
+
+    Status = STATUS_NOT_SUPPORTED;
+
+    if (NT_SUCCESS(Irp->IoStatus.Status))
+    {
+        if (Param5)
+            Status = ((NTSTATUS (NTAPI *)(PDEVICE_OBJECT, PIRP, ULONG, BOOLEAN))Callback)(DeviceObject, Irp, Param3, FALSE);
+    }
+    else if (Irp->IoStatus.Status == STATUS_NOT_SUPPORTED)
+    {
+        if (Param6)
+            Status = ((NTSTATUS (NTAPI *)(PDEVICE_OBJECT, PIRP, ULONG, BOOLEAN))Callback)(DeviceObject, Irp, Param3, FALSE);
+    }
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if (DeviceExtension->Flags & 0x0000000000000020)
+    {
+        if (Status != STATUS_PENDING)
+        {
+            if (Status != STATUS_NOT_SUPPORTED)
+                Irp->IoStatus.Status = Status;
+            else
+                Status = Irp->IoStatus.Status;
+
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        }
+    }
+    else if (Status != STATUS_PENDING)
+    {
+        if (Status != STATUS_NOT_SUPPORTED)
+            Irp->IoStatus.Status = Status;
+
+        if (NT_SUCCESS(Status) || (Status == STATUS_NOT_SUPPORTED))
+            Status = IoCallDriver(DeviceExtension->TargetDeviceObject, Irp);
+        else
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    }
+
+    return Status;
 }
 
 NTSTATUS
