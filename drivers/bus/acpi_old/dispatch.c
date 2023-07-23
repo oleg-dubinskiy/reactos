@@ -5879,9 +5879,10 @@ ACPIBusIrpQueryCapabilities(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAGED_CODE();
+    return ACPIIrpInvokeDispatchRoutine(DeviceObject, Irp, 0, ACPIBusAndFilterIrpQueryCapabilities, TRUE, TRUE);
 }
+
 
 NTSTATUS
 NTAPI
