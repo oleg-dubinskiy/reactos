@@ -5786,8 +5786,104 @@ ACPIBusIrpQueryId(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIO_STACK_LOCATION IoStack;
+    BUS_QUERY_ID_TYPE IdType;
+    PVOID DataBuff;
+    ULONG dummy;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIBusIrpQueryId: %p, %p\n", DeviceObject, Irp);
+
+    Status = Irp->IoStatus.Status;
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    IdType = IoStack->Parameters.QueryId.IdType;
+
+    if (IdType == 0)
+    {
+        Status = ACPIGet(DeviceExtension, 'DIH_', 0x20080036, NULL, 0, NULL, NULL, &DataBuff, &dummy);
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+        {
+            Status = STATUS_NOT_SUPPORTED;
+            goto Finish;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIBusIrpQueryId: Status %X\n", Status);
+            goto Finish;
+        }
+
+        Irp->IoStatus.Information = (ULONG_PTR)DataBuff;
+        goto Finish;
+    }
+
+    if (IdType == 1)
+    {
+        Status = ACPIGet(DeviceExtension, 'DIH_', 0x20080056, NULL, 0, NULL, NULL, &DataBuff, &dummy);
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+        {
+            Status = STATUS_NOT_SUPPORTED;
+            goto Finish;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIBusIrpQueryId: Status %X\n", Status);
+            goto Finish;
+        }
+
+        Irp->IoStatus.Information = (ULONG_PTR)DataBuff;
+        goto Finish;
+    }
+
+    if (IdType == 2)
+    {
+        Status = ACPIGet(DeviceExtension, 'DIC_', 0x20080117, NULL, 0, NULL, NULL, &DataBuff, &dummy);
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+        {
+            Status = STATUS_NOT_SUPPORTED;
+            goto Finish;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIBusIrpQueryId: Status %X\n", Status);
+            goto Finish;
+        }
+
+        Irp->IoStatus.Information = (ULONG_PTR)DataBuff;
+        goto Finish;
+    }
+
+    if (IdType == 3)
+    {
+        Status = ACPIGet(DeviceExtension, 'DIU_', 0x20080096, NULL, 0, NULL, NULL, &DataBuff, &dummy);
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+        {
+            Status = STATUS_NOT_SUPPORTED;
+            goto Finish;
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIBusIrpQueryId: Status %X\n", Status);
+            goto Finish;
+        }
+
+        Irp->IoStatus.Information = (ULONG_PTR)DataBuff;
+        goto Finish;
+    }
+
+Finish:
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS
