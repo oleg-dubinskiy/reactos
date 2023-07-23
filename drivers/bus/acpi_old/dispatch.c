@@ -1140,7 +1140,20 @@ ACPIAmliDoubleToNameWide(
     _In_ ULONG Index,
     _In_ BOOLEAN IsNameID)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PWCHAR Name = DataBuff;
+
+    DPRINT("ACPIAmliDoubleToNameWide: %X, %X, %X\n", DataBuff, Index, IsNameID);
+
+    if (IsNameID)
+        *DataBuff++ = '*';
+
+    *DataBuff++ = (((Index >> 2) & 0x1F) + 0x40);
+    *DataBuff++ = (((Index >> 0xD) & 7) + (8 * ((Index & 3) + 8)));
+    *DataBuff = (((Index & 0x1F00) >> 8) + 0x40);
+
+    swprintf((DataBuff + 1), L"%02X%02X", (int)((Index & 0x00FF0000) >> 16), (int)(Index >> 24));
+
+    DPRINT("ACPIAmliDoubleToNameWide: '%S'\n", Name);
 }
 
 NTSTATUS
