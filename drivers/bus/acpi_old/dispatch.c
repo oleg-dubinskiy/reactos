@@ -5855,8 +5855,145 @@ ACPIBusAndFilterIrpQueryCapabilities(
     _In_ ULONG Param3,
     _In_ BOOLEAN Param4)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_CAPABILITIES Capabilities;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIO_STACK_LOCATION IoStack;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PAMLI_NAME_SPACE_OBJECT ChildNsObject;
+    ULONG DataBuff1;
+    ULONG DataBuff2;
+    ULONG UINumber;
+    UCHAR MinorFunction;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIBusAndFilterIrpQueryCapabilities: %p, %p, %X, %X\n", DeviceObject, Irp, Param3, Param4);
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+    MinorFunction = IoStack->MinorFunction;
+    Capabilities = IoStack->Parameters.DeviceCapabilities.Capabilities;
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    NsObject = DeviceExtension->AcpiObject;
+
+    if (!(DeviceExtension->Flags & 0x0000008000000000))
+    {
+        ChildNsObject = ACPIAmliGetNamedChild(NsObject, 'VMR_');
+        if (ChildNsObject)
+        {
+            if (ChildNsObject->ObjData.DataType == 8)
+            {
+                Status = ACPIGet(DeviceExtension, 'VMR_', 0x20044002, NULL, 0, NULL, NULL, (PVOID *)&DataBuff1, NULL);
+
+                if (!NT_SUCCESS(Status) || DataBuff1)
+                {
+                    Capabilities->Removable = 1;
+                }
+                else
+                {
+                    Capabilities->Removable = 0;
+                }
+            }
+            else
+            {
+                Capabilities->Removable = 1;
+            }
+        }
+
+        if (!ACPIDockIsDockDevice(NsObject))
+        {
+            if (ACPIAmliGetNamedChild(NsObject, '0JE_'))
+            {
+                Capabilities->EjectSupported = 1;
+                Capabilities->Removable = 1;
+            }
+
+            if (ACPIAmliGetNamedChild(NsObject, '1JE_') ||
+                ACPIAmliGetNamedChild(NsObject, '2JE_') ||
+                ACPIAmliGetNamedChild(NsObject, '3JE_') ||
+                ACPIAmliGetNamedChild(NsObject, '4JE_'))
+            {
+                Capabilities->WarmEjectSupported = 1;
+                Capabilities->Removable = 1;
+            }
+        }
+    }
+
+    if (ACPIAmliGetNamedChild(NsObject, 'CRI_'))
+        DeviceObject->Flags |= DO_POWER_INRUSH;
+
+    Status = ACPIGet(DeviceExtension, 'ATS_', 0x20040802, NULL, 0, NULL, NULL, (PVOID *)&DataBuff2, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBusAndFilterIrpQueryCapabilities: Status %X\n", Status);
+        goto Exit;
+    }
+
+    if (!(DeviceExtension->Flags & 0x0040000000000000))
+    {
+        if (ACPIAmliGetNamedChild(NsObject, 'SRC_') && !ACPIAmliGetNamedChild(NsObject, 'SRS_'))
+            Capabilities->HardwareDisabled = 1;
+        else if (Param4)
+            Capabilities->HardwareDisabled = 0;
+
+    }
+    else if (!Param4)
+    {
+        if (AcpiOverrideAttributes & 2)
+            Capabilities->HardwareDisabled = 1;
+        else
+            Capabilities->HardwareDisabled = 0;
+    }
+
+    if (!(DataBuff2 & 4))
+        Capabilities->NoDisplayInUI = 1;
+
+    if (ACPIAmliGetNamedChild(NsObject, 'NUS_'))
+    {
+        Status = ACPIGet(DeviceExtension, 'NUS_', 0x20040002, NULL, 0, NULL, NULL, (PVOID *)&UINumber, NULL);
+        if (NT_SUCCESS(Status))
+            Capabilities->UINumber = UINumber;
+    }
+
+    if (ACPIAmliGetNamedChild(NsObject, 'RDA_'))
+    {
+        Status = ACPIGet(DeviceExtension, 'RDA_', 0x20040402, NULL, 0, NULL, NULL, (PVOID *)&Capabilities->Address, NULL);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIBusAndFilterIrpQueryCapabilities: Could query device address %X\n", Status);
+            goto Exit;
+        }
+    }
+
+    Status = ACPISystemPowerQueryDeviceCapabilities(DeviceExtension, Capabilities);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBusAndFilterIrpQueryCapabilities: Could query device Capabilities %X\n", Status);
+        goto Exit;
+    }
+
+    if (!Param4)
+    {
+        Capabilities->SilentInstall = 1;
+
+        if (DeviceExtension->Flags & 0x0000000000020000)
+            Capabilities->RawDeviceOK =  1;
+        else
+            Capabilities->RawDeviceOK = 0;
+
+        if (DeviceExtension->InstanceID)
+            Capabilities->UniqueID = 1;
+        else
+            Capabilities->UniqueID = 0;
+
+        Status = STATUS_SUCCESS;
+    }
+
+Exit:
+
+    DPRINT("ACPIBusAndFilterIrpQueryCapabilities: %X, %X, %X\n", Irp, MinorFunction, Status);
+
+    return Status;
 }
 
 NTSTATUS
