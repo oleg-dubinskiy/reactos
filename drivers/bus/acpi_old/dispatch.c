@@ -5843,8 +5843,60 @@ ACPISystemPowerQueryDeviceCapabilities(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PDEVICE_CAPABILITIES Capabilities)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DEVICE_CAPABILITIES capabilities;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    if (!(DeviceExtension->Flags & 0x0400000000000000))
+    {
+        if ((DeviceExtension->Flags & 0x0000000000000040) &&
+            !(DeviceExtension->Flags & 0x0000000000000020))
+        {
+            Status = ACPISystemPowerUpdateDeviceCapabilities(DeviceExtension, Capabilities, Capabilities);
+        }
+        else
+        {
+            Status = ACPIInternalGetDeviceCapabilities(DeviceExtension->ParentExtension->DeviceObject, &capabilities);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("ACPISystemPowerQueryDeviceCapabilities: Could not get parent caps (%X)\n", Status);
+                return Status;
+            }
+
+            Status = ACPISystemPowerUpdateDeviceCapabilities(DeviceExtension, &capabilities, Capabilities);
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPISystemPowerQueryDeviceCapabilities: Could not update caps (%X)\n", Status);
+
+            if ((DeviceExtension->Flags & 0x0000000000000020))
+            {
+                DPRINT1("ACPISystemPowerQueryDeviceCapabilities: FIXME\n");
+                ASSERT(FALSE);
+            }
+
+            return Status;
+        }
+
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0400000000000000, FALSE);
+    }
+
+    RtlCopyMemory(Capabilities->DeviceState, DeviceExtension->PowerInfo.DevicePowerMatrix, (7 * sizeof(DEVICE_POWER_STATE)));
+
+    Capabilities->DeviceD1 = DeviceExtension->PowerInfo.SupportDeviceD1;
+    Capabilities->DeviceD2 = DeviceExtension->PowerInfo.SupportDeviceD2;
+
+    Capabilities->WakeFromD0 = DeviceExtension->PowerInfo.SupportWakeFromD0;
+    Capabilities->WakeFromD1 = DeviceExtension->PowerInfo.SupportWakeFromD1;
+    Capabilities->WakeFromD2 = DeviceExtension->PowerInfo.SupportWakeFromD2;
+    Capabilities->WakeFromD3 = DeviceExtension->PowerInfo.SupportWakeFromD3;
+
+    Capabilities->SystemWake = DeviceExtension->PowerInfo.SystemWakeLevel;
+    Capabilities->DeviceWake = DeviceExtension->PowerInfo.DeviceWakeLevel;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
