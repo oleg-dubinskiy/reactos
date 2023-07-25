@@ -5770,8 +5770,29 @@ ACPIInternalGetDeviceCapabilities(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PDEVICE_CAPABILITIES Capabilities)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    IO_STACK_LOCATION ioStack;
+    ULONG_PTR dummyInformation;
+
+    PAGED_CODE();
+
+    ASSERT(DeviceObject != NULL);
+    ASSERT(Capabilities != NULL);
+
+    RtlZeroMemory(&ioStack, sizeof(IO_STACK_LOCATION));
+    RtlZeroMemory(Capabilities, sizeof(DEVICE_CAPABILITIES));
+
+    Capabilities->Address = 0xFFFFFFFF;
+    Capabilities->UINumber = 0xFFFFFFFF;
+
+    ioStack.MajorFunction = IRP_MJ_PNP;
+    ioStack.MinorFunction = IRP_MN_QUERY_CAPABILITIES;
+
+    ioStack.Parameters.DeviceCapabilities.Capabilities = Capabilities;
+
+    Capabilities->Size = sizeof(*Capabilities);
+    Capabilities->Version = 1;
+
+    return ACPIInternalSendSynchronousIrp(DeviceObject, &ioStack, (ULONG_PTR *)&dummyInformation);
 }
 
 NTSTATUS
