@@ -5760,8 +5760,59 @@ ACPIInternalSendSynchronousIrp(
     _In_ PIO_STACK_LOCATION InIoStack,
     _In_ ULONG_PTR* OutInformation)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_OBJECT AttachedDevice;
+    PIO_STACK_LOCATION IoStack;
+    IO_STATUS_BLOCK ioStatus;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    KeInitializeEvent(&Event, SynchronizationEvent, FALSE);
+
+    AttachedDevice = IoGetAttachedDeviceReference(DeviceObject);
+
+    Irp = IoBuildSynchronousFsdRequest(IRP_MJ_PNP, AttachedDevice, NULL, 0, NULL, &Event, &ioStatus);
+    if (!Irp)
+    {
+        DPRINT1("ACPIInternalSendSynchronousIrp: STATUS_INSUFFICIENT_RESOURCES\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
+    Irp->IoStatus.Information = 0;
+
+    IoStack = IoGetNextIrpStackLocation(Irp);
+    if (!IoStack)
+    {
+        DPRINT1("ACPIInternalSendSynchronousIrp: STATUS_INVALID_PARAMETER\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto Exit;
+    }
+
+    *IoStack = *InIoStack;
+
+    IoSetCompletionRoutine(Irp, NULL, NULL, FALSE, FALSE, FALSE);
+
+    Status = IoCallDriver(AttachedDevice, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = ioStatus.Status;
+    }
+
+    if (NT_SUCCESS(Status) && OutInformation)
+        *OutInformation = ioStatus.Information;
+
+Exit:
+
+    DPRINT("ACPIInternalSendSynchronousIrp: DeviceObject %p, Status %X\n", DeviceObject, Status);
+
+    ObDereferenceObject(AttachedDevice);
+
+    return Status;
 }
 
 NTSTATUS
