@@ -5905,8 +5905,162 @@ ACPISystemPowerUpdateDeviceCapabilities(
     _In_ PDEVICE_CAPABILITIES Capabilities,
     _In_ DEVICE_CAPABILITIES* OutCapabilities)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DEVICE_POWER_STATE deviceState[PowerSystemMaximum];
+    DEVICE_POWER_STATE DeviceStateBit;
+    DEVICE_POWER_STATE CurrentState;
+    DEVICE_POWER_STATE DeviceWakeLevel = 0;
+    DEVICE_POWER_STATE WakeLevel = 0;
+    SYSTEM_POWER_STATE SystemState;
+    SYSTEM_POWER_STATE SystemWakeLevel = 0;
+    ULONG SupportedPsStates = 0;
+    ULONG SupportedPrStates = 0;
+    ULONG SupportedStates = 0;
+    ULONG DeviceWakeBit = 0;
+    ULONG Bits;
+    KIRQL Irql;
+    BOOLEAN IsFound;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPISystemPowerUpdateDeviceCapabilities: DeviceExtension %p\n", DeviceExtension);
+
+    RtlCopyMemory(deviceState, Capabilities->DeviceState, sizeof(deviceState));
+
+    if (deviceState[PowerSystemWorking] != PowerDeviceD0)
+        deviceState[PowerSystemWorking] = PowerDeviceD0;
+
+    Status = ACPIDevicePowerDetermineSupportedDeviceStates(DeviceExtension, &SupportedPrStates, &SupportedPsStates);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPISystemPowerUpdateDeviceCapabilities: %X\n", Status);
+        return Status;
+    }
+
+    SupportedStates = (SupportedPrStates | SupportedPsStates);
+    if (!SupportedStates)
+    {
+        if ((DeviceExtension->Flags & 0x0000000000000040) &&
+            !(DeviceExtension->Flags & 0x0000000000000020) &&
+            !(OutCapabilities->DeviceD1) &&
+            !(OutCapabilities->DeviceD2))
+        {
+            goto Finish;
+        }
+
+        SupportedStates = 0x12;
+
+        if (OutCapabilities->DeviceD1)
+            SupportedStates = 0x16;
+
+        if (OutCapabilities->DeviceD2)
+            SupportedStates |= 0x08;
+    }
+
+    Status = ACPISystemPowerUpdateWakeCapabilities(DeviceExtension, Capabilities, OutCapabilities, deviceState, &DeviceWakeBit, &SystemWakeLevel, &DeviceWakeLevel, &WakeLevel);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPISystemPowerUpdateDeviceCapabilities: %X\n", Status);
+        return Status;
+    }
+
+    for (SystemState = PowerSystemSleeping1; SystemState <= PowerSystemShutdown; SystemState++)
+    {
+        if (!(AcpiSupportedSystemStates & (1 << SystemState)))
+            continue;
+
+        Status = ACPISystemPowerGetSxD(DeviceExtension, SystemState, &DeviceStateBit);
+        if (NT_SUCCESS(Status))
+        {
+            if (DeviceStateBit > deviceState[SystemState])
+                deviceState[SystemState] = DeviceStateBit;
+
+            continue;
+        }
+
+        if (Status != STATUS_OBJECT_NAME_NOT_FOUND)
+        {
+            DPRINT1("ACPISystemPowerUpdateDeviceCapabilities: %X\n", Status);
+        }
+
+        CurrentState = deviceState[SystemState];
+        IsFound = FALSE;
+
+        Bits = SupportedStates & ~((1 << CurrentState) - 1);
+
+        while (Bits)
+        {
+            DeviceStateBit = (DEVICE_POWER_STATE)RtlFindLeastSignificantBit((ULONGLONG)Bits);
+            Bits &= ~((1 << DeviceStateBit));
+
+            if (SystemState <= SystemWakeLevel)
+            {
+                if ((DeviceWakeBit & Bits))
+                    continue;
+
+                if (DeviceStateBit == WakeLevel)
+                {
+                    deviceState[SystemState] = DeviceStateBit;
+                    IsFound = TRUE;
+                }
+            }
+
+            if (DeviceStateBit == PowerDeviceD3)
+            {
+                deviceState[SystemState] = DeviceStateBit;
+                IsFound = TRUE;
+                break;
+            }
+
+            if (!SupportedPrStates)
+            {
+                deviceState[SystemState] = DeviceStateBit;
+                IsFound = TRUE;
+                break;
+            }
+
+            KeAcquireSpinLock(&AcpiPowerLock, &Irql);
+
+            DPRINT1("ACPISystemPowerUpdateDeviceCapabilities: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (!IsFound)
+        {
+            DPRINT1("ACPISystemPowerUpdateDeviceCapabilities: No match found for S%x\n", (SystemState - 1));
+            ASSERT(FALSE);
+            KeBugCheckEx(0xA5, 0x10, (ULONG_PTR)DeviceExtension, 1, SystemState);
+        }
+    }
+
+Finish:
+
+    Status = ACPISystemPowerUpdateWakeCapabilities(DeviceExtension, Capabilities, OutCapabilities, deviceState, &DeviceWakeBit, &SystemWakeLevel, &DeviceWakeLevel, &WakeLevel);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPISystemPowerUpdateDeviceCapabilities: %X\n", Status);
+        return Status;
+    }
+
+    KeAcquireSpinLock(&AcpiPowerLock, &Irql);
+
+    RtlCopyMemory(DeviceExtension->PowerInfo.DevicePowerMatrix, deviceState, sizeof(DeviceExtension->PowerInfo.DevicePowerMatrix));
+
+    DeviceExtension->PowerInfo.DeviceWakeLevel = DeviceWakeLevel;
+    DeviceExtension->PowerInfo.SystemWakeLevel = SystemWakeLevel;
+
+    DeviceExtension->PowerInfo.SupportDeviceD1 = ((SupportedStates & 0x04) != 0);
+    DeviceExtension->PowerInfo.SupportDeviceD2 = ((SupportedStates & 0x08) != 0);
+
+    DeviceExtension->PowerInfo.SupportWakeFromD0 = ((DeviceWakeBit & 0x02) != 0);
+    DeviceExtension->PowerInfo.SupportWakeFromD1 = ((DeviceWakeBit & 0x04) != 0);
+    DeviceExtension->PowerInfo.SupportWakeFromD2 = ((DeviceWakeBit & 0x08) != 0);
+    DeviceExtension->PowerInfo.SupportWakeFromD3 = ((DeviceWakeBit & 0x10) != 0);
+
+    KeReleaseSpinLock(&AcpiPowerLock, Irql);
+
+    if (!(DeviceExtension->Flags & 0x0008000000000000))
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0100000000000000, FALSE);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
