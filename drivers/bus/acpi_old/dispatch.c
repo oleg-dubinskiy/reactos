@@ -5853,8 +5853,75 @@ ACPIDevicePowerDetermineSupportedDeviceStates(
      _In_ ULONG* OutSupportedPrStates,
      _In_ ULONG* OutSupportedPsStates)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG PsNameSegment[4] = {'0SP_', '1SP_', '2SP_', '3SP_'};
+    ULONG PrNameSegment[3] = {'0RP_', '1RP_', '2RP_'};
+    ULONG PsStates = 0;
+    ULONG PrStates = 0;
+    ULONG Shift;
+    ULONG ix;
+    ULONG States;
+
+    PAGED_CODE();
+
+    ASSERT(DeviceExtension != NULL);
+    ASSERT(OutSupportedPrStates != NULL);
+    ASSERT(OutSupportedPsStates != NULL);
+
+    *OutSupportedPrStates = 0;
+    *OutSupportedPsStates = 0;
+
+    if (DeviceExtension->Flags & 0x0008000000000000)
+    {
+        *OutSupportedPrStates = PrStates;
+        *OutSupportedPsStates = 0x12;
+        return STATUS_SUCCESS;
+    }
+
+    Shift = 1;
+    for (ix = 0; Shift <= 4; ix++, Shift++)
+    {
+        if (ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, PsNameSegment[ix]))
+            PsStates |= (1 << Shift);
+    }
+
+    Shift = 1;
+    for (ix = 0; Shift <= 3; ix++, Shift++)
+    {
+        if (ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, PrNameSegment[ix]))
+            PrStates |= ((1 << Shift) | 0x10);
+    }
+
+    States = (PrStates | PsStates);
+
+    if (!States)
+        return STATUS_SUCCESS;
+
+    if (!(States & 2))
+    {
+        DPRINT("ACPIDevicePowerDetermineSupportedDeviceStates: does not support D0 power state!\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0xA5, 0xD, (ULONG_PTR)DeviceExtension, (PrStates ? '0RP_' : '0SP_'), 0);
+    }
+    else if (!(States & 0x10))
+    {
+        DPRINT("ACPIDevicePowerDetermineSupportedDeviceStates: does not support D3 power state!\n");
+        ASSERT(FALSE);
+        KeBugCheckEx(0xA5, 0xD, (ULONG_PTR)DeviceExtension, '3SP_', 0);
+    }
+    else
+    {
+        if (PrStates && PsStates && PrStates != PsStates)
+        {
+            DPRINT("ACPIDevicePowerDetermineSupportedDeviceStates: has mismatch between power plane and power source information!\n");
+            PrStates &= PsStates;
+            PsStates &= PrStates;
+        }
+
+        *OutSupportedPrStates = PrStates;
+        *OutSupportedPsStates = PsStates;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 DEVICE_POWER_STATE
