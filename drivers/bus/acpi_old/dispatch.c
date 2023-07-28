@@ -5954,15 +5954,26 @@ NTAPI
 ACPISystemPowerUpdateWakeCapabilities(
      _In_ PDEVICE_EXTENSION DeviceExtension,
      _In_ PDEVICE_CAPABILITIES Capabilities,
-     _In_ DEVICE_CAPABILITIES *OutCapabilities,
-     _In_ DEVICE_POWER_STATE *States,
-     _In_ ULONG* Param5,
-     _In_ SYSTEM_POWER_STATE* Param6,
-     _In_ DEVICE_POWER_STATE* Param7,
-     _In_ DEVICE_POWER_STATE* Param8)
+     _In_ DEVICE_CAPABILITIES* OutCapabilities,
+     _In_ DEVICE_POWER_STATE* States,
+     _In_ ULONG* OutDeviceWakeBit,
+     _In_ SYSTEM_POWER_STATE* OutSystemWakeLevel,
+     _In_ DEVICE_POWER_STATE* OutDeviceWakeLevel,
+     _In_ DEVICE_POWER_STATE* OutWakeLevel)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAGED_CODE();
+
+    if ((DeviceExtension->Flags & 0x0000000000000040) &&
+        !(DeviceExtension->Flags & 0x0000000000000020))
+    {
+        DPRINT("ACPISystemPowerUpdateWakeCapabilities: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (OutWakeLevel)
+        *OutWakeLevel = PowerDeviceUnspecified;
+
+    return ACPISystemPowerUpdateWakeCapabilitiesForPDOs(DeviceExtension, Capabilities, OutCapabilities, States, OutDeviceWakeBit, OutSystemWakeLevel, OutDeviceWakeLevel, OutWakeLevel);
 }
 
 NTSTATUS
