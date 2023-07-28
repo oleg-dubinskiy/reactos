@@ -5940,13 +5940,108 @@ ACPISystemPowerUpdateWakeCapabilitiesForPDOs(
     _In_ PDEVICE_CAPABILITIES Capabilities,
     _In_ PDEVICE_CAPABILITIES OutCapabilities,
     _In_ DEVICE_POWER_STATE* States,
-    _In_ ULONG* OutParam5,
-    _In_ SYSTEM_POWER_STATE* OutParam6,
-    _In_ DEVICE_POWER_STATE* OutParam7,
-    _In_ DEVICE_POWER_STATE* OutParam8)
+    _In_ ULONG* OutDeviceWakeBit,
+    _In_ SYSTEM_POWER_STATE* OutSystemWakeLevel,
+    _In_ DEVICE_POWER_STATE* OutDeviceWakeLevel,
+    _In_ DEVICE_POWER_STATE* OutWakeLevel)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DEVICE_POWER_STATE DeviceWakeLevel = 0;
+    DEVICE_POWER_STATE DeviceWakeState;
+    DEVICE_POWER_STATE WakeLevel = 0;
+    SYSTEM_POWER_STATE SystemWakeLevel;
+    BOOLEAN IsFound = FALSE;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    DPRINT("ACPISystemPowerUpdateWakeCapabilitiesForPDOs: DeviceExtension %p\n", DeviceExtension);
+
+    if (!(DeviceExtension->Flags & 0x0000000000010000))
+    {
+        SystemWakeLevel = 0;
+
+        *OutDeviceWakeBit = 0;
+
+        goto Finish;
+    }
+
+    KeAcquireSpinLock(&AcpiPowerLock, &OldIrql);
+    SystemWakeLevel = DeviceExtension->PowerInfo.SystemWakeLevel;
+    DeviceWakeState = ACPISystemPowerDetermineSupportedDeviceWakeState(DeviceExtension);
+    KeReleaseSpinLock(&AcpiPowerLock, OldIrql);
+
+    if (!((1 << SystemWakeLevel) & AcpiSupportedSystemStates))
+    {
+        if (!(AcpiOverrideAttributes & 4))
+        {
+            DPRINT1("ACPISystemPowerUpdateWakeCapabilitiesForPDOs: KeBugCheckEx()! FIXME\n");
+            ASSERT(FALSE);
+            //KeBugCheckEx(..);
+        }
+
+        DeviceWakeLevel = 0;
+        SystemWakeLevel = 0;
+
+        *OutDeviceWakeBit = 0;
+
+        goto Finish;
+    }
+
+    if (DeviceWakeState)
+    {
+        DeviceWakeLevel = DeviceWakeState;
+        WakeLevel = DeviceWakeState;
+
+        *OutDeviceWakeBit = (1 << DeviceWakeState);
+
+        IsFound = TRUE;
+    }
+    else
+    {
+        DPRINT1("ACPISystemPowerUpdateWakeCapabilitiesForPDOs: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    Status = ACPISystemPowerGetSxD(DeviceExtension, SystemWakeLevel, &DeviceWakeState);
+    if (NT_SUCCESS(Status))
+    {
+        DeviceWakeLevel = DeviceWakeState;
+        WakeLevel = DeviceWakeState;
+
+        IsFound = TRUE;
+    }
+
+    if (!IsFound)
+    {
+        DeviceWakeLevel = States[SystemWakeLevel];
+        if (DeviceWakeLevel)
+        {
+            *OutDeviceWakeBit = (1 << DeviceWakeLevel);
+            goto Finish;
+        }
+
+        DeviceWakeLevel = 4;
+    }
+
+    if (DeviceWakeLevel == PowerDeviceUnspecified)
+    {
+        *OutDeviceWakeBit = 0;
+        goto Finish;
+    }
+
+    *OutDeviceWakeBit = (1 << DeviceWakeLevel);
+
+  Finish:
+
+    if (OutSystemWakeLevel)
+        *OutSystemWakeLevel = SystemWakeLevel;
+
+    if (OutDeviceWakeLevel)
+        *OutDeviceWakeLevel = DeviceWakeLevel;
+
+    if (OutWakeLevel)
+        *OutWakeLevel = WakeLevel;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -5966,7 +6061,7 @@ ACPISystemPowerUpdateWakeCapabilities(
     if ((DeviceExtension->Flags & 0x0000000000000040) &&
         !(DeviceExtension->Flags & 0x0000000000000020))
     {
-        DPRINT("ACPISystemPowerUpdateWakeCapabilities: FIXME\n");
+        DPRINT1("ACPISystemPowerUpdateWakeCapabilities: FIXME\n");
         ASSERT(FALSE);
     }
 
