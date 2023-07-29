@@ -1847,6 +1847,111 @@ Finish:
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+ACPIGetConvertToInstanceIDWide(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ ULONG GetFlags,
+    _Out_ PVOID* OutDataBuff,
+    _Out_ ULONG* OutDataLen)
+{
+    PWCHAR String;
+    POOL_TYPE PoolType;
+    ULONG DataLen;
+
+    DPRINT("ACPIGetConvertToInstanceIDWide: %p\n", DeviceExtension);
+
+    if (GetFlags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0001000000000000))
+    {
+        DataLen = (strlen(DeviceExtension->InstanceID) + 1);
+
+        String = ExAllocatePoolWithTag(PoolType, (DataLen * 2), 'SpcA');
+        if (!String)
+        {
+            DPRINT1("ACPIGetConvertToInstanceIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(String, (DataLen * 2));
+
+        swprintf(String, L"%S", DeviceExtension->InstanceID);
+        goto Exit;
+    }
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000004000000000))
+    {
+        DataLen = 9;
+
+        String = ExAllocatePoolWithTag(PoolType, (DataLen * 2), 'SpcA');
+        if (!String)
+        {
+            DPRINT1("ACPIGetConvertToInstanceIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(String, (DataLen * 2));
+
+        swprintf(String, L"%lx", AmliData->DataValue);
+        goto Exit;
+    }
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT("ACPIGetConvertToInstanceIDWide: InStatus %X\n", InStatus);
+        return InStatus;
+    }
+
+    if (AmliData->DataType == 1)
+    {
+        DataLen = 9;
+
+        String = ExAllocatePoolWithTag(PoolType, (DataLen * 2), 'SpcA');
+        if (!String)
+        {
+            DPRINT1("ACPIGetConvertToInstanceIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(String, (DataLen * 2));
+
+        swprintf(String, L"%lx", AmliData->DataValue);
+        goto Exit;
+    }
+
+    if (AmliData->DataType != 2)
+    {
+        DPRINT1("ACPIGetConvertToInstanceIDWide: FIXME\n");
+        ASSERT(FALSE);
+        return STATUS_ACPI_INVALID_DATA;
+    }
+
+    DataLen = (strlen(AmliData->DataBuff) + 1);
+
+    String = ExAllocatePoolWithTag(PoolType, (DataLen * 2), 'SpcA');
+    if (!String)
+    {
+        DPRINT1("ACPIGetConvertToInstanceIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(String, (DataLen * 2));
+
+    swprintf(String, L"%S", AmliData->DataBuff);
+    goto Exit;
+
+Exit:
+
+    *OutDataBuff = String;
+
+    if (OutDataLen)
+        *OutDataLen = (DataLen * 2);
+
+    return STATUS_SUCCESS;
+}
+
 VOID
 __cdecl
 ACPIGetWorkerForString(
@@ -1902,28 +2007,24 @@ ACPIGetWorkerForString(
             DPRINT1("ACPIGetWorkerForString: FIXME\n");
             ASSERT(FALSE);
         }
-        else if (!(GetFlags & 0x80))
+        else if (GetFlags & 0x80)
         {
-            if (GetFlags & 0x0200)
-            {
-                DPRINT1("ACPIGetWorkerForString: FIXME\n");
-                ASSERT(FALSE);
-            }
-            else if (GetFlags & 0x0100)
-            {
-                DPRINT1("ACPIGetWorkerForString: FIXME\n");
-                ASSERT(FALSE);
-            }
-            else if (GetFlags & 0x2000)
-            {
-                DPRINT1("ACPIGetWorkerForString: FIXME\n");
-                ASSERT(FALSE);
-            }
-            else
-            {
-                DPRINT1("ACPIGetWorkerForString: FIXME\n");
-                ASSERT(FALSE);
-            }
+            Status = ACPIGetConvertToInstanceIDWide(DeviceExtension, InStatus, AmliData, GetFlags, OutDataBuff, OutDataLen);
+        }
+        else if (GetFlags & 0x0200)
+        {
+            DPRINT1("ACPIGetWorkerForString: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else if (GetFlags & 0x0100)
+        {
+            DPRINT1("ACPIGetWorkerForString: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else if (GetFlags & 0x2000)
+        {
+            DPRINT1("ACPIGetWorkerForString: FIXME\n");
+            ASSERT(FALSE);
         }
         else
         {
