@@ -1952,6 +1952,138 @@ Exit:
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+ACPIGetConvertToHardwareIDWide(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ ULONG GetFlags,
+    _Out_ PVOID* OutDataBuff,
+    _Out_ ULONG* OutDataLen)
+{
+    PCHAR IdString;
+    PWCHAR HardwareID;
+    POOL_TYPE PoolType;
+    ULONG DataBuffLen;
+    ULONG DataLen;
+    BOOLEAN IsAllocated = FALSE;
+
+    DPRINT("ACPIGetConvertToHardwareIDWide: %p\n", DeviceExtension);
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000001000000000))
+    {
+        DPRINT1("ACPIGetConvertToHardwareIDWide: FIXME\n");
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    if (GetFlags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000800000000000))
+    {
+        DataBuffLen = (strlen(DeviceExtension->DeviceID) - 4);
+
+        IdString = ExAllocatePoolWithTag(PoolType, DataBuffLen, 'SpcA');
+        if (!IdString)
+        {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(IdString, DataBuffLen);
+
+        IsAllocated = TRUE;
+
+        strncpy(IdString, (DeviceExtension->DeviceID + 5), (DataBuffLen - 1));
+        goto Finish;
+    }
+
+    if (!(GetFlags & 0x08000000) && DeviceExtension->Flags & 0x0000004000000000)
+    {
+        DataBuffLen = 0xD;
+
+        IdString = ExAllocatePoolWithTag(PoolType, DataBuffLen, 'SpcA');
+        if (!IdString)
+        {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(IdString, DataBuffLen);
+
+        IsAllocated = TRUE;
+
+        strncpy(IdString, "PciBarTarget", (DataBuffLen - 1));
+        goto Finish;
+    }
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        return InStatus;
+    }
+
+    if (AmliData->DataType == 1)
+    {
+        DataBuffLen = 0x8;
+
+        IdString = ExAllocatePoolWithTag(PoolType, DataBuffLen, 'SpcA');
+        if (!IdString)
+        {
+            if (IsAllocated)
+                ExFreePool(IdString);
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(IdString, DataBuffLen);
+        IsAllocated = TRUE;
+
+        ACPIAmliDoubleToName(IdString, (ULONG)AmliData->DataValue, FALSE);
+        goto Finish;
+    }
+
+    if (AmliData->DataType != 2)
+    {
+        ASSERT(FALSE);
+        return STATUS_ACPI_INVALID_DATA;
+    }
+
+    IdString = AmliData->DataBuff;
+
+    if (*IdString == '*')
+        IdString++;
+
+    DataBuffLen = (strlen(IdString) + 1);
+
+Finish:
+
+    DataLen = (7 + (DataBuffLen * 2));
+
+    HardwareID = ExAllocatePoolWithTag(PoolType, (DataLen * 2), 'SpcA');
+    if (!HardwareID)
+    {
+        if (IsAllocated)
+            ExFreePool(IdString);
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(HardwareID, (DataLen * 2));
+
+    swprintf(HardwareID, L"ACPI\\%S", IdString);
+    swprintf(&HardwareID[DataBuffLen + 5], L"*%S", IdString);
+
+Exit:
+
+    *(OutDataBuff) = HardwareID;
+
+    if (OutDataLen)
+        *(OutDataLen) = (DataLen * 2);
+
+    if (IsAllocated)
+        ExFreePool(IdString);
+
+    return STATUS_SUCCESS;
+}
+
 VOID
 __cdecl
 ACPIGetWorkerForString(
@@ -2004,8 +2136,7 @@ ACPIGetWorkerForString(
         }
         else if (GetFlags & 0x40)
         {
-            DPRINT1("ACPIGetWorkerForString: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIGetConvertToHardwareIDWide(DeviceExtension, InStatus, AmliData, GetFlags, OutDataBuff, OutDataLen);
         }
         else if (GetFlags & 0x80)
         {
