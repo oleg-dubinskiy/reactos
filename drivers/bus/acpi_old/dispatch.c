@@ -2084,6 +2084,62 @@ Exit:
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+ACPIGetConvertToCompatibleIDWide(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ ULONG GetFlags,
+    _Out_ PVOID* OutDataBuff,
+    _Out_ ULONG* OutDataLen)
+{
+    PVOID CompatibleId;
+    POOL_TYPE PoolType;
+    ULONG DataLen;
+    NTSTATUS Status = InStatus;
+
+    DPRINT("ACPIGetConvertToCompatibleIDWide: %p\n", DeviceExtension);
+
+    if (GetFlags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x8000000000000000))
+    {
+        DataLen = ((strlen(DeviceExtension->Processor.CompatibleID) + 2) * 2);
+
+        CompatibleId = ExAllocatePoolWithTag(PoolType, DataLen, 'SpcA');
+        if (!CompatibleId)
+        {
+            DPRINT1("ACPIGetConvertToCompatibleIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(CompatibleId, DataLen);
+
+        swprintf(CompatibleId, L"%S", DeviceExtension->Button.SpinLock);
+
+        *OutDataBuff = CompatibleId;
+
+        if (OutDataLen)
+            *OutDataLen = 0;
+
+        return STATUS_SUCCESS;
+    }
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIGetConvertToCompatibleIDWide: InStatus %X\n", InStatus);
+        return Status;
+    }
+
+    DPRINT1("ACPIGetConvertToCompatibleIDWide: FIXME\n");
+    ASSERT(FALSE);
+
+    return Status;
+}
+
 VOID
 __cdecl
 ACPIGetWorkerForString(
@@ -2149,8 +2205,7 @@ ACPIGetWorkerForString(
         }
         else if (GetFlags & 0x0100)
         {
-            DPRINT1("ACPIGetWorkerForString: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIGetConvertToCompatibleIDWide(DeviceExtension, InStatus, AmliData, GetFlags, OutDataBuff, OutDataLen);
         }
         else if (GetFlags & 0x2000)
         {
