@@ -3512,8 +3512,26 @@ NTSTATUS __cdecl CreateByteField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM
 }
 NTSTATUS __cdecl CreateDWordField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_BUFF_FIELD_OBJECT BufferField;
+    NTSTATUS Status;
+
+    DPRINT("CreateDWordField: %X, %X, %X\n", AmliContext, AmliContext->Op, TermContext);
+
+    giIndent++;
+
+    Status = CreateXField(AmliContext, TermContext, &TermContext->DataArgs[2], &BufferField);
+    if (Status == STATUS_SUCCESS)
+    {
+        BufferField->FieldDesc.ByteOffset = (ULONG)TermContext->DataArgs[1].DataValue;
+        BufferField->FieldDesc.StartBitPos = 0;
+        BufferField->FieldDesc.NumBits = 0x20;
+        BufferField->FieldDesc.FieldFlags = 3;
+    }
+
+    giIndent--;
+
+    //DPRINT("CreateDWordField: Status %X\n", Status);
+    return Status;
 }
 NTSTATUS __cdecl CreateField(_In_ PAMLI_CONTEXT AmliContext, _In_ PAMLI_TERM_CONTEXT TermContext)
 {
