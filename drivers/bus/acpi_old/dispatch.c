@@ -6818,8 +6818,97 @@ ACPIBusIrpQueryResourceRequirements(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_RESOURCE_REQUIREMENTS_LIST IoResource = NULL;
+    PDEVICE_EXTENSION DeviceExtension;
+    PVOID CrsDataBuff = NULL;
+    PVOID PrsDataBuff = NULL;
+    ULONG CrsDataLen;
+    ULONG PrsDataLen;
+    NTSTATUS CrsStatus;
+    NTSTATUS PrsStatus;
+    NTSTATUS Status = Irp->IoStatus.Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIBusIrpQueryResourceRequirements: %p, %p\n", DeviceObject, Irp);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    CrsStatus = ACPIGet(DeviceExtension, 'SRC_', 0x20010008, NULL, 0, NULL, NULL, &CrsDataBuff, &CrsDataLen);
+    PrsStatus = ACPIGet(DeviceExtension, 'SRP_', 0x20010008, NULL, 0, NULL, NULL, &PrsDataBuff, &PrsDataLen);
+
+    if (NT_SUCCESS(CrsStatus))
+    {
+        Status = STATUS_NOT_SUPPORTED;
+
+        if (!NT_SUCCESS(PrsStatus))
+        {
+            DPRINT1("ACPIBusIrpQueryResourceRequirements: PrsStatus %X\n", PrsStatus);
+            ASSERT(FALSE);
+        }
+        else
+        {
+            DPRINT1("ACPIBusIrpQueryResourceRequirements: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+    else
+    {
+        if (!NT_SUCCESS(PrsStatus))
+        {
+            if (PrsStatus == STATUS_INSUFFICIENT_RESOURCES || CrsStatus == STATUS_INSUFFICIENT_RESOURCES)
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+
+            goto Exit;
+        }
+
+        DPRINT1("ACPIBusIrpQueryResourceRequirements: CrsStatus %X\n", CrsStatus);
+        ASSERT(FALSE);
+    }
+
+    if (!IoResource)
+    {
+        if (!(DeviceExtension->Flags & 0x0000000002000000))
+            goto Exit;
+
+        Status = STATUS_UNSUCCESSFUL;
+    }
+
+    if (DeviceExtension->Flags & 0x0000000002000000)
+    {
+        DPRINT1("ACPIBusIrpQueryResourceRequirements: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (DeviceExtension->Flags & 0x0000000200000000)
+    {
+        DPRINT1("ACPIBusIrpQueryResourceRequirements: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        Irp->IoStatus.Information = 0;
+        goto Exit;
+    }
+
+    if (NT_SUCCESS(Status))
+        Irp->IoStatus.Information = (ULONG_PTR)IoResource;
+    else
+        Irp->IoStatus.Information = 0;
+
+Exit:
+
+    if (!NT_SUCCESS(Status) &&
+        Status != STATUS_INSUFFICIENT_RESOURCES &&
+        (DeviceExtension->Flags & 0x0000000002000000))
+    {
+        DPRINT1("ACPIBusIrpQueryResourceRequirements: Status %X\n", Status);
+        ASSERT(FALSE);
+    }
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS
