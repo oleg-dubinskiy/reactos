@@ -2268,6 +2268,99 @@ Finish:
     ExFreePool(AcpiGetContext);
 }
 
+VOID
+__cdecl
+ACPIGetWorkerForBuffer(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ PVOID Context)
+{
+    PACPI_GET_CONTEXT AcpiGetContext = Context;
+    PVOID DataBuff;
+    POOL_TYPE PoolType;
+    KIRQL Irql;
+    BOOLEAN IsSuccess = TRUE;
+
+    DPRINT("ACPIGetWorkerForBuffer: %p, %X\n", AcpiGetContext, AcpiGetContext->Flags);
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIGetWorkerForBuffer: InStatus %X\n", InStatus);
+        IsSuccess = FALSE;
+        goto Exit;
+    }
+
+    if (AmliData->DataType != 3)
+    {
+        DPRINT1("ACPIGetWorkerForBuffer: AmliData %p, DataType %X\n", AmliData, AmliData->DataType);
+        ASSERT(FALSE);
+
+        if (AcpiGetContext->Flags & 0x80000000)
+        {
+            DPRINT1("ACPIGetWorkerForBuffer: FIXME\n");
+            ASSERT(FALSE);
+            //ACPIInternalError(..);
+        }
+
+        InStatus = STATUS_ACPI_INVALID_DATA;
+        goto Exit;
+    }
+
+    if (!AmliData->DataLen)
+    {
+        DPRINT1("ACPIGetWorkerForBuffer: AmliData %p, DataType %X\n", AmliData, AmliData->DataType);
+        ASSERT(FALSE);
+        InStatus = STATUS_ACPI_INVALID_DATA;
+        goto Exit;
+    }
+
+    if (AcpiGetContext->Flags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    DataBuff = ExAllocatePoolWithTag(PoolType, AmliData->DataLen, 'BpcA');
+    if (!DataBuff)
+    {
+        DPRINT1("ACPIGetWorkerForBuffer: InStatus %X\n", InStatus);
+        InStatus = STATUS_INSUFFICIENT_RESOURCES;
+        goto Exit;
+    }
+
+    RtlCopyMemory(DataBuff, AmliData->DataBuff, AmliData->DataLen);
+
+    if (AcpiGetContext->OutDataBuff)
+    {
+        *(AcpiGetContext->OutDataBuff) = DataBuff;
+
+        if (AcpiGetContext->OutDataLen)
+            *(AcpiGetContext->OutDataLen) = AmliData->DataLen;
+    }
+
+Exit:
+
+    AcpiGetContext->Status = InStatus;
+
+    if (IsSuccess)
+        AMLIFreeDataBuffs(AmliData, 1);
+
+    if (AcpiGetContext->Flags & 0x20000000)
+        return;
+
+    if (AcpiGetContext->CallBack)
+    {
+        DPRINT1("ACPIGetWorkerForBuffer: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeAcquireSpinLock(&AcpiGetLock, &Irql);
+    RemoveEntryList(&AcpiGetContext->List);
+    KeReleaseSpinLock(&AcpiGetLock, Irql);
+
+    ExFreePool(AcpiGetContext);
+}
+
 NTSTATUS
 NTAPI
 ACPIGet(
@@ -2311,8 +2404,7 @@ ACPIGet(
 
     if ((Flags & 0x1F0000) == 0x10000)
     {
-        DPRINT1("ACPIGet: FIXME\n");
-        ASSERT(FALSE);
+        Worker = ACPIGetWorkerForBuffer;
     }
     else if ((Flags & 0x1F0000) == 0x20000)
     {
