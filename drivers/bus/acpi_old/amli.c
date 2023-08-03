@@ -2312,6 +2312,17 @@ GetFieldUnitRegionObj(
 
 NTSTATUS
 __cdecl
+WriteBuffField(
+    _In_ PAMLI_BUFF_FIELD_OBJECT BufferFieldObj,
+    _In_ PAMLI_FIELD_DESCRIPTOR FieldDesc,
+    _In_ ULONG Data)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+__cdecl
 AccessFieldData(
     _In_ PAMLI_CONTEXT AmliContext,
     _In_ PAMLI_OBJECT_DATA DataObj,
@@ -2338,14 +2349,9 @@ AccessFieldData(
     if (DataObj->DataType == 0xE)
     {
         if (IsRead)
-        {
             Status = ReadBuffField(DataObj->DataBuff, FieldDesc, OutData);
-        }
         else
-        {
-            DPRINT1("AccessFieldData: FIXME\n");
-            ASSERT(FALSE);
-        }
+            Status = WriteBuffField(DataObj->DataBuff, FieldDesc, *OutData);
 
         goto Exit;
     }
