@@ -2620,8 +2620,7 @@ Stage0:
         if (Afo->CurrentNum >= Afo->AccCount)
         {
             Afo->FrameHeader.Flags += 3;
-            PopFrame(AmliContext);
-            break;
+            goto Stage3;
         }
 
         Afo->FrameHeader.Flags++;
@@ -2642,7 +2641,7 @@ Stage0:
                                            &ParentFieldUnitObj->FieldDesc,
                                            (PUCHAR)&Afo->FieldDesc.ByteOffset,
                                            4);
-                break;
+                goto Exit;
             }
         }
 
@@ -2652,10 +2651,10 @@ Stage0:
 
         InStatus = AccessFieldData(AmliContext, Afo->DataObj, &Afo->FieldDesc, &Afo->Data, TRUE);
         if (InStatus != STATUS_SUCCESS)
-            break;
+            goto Exit;
 
         if (Afo != AmliContext->LocalHeap.HeapEnd)
-            break;
+            goto Exit;
 
   Stage2:
 
@@ -2670,7 +2669,7 @@ Stage0:
             if (Afo->BufferStart >= Afo->BufferEnd)
             {
                 Afo->FrameHeader.Flags++;
-                PopFrame(AmliContext);
+                goto Stage3;
             }
         }
 
@@ -2692,18 +2691,21 @@ Stage0:
         Afo->CurrentNum++;
 
         if (Afo->CurrentNum >= Afo->AccCount)
-        {
-            Afo->FrameHeader.Flags++;
-            PopFrame(AmliContext);
-        }
+            break;
 
         Afo->FrameHeader.Flags -= 2;
     }
+
+    Afo->FrameHeader.Flags++;
+
+Stage3:
+    PopFrame(AmliContext);
 
 Exit:
 
     giIndent--;
 
+    DPRINT("ReadFieldObj: %X\n", InStatus);
     return InStatus;
 }
 
