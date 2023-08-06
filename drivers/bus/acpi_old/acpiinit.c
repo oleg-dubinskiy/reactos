@@ -2003,8 +2003,72 @@ LookupIsaVectorOverride(
     _Out_ ULONG* OutGlobalVector,
     _Out_ UCHAR* OutFlags)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_MADT_INTERRUPT_OVERRIDE EntryHeader;
+    PMAPIC Mapic;
+    ULONG_PTR EndMapic;
+
+    PAGED_CODE();
+    DPRINT("LookupIsaVectorOverride: IntVector %X\n", IntVector);
+
+    if (!InterruptModel)
+    {
+        DPRINT1("LookupIsaVectorOverride: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    if (IntVector >= 0x10)
+    {
+        DPRINT1("LookupIsaVectorOverride: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    Mapic = AcpiInformation->MultipleApicTable;
+    if (!Mapic)
+    {
+        DPRINT1("LookupIsaVectorOverride: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    EntryHeader = (PACPI_MADT_INTERRUPT_OVERRIDE)Mapic->APICTables;
+    EndMapic = (ULONG_PTR)Add2Ptr(Mapic, Mapic->Header.Length);
+
+    while ((ULONG_PTR)EntryHeader < EndMapic)
+    {
+        if (EntryHeader->Header.Type == 2 &&
+            EntryHeader->Header.Length == 0xA &&
+            EntryHeader->SourceIrq == IntVector)
+        {
+            if (OutGlobalVector)
+                *OutGlobalVector = EntryHeader->GlobalIrq;
+
+            if (!OutFlags)
+                return STATUS_SUCCESS;
+
+            *OutFlags = 0;
+
+            if ((EntryHeader->IntiFlags & 3) != 1 && (EntryHeader->IntiFlags & 3))
+                *OutFlags = 2;
+
+            if ((EntryHeader->IntiFlags & 0xC) == 4)
+                return STATUS_SUCCESS;
+
+            if (EntryHeader->IntiFlags & 0xC)
+                *OutFlags |= 1;
+
+            return STATUS_SUCCESS;
+        }
+
+        if (!EntryHeader->Header.Length)
+        {
+            DPRINT1("LookupIsaVectorOverride: STATUS_NOT_FOUND\n");
+            return STATUS_NOT_FOUND;
+        }
+
+        EntryHeader = Add2Ptr(EntryHeader, EntryHeader->Header.Length);
+    }
+
+    DPRINT1("LookupIsaVectorOverride: STATUS_NOT_FOUND\n");
+    return STATUS_NOT_FOUND;
 }
 
 NTSTATUS
