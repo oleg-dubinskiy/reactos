@@ -2317,8 +2317,44 @@ WriteBuffField(
     _In_ PAMLI_FIELD_DESCRIPTOR FieldDesc,
     _In_ ULONG Data)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG FieldShift;
+    ULONG AccSize;
+    int MaskData;
+    ULONG Mask;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("WriteBuffField: %X, %X\n", BufferFieldObj, FieldDesc);
+
+    FieldShift = (FieldDesc->FieldFlags & 0xF);
+
+    if (FieldShift >= 1 || FieldShift <= 3)
+        AccSize = (1 << (FieldShift - 1));
+    else
+        AccSize = 1;
+
+    giIndent++;
+
+    if ((FieldDesc->ByteOffset + AccSize) > BufferFieldObj->BuffLen)
+    {
+        DPRINT("WriteBuffField: STATUS_ACPI_INVALID_INDEX\n");
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_INDEX;
+    }
+    else
+    {
+        MaskData = 0;
+
+        if (FieldDesc->NumBits < 0x20)
+            MaskData = (1 << FieldDesc->NumBits);
+
+        Mask = ((MaskData - 1) << FieldDesc->StartBitPos);
+
+        WriteSystemMem(&BufferFieldObj->DataBuff[FieldDesc->ByteOffset], AccSize, (Data & Mask), Mask);
+    }
+
+    giIndent--;
+
+    return Status;
 }
 
 NTSTATUS
