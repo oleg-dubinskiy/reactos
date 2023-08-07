@@ -3661,8 +3661,34 @@ NTAPI
 ACPIBuildProcessDevicePhaseCrs(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    //PDEVICE_EXTENSION DeviceExtension;
+
+    DPRINT("ACPIBuildProcessDevicePhaseCrs: BuildRequest %X\n", BuildRequest);
+
+    //DeviceExtension = BuildRequest->DeviceExtension;
+    BuildRequest->BuildReserved1 = 0xB;
+
+    if (BuildRequest->ChildObject)
+    {
+        if (BuildRequest->Device.Data.DataType != 3)
+        {
+            DPRINT1("ACPIBuildProcessDevicePhaseCrs: KeBugCheckEx()\n");
+            ASSERT(FALSE);
+            //KeBugCheckEx(0xA5, 7, DeviceExtension, BuildRequest->ChildObject, BuildRequest->Device.Data.DataType);
+        }
+
+        DPRINT1("ACPIBuildProcessDevicePhaseCrs: FIXME\n");
+        ASSERT(FALSE);
+
+        //ACPIMatchKernelPorts(DeviceExtension, &BuildRequest->Synchronize);
+        //AMLIFreeDataBuffs(&BuildRequest->Synchronize, 1);
+    }
+
+    //ACPIDebugDevicePrint(8u, DeviceExtension, "ACPIBuildProcessDevicePhaseCrs: Status = %08lx\n", 0);
+
+    ACPIBuildCompleteMustSucceed(NULL, STATUS_SUCCESS, 0, BuildRequest);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
