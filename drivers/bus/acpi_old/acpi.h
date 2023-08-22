@@ -739,6 +739,67 @@ typedef struct _ARBITER_EXTENSION
     ULONGLONG LastPciIrq[0xA];
 } ARBITER_EXTENSION, *PARBITER_EXTENSION;
 
+/* RESOURCE DATA STRUCTURES *************************************************/
+
+#include <pshpack1.h>
+
+typedef struct _ACPI_RESOURCE_DATA_TYPE
+{
+    union
+    {
+        struct
+        {
+            union
+            {
+                struct
+                {
+                    UCHAR Length :3;
+                    UCHAR Name :4;
+                    UCHAR Type :1;
+                };
+                UCHAR Tag;
+            };
+            UCHAR Data[];
+        } Small;
+        struct
+        {
+            union
+            {
+                struct
+                {
+                    UCHAR Name :7;
+                    UCHAR Type :1;
+                };
+                UCHAR Tag;
+            };
+            USHORT Length;
+            UCHAR Data[1];
+        } Large;
+    };
+} ACPI_RESOURCE_DATA_TYPE, *PACPI_RESOURCE_DATA_TYPE;
+
+typedef struct _ACPI_IO_PORT_DESCRIPTOR
+{
+    union
+    {
+        struct
+        {
+            UCHAR Length :3;
+            UCHAR Name :4;
+            UCHAR Type :1;
+        };
+        UCHAR Tag;
+    };
+    UCHAR Reserved :7;
+    UCHAR DecodingBitness :1;
+    USHORT Minimum;
+    USHORT Maximum;
+    UCHAR Alignment;
+    UCHAR RangeLength;
+} ACPI_IO_PORT_DESCRIPTOR, *PACPI_IO_PORT_DESCRIPTOR;
+
+#include <poppack.h>
+
 /* FUNCTIONS ****************************************************************/
 
 #ifndef Add2Ptr

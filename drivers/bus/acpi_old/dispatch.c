@@ -6932,13 +6932,366 @@ ACPIBusIrpQueryResources(
 
 NTSTATUS
 NTAPI
+PnpiGrowResourceList(
+    _Out_ PIO_RESOURCE_LIST** OutResourceListArray,
+    _Out_ ULONG* OutResourceListArraySize)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PnpiBiosPortToIoDescriptor(
+    _In_ PACPI_IO_PORT_DESCRIPTOR AcpiDesc,
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG Index,
+    _In_ ULONG Param4)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PnpiBiosAddressDoubleToIoDescriptor(
+    _In_ PVOID Data,
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG Index,
+    _In_ ULONG Param4)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PnpiBiosAddressToIoDescriptor(
+    _In_ PVOID Data,
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG Index,
+    _In_ ULONG Param4)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+PnpiClearAllocatedMemory(
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG ResourceListArraySize)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
 PnpBiosResourcesToNtResources(
     _In_ PVOID Data,
     _In_ ULONG Param2,
     _Out_ PIO_RESOURCE_REQUIREMENTS_LIST* OutIoResource)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_RESOURCE_LIST* ResourceListArray = NULL;
+    PIO_RESOURCE_LIST IoList;
+    PACPI_RESOURCE_DATA_TYPE ResDataType;
+    ULONG ResourceListArraySize = 0;
+    ULONG Increment;
+    ULONG Index = 0;
+    ULONG MaxIndex = 0;
+    ULONG ListSize;
+    ULONG Size;
+    ULONG ix;
+    ULONG jx = 0;
+    UCHAR TagName;
+    NTSTATUS Status;
+
+    DPRINT("PnpBiosResourcesToNtResources: %p, %X\n", Data, Param2);
+
+    PAGED_CODE();
+    ASSERT(Data != NULL);
+
+    Status = PnpiGrowResourceList(&ResourceListArray, &ResourceListArraySize);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PnpBiosResourcesToNtResources: Status %X\n", Status);
+        return Status;
+    }
+
+    for (ResDataType = Data; ; )
+    {
+        if (!ResDataType->Small.Type)
+        {
+            Increment = (ResDataType->Small.Length + 1);
+            TagName = ResDataType->Small.Name;
+            DPRINT("PnpBiosResourcesToNtResources: Small TagName %X, Increment %X\n", TagName, Increment);
+        }
+        else
+        {
+            Increment = (ResDataType->Large.Length + 3);
+            TagName = ResDataType->Large.Name;
+            DPRINT("PnpBiosResourcesToNtResources: Large TagName %X, Increment %X\n", TagName, Increment);
+        }
+
+        if ((ResDataType->Small.Tag & 0xF8) == 0x78)
+        {
+            DPRINT("PnpBiosResourcesToNtResources: TAG_END\n");
+            break;
+        }
+
+        ix++;
+
+        if (!ResDataType->Small.Type)
+        {
+            switch (TagName)
+            {
+                case 0x04:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x05:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x06:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x07:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x08:
+                {
+                    Status = PnpiBiosPortToIoDescriptor(Data, ResourceListArray, Index, Param2);
+                    DPRINT("PnpBiosResourcesToNtResources: TAG_IO, Status %X\n", Status);
+                    break;
+                }
+                case 0x09:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x0E:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                default:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                }
+            }
+        }
+        else
+        {
+            switch (TagName)
+            {
+                case 0x01:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x02:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x03:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x04:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x05:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x06:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x07:
+                {
+                    Status = PnpiBiosAddressDoubleToIoDescriptor(Data, ResourceListArray, Index, Param2);
+                    DPRINT("PnpBiosResourcesToNtResources: TAG_DOUBLE_ADDRESS = %X\n", Status);
+                    break;
+                }
+                case 0x08:
+                {
+                    Status = PnpiBiosAddressToIoDescriptor(Data, ResourceListArray, Index, Param2);
+                    DPRINT("PnpBiosResourcesToNtResources: TAG_WORD_ADDRESS = %X\n", Status);
+                    break;
+                }
+                default:
+                {
+                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+            }
+        }
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("PnpBiosResourcesToNtResources: Failed on TagName %X, Status %X\n", TagName, Status);
+
+            PnpiClearAllocatedMemory(ResourceListArray, ResourceListArraySize);
+            return Status;
+        }
+
+        Data = ResDataType = Add2Ptr(ResDataType, Increment);
+    }
+
+    DPRINT("PnpBiosResourcesToNtResources: TAG_END\n");
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("PnpBiosResourcesToNtResources: Failed on TagName %X, Status %X\n", TagName, Status);
+
+        PnpiClearAllocatedMemory(ResourceListArray, ResourceListArraySize);
+        return Status;
+    }
+
+    if (ix && ix == jx)
+    {
+        DPRINT("PnpBiosResourcesToNtResources: This _CRS contains vendor defined tags only. No resources will be allocated.\n");
+
+        PnpiClearAllocatedMemory(ResourceListArray, ResourceListArraySize);
+        *OutIoResource = NULL;
+
+        return Status;
+    }
+
+    ListSize = sizeof(IO_RESOURCE_DESCRIPTOR);
+
+    if (*ResourceListArray)
+        Size = (*ResourceListArray)->Count;
+    else
+        Size = 0;
+
+    Index = 1;
+
+    for (Index = 1; Index <= MaxIndex; Index++)
+    {
+        if (!(ResourceListArray[Index]))
+        {
+            DPRINT1("PnpBiosResourcesToNtResources: Bad List at Array[%X]\n", Index);
+
+            PnpiClearAllocatedMemory(ResourceListArray, ResourceListArraySize);
+            *OutIoResource = NULL;
+
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        if (ResourceListArray[Index]->Count)
+        {
+            DPRINT("PnpBiosResourcesToNtResources: Index %X, ListSize %X\n", Index, ListSize);
+            ListSize += (sizeof(IO_RESOURCE_LIST) + ((ResourceListArray[Index]->Count + Size - 1) * sizeof(IO_RESOURCE_DESCRIPTOR)));
+        }
+    }
+
+    if (!MaxIndex)
+    {
+        if (!(*ResourceListArray) || (!(*ResourceListArray)->Count))
+        {
+            DPRINT1("PnpBiosResourcesToNtResources: No Resources to Report\n");
+
+            PnpiClearAllocatedMemory(ResourceListArray, ResourceListArraySize);
+            *OutIoResource = NULL;
+
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        ListSize += (((*ResourceListArray)->Count - 1) + sizeof(IO_RESOURCE_LIST) * sizeof(IO_RESOURCE_DESCRIPTOR));
+    }
+
+    if (ListSize < sizeof(IO_RESOURCE_REQUIREMENTS_LIST))
+    {
+        DPRINT1("PnpBiosResourcesToNtResources: Resources smaller than a List\n");
+
+        PnpiClearAllocatedMemory(ResourceListArray, ResourceListArraySize);
+        *OutIoResource = NULL;
+
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    *OutIoResource = ExAllocatePoolWithTag(PagedPool, ListSize, 'RpcA');
+
+    DPRINT("PnpBiosResourceToNtResources: %p, %X\n", *OutIoResource, ListSize);
+
+    if (!(*OutIoResource))
+    {
+        DPRINT1("PnpBiosResourceToNtResources: Could not allocate memory for ResourceRequirementList\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Finish;
+    }
+    RtlZeroMemory(*OutIoResource, ListSize);
+
+    (*OutIoResource)->InterfaceType = 0xF;
+    (*OutIoResource)->BusNumber = 0;
+    (*OutIoResource)->ListSize = ListSize;
+
+    IoList = (*OutIoResource)->List;
+
+    for (Index = 1; Index <= MaxIndex; Index++)
+    {
+        if (!(ResourceListArray[Index]->Count))
+            continue;
+
+        ListSize = (sizeof(IO_RESOURCE_LIST) + (ResourceListArray[Index]->Count - 1) * sizeof(IO_RESOURCE_DESCRIPTOR));
+        (ResourceListArray[Index])->Count += Size;
+
+        DPRINT1("PnpBiosResourcesToNtResources: [%X] %p, %X, %X\n", Index, IoList, ListSize, ResourceListArray[Index]->Count);
+        RtlCopyMemory(IoList, ResourceListArray[Index], ListSize);
+
+        IoList = Add2Ptr(IoList, ListSize);
+
+        if (Size)
+        {
+            RtlCopyMemory(IoList, (*ResourceListArray)->Descriptors, (Size * sizeof(IO_RESOURCE_DESCRIPTOR)));
+            IoList = Add2Ptr(IoList, (Size * sizeof(IO_RESOURCE_DESCRIPTOR)));
+        }
+
+        ((*OutIoResource)->AlternativeLists)++;
+    }
+
+    if (!MaxIndex)
+    {
+        ASSERT(Size != 0);
+        RtlCopyMemory(IoList, *ResourceListArray, (sizeof(IO_RESOURCE_LIST) + ((Size - 1) * sizeof(IO_RESOURCE_DESCRIPTOR))));
+
+        ((*OutIoResource)->AlternativeLists)++;
+    }
+
+Finish:
+
+    PnpiClearAllocatedMemory(ResourceListArray, ResourceListArraySize);
+
+    return Status;
 }
 
 NTSTATUS
