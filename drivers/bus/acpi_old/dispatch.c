@@ -6932,6 +6932,70 @@ ACPIBusIrpQueryResources(
 
 NTSTATUS
 NTAPI
+PnpBiosResourcesToNtResources(
+    _In_ PVOID Data,
+    _In_ ULONG Param2,
+    _Out_ PIO_RESOURCE_REQUIREMENTS_LIST* OutIoResource)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PnpDeviceBiosResourcesToNtResources(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PVOID Data,
+    _In_ ULONG Param3,
+    _Inout_ PIO_RESOURCE_REQUIREMENTS_LIST* OutIoResource)
+{
+    KIRQL Irql;
+    BOOLEAN IsFound;
+    NTSTATUS Status;
+
+    DPRINT("PnpDeviceBiosResourcesToNtResources: %p, %X\n", DeviceExtension, Param3);
+
+    Status = PnpBiosResourcesToNtResources(Data, Param3, OutIoResource);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PnpDeviceBiosResourcesToNtResources: Status %X\n", Status);
+        return Status;
+    }
+
+    if (!(*OutIoResource))
+    {
+        DPRINT1("PnpDeviceBiosResourcesToNtResources: IoResource is NULL!\n");
+        return Status;
+    }
+
+    IsFound = FALSE;
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
+
+    while (DeviceExtension)
+    {
+        if (DeviceExtension->Flags & 0x0000002000000000)
+        {
+            IsFound = TRUE;
+            break;
+        }
+
+        DeviceExtension = DeviceExtension->ParentExtension;
+    }
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+    if (!IsFound)
+        return Status;
+
+    DPRINT1("PnpDeviceBiosResourcesToNtResources: FIXME\n");
+    ASSERT(FALSE);
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 ACPIBusIrpQueryResourceRequirements(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
@@ -6960,8 +7024,16 @@ ACPIBusIrpQueryResourceRequirements(
 
         if (!NT_SUCCESS(PrsStatus))
         {
-            DPRINT1("ACPIBusIrpQueryResourceRequirements: PrsStatus %X\n", PrsStatus);
-            ASSERT(FALSE);
+            Status = PnpDeviceBiosResourcesToNtResources(DeviceExtension,
+                                                         CrsDataBuff,
+                                                         ((DeviceExtension->Flags & 0x0000000002000000) != 0),
+                                                         &IoResource);
+        
+            ASSERTMSG("The BIOS has reported inconsistent resources (_PRS). Please upgrade your BIOS.", NT_SUCCESS(Status));
+            DPRINT("ACPIBusIrpQueryResourceRequirements: Status %X\n", Status);
+
+            if (NT_SUCCESS(CrsStatus))
+                ExFreePool(CrsDataBuff);
         }
         else
         {
