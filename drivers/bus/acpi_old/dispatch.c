@@ -6932,12 +6932,63 @@ ACPIBusIrpQueryResources(
 
 NTSTATUS
 NTAPI
+ACPIInternalGrowBuffer(
+    _Inout_ PVOID* OutIoResource,
+    _In_ ULONG CopySize,
+    _In_ ULONG BufferSize)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 PnpiGrowResourceList(
     _Out_ PIO_RESOURCE_LIST** OutResourceListArray,
     _Out_ ULONG* OutResourceListArraySize)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG ResourceListArraySize;
+    ULONG Count;
+    SIZE_T Size;
+    NTSTATUS Status;
+
+    DPRINT("PnpiGrowResourceList: %X\n", *OutResourceListArray);
+
+    PAGED_CODE();
+    ASSERT(OutResourceListArray != NULL);
+
+    if (!(*OutResourceListArray) || !(*OutResourceListArraySize))
+    {
+        DPRINT("PnpiGrowResourceList: %X -> %X, (%X)\n", 0, 8, sizeof(IO_RESOURCE_DESCRIPTOR));
+
+        *OutResourceListArray = ExAllocatePoolWithTag(PagedPool, sizeof(IO_RESOURCE_DESCRIPTOR), 'RpcA');
+        if (!(*OutResourceListArray))
+        {
+            DPRINT1("PnpiGrowResourceList: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(*OutResourceListArray, sizeof(IO_RESOURCE_DESCRIPTOR));
+
+        *OutResourceListArraySize = 8;
+
+        return STATUS_SUCCESS;
+    }
+
+    Count = *OutResourceListArraySize;
+
+    Size = (sizeof(IO_RESOURCE_DESCRIPTOR) + (Count * sizeof(PIO_RESOURCE_LIST)));
+    ResourceListArraySize = (Count + 8);
+
+    DPRINT("PnpiGrowResourceList: %X -> %X, (%X)\n", Count, (Count + 8), Size);
+
+    Status = ACPIInternalGrowBuffer((PVOID *)OutResourceListArray, (Count * sizeof(PIO_RESOURCE_LIST)), Size);
+
+    if (NT_SUCCESS(Status))
+        *OutResourceListArraySize = ResourceListArraySize;
+    else
+        *OutResourceListArraySize = 0;
+
+    return Status;
 }
 
 NTSTATUS
