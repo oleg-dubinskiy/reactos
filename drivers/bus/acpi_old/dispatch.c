@@ -6993,18 +6993,6 @@ PnpiGrowResourceList(
 
 NTSTATUS
 NTAPI
-PnpiBiosAddressDoubleToIoDescriptor(
-    _In_ PVOID Data,
-    _In_ PIO_RESOURCE_LIST* ResourceListArray,
-    _In_ ULONG Index,
-    _In_ ULONG Param4)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-NTSTATUS
-NTAPI
 PnpiGrowResourceDescriptor(
     _Inout_ PIO_RESOURCE_LIST* OutIoResource)
 {
@@ -7295,6 +7283,160 @@ PnpiBiosAddressToIoDescriptor(
         {
             DPRINT("PnpiBiosAddressToIoDescriptor: Unknown ResourceType %X\n", AcpiDesc->ResourceType);
             ASSERT(FALSE);
+            break;
+        }
+    }
+
+    PnpiBiosAddressHandleGlobalFlags(AcpiDesc, ResourceListArray, Index, IoDescriptor);
+
+    return STATUS_SUCCESS;
+}
+
+VOID
+NTAPI
+PnpiBiosAddressHandleMemoryFlags(
+    _In_ PVOID Data,
+    _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+PnpiBiosAddressDoubleToIoDescriptor(
+    _In_ PVOID Data,
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG Index,
+    _In_ ULONG Param4)
+{
+    PACPI_DWORD_ADDRESS_SPACE_DESCRIPTOR AcpiDesc = Data;
+    PIO_RESOURCE_DESCRIPTOR IoDescriptor;
+    PIO_RESOURCE_DESCRIPTOR DevicePrivateIoDescriptor;
+    ULONG Alignment;
+    ULONG Length;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    ASSERT(ResourceListArray != NULL);
+
+    if ((AcpiDesc->GeneralFlags & 1) && AcpiDesc->ResourceType == 1 && (Param4 & 1))
+        return STATUS_SUCCESS;
+
+    if (!AcpiDesc->AddressLength)
+        return STATUS_SUCCESS;
+
+    Status = PnpiUpdateResourceList(&ResourceListArray[Index], &IoDescriptor);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PnpiBiosAddressDoubleToIoDescriptor: Status %X\n", Status);
+        return Status;
+    }
+
+    if (AcpiDesc->ResourceType == 0 || AcpiDesc->ResourceType == 1)
+    {
+        Status = PnpiUpdateResourceList(&ResourceListArray[Index], &DevicePrivateIoDescriptor);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("PnpiBiosAddressDoubleToIoDescriptor: Status %X\n", Status);
+            return Status;
+        }
+
+        ASSERT(ResourceListArray[Index]->Count >= 2);
+
+        IoDescriptor = (DevicePrivateIoDescriptor - 1);
+
+        DevicePrivateIoDescriptor->Type = CmResourceTypeDevicePrivate;
+        DevicePrivateIoDescriptor->Flags = 0x6000;
+        DevicePrivateIoDescriptor->u.DevicePrivate.Data[2] = 0;
+    }
+
+    if (AcpiDesc->Length < 0x17)
+    {
+        DPRINT("PnpiBiosAddressDoubleToIoDescriptor: Descriptor too small %X\n", AcpiDesc->Length);
+        KeBugCheckEx(0xA5, 0xF, (ULONG_PTR)AcpiDesc, AcpiDesc->Tag, AcpiDesc->Length);
+    }
+
+    Length =  AcpiDesc->AddressLength;
+    Alignment = (AcpiDesc->Granularity + 1);
+
+    if ((AcpiDesc->GeneralFlags & 4) && (AcpiDesc->GeneralFlags & 8))
+    {
+        if (Length != (AcpiDesc->Maximum - AcpiDesc->Minimum + 1))
+        {
+            DPRINT1("PnpiBiosAddressDoubleToIoDescriptor: Length does not match fixed attributes\n");
+            Length = (AcpiDesc->Maximum - AcpiDesc->Minimum + 1);
+        }
+
+        if (AcpiDesc->Minimum & AcpiDesc->Granularity)
+        {
+            DPRINT1("PnpiBiosAddressDoubleToIoDescriptor: Granularity does not match fixed attributes\n");
+            Alignment = 1;
+        }
+    }
+
+    switch (AcpiDesc->ResourceType)
+    {
+        case 0:
+        {
+            IoDescriptor->Type = CmResourceTypeMemory;
+            IoDescriptor->u.Memory.Length = Length;
+            IoDescriptor->u.Memory.Alignment = Alignment;
+            IoDescriptor->u.Memory.MinimumAddress.LowPart = AcpiDesc->Minimum;
+            IoDescriptor->u.Memory.MinimumAddress.HighPart = 0;
+            IoDescriptor->u.Memory.MaximumAddress.LowPart = AcpiDesc->Maximum;
+            IoDescriptor->u.Memory.MaximumAddress.HighPart = 0;
+
+            if (AcpiDesc->SpecificFlags & 0x20)
+                DevicePrivateIoDescriptor->u.DevicePrivate.Data[0] = CmResourceTypePort;
+            else
+                DevicePrivateIoDescriptor->u.DevicePrivate.Data[0] = CmResourceTypeMemory;
+
+            DevicePrivateIoDescriptor->u.DevicePrivate.Data[1] = (AcpiDesc->Minimum + AcpiDesc->Offset);
+
+            PnpiBiosAddressHandleMemoryFlags(AcpiDesc, IoDescriptor);
+
+            IoDescriptor->u.Memory.Alignment = 1;
+            break;
+        }
+        case 1:
+        {
+            IoDescriptor->Type = CmResourceTypePort;
+            IoDescriptor->u.Port.Length = Length;
+            IoDescriptor->u.Port.Alignment = Alignment;
+            IoDescriptor->u.Port.MinimumAddress.LowPart = AcpiDesc->Minimum;
+            IoDescriptor->u.Port.MinimumAddress.HighPart = 0;
+            IoDescriptor->u.Port.MaximumAddress.LowPart = AcpiDesc->Maximum;
+            IoDescriptor->u.Port.MaximumAddress.HighPart = 0;
+
+            if (AcpiDesc->SpecificFlags & 0x20)
+                DevicePrivateIoDescriptor->Flags |= 1;
+
+            if (AcpiDesc->SpecificFlags & 0x10)
+                DevicePrivateIoDescriptor->u.DevicePrivate.Data[0] = CmResourceTypeMemory;
+            else
+                DevicePrivateIoDescriptor->u.DevicePrivate.Data[0] = CmResourceTypePort;
+
+            DevicePrivateIoDescriptor->u.DevicePrivate.Data[1] = (AcpiDesc->Minimum + AcpiDesc->Offset);
+
+            PnpiBiosAddressHandlePortFlags(AcpiDesc, IoDescriptor);
+
+            IoDescriptor->u.Port.Alignment = 1;
+            break;
+        }
+        case 2:
+        {
+            IoDescriptor->Type = CmResourceTypeBusNumber;
+            IoDescriptor->u.BusNumber.Length = Length;
+            IoDescriptor->u.BusNumber.MinBusNumber = AcpiDesc->Minimum;
+            IoDescriptor->u.BusNumber.MaxBusNumber = AcpiDesc->Maximum;
+
+            PnpiBiosAddressHandleBusFlags(AcpiDesc, IoDescriptor);
+
+            break;
+        }
+        default:
+        {
+            DPRINT1("PnpiBiosAddressDoubleToIoDescriptor: Unknown ResourceType %X\n", AcpiDesc->ResourceType);
             break;
         }
     }
