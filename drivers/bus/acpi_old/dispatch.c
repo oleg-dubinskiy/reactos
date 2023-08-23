@@ -7020,8 +7020,43 @@ NTAPI
 PnpiGrowResourceDescriptor(
     _Inout_ PIO_RESOURCE_LIST* OutIoResource)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_RESOURCE_LIST IoResource;
+    ULONG Count;
+    ULONG Size;
+
+    DPRINT("PnpiGrowResourceDescriptor: *OutIoResource %X\n", *OutIoResource);
+
+    PAGED_CODE();
+    ASSERT(OutIoResource != NULL);
+
+    // FIXME sizeof ..
+
+    IoResource = *OutIoResource;
+    if (*OutIoResource)
+    {
+        Count = IoResource->Count;
+        Size = (sizeof(IO_RESOURCE_LIST) + sizeof(IO_RESOURCE_DESCRIPTOR) * (Count - 1));
+
+        DPRINT("PnpiGrowResourceDescriptor: %X -> %X, Size %X\n", Count, (Count + 8), (0x128 + sizeof(IO_RESOURCE_DESCRIPTOR) * (Count - 1)));
+
+        return ACPIInternalGrowBuffer((PVOID *)OutIoResource, Size, (Size + 0x100));
+    }
+
+    DPRINT("PnpiGrowResourceDescriptor: %X -> %X, Size %X\n", 0, 8, 0x108);
+
+    *OutIoResource = IoResource = ExAllocatePoolWithTag(PagedPool, 0x108, 'RpcA');
+    if (!IoResource)
+    {
+        DPRINT1("PnpiGrowResourceDescriptor: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(IoResource, 0x108);
+
+    IoResource->Version = 1;
+    IoResource->Revision = 1;
+    IoResource->Count = 0;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
