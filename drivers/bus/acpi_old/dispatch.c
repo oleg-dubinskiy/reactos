@@ -6935,10 +6935,37 @@ NTAPI
 ACPIInternalGrowBuffer(
     _Inout_ PVOID* OutIoResource,
     _In_ ULONG CopySize,
-    _In_ ULONG BufferSize)
+    _In_ ULONG AllocateSize)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_RESOURCE_LIST IoResource;
+
+    DPRINT("ACPIInternalGrowBuffer: %X, %X\n", CopySize, AllocateSize);
+
+    PAGED_CODE();
+    ASSERT(OutIoResource != NULL);
+
+    IoResource = ExAllocatePoolWithTag(PagedPool, AllocateSize, 'RpcA');
+    if (!IoResource)
+    {
+        if (*OutIoResource)
+        {
+            ExFreePool(*OutIoResource);
+            *OutIoResource = NULL;
+        }
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(IoResource, AllocateSize);
+
+    if (*OutIoResource)
+    {
+        RtlCopyMemory(IoResource, *OutIoResource, CopySize);
+        ExFreePool(*OutIoResource);
+    }
+
+    *OutIoResource = IoResource;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
