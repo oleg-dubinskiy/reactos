@@ -778,6 +778,30 @@ typedef struct _ACPI_RESOURCE_DATA_TYPE
     };
 } ACPI_RESOURCE_DATA_TYPE, *PACPI_RESOURCE_DATA_TYPE;
 
+typedef struct _ACPI_WORD_ADDRESS_SPACE_DESCRIPTOR
+{
+    union
+    {
+        struct
+        {
+            UCHAR Name :7;
+            UCHAR Type :1;
+        };
+        UCHAR Tag;
+    };
+    USHORT Length;
+    UCHAR ResourceType;
+    UCHAR GeneralFlags;
+    UCHAR SpecificFlags;
+    USHORT Granularity;
+    USHORT Minimum;
+    USHORT Maximum;
+    USHORT Offset;
+    USHORT AddressLength;
+    UCHAR ResourceSourceIndex; // Optional
+    CHAR ResourceSource[]; // Optional
+} ACPI_WORD_ADDRESS_SPACE_DESCRIPTOR, *PACPI_WORD_ADDRESS_SPACE_DESCRIPTOR;
+
 typedef struct _ACPI_IO_PORT_DESCRIPTOR
 {
     union
