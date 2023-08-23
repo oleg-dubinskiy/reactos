@@ -7017,12 +7017,43 @@ PnpiBiosAddressDoubleToIoDescriptor(
 
 NTSTATUS
 NTAPI
+PnpiGrowResourceDescriptor(
+    _Inout_ PIO_RESOURCE_LIST* OutIoResource)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 PnpiUpdateResourceList(
     _Inout_ PIO_RESOURCE_LIST* OutIoResource,
     _Out_ PIO_RESOURCE_DESCRIPTOR* OutIoDescriptors)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_RESOURCE_LIST IoResource;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("PnpiUpdateResourceList: %p\n", OutIoResource);
+
+    PAGED_CODE();
+    ASSERT(OutIoResource != NULL);
+
+    IoResource = *OutIoResource;
+
+    if (!IoResource || !(IoResource->Count & 7))
+    {
+        Status = PnpiGrowResourceDescriptor(OutIoResource);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("PnpiUpdateResourceList: Status %X\n", Status);
+            return Status;
+        }
+    }
+
+    *OutIoDescriptors = &((*OutIoResource)->Descriptors[(*OutIoResource)->Count]);
+    (*OutIoResource)->Count++;
+
+    return Status;
 }
 
 VOID
