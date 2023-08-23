@@ -6993,18 +6993,6 @@ PnpiGrowResourceList(
 
 NTSTATUS
 NTAPI
-PnpiBiosPortToIoDescriptor(
-    _In_ PACPI_IO_PORT_DESCRIPTOR AcpiDesc,
-    _In_ PIO_RESOURCE_LIST* ResourceListArray,
-    _In_ ULONG Index,
-    _In_ ULONG Param4)
-{
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-NTSTATUS
-NTAPI
 PnpiBiosAddressDoubleToIoDescriptor(
     _In_ PVOID Data,
     _In_ PIO_RESOURCE_LIST* ResourceListArray,
@@ -7307,6 +7295,49 @@ PnpiBiosAddressToIoDescriptor(
     }
 
     PnpiBiosAddressHandleGlobalFlags(AcpiDesc, ResourceListArray, Index, IoDescriptor);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+PnpiBiosPortToIoDescriptor(
+    _In_ PACPI_IO_PORT_DESCRIPTOR AcpiDesc,
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG Index,
+    _In_ ULONG Param4)
+{
+    PIO_RESOURCE_DESCRIPTOR IoDescriptor;
+    NTSTATUS Status;
+
+    DPRINT("PnpiBiosPortToIoDescriptor: %p, %X\n", AcpiDesc, Param4);
+
+    PAGED_CODE();
+    ASSERT(ResourceListArray != NULL);
+
+    if ((Param4 & 1) || !AcpiDesc->RangeLength)
+        return STATUS_SUCCESS;
+
+    Status = PnpiUpdateResourceList(&ResourceListArray[Index], &IoDescriptor);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PnpiBiosPortToIoDescriptor: Status %X\n", Status);
+        return Status;
+    }
+
+    IoDescriptor->Type = CmResourceTypePort;
+    IoDescriptor->Flags = 1;
+    IoDescriptor->ShareDisposition = 1;
+
+    IoDescriptor->u.Port.MinimumAddress.LowPart = AcpiDesc->Minimum;
+    IoDescriptor->u.Port.MaximumAddress.LowPart = (AcpiDesc->Maximum + AcpiDesc->RangeLength - 1);
+    IoDescriptor->u.Port.Length = AcpiDesc->RangeLength;
+    IoDescriptor->u.Port.Alignment = AcpiDesc->Alignment;
+
+    if (AcpiDesc)
+        IoDescriptor->Flags |= CM_RESOURCE_PORT_16_BIT_DECODE;
+    else
+        IoDescriptor->Flags |= CM_RESOURCE_PORT_10_BIT_DECODE;
 
     return STATUS_SUCCESS;
 }
