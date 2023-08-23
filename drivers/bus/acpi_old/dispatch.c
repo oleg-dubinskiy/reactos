@@ -7106,7 +7106,8 @@ PnpiBiosAddressHandleBusFlags(
     _In_ PVOID Data,
     _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAGED_CODE();
+    ASSERT(IoDescriptor->u.BusNumber.Length > 0);
 }
 
 NTSTATUS
