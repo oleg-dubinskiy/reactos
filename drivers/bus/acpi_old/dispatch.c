@@ -7085,7 +7085,12 @@ PnpiBiosAddressHandlePortFlags(
     _In_ PVOID Data,
     _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_WORD_ADDRESS_SPACE_DESCRIPTOR AcpiDesc = Data;
+
+    PAGED_CODE();
+
+    if (!(AcpiDesc->GeneralFlags & 2))
+        IoDescriptor->Flags |= 0x20;
 }
 
 VOID
