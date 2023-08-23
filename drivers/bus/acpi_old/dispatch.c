@@ -7325,7 +7325,36 @@ PnpiBiosAddressHandleMemoryFlags(
     _In_ PVOID Data,
     _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_WORD_ADDRESS_SPACE_DESCRIPTOR AcpiDesc = Data;
+
+    PAGED_CODE();
+
+    if (!(AcpiDesc->SpecificFlags & 0x1E))
+        goto Finish;
+
+    switch (AcpiDesc->SpecificFlags & 0x1E)
+    {
+        case 2:
+            IoDescriptor->Flags |= 0x20;
+            break;
+
+        case 4:
+            IoDescriptor->Flags |= 8;
+            break;
+
+        case 6:
+            IoDescriptor->Flags |= 4;
+            break;
+
+        default:
+            DPRINT1("PnpiBiosAddressHandleMemoryFlags: Unknown Memory TFlag 0x%02x\n", AcpiDesc->SpecificFlags);
+            break;
+    }
+
+Finish:
+
+    if (!(AcpiDesc->SpecificFlags & 1))
+        IoDescriptor->Flags |= 1;
 }
 
 NTSTATUS
