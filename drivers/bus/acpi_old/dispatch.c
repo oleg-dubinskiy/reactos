@@ -7118,8 +7118,62 @@ PnpiBiosAddressHandleGlobalFlags(
     _In_ ULONG Index,
     _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_WORD_ADDRESS_SPACE_DESCRIPTOR AcpiDesc = Data;
+    NTSTATUS Status;
+
+    DPRINT("PnpiBiosAddressHandleGlobalFlags: %p, %X\n", AcpiDesc, AcpiDesc->GeneralFlags);
+    PAGED_CODE();
+
+    if ((AcpiOverrideAttributes & 0x800) || (AcpiDesc->GeneralFlags & 1))
+        IoDescriptor->ShareDisposition = 1;
+    else
+        IoDescriptor->ShareDisposition = 3;
+
+    if ((AcpiDesc->GeneralFlags & 4) && (AcpiDesc->GeneralFlags & 8))
+    {
+        if (IoDescriptor->Type == CmResourceTypeBusNumber)
+            IoDescriptor->u.BusNumber.Length = (IoDescriptor->u.BusNumber.MaxBusNumber - IoDescriptor->u.BusNumber.MinBusNumber + 1);
+        else
+            IoDescriptor->u.Memory.Length = (IoDescriptor->u.Memory.MaximumAddress.LowPart - IoDescriptor->u.Memory.MinimumAddress.LowPart + 1);
+
+        goto Finish;
+    }
+
+    if (AcpiDesc->GeneralFlags & 8)
+    {
+        if (IoDescriptor->Type == CmResourceTypeBusNumber)
+            IoDescriptor->u.BusNumber.MinBusNumber = (IoDescriptor->u.BusNumber.MaxBusNumber - IoDescriptor->u.BusNumber.Length + 1);
+        else
+            IoDescriptor->u.Memory.MinimumAddress.LowPart = (IoDescriptor->u.Memory.MaximumAddress.LowPart - IoDescriptor->u.Memory.Length + 1);
+
+        goto Finish;
+    }
+
+    if (AcpiDesc->GeneralFlags & 4)
+    {
+        if (IoDescriptor->Type == CmResourceTypeBusNumber)
+            IoDescriptor->u.BusNumber.MaxBusNumber = (IoDescriptor->u.BusNumber.MinBusNumber + IoDescriptor->u.BusNumber.Length - 1);
+        else
+            IoDescriptor->u.Memory.MaximumAddress.LowPart = (IoDescriptor->u.Memory.MinimumAddress.LowPart - IoDescriptor->u.Memory.Length - 1);
+    }
+
+Finish:
+
+    if (AcpiDesc->GeneralFlags & 1)
+        return STATUS_SUCCESS;
+
+    Status = PnpiUpdateResourceList(&ResourceListArray[Index], &IoDescriptor);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PnpiBiosAddressHandleGlobalFlags: Status %X\n", Status);
+        return Status;
+    }
+    RtlZeroMemory(IoDescriptor, sizeof(IO_RESOURCE_DESCRIPTOR));
+
+    IoDescriptor->Type = 0x81;
+    IoDescriptor->Flags = 1;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
