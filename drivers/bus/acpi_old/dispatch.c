@@ -7551,7 +7551,27 @@ PnpiClearAllocatedMemory(
     _In_ PIO_RESOURCE_LIST* ResourceListArray,
     _In_ ULONG ResourceListArraySize)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ULONG Index = 0;
+
+    DPRINT("PnpiClearAllocatedMemory: %p, %X\n", ResourceListArray, ResourceListArraySize);
+    PAGED_CODE();
+
+    if (ResourceListArray == NULL)
+        return;
+
+    if (ResourceListArraySize > Index)
+    {
+        do
+        {
+            if (ResourceListArray[Index])
+                ExFreePool(ResourceListArray[Index]);
+
+            Index++;
+        }
+        while (Index < ResourceListArraySize);
+    }
+
+    ExFreePool(ResourceListArray);
 }
 
 NTSTATUS
