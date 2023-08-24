@@ -7938,6 +7938,143 @@ PnpDeviceBiosResourcesToNtResources(
 
 NTSTATUS
 NTAPI
+ACPIRangeSortCmList(
+    _In_ PCM_RESOURCE_LIST CmResource)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIRangeSortIoList(
+    _In_ PIO_RESOURCE_LIST IoList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIRangeSubtractIoList(
+    _In_ PIO_RESOURCE_LIST IoList,
+    _In_ PCM_RESOURCE_LIST CmResource,
+    _Out_ PIO_RESOURCE_LIST* OutIoList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIRangeSubtract(
+    _Inout_ PIO_RESOURCE_REQUIREMENTS_LIST* OutIoResource,
+    _In_ PCM_RESOURCE_LIST CmResource)
+{
+    PIO_RESOURCE_REQUIREMENTS_LIST IoResource;
+    PIO_RESOURCE_LIST* ResourceListArray;
+    PIO_RESOURCE_LIST IoList;
+    ULONG ListCounter;
+    ULONG ResourceSize;
+    ULONG Size;
+    ULONG ix;
+    NTSTATUS Status;
+
+    DPRINT("ACPIRangeSubtract: %p, %p\n", OutIoResource, CmResource);
+
+    ListCounter = (*OutIoResource)->AlternativeLists;
+
+    Status = ACPIRangeSortCmList(CmResource);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIRangeSubtract: Status %X\n", Status);
+        return Status;
+    }
+
+    Size = (ListCounter * sizeof(PIO_RESOURCE_LIST));
+
+    ResourceListArray = ExAllocatePoolWithTag(NonPagedPool, Size, 'RpcA');
+    if (!ResourceListArray)
+    {
+        DPRINT1("ACPIRangeSubtract: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(ResourceListArray, Size);
+
+    IoList = (*OutIoResource)->List;
+    ResourceSize = (sizeof(IO_RESOURCE_REQUIREMENTS_LIST) - sizeof(IO_RESOURCE_LIST));
+
+    Status = ACPIRangeSortIoList(IoList);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIRangeSubtract: Status %X\n", Status);
+        return Status;
+    }
+
+    for (ix = 0; ix < ListCounter; ix++)
+    {
+        Status = ACPIRangeSubtractIoList(IoList, CmResource, &ResourceListArray[ix]);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIRangeSubtract: Status %X\n", Status);
+
+            while (ix)
+            {
+                ExFreePool(ResourceListArray[ix]);
+                ix--;
+            }
+
+            ExFreePool(ResourceListArray);
+
+            return Status;
+        }
+
+        ResourceSize += (sizeof(IO_RESOURCE_LIST) + (((ResourceListArray[ix])->Count - 1) * sizeof(IO_RESOURCE_DESCRIPTOR)));
+        Size = (sizeof(IO_RESOURCE_LIST) + (IoList->Count - 1) * sizeof(IO_RESOURCE_DESCRIPTOR));
+        IoList = Add2Ptr(IoList, Size);
+    }
+
+    IoResource = ExAllocatePoolWithTag(NonPagedPool, ResourceSize, 'RpcA');
+    if (!IoResource)
+    {
+        DPRINT1("ACPIRangeSubtract: STATUS_INSUFFICIENT_RESOURCES\n");
+
+        do
+        {
+            ListCounter--;
+            ExFreePool(ResourceListArray[ListCounter]);
+        }
+        while (ListCounter);
+
+        ExFreePool(ResourceListArray);
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(IoResource, ResourceSize);
+
+    RtlCopyMemory(IoResource, *OutIoResource, (sizeof(IO_RESOURCE_REQUIREMENTS_LIST) - sizeof(IO_RESOURCE_LIST)));
+
+    IoResource->ListSize = ResourceSize;
+    IoList = IoResource->List;
+
+    for (ix = 0; ix < ListCounter; ix++)
+    {
+        Size = sizeof(IO_RESOURCE_LIST) + ((((ResourceListArray[ix])->Count) - 1) * sizeof(IO_RESOURCE_DESCRIPTOR));
+        RtlCopyMemory(IoList, ResourceListArray[ix], Size);
+        IoList = Add2Ptr(IoList, Size);
+        ExFreePool(ResourceListArray[ix]);
+    }
+
+    ExFreePool(ResourceListArray);
+    ExFreePool(*OutIoResource);
+
+    *OutIoResource = IoResource;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 ACPIBusIrpQueryResourceRequirements(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
@@ -8007,8 +8144,18 @@ ACPIBusIrpQueryResourceRequirements(
 
     if (DeviceExtension->Flags & 0x0000000002000000)
     {
-        DPRINT1("ACPIBusIrpQueryResourceRequirements: FIXME\n");
-        ASSERT(FALSE);
+        //ACPIRangeValidatePciResources(DeviceExtension, IoResource);
+
+        Status = ACPIRangeSubtract(&IoResource, RootDeviceExtension->ResourceList);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIBusIrpQueryResourceRequirements: Status %X\n", Status);
+            ASSERT(NT_SUCCESS(Status));
+            ExFreePool(IoResource);
+            IoResource = NULL;
+        }
+
+        //ACPIRangeValidatePciResources(DeviceExtension, IoResource);
     }
     else if (DeviceExtension->Flags & 0x0000000200000000)
     {
