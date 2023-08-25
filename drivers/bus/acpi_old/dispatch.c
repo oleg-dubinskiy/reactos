@@ -8015,8 +8015,69 @@ NTAPI
 ACPIRangeSortIoList(
     _In_ PIO_RESOURCE_LIST IoList)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_RESOURCE_DESCRIPTOR Descriptor1;
+    PIO_RESOURCE_DESCRIPTOR Descriptor2;
+    IO_RESOURCE_DESCRIPTOR descriptor;
+    ULONG Count;
+    ULONG ix;
+    ULONG jx;
+
+    DPRINT("ACPIRangeSortIoList: %p\n", IoList);
+
+    Count = IoList->Count;
+
+    for (ix = 0; ix < Count; ix++)
+    {
+        Descriptor1 = &IoList->Descriptors[ix];
+
+        for (jx = (ix + 1); jx < Count; jx++)
+        {
+            Descriptor2 = &IoList->Descriptors[jx];
+
+            if (Descriptor1->Type != Descriptor2->Type)
+                continue;
+
+            if (Descriptor1->Type == CmResourceTypePort)
+            {
+                if (Descriptor2->u.Port.MinimumAddress.QuadPart < Descriptor1->u.Port.MinimumAddress.QuadPart)
+                    Descriptor1 = Descriptor2;
+
+                continue;
+            }
+
+            if (Descriptor1->Type == CmResourceTypeMemory)
+            {
+                if (Descriptor2->u.Memory.MinimumAddress.QuadPart < Descriptor1->u.Memory.MinimumAddress.QuadPart)
+                    Descriptor1 = Descriptor2;
+
+                continue;
+            }
+
+            if (Descriptor1->Type == CmResourceTypeInterrupt)
+            {
+                if (Descriptor2->u.Interrupt.MinimumVector < Descriptor1->u.Interrupt.MinimumVector)
+                    Descriptor1 = Descriptor2;
+
+                continue;
+            }
+
+            if (Descriptor1->Type == CmResourceTypeDma)
+            {
+                if (Descriptor2->u.Dma.MinimumChannel < Descriptor1->u.Dma.MaximumChannel)
+                    Descriptor1 = Descriptor2;
+            }
+        }
+
+        if (Descriptor1 == &IoList->Descriptors[ix])
+            continue;
+
+        RtlCopyMemory(&descriptor, &IoList->Descriptors[ix], sizeof(IO_RESOURCE_DESCRIPTOR));
+        RtlCopyMemory(&IoList->Descriptors[ix], Descriptor1, sizeof(IO_RESOURCE_DESCRIPTOR));
+        RtlCopyMemory(Descriptor1, &descriptor, sizeof(IO_RESOURCE_DESCRIPTOR));
+    }
+
+    return STATUS_SUCCESS;
+
 }
 
 NTSTATUS
