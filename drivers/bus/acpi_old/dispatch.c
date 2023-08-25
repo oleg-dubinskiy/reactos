@@ -7941,8 +7941,73 @@ NTAPI
 ACPIRangeSortCmList(
     _In_ PCM_RESOURCE_LIST CmResource)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PCM_PARTIAL_RESOURCE_LIST PartialList;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor1;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor2;
+    CM_PARTIAL_RESOURCE_DESCRIPTOR descriptor;
+    ULONG DescriptorCount;
+    ULONG DescriptorSize;
+    ULONG ix;
+    ULONG jx;
+
+    DPRINT("ACPIRangeSortCmList: %p\n", CmResource);
+
+    PartialList = &CmResource->List[0].PartialResourceList;
+
+    DescriptorCount = PartialList->Count;
+    DescriptorSize = sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR);
+
+    for (ix = 0; ix < DescriptorCount; ix++)
+    {
+        Descriptor1 = &PartialList->PartialDescriptors[ix];
+
+        for (jx = (ix + 1); jx < DescriptorCount; jx++)
+        {
+            Descriptor2 = &PartialList->PartialDescriptors[jx];
+
+            if (Descriptor1->Type != Descriptor2->Type)
+                continue;
+
+            if (Descriptor1->Type == CmResourceTypePort)
+            {
+                if (Descriptor2->u.Port.Start.QuadPart < Descriptor1->u.Port.Start.QuadPart)
+                    Descriptor1 = Descriptor2;
+
+                continue;
+            }
+
+            if (Descriptor1->Type == CmResourceTypeMemory)
+            {
+                if (Descriptor2->u.Memory.Start.QuadPart < Descriptor1->u.Memory.Start.QuadPart)
+                    Descriptor1 = Descriptor2;
+
+                continue;
+            }
+
+            if (Descriptor1->Type == CmResourceTypeInterrupt)
+            {
+                if (Descriptor2->u.Interrupt.Vector < Descriptor1->u.Interrupt.Vector)
+                    Descriptor1 = Descriptor2;
+
+                continue;
+            }
+
+            if (Descriptor1->Type == CmResourceTypeDma)
+            {
+                if (Descriptor2->u.Dma.Channel < Descriptor1->u.Dma.Channel)
+                    Descriptor1 = Descriptor2;
+            }
+        }
+
+        if (Descriptor1 == &PartialList->PartialDescriptors[ix])
+            continue;
+
+        RtlCopyMemory(&descriptor, &PartialList->PartialDescriptors[ix], DescriptorSize);
+        RtlCopyMemory(&PartialList->PartialDescriptors[ix], Descriptor1, DescriptorSize);
+        RtlCopyMemory(Descriptor1, &descriptor, DescriptorSize);
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
