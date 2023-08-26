@@ -8083,12 +8083,106 @@ ACPIRangeSortIoList(
 NTSTATUS
 NTAPI
 ACPIRangeSubtractIoList(
-    _In_ PIO_RESOURCE_LIST IoList,
+    _In_ PIO_RESOURCE_LIST InIoList,
     _In_ PCM_RESOURCE_LIST CmResource,
     _Out_ PIO_RESOURCE_LIST* OutIoList)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor;
+    PCM_PARTIAL_RESOURCE_LIST PartialList;
+    PIO_RESOURCE_DESCRIPTOR IoDescriptor;
+    PIO_RESOURCE_LIST IoList;
+    ULONG DescriptorCount;
+    ULONG Count;
+    ULONG Size;
+    ULONG ix;
+    ULONG jx = 0;
+    ULONG kx;
+
+    DPRINT("ACPIRangeSubtractIoList: %p, %p\n", InIoList, CmResource);
+
+    PartialList = &CmResource->List[0].PartialResourceList;
+
+    DescriptorCount = PartialList->Count;
+    Count = InIoList->Count;
+    Size = (sizeof(IO_RESOURCE_LIST) + ((((DescriptorCount + Count) * 2) - 1)) * sizeof(IO_RESOURCE_DESCRIPTOR));
+
+    IoList = ExAllocatePoolWithTag(NonPagedPool, Size, 'RpcA');
+    if (!IoList)
+    {
+        DPRINT1("ACPIRangeSubtractIoList: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(IoList, Size);
+
+    IoList->Version = InIoList->Version;
+    IoList->Revision = InIoList->Revision;
+    IoList->Count = InIoList->Count;
+
+    for (ix = 0; ix < Count; ix++)
+    {
+        RtlCopyMemory(&IoList->Descriptors[jx], &InIoList->Descriptors[ix], sizeof(IO_RESOURCE_DESCRIPTOR));
+
+        DPRINT("ACPIRangeSubtractIoList: InIoDesc[%X] %X -> IoDesc[%X] %X\n", ix, &InIoList->Descriptors[ix], jx, &IoList->Descriptors[jx]);
+
+        IoDescriptor = &IoList->Descriptors[jx];
+        jx++;
+
+        for (kx = 0; kx < DescriptorCount; kx++)
+        {
+            if (!IoDescriptor)
+                break;
+
+            CmDescriptor = &PartialList->PartialDescriptors[kx];
+
+            if (CmDescriptor->Type != IoDescriptor->Type)
+                continue;
+
+            if (IoDescriptor->Type == CmResourceTypePort ||
+                IoDescriptor->Type == CmResourceTypeMemory)
+            {
+                DPRINT1("ACPIRangeSubtractIoList: FIXME\n");
+                ASSERT(FALSE);
+                continue;
+            }
+
+            if (IoDescriptor->Type == CmResourceTypeInterrupt)
+            {
+                DPRINT1("ACPIRangeSubtractIoList: FIXME\n");
+                ASSERT(FALSE);
+                continue;
+            }
+
+            if (IoDescriptor->Type == CmResourceTypeDma)
+            {
+                DPRINT1("ACPIRangeSubtractIoList: FIXME\n");
+                ASSERT(FALSE);
+                continue;
+            }
+        }
+
+        IoDescriptor = &IoList->Descriptors[jx];
+        RtlCopyMemory(IoDescriptor, &InIoList->Descriptors[ix], sizeof(IO_RESOURCE_DESCRIPTOR));
+        IoDescriptor->Type = CmResourceTypeDevicePrivate;
+
+        DPRINT("ACPIRangeSubtractIoList: InIoDesc[%X] %X -> IoDesc[%X] %X for backup\n", ix, &InIoList->Descriptors[ix], jx, IoDescriptor);
+
+        jx++;
+    }
+
+    IoList->Count = jx;
+
+    Size = (sizeof(IO_RESOURCE_LIST) + (jx - 1) * sizeof(IO_RESOURCE_DESCRIPTOR));
+
+    *OutIoList = ExAllocatePoolWithTag(NonPagedPool, Size, 'RpcA');
+    if (*OutIoList == NULL)
+    {
+        DPRINT1("ACPIRangeSubtractIoList: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(*OutIoList, IoList, Size);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
