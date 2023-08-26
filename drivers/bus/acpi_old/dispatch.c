@@ -6999,8 +6999,104 @@ PnpIoResourceListToCmResourceList(
     _In_ PIO_RESOURCE_REQUIREMENTS_LIST IoResource,
     _Out_ PCM_RESOURCE_LIST* OutCmResource)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor;
+    PCM_RESOURCE_LIST CmResource;
+    PIO_RESOURCE_DESCRIPTOR IoDescriptor;
+    PIO_RESOURCE_LIST IoList;
+    ULONG Size;
+    ULONG ix;
+
+    DPRINT("PnpIoResourceListToCmResourceList: %p\n", IoResource);
+    PAGED_CODE();
+
+    *OutCmResource = NULL;
+
+    if (!IoResource)
+    {
+        DPRINT1("PnpIoResourceListToCmResourceList: STATUS_INVALID_DEVICE_REQUEST\n");
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    if (!IoResource->List)
+    {
+        DPRINT1("PnpIoResourceListToCmResourceList: STATUS_INVALID_DEVICE_REQUEST\n");
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    if (!IoResource->List[0].Count)
+    {
+        DPRINT1("PnpIoResourceListToCmResourceList: STATUS_INVALID_DEVICE_REQUEST\n");
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    Size = (sizeof(CM_RESOURCE_LIST) + (IoResource->List[0].Count - 1) * sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+
+    CmResource = ExAllocatePoolWithTag(PagedPool, Size, 'RpcA');
+    if (!CmResource)
+    {
+        DPRINT1("PnpIoResourceListToCmResourceList: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(CmResource, Size);
+
+    IoList = IoResource->List;
+
+    CmResource->Count = 1;
+    CmResource->List[0].InterfaceType = IoResource->InterfaceType;
+    CmResource->List[0].BusNumber = IoResource->BusNumber;
+
+    CmResource->List[0].PartialResourceList.Version = 1;
+    CmResource->List[0].PartialResourceList.Revision = 1;
+    CmResource->List[0].PartialResourceList.Count = IoList->Count;
+
+    for (ix = 0; ix < IoList->Count; ix++)
+    {
+        IoDescriptor = &IoList->Descriptors[ix];
+        CmDescriptor = &CmResource->List[0].PartialResourceList.PartialDescriptors[ix];
+
+        CmDescriptor->Type = IoDescriptor->Type;
+        CmDescriptor->ShareDisposition = IoDescriptor->ShareDisposition;
+        CmDescriptor->Flags = IoDescriptor->Flags;
+
+        switch (CmDescriptor->Type)
+        {
+            case CmResourceTypePort:
+                CmDescriptor->u.Port.Start = IoDescriptor->u.Port.MinimumAddress;
+                CmDescriptor->u.Port.Length = IoDescriptor->u.Port.Length;
+                break;
+
+            case CmResourceTypeInterrupt:
+                CmDescriptor->u.Interrupt.Level = IoDescriptor->u.Interrupt.MinimumVector;
+                CmDescriptor->u.Interrupt.Vector = IoDescriptor->u.Interrupt.MinimumVector;
+                CmDescriptor->u.Interrupt.Affinity = 0xFFFFFFFF;
+                break;
+
+            case CmResourceTypeMemory:
+                CmDescriptor->u.Memory.Start = IoDescriptor->u.Memory.MinimumAddress;
+                CmDescriptor->u.Memory.Length = IoDescriptor->u.Memory.Length;
+                break;
+
+            case CmResourceTypeDma:
+                CmDescriptor->u.Dma.Channel = IoDescriptor->u.Dma.MinimumChannel;
+                CmDescriptor->u.Dma.Port = 0;
+                break;
+
+            case CmResourceTypeBusNumber:
+                CmDescriptor->u.BusNumber.Start = IoDescriptor->u.BusNumber.MinBusNumber;
+                CmDescriptor->u.BusNumber.Length = IoDescriptor->u.BusNumber.Length;
+                break;
+
+            default:
+                CmDescriptor->u.DevicePrivate.Data[0] = IoDescriptor->u.DevicePrivate.Data[0];
+                CmDescriptor->u.DevicePrivate.Data[1] = IoDescriptor->u.DevicePrivate.Data[1];
+                CmDescriptor->u.DevicePrivate.Data[2] = IoDescriptor->u.DevicePrivate.Data[2];
+                break;
+        }
+    }
+
+    *OutCmResource = CmResource;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
