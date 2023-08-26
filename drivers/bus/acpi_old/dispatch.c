@@ -7590,7 +7590,7 @@ PnpBiosResourcesToNtResources(
     ULONG MaxIndex = 0;
     ULONG ListSize;
     ULONG Size;
-    ULONG ix;
+    ULONG ix = 0;
     ULONG jx = 0;
     UCHAR TagName;
     NTSTATUS Status;
