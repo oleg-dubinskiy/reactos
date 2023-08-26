@@ -6919,6 +6919,24 @@ ACPIBusIrpQueryCapabilities(
     return ACPIIrpInvokeDispatchRoutine(DeviceObject, Irp, 0, ACPIBusAndFilterIrpQueryCapabilities, TRUE, TRUE);
 }
 
+NTSTATUS
+NTAPI
+ACPIInitDosDeviceName(
+    _In_ PDEVICE_EXTENSION DeviceExtension)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PnpIoResourceListToCmResourceList(
+    _In_ PIO_RESOURCE_REQUIREMENTS_LIST IoResource,
+    _Out_ PCM_RESOURCE_LIST* OutCmResource)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
 
 NTSTATUS
 NTAPI
@@ -6926,8 +6944,134 @@ ACPIBusIrpQueryResources(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_RESOURCE_REQUIREMENTS_LIST IoResource = NULL;
+    PCM_RESOURCE_LIST CmResource = NULL;
+    PDEVICE_EXTENSION DeviceExtension;
+    PVOID DataBuff;
+    ULONG DataLen;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBusIrpQueryResources: %p, %p\n", DeviceObject, Irp);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    ACPIInitDosDeviceName(DeviceExtension);
+
+    Status = ACPIGet(DeviceExtension, 'ATS_', 0x20040802, NULL, 0, NULL, NULL, &DataBuff, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBusIrpQueryResources: Status %X\n", Status);
+        goto Finish;
+    }
+
+    if (!(DeviceExtension->Flags & 0x0040000000000000))
+    {
+        DPRINT1("ACPIBusIrpQueryResources: STATUS_INVALID_DEVICE_STATE (Device not Enabled)\n");
+        Status = STATUS_INVALID_DEVICE_STATE;
+        goto Finish;
+    }
+
+    if (DeviceExtension->Flags & 0x0000002000000000)
+    {
+        DPRINT1("ACPIBusIrpQueryResources: STATUS_OBJECT_NAME_NOT_FOUND\n");
+        Status = STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+    else
+    {
+        DataBuff = NULL;
+        Status = ACPIGet(DeviceExtension, 'SRC_', 0x20010008, NULL, 0, NULL, NULL, &DataBuff, &DataLen);
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBusIrpQueryResources: Status %X\n", Status);
+
+        if (! (DeviceExtension->Flags & 0x0000000002000000))
+            Status = Irp->IoStatus.Status;
+
+        goto Finish;
+    }
+
+    Status = PnpDeviceBiosResourcesToNtResources(DeviceExtension, DataBuff, ((DeviceExtension->Flags & 0x0000000002000000) != 0), &IoResource);
+
+    ExFreePool(DataBuff);
+
+    if (!IoResource)
+    {
+        if (DeviceExtension->Flags & 0x0000000002000000)
+            Status = STATUS_UNSUCCESSFUL;
+
+        goto Finish;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBusIrpQueryResources: Status %X\n", Status);
+        goto Finish;
+    }
+
+    if (DeviceExtension->Flags & 0x0000000002000000)
+    {
+        Status = ACPIRangeSubtract(&IoResource, RootDeviceExtension->ResourceList);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIBusIrpQueryResources: Status %X\n", Status);
+            ExFreePool(IoResource);
+            goto Finish;
+        }
+
+        //ACPIRangeValidatePciResources(DeviceExtension, IoResource);
+    }
+    else if (DeviceExtension->Flags & 0x0000000200000000)
+    {
+        ASSERT(FALSE);
+        Status = 0;//ACPIRangeFilterPICInterrupt(IoResource);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIBusIrpQueryResources: Status %X\n", Status);
+            ExFreePool(IoResource);
+            goto Finish;
+        }
+    }
+
+    if (NT_SUCCESS(Status))
+    {
+        Status = PnpIoResourceListToCmResourceList(IoResource, &CmResource);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIBusIrpQueryResources: Status %X\n", Status);
+            ExFreePool(IoResource);
+            goto Finish;
+        }
+    }
+
+    ExFreePool(IoResource);
+
+Finish:
+
+    if (!NT_SUCCESS(Status) && Status != STATUS_INSUFFICIENT_RESOURCES)
+    {
+        DPRINT1("ACPIBusIrpQueryResources: Status %X\n", Status);
+
+        if (DeviceExtension->Flags & 0x0000000002000000)
+        {
+            DPRINT1("ACPIBusIrpQueryResources: KeBugCheckEx()!!!n");
+            ASSERT(FALSE);
+            KeBugCheckEx(0xA5, 2, (ULONG_PTR)DeviceExtension, 0, (ULONG_PTR)Irp);
+        }
+    }
+
+    Irp->IoStatus.Status = Status;
+    if (NT_SUCCESS(Status))
+        Irp->IoStatus.Information = (ULONG_PTR)CmResource;
+    else
+        Irp->IoStatus.Information = 0;
+
+    IoCompleteRequest(Irp, 0);
+
+    DPRINT("ACPIBusIrpQueryResources: ret Status %X\n", Status);
+
+    return Status;
 }
 
 NTSTATUS

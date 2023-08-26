@@ -1288,6 +1288,22 @@ ACPIBuildRunMethodRequest(
     _In_ BOOLEAN IsInsertDpc
 );
 
+NTSTATUS
+NTAPI
+PnpDeviceBiosResourcesToNtResources(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PVOID Data,
+    _In_ ULONG Param3,
+    _Out_ PIO_RESOURCE_REQUIREMENTS_LIST* OutIoResource
+);
+
+NTSTATUS
+NTAPI
+ACPIRangeSubtract(
+    _Inout_ PIO_RESOURCE_REQUIREMENTS_LIST* OutIoResource,
+    _In_ PCM_RESOURCE_LIST CmResource
+);
+
 #endif /* _ACPI_H_ */
 
 /* EOF */
