@@ -6924,8 +6924,73 @@ NTAPI
 ACPIInitDosDeviceName(
     _In_ PDEVICE_EXTENSION DeviceExtension)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT Child;
+    AMLI_OBJECT_DATA DataResult;
+    UNICODE_STRING NameString;
+    ANSI_STRING AnsiString;
+    HANDLE DevInstRegKey;
+    ULONG Data = 1;
+    NTSTATUS Status;
+
+    DPRINT("ACPIInitDosDeviceName: %p\n", DeviceExtension);
+
+    RtlInitUnicodeString(&NameString, L"FirmwareIdentified");
+
+    Status = IoOpenDeviceRegistryKey(DeviceExtension->PhysicalDeviceObject, 1, 0x00020000, &DevInstRegKey);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInitDosDeviceName: Status %X\n", Status);
+        return STATUS_SUCCESS;
+    }
+
+    Status = ZwSetValueKey(DevInstRegKey, &NameString, 0, REG_DWORD, &Data, sizeof(Data));
+    RtlInitUnicodeString(&NameString, L"DosDeviceName");
+
+    Child = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'NDD_');
+    if (!Child)
+    {
+        ZwClose(DevInstRegKey);
+        return STATUS_SUCCESS;
+    }
+
+    Status = AMLIEvalNameSpaceObject(Child, &DataResult, 0, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInitDosDeviceName: Status %X\n", Status);
+        ZwClose(DevInstRegKey);
+        return STATUS_SUCCESS;
+    }
+
+    if (DataResult.DataType != 2)
+    {
+        DPRINT1("ACPIInitDosDeviceName: eval returns wrong type %X\n", DataResult.DataType);
+        AMLIFreeDataBuffs(&DataResult, 1);
+        ZwClose(DevInstRegKey);
+        return STATUS_SUCCESS;
+    }
+
+    RtlInitAnsiString(&AnsiString, DataResult.DataBuff);
+
+    Status = RtlAnsiStringToUnicodeString(&NameString, &AnsiString, TRUE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInitDosDeviceName: Status %X\n", Status);
+        AMLIFreeDataBuffs(&DataResult, 1);
+        ZwClose(DevInstRegKey);
+        return Status;
+    }
+
+    Status = ZwSetValueKey(DevInstRegKey, &NameString, 0, REG_SZ, NameString.Buffer, NameString.Length);
+
+    AMLIFreeDataBuffs(&DataResult, 1);
+    ZwClose(DevInstRegKey);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInitDosDeviceName: Status %X\n", Status);
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
