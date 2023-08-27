@@ -6148,14 +6148,186 @@ ACPIBusIrpQueryDeviceRelations(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+BOOLEAN
+NTAPI
+IsPciBus(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+NTSTATUS
+NTAPI
+TranslateEjectInterface(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+PciBusEjectInterface(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 NTAPI
 ACPIBusIrpQueryInterface(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PACPI_INTERFACE_STANDARD Interface;
+    PIO_STACK_LOCATION IoStack;
+    GUID* InterfaceType;
+    UNICODE_STRING GuidString;
+    CM_RESOURCE_TYPE ResourceType;
+    ULONG Size;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBusIrpQueryInterface: DeviceObject %p\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    InterfaceType = (PVOID)IoStack->Parameters.QueryInterface.InterfaceType;
+    ResourceType = (CM_RESOURCE_TYPE)IoStack->Parameters.QueryInterface.InterfaceSpecificData;
+
+    Status = RtlStringFromGUID(InterfaceType, &GuidString);
+    if (NT_SUCCESS(Status))
+    {
+        DPRINT("ACPIBusIrpQueryInterface: %X, %X, '%wZ'\n", IoStack->MinorFunction, ResourceType, &GuidString);
+        RtlFreeUnicodeString(&GuidString);
+    }
+
+    Status = STATUS_NOT_SUPPORTED;
+
+    if (InterfaceType == &GUID_ACPI_INTERFACE_STANDARD ||
+        RtlCompareMemory(InterfaceType, &GUID_ACPI_INTERFACE_STANDARD, sizeof(GUID)) == sizeof(GUID))
+    {
+        DPRINT("ACPIBusIrpQueryInterface: GUID_ACPI_INTERFACE_STANDARD\n");
+
+        if (IoStack->Parameters.QueryInterface.Size <= sizeof(ACPI_INTERFACE_STANDARD))
+            Size = IoStack->Parameters.QueryInterface.Size;
+        else
+            Size = sizeof(ACPI_INTERFACE_STANDARD);
+
+        Interface = (PVOID)IoStack->Parameters.QueryInterface.Interface;
+        RtlCopyMemory(Interface, &ACPIInterfaceTable, Size);
+
+        if (Size > 8) // FIXME
+            Interface->Context = DeviceObject;
+
+        Irp->IoStatus.Status = Status = STATUS_SUCCESS;
+
+        goto Exit;
+    }
+
+    if (InterfaceType == &GUID_TRANSLATOR_INTERFACE_STANDARD ||
+        RtlCompareMemory(InterfaceType, &GUID_TRANSLATOR_INTERFACE_STANDARD, sizeof(GUID)) == sizeof(GUID))
+    {
+        DPRINT("ACPIBusIrpQueryInterface: GUID_TRANSLATOR_INTERFACE_STANDARD. ResourceType %X\n", ResourceType);
+
+        if (ResourceType == CmResourceTypeInterrupt)
+        {
+            if (IsPciBus(DeviceObject))
+            {
+                DPRINT1("ACPIBusIrpQueryInterface: FIXME\n");
+                ASSERT(FALSE);
+                //SmashInterfaceQuery(Irp);
+            }
+
+            Status = Irp->IoStatus.Status;
+        }
+        else
+        {
+            if ((ResourceType == CmResourceTypePort || ResourceType == CmResourceTypeMemory) && IsPciBus(DeviceObject))
+            {
+                Status = TranslateEjectInterface(DeviceObject, Irp);
+            }
+
+            if (Status == STATUS_NOT_SUPPORTED)
+                Status = Irp->IoStatus.Status;
+            else
+                Irp->IoStatus.Status = Status;
+        }
+
+        goto Exit;
+    }
+
+    if (InterfaceType == &GUID_PCI_BUS_INTERFACE_STANDARD ||
+        RtlCompareMemory(InterfaceType, &GUID_PCI_BUS_INTERFACE_STANDARD, sizeof(GUID)) == sizeof(GUID))
+    {
+        if (!IsPciBus(DeviceObject))
+        {
+            Status = Irp->IoStatus.Status;
+            goto Exit;
+        }
+
+        Status = PciBusEjectInterface(DeviceObject, Irp);
+
+        if (Status == STATUS_NOT_SUPPORTED)
+            Status = Irp->IoStatus.Status;
+        else
+            Irp->IoStatus.Status = Status;
+
+        goto Exit;
+    }
+
+    if (InterfaceType == &GUID_BUS_INTERFACE_STANDARD ||
+        RtlCompareMemory(InterfaceType, &GUID_BUS_INTERFACE_STANDARD, sizeof(GUID)) == sizeof(GUID))
+    {
+        DPRINT("ACPIBusIrpQueryInterface: GUID_BUS_INTERFACE_STANDARD\n");
+
+        Irp->IoStatus.Status = STATUS_NOINTERFACE;
+
+        if (DeviceExtension->ParentExtension)
+        {
+            if (DeviceExtension->ParentExtension->DeviceObject)
+            {
+                DPRINT1("ACPIBusIrpQueryInterface: FIXME\n");
+                ASSERT(FALSE);
+                Irp->IoStatus.Status = 0;//ACPIInternalSendSynchronousIrp(DeviceExtension->ParentExtension->DeviceObject, IoStack, 0);
+            }
+        }
+
+        Status = Irp->IoStatus.Status;
+
+        goto Exit;
+    }
+
+    if (InterfaceType == &GUID_ARBITER_INTERFACE_STANDARD ||
+        RtlCompareMemory(InterfaceType, &GUID_ARBITER_INTERFACE_STANDARD, sizeof(GUID)) == sizeof(GUID))
+    {
+        DPRINT("ACPIBusIrpQueryInterface: GUID_ARBITER_INTERFACE_STANDARD\n");
+
+        if ((DeviceExtension->Flags & 0x0000002000000000) && DeviceExtension->Module.ArbitersNeeded)
+        {
+            DPRINT1("ACPIBusIrpQueryInterface: FIXME\n");
+            ASSERT(FALSE);
+            Irp->IoStatus.Status = Status = 0;//AcpiArblibEjectInterface(DeviceObject, Irp);
+
+            if (Status == STATUS_NOT_SUPPORTED)
+                Status = Irp->IoStatus.Status;
+
+            goto Exit;
+        }
+
+        Status = Irp->IoStatus.Status;
+    }
+
+Exit:
+
+    IoCompleteRequest(Irp, 0);
+    return Status;
 }
 
 NTSTATUS

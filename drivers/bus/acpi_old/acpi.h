@@ -13,7 +13,10 @@
 #include <ndk/rtlfuncs.h>
 #include <arbiter.h>           //sdk/lib/drivers/arbiter/arbiter.h
 #include <stdio.h>
+#include <initguid.h>
+#include <wdmguid.h>
 #include "amli.h"
+
 
 /* STRUCTURES ***************************************************************/
 
@@ -258,6 +261,14 @@ typedef struct _PROCESSOR_DEVICE_EXTENSION
     ULONG ProcessorIndex;
 } PROCESSOR_DEVICE_EXTENSION, *PPROCESSOR_DEVICE_EXTENSION;
 
+typedef struct _MODULE_DEVICE_EXTENSION
+{
+    EXTENSION_WORKER WorkQueue;
+    BOOLEAN ArbitersNeeded;
+    UCHAR Pad[3];
+    struct _ACPI_ARBITER_INSTANCE* Arbiters[3];
+} MODULE_DEVICE_EXTENSION, *PMODULE_DEVICE_EXTENSION;
+
 typedef struct _WORK_QUEUE_CONTEXT
 {
     WORK_QUEUE_ITEM Item;
@@ -385,6 +396,7 @@ typedef struct _DEVICE_EXTENSION
         EXTENSION_WORKER WorkQueue;
         BUTTON_EXTENSION Button;
         PROCESSOR_DEVICE_EXTENSION Processor;
+        MODULE_DEVICE_EXTENSION Module;
     };
     ACPI_DEVICE_STATE DeviceState;
     ACPI_DEVICE_STATE PreviousState;
