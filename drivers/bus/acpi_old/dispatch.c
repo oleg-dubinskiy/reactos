@@ -9339,8 +9339,41 @@ ACPIInternalDeviceQueryCapabilities(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIO_STACK_LOCATION IoStack;
+    PDEVICE_CAPABILITIES Capabilities;
+    NTSTATUS Status;
+
+    DPRINT("ACPIInternalDeviceQueryCapabilities: DeviceObject %p\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    Capabilities = IoStack->Parameters.DeviceCapabilities.Capabilities;
+
+    if (DeviceExtension->InstanceID)
+        Capabilities->UniqueID = 1;
+    else
+        Capabilities->UniqueID = 0;
+
+    if (DeviceExtension->Flags & 0x0000000000020000)
+        Capabilities->RawDeviceOK = 1;
+    else
+        Capabilities->RawDeviceOK = 0;
+
+    Capabilities->SilentInstall = 1;
+
+    Status = ACPISystemPowerQueryDeviceCapabilities(DeviceExtension, Capabilities);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInternalDeviceQueryCapabilities: Could query device capabilities - %X", Status);
+    }
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+    return Status;
 }
 
 NTSTATUS
