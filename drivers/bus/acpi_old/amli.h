@@ -875,4 +875,13 @@ EvalMethodComplete(
     _In_ PVOID Context
 );
 
+VOID
+__cdecl
+AmlisuppCompletePassive(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ ULONG Param3,
+    _In_ PVOID Context
+);
+
 /* EOF */

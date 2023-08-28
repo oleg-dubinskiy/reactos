@@ -6197,13 +6197,51 @@ ACPIBusIrpQueryDeviceRelations(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+NTAPI
+IsPciBusAsync(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext,
+    _In_ BOOLEAN* OutIsBusAsync)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 BOOLEAN
 NTAPI
 IsNsobjPciBus(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PDEVICE_EXTENSION DeviceExtension;
+    ACPI_WAIT_CONTEXT WaitContext;
+    BOOLEAN IsBusAsync = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("IsPciBusExtension: NsObject %p\n", NsObject);
+    PAGED_CODE();
+
+    DeviceExtension = NsObject->Context;
+    if (DeviceExtension)
+    {
+        ASSERT(DeviceExtension->Signature == '_SGP'); // ACPI_SIGNATURE
+
+        if (DeviceExtension->Flags & 0x0000000002000000)
+            return TRUE;
+    }
+
+    KeInitializeEvent(&WaitContext.Event, SynchronizationEvent, FALSE);
+
+    WaitContext.Status = STATUS_NOT_FOUND;
+
+    Status = IsPciBusAsync(NsObject, AmlisuppCompletePassive, &WaitContext, &IsBusAsync);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&WaitContext.Event, Executive, KernelMode, FALSE, NULL);
+    }
+
+    return IsBusAsync;
 }
 
 BOOLEAN
