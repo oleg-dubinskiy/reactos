@@ -9424,10 +9424,29 @@ ACPIInternalDeviceQueryDeviceRelations(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
-}
+    PIO_STACK_LOCATION IoStack;
+    NTSTATUS Status;
 
+    DPRINT("ACPIInternalDeviceQueryDeviceRelations: DeviceObject %p\n", DeviceObject);
+    PAGED_CODE();
+
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    if (IoStack->Parameters.QueryDeviceRelations.Type != TargetDeviceRelation)
+    {
+        DPRINT("ACPIInternalDeviceQueryDeviceRelations: Unhandled Type %X\n", IoStack->Parameters.QueryDeviceRelations.Type);
+        Status = Irp->IoStatus.Status;
+        goto Exit;
+    }
+
+    DPRINT1("ACPIInternalDeviceQueryDeviceRelations: FIXME\n");
+    ASSERT(FALSE);
+
+Exit:
+
+    IoCompleteRequest(Irp, 0);
+    return Status;
+}
 NTSTATUS
 NTAPI
 ACPIInternalDeviceQueryCapabilities(
