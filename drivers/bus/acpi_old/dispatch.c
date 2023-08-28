@@ -9257,8 +9257,91 @@ ACPIBusAndFilterIrpQueryPnpDeviceState(
     _In_ ULONG Param3,
     _In_ BOOLEAN Param4)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT NsObject = NULL;
+    PVOID DataBuff;
+    BOOLEAN IsFoundChild;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIBusAndFilterIrpQueryPnpDeviceState: %p, %p\n", DeviceObject, Irp);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if (!(DeviceExtension->Flags & 0x0008000000000000))
+    {
+        NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'ATS_');
+    }
+
+    IsFoundChild = (NsObject != NULL);
+
+    Status = ACPIGet(DeviceExtension, 'ATS_', 0x20040802, NULL, 0, NULL, NULL, &DataBuff, 0);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBusAndFilterIrpQueryPnpDeviceState: Status %X\n", Status);
+        goto Exit;
+    }
+
+    if (DeviceExtension->Flags & 0x0000000040000000)
+        Irp->IoStatus.Information |= 2;
+    else  if (DeviceExtension->Flags & 0x0000000020000000)
+        Irp->IoStatus.Information |= 2;
+    else if (IsFoundChild || !Param4)
+        Irp->IoStatus.Information &= ~2;
+
+    if (DeviceExtension->Flags & 0x0080000000000000)
+        Irp->IoStatus.Information |= 4;
+    else if (IsFoundChild && !Param4)
+        Irp->IoStatus.Information &= ~4;
+
+    if ((DeviceExtension->Flags & 0x0008000000000000) ||
+        (DeviceExtension->Flags & 0x0000001000000000) ||
+        (DeviceExtension->Flags & 0x0000000008000000) ||
+        (DeviceExtension->Flags & 0x0000000000040000))
+    {
+        if (DeviceExtension->Flags & 0x0000000000200000)
+            Irp->IoStatus.Information |= 0x20;
+
+        goto Exit;
+    }
+
+    NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'SID_');
+
+    if (Param4)
+    {
+        if (!NsObject)
+        {
+            NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, '3SP_');
+            if (!NsObject)
+                NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, '0RP_');
+        }
+
+        if (DeviceExtension->Flags & 0x0000000000200000)
+            NsObject = NULL;
+
+        if (NsObject)
+            Irp->IoStatus.Information &= ~0x20;
+
+        goto Exit;
+    }
+
+    if (!NsObject)
+    {
+        NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, '3SP_');
+        if (!NsObject)
+            NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, '0RP_');
+    }
+
+    if (DeviceExtension->Flags & 0x0000000000200000)
+        NsObject = NULL;
+
+    if (!NsObject)
+        Irp->IoStatus.Information |= 0x20;
+
+Exit:
+    DPRINT("ACPIBusAndFilterIrpQueryPnpDeviceState: Irp->IoStatus.Information %p\n", Irp->IoStatus.Information);
+
+    return Status;
 }
 
 NTSTATUS
