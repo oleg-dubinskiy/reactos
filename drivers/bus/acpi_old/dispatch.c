@@ -9251,12 +9251,24 @@ Finish:
 
 NTSTATUS
 NTAPI
+ACPIBusAndFilterIrpQueryPnpDeviceState(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ ULONG Param3,
+    _In_ BOOLEAN Param4)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPIBusIrpQueryPnpDeviceState(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAGED_CODE();
+    return ACPIIrpInvokeDispatchRoutine(DeviceObject, Irp, 0, ACPIBusAndFilterIrpQueryPnpDeviceState, TRUE, TRUE);
 }
 
 NTSTATUS
