@@ -6322,8 +6322,85 @@ TranslateEjectInterface(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIO_STACK_LOCATION IoStack;
+    PIO_RESOURCE_DESCRIPTOR IoDescriptor;
+    PTRANSLATOR_INTERFACE TranslateInterface;
+    PIO_RESOURCE_REQUIREMENTS_LIST IoResource = NULL;
+    PVOID Data = NULL;
+    PHYSICAL_ADDRESS MinimumAddress;
+    ULONG ix;
+    ULONG DataLen;
+    NTSTATUS Status;
+
+    DPRINT("TranslateEjectInterface: DeviceObject %p\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    ASSERT(DeviceExtension);
+    ASSERT(DeviceExtension->AcpiObject);
+
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+    ASSERT(IoStack->Parameters.QueryInterface.Size >= sizeof(TRANSLATOR_INTERFACE));
+
+    TranslateInterface = (PVOID)IoStack->Parameters.QueryInterface.Interface;
+    ASSERT(TranslateInterface != NULL);
+
+    Status = ACPIGet(DeviceExtension, 'SRC_', 0x20010008, NULL, 0, NULL, NULL, &Data, &DataLen);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("TranslateEjectInterface: Status %X\n", Status);
+        Status = Irp->IoStatus.Status;
+        goto Exit;
+    }
+
+    Status = PnpBiosResourcesToNtResources(Data, 1, &IoResource);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("TranslateEjectInterface: Status %X\n", Status);
+        goto Exit;
+    }
+
+    if (!IoResource || !IoResource->List[0].Count)
+    {
+        DPRINT1("TranslateEjectInterface: Status %X\n", Status);
+        Status = Irp->IoStatus.Status;
+        goto Exit;
+    }
+
+    for (ix = 0; ix < IoResource->List[0].Count; ix++)
+    {
+        IoDescriptor = &IoResource->List[0].Descriptors[ix];
+
+        if (IoResource->List[0].Descriptors[ix].Type == 0x81 &&
+            (IoResource->List[0].Descriptors[ix].Flags & 0x6000))
+        {
+            ASSERT(ix != 0);
+
+            MinimumAddress.LowPart  = IoDescriptor->u.DevicePrivate.Data[1];
+            MinimumAddress.HighPart = IoDescriptor->u.DevicePrivate.Data[2];
+
+            if (IoDescriptor->u.DevicePrivate.Data[0] != IoResource->List[0].Descriptors[ix - 1].Type ||
+                (MinimumAddress.QuadPart != IoDescriptor[-1].u.Generic.MinimumAddress.QuadPart))
+            {
+                DPRINT1("TranslateEjectInterface: FIXME\n");
+                ASSERT(FALSE);
+                break;
+            }
+        }
+    }
+
+    Status = Irp->IoStatus.Status;
+
+Exit:
+
+    if (Data)
+        ExFreePool(Data);
+
+    if (IoResource)
+        ExFreePool(IoResource);
+
+    return Status;
 }
 
 NTSTATUS
