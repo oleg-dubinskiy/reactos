@@ -6198,6 +6198,18 @@ ACPIBusIrpQueryDeviceRelations(
 }
 
 NTSTATUS
+__cdecl
+IsPciBusAsyncWorker(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ PVOID Param3,
+    _In_ PVOID InContext)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
 NTAPI
 IsPciBusAsync(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
@@ -6205,8 +6217,43 @@ IsPciBusAsync(
     _In_ PVOID CallBackContext,
     _In_ BOOLEAN* OutIsBusAsync)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIS_PCI_BUS_CONTEXT Context;
+    NTSTATUS Status;
+
+    DPRINT("IsPciBusAsync: NsObject %p\n", NsObject);
+
+    DeviceExtension = NsObject->Context;
+    if (DeviceExtension)
+    {
+        ASSERT(DeviceExtension->Signature == '_SGP');//ACPI_SIGNATURE
+
+        if (DeviceExtension->Flags & 0x0000000002000000)
+        {
+            *OutIsBusAsync = TRUE;
+            return STATUS_SUCCESS;
+        }
+    }
+
+    Context = ExAllocatePoolWithTag(NonPagedPool, sizeof(IS_PCI_BUS_CONTEXT), 'FpcA');
+    if (!Context)
+    {
+        DPRINT1("IsPciBusAsync: STATUS_INSUFFICIENT_RESOURCES\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(Context, sizeof(IS_PCI_BUS_CONTEXT));
+
+    Context->NsObject = NsObject;
+    Context->RefCount = -1;
+    Context->CallBack = CallBack;
+    Context->CallBackContext = CallBackContext;
+    Context->OutIsBusAsync = OutIsBusAsync;
+
+    *OutIsBusAsync = FALSE;
+
+    Status = IsPciBusAsyncWorker(NsObject, STATUS_SUCCESS, NULL, Context);
+
+    return Status;
 }
 
 BOOLEAN

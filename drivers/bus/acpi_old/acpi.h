@@ -491,6 +491,22 @@ typedef struct _ACPI_WAIT_CONTEXT
     NTSTATUS Status;
 } ACPI_WAIT_CONTEXT, *PACPI_WAIT_CONTEXT;
 
+typedef struct _IS_PCI_BUS_CONTEXT
+{
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    ULONG Flags;
+    PCHAR HidId;
+    PCHAR CidId;
+    PVOID Adr;
+    BOOLEAN IsPciDevice;
+    UCHAR Pad[3];
+    LONG RefCount;
+    PVOID CallBack;
+    PVOID CallBackContext;
+    BOOLEAN* OutIsBusAsync;
+    UCHAR Buffer[0x40]; // FIXME
+} IS_PCI_BUS_CONTEXT, *PIS_PCI_BUS_CONTEXT;
+
 /* PM_DISPATCH STRUCTURES ***************************************************/
 
 typedef struct _HALP_STATE_DATA
@@ -1222,6 +1238,14 @@ NTSTATUS
 NTAPI
 ACPIBuildProcessSynchronizationList(
     _In_ PLIST_ENTRY SynchronizationList
+);
+
+NTSTATUS
+NTAPI
+PnpBiosResourcesToNtResources(
+    _In_ PVOID Data,
+    _In_ ULONG Param2,
+    _Out_ PIO_RESOURCE_REQUIREMENTS_LIST* OutIoResource
 );
 
 /* registry.c */
