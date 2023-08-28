@@ -9426,8 +9426,23 @@ ACPIInternalSetDeviceInterface(
     IN PDEVICE_OBJECT DeviceObject,
     IN LPGUID InterfaceGuid)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    UNICODE_STRING SymbolicLinkName;
+    NTSTATUS Status;
+
+    Status = IoRegisterDeviceInterface(DeviceObject, InterfaceGuid, NULL, &SymbolicLinkName);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInternalSetDeviceInterface: IoRegisterDeviceInterface ret %X", Status);
+        return Status;
+    }
+
+    Status = IoSetDeviceInterfaceState(&SymbolicLinkName, TRUE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInternalSetDeviceInterface: IoSetDeviceInterfaceState ret %X", Status);
+    }
+
+    return Status;
 }
 
 NTSTATUS
