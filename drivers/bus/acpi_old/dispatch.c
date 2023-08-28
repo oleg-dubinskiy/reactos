@@ -5043,6 +5043,7 @@ ACPIDetectPdoDevices(
     PDEVICE_EXTENSION Extension;
     PDEVICE_RELATIONS InDeviceRelation = NULL;
     PDEVICE_RELATIONS DeviceRelation;
+    PDEVICE_OBJECT* Objects;
     PLIST_ENTRY Head;
     PLIST_ENTRY Entry;
     LONG RefCount;
@@ -5110,8 +5111,27 @@ ACPIDetectPdoDevices(
                 {
                     if ((Extension->Flags & 0x0000000000000020) && Extension->DeviceObject)
                     {
-                        DPRINT1("ACPIDetectPdoDevices: FIXME\n");
-                        ASSERT(FALSE);
+                        if (InDeviceRelation && InDeviceRelation->Count)
+                        {
+                            ix = 0;
+                            Objects = InDeviceRelation->Objects;
+                            while (*Objects != Extension->DeviceObject)
+                            {
+                                Objects++;
+                                ix++;
+                                if (ix >= InDeviceRelation->Count)
+                                {
+                                    count++;
+                                    ACPIInternalUpdateFlags(Extension, 0x100, 1);
+                                    break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            count++;
+                            ACPIInternalUpdateFlags(Extension, 0x100, 1);
+                        }
                     }
                 }
                 else
