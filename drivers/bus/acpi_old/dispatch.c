@@ -689,6 +689,7 @@ extern KSPIN_LOCK AcpiPowerLock;
 extern PUCHAR GpeEnable;
 extern PUCHAR GpeWakeHandler;
 extern PUCHAR GpeSpecialHandler;
+extern ARBITER_INSTANCE AcpiArbiter;
 
 /* FUNCTIOS *****************************************************************/
 
@@ -5662,8 +5663,56 @@ ACPIRootIrpQueryInterface(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_STACK_LOCATION IoStack;
+    GUID* InterfaceType;
+    ARBITER_INTERFACE Interface;
+    UNICODE_STRING GuidString;
+    CM_RESOURCE_TYPE ResourceType;
+    ULONG Size;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+    InterfaceType = (PVOID)IoStack->Parameters.QueryInterface.InterfaceType;
+    ResourceType = (CM_RESOURCE_TYPE)IoStack->Parameters.QueryInterface.InterfaceSpecificData;
+
+    Status = RtlStringFromGUID(IoStack->Parameters.QueryInterface.InterfaceType, &GuidString);
+    if (NT_SUCCESS(Status))
+    {
+        DPRINT("ACPIRootIrpQueryInterface: %X, '%wZ'\n", ResourceType, &GuidString);
+        RtlFreeUnicodeString(&GuidString);
+    }
+
+    if (InterfaceType == &GUID_ARBITER_INTERFACE_STANDARD ||
+        (RtlCompareMemory(InterfaceType, &GUID_ARBITER_INTERFACE_STANDARD, sizeof(GUID)) == sizeof(GUID)))
+    {
+        if (ResourceType == CmResourceTypeInterrupt)
+        {
+            if (IoStack->Parameters.QueryInterface.Size <= sizeof(ARBITER_INTERFACE))
+                Size = IoStack->Parameters.QueryInterface.Size;
+            else
+                Size = sizeof(ARBITER_INTERFACE);
+
+            Interface.Size = sizeof(ARBITER_INTERFACE);
+            Interface.Version = 1;
+            Interface.Flags = 0;
+            Interface.ArbiterHandler = ArbArbiterHandler;
+            Interface.Context = &AcpiArbiter;
+            Interface.InterfaceReference = AcpiNullReference;
+            Interface.InterfaceDereference = AcpiNullReference;
+
+            RtlCopyMemory(IoStack->Parameters.QueryInterface.Interface, &Interface, Size);
+
+            Irp->IoStatus.Status = STATUS_SUCCESS;
+        }
+    }
+
+    Status = Irp->IoStatus.Status;
+
+    DPRINT("ACPIRootIrpQueryInterface: Status %X\n", Status);
+
+    return ACPIDispatchForwardIrp(DeviceObject, Irp);
 }
 
 NTSTATUS
