@@ -6199,11 +6199,36 @@ ACPIBusIrpQueryDeviceRelations(
 
 BOOLEAN
 NTAPI
-IsPciBus(
-    _In_ PDEVICE_OBJECT DeviceObject)
+IsNsobjPciBus(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject)
 {
     UNIMPLEMENTED_DBGBREAK();
     return FALSE;
+}
+
+BOOLEAN
+NTAPI
+IsPciBusExtension(
+    _In_ PDEVICE_EXTENSION DeviceExtension)
+{
+    DPRINT("IsPciBusExtension: DeviceExtension %p\n", DeviceExtension);
+    PAGED_CODE();
+    return IsNsobjPciBus(DeviceExtension->AcpiObject);
+}
+
+BOOLEAN
+NTAPI
+IsPciBus(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+
+    DPRINT("IsPciBus: DeviceObject %p\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    return IsPciBusExtension(DeviceExtension);
 }
 
 NTSTATUS
