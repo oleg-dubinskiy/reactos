@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <initguid.h>
 #include <wdmguid.h>
+#include <poclass.h>
 #include "amli.h"
 
 

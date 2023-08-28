@@ -9422,12 +9422,28 @@ ACPIButtonDeviceControl(
 
 NTSTATUS
 NTAPI
+ACPIInternalSetDeviceInterface(
+    IN PDEVICE_OBJECT DeviceObject,
+    IN LPGUID InterfaceGuid)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPIButtonStartDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    Status = ACPIInternalSetDeviceInterface(DeviceObject, (LPGUID)&GUID_DEVICE_SYS_BUTTON);
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS
