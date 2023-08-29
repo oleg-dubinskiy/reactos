@@ -6423,14 +6423,117 @@ Exit:
     return Status;
 }
 
+VOID
+NTAPI
+PciInterfacePinToLine(
+    _In_ PVOID Context,
+    _In_ PPCI_COMMON_CONFIG PciData)
+{
+    ;
+}
+
+VOID
+NTAPI
+PciInterfaceLineToPin(
+    _In_ PVOID Context,
+    _In_ PPCI_COMMON_CONFIG PciNewData,
+    _In_ PPCI_COMMON_CONFIG PciOldData)
+{
+    ;
+}
+
 NTSTATUS
 NTAPI
 PciBusEjectInterface(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_RESOURCE_REQUIREMENTS_LIST IoResource = NULL;
+    PPCI_BUS_INTERFACE_STANDARD Interface;
+    PIO_STACK_LOCATION IoStack;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+    BOOLEAN IsFound = FALSE;
+    AMLI_OBJECT_DATA Data;
+    ULONG MinBusNumber;
+    ULONG ix;
+
+    DPRINT("PciBusEjectInterface: DeviceObject %p\n", DeviceObject);
+    PAGED_CODE();
+
+    ASSERT(PmHalDispatchTable->Function[6]);//HalPciInterfaceReadConfig
+    ASSERT(PmHalDispatchTable->Function[7]);//HalPciInterfaceWriteConfig
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    ASSERT(DeviceExtension);
+    ASSERT(DeviceExtension->AcpiObject);
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+    ASSERT(IoStack->Parameters.QueryInterface.Size >= sizeof(PCI_BUS_INTERFACE_STANDARD));
+
+    Interface = (PPCI_BUS_INTERFACE_STANDARD)IoStack->Parameters.QueryInterface.Interface;
+    ASSERT(Interface);
+
+    Status = ACPIGet(DeviceExtension, 'SRC_', 0x20020000, NULL, 0, NULL, NULL, (PVOID *)&Data, 0);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PciBusEjectInterface: Status %X\n", Status);
+        goto Finish;
+    }
+
+    ASSERT(Data.DataType == 3);//OBJTYPE_BUFFDATA
+
+    Status = PnpBiosResourcesToNtResources(Data.DataBuff, 1, &IoResource);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PciBusEjectInterface: Status %X\n", Status);
+        AMLIFreeDataBuffs(&Data, 1);
+        goto Finish;
+    }
+
+    if (!IoResource)
+    {
+        AMLIFreeDataBuffs(&Data, 1);
+        goto Finish;
+    }
+
+    ASSERT(IoResource->AlternativeLists == 1);
+
+    for (ix = 0; ix < IoResource->List[0].Count; ix++)
+    {
+        if (IoResource->List[0].Descriptors[ix].Type == CmResourceTypeBusNumber)
+            break;
+    }
+
+    if (ix != IoResource->List[0].Count)
+    {
+        MinBusNumber = IoResource->List[0].Descriptors[ix].u.BusNumber.MinBusNumber;
+        IsFound = TRUE;
+    }
+
+    AMLIFreeDataBuffs(&Data, 1);
+
+Finish:
+
+    if (!IsFound)
+        MinBusNumber = 0;
+
+    Interface->Size = sizeof(PCI_BUS_INTERFACE_STANDARD);
+    Interface->Version = 1;
+    Interface->Context = (PVOID)MinBusNumber;
+    Interface->InterfaceReference = AcpiNullReference;
+    Interface->InterfaceDereference = AcpiNullReference;
+    Interface->ReadConfig = PmHalDispatchTable->Function[6];//HalPciInterfaceReadConfig;
+    Interface->WriteConfig = PmHalDispatchTable->Function[7];//HalPciInterfaceWriteConfig;
+    Interface->PinToLine = PciInterfacePinToLine;
+    Interface->LineToPin = PciInterfaceLineToPin;
+
+    if (IoResource)
+        ExFreePool(IoResource);
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
