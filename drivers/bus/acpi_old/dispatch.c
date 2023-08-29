@@ -2362,6 +2362,62 @@ Exit:
     ExFreePool(AcpiGetContext);
 }
 
+VOID
+__cdecl
+ACPIGetWorkerForData(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ PVOID Context)
+{
+    PACPI_GET_CONTEXT AcpiGetContext = Context;
+    BOOLEAN IsFreeBuffs;
+    KIRQL Irql;
+
+    DPRINT("ACPIGetWorkerForData: %p, %X\n", AcpiGetContext, AcpiGetContext->Flags);
+
+    if (NT_SUCCESS(InStatus))
+        IsFreeBuffs = TRUE;
+    else
+        IsFreeBuffs = FALSE;
+
+    ASSERT(AcpiGetContext->OutDataBuff);
+
+    if (!AcpiGetContext->OutDataBuff)
+    {
+        DPRINT1("ACPIGetWorkerForData: STATUS_INSUFFICIENT_RESOURCES\n");
+        InStatus = STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (NT_SUCCESS(InStatus))
+    {
+        RtlCopyMemory(AcpiGetContext->OutDataBuff, AmliData, sizeof(AMLI_OBJECT_DATA));
+        RtlZeroMemory(AmliData, sizeof(*AmliData));
+
+        IsFreeBuffs = FALSE;
+    }
+
+    AcpiGetContext->Status = InStatus;
+
+    if (IsFreeBuffs)
+        AMLIFreeDataBuffs(AmliData, 1);
+
+    if (AcpiGetContext->Flags & 0x20000000)
+        return;
+
+    if (AcpiGetContext->CallBack)
+    {
+        DPRINT1("ACPIGetWorkerForData: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeAcquireSpinLock(&AcpiGetLock, &Irql);
+    RemoveEntryList(&AcpiGetContext->List);
+    KeReleaseSpinLock(&AcpiGetLock, Irql);
+
+    ExFreePool(AcpiGetContext);
+}
+
 NTSTATUS
 NTAPI
 ACPIGet(
@@ -2409,8 +2465,7 @@ ACPIGet(
     }
     else if ((Flags & 0x1F0000) == 0x20000)
     {
-        DPRINT1("ACPIGet: FIXME\n");
-        ASSERT(FALSE);
+        Worker = ACPIGetWorkerForData;
     }
     else if ((Flags & 0x1F0000) == 0x40000)
     {
