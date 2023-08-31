@@ -10618,6 +10618,15 @@ ACPIRootIrpStartDevice(
     return Status;
 }
 
+PAMLI_NAME_SPACE_OBJECT
+NTAPI
+OSConvertDeviceHandleToPNSOBJ(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return NULL;
+}
+
 NTSTATUS
 NTAPI
 ACPIIoctlEvalPreProcessing(
@@ -10630,8 +10639,97 @@ ACPIIoctlEvalPreProcessing(
     _Out_ PAMLI_OBJECT_DATA* OutDataArgs,
     _Out_ ULONG* OutArgsCount)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_EVAL_INPUT_BUFFER InBuffer;
+    PAMLI_NAME_SPACE_OBJECT ScopeNsObject;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PAMLI_OBJECT_DATA DataArgs = NULL;
+    PAMLI_OBJECT_DATA DataResult = NULL;
+    CHAR ObjPath[8];
+    ULONG ArgsCount = 0;
+    ULONG InBufferLength;
+    ULONG OutBufferLength;
+    NTSTATUS Status;
+
+    DPRINT("ACPIIoctlEvalPreProcessing: %p, %p\n", DeviceObject, Irp);
+
+    InBufferLength = IoStack->Parameters.DeviceIoControl.InputBufferLength;
+    OutBufferLength = IoStack->Parameters.DeviceIoControl.OutputBufferLength;
+
+    Irp->IoStatus.Information = 0;
+
+    if (InBufferLength < sizeof(ACPI_EVAL_INPUT_BUFFER))
+    {
+        DPRINT1("ACPIIoctlEvalPreProcessing: STATUS_INFO_LENGTH_MISMATCH. InBufferLength %X\n", InBufferLength);
+        ASSERT(FALSE);
+        return STATUS_INFO_LENGTH_MISMATCH;
+    }
+
+    if (OutBufferLength && OutBufferLength < sizeof(ACPI_EVAL_OUTPUT_BUFFER))
+    {
+        DPRINT1("ACPIIoctlEvalPreProcessing: STATUS_INFO_LENGTH_MISMATCH. OutBufferLength %X\n", OutBufferLength);
+        ASSERT(FALSE);
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    InBuffer = Irp->AssociatedIrp.SystemBuffer;
+
+    RtlZeroMemory(ObjPath, sizeof(*ObjPath));
+
+    ASSERT(sizeof(InBuffer->MethodName) <= sizeof(ObjPath));
+    RtlCopyMemory(ObjPath, InBuffer->MethodName, sizeof(InBuffer->MethodName));
+
+    ScopeNsObject = OSConvertDeviceHandleToPNSOBJ(DeviceObject);
+    if (!ScopeNsObject)
+    {
+        DPRINT("ACPIIoctlEvalPreProcessing: STATUS_NO_SUCH_DEVICE\n");
+        ASSERT(FALSE);
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    Status = AMLIGetNameSpaceObject(ObjPath, ScopeNsObject, &NsObject, 1);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIIoctlEvalPreProcessing: Status %X\n", Status);
+        return Status;
+    }
+
+    DataResult = ExAllocatePoolWithTag(PoolType, sizeof(*DataResult), 'RcpA');
+    if (!DataResult)
+    {
+        DPRINT("ACPIIoctlEvalPreProcessing: STATUS_INSUFFICIENT_RESOURCES\n");
+        ASSERT(FALSE);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (InBuffer->Signature == 'BieA')
+        goto Exit;
+
+    if (InBuffer->Signature == 'CieA')
+    {
+        DPRINT1("ACPIIoctlEvalPreProcessing: FIXME\n");
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    if (InBuffer->Signature != 'IieA' &&
+        InBuffer->Signature != 'SieA')
+    {
+        DPRINT("ACPIIoctlEvalPreProcessing: Unknown signature %X\n", InBuffer->Signature);
+        ASSERT(FALSE);
+        return STATUS_INVALID_PARAMETER_1;
+    }
+
+    DPRINT1("ACPIIoctlEvalPreProcessing: FIXME\n");
+    ASSERT(FALSE);
+
+Exit:
+
+    *OutNsObject = NsObject;
+    *OutDataResult = DataResult;
+    *OutDataArgs = DataArgs;
+    *OutArgsCount = ArgsCount;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
