@@ -10620,12 +10620,67 @@ ACPIRootIrpStartDevice(
 
 NTSTATUS
 NTAPI
+ACPIIoctlEvalControlMethod(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PIO_STACK_LOCATION IoStack)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPIIrpDispatchDeviceControl(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_STACK_LOCATION IoStack;
+    NTSTATUS Status;
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    DPRINT("ACPIIrpDispatchDeviceControl: %p, %p, %X\n", DeviceObject, Irp, IoStack->Parameters.DeviceIoControl.IoControlCode);
+
+    if (Irp->RequestorMode != KernelMode)
+        return ACPIDispatchForwardIrp(DeviceObject, Irp);
+
+    switch (IoStack->Parameters.DeviceIoControl.IoControlCode)
+    {
+        case 0x32C000:
+            DPRINT1("ACPIIrpDispatchDeviceControl: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case 0x32C004:
+            Status = ACPIIoctlEvalControlMethod(DeviceObject, Irp, IoStack);
+            break;
+
+        case 0x32C008:
+            DPRINT1("ACPIIrpDispatchDeviceControl: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case 0x32C00C:
+            DPRINT1("ACPIIrpDispatchDeviceControl: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case 0x32C010:
+            DPRINT1("ACPIIrpDispatchDeviceControl: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case 0x32C014:
+            DPRINT1("ACPIIrpDispatchDeviceControl: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        default:
+            return ACPIDispatchForwardIrp(DeviceObject, Irp);
+    }
+
+    return Status;
 }
 
 NTSTATUS
