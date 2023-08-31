@@ -10620,13 +10620,72 @@ ACPIRootIrpStartDevice(
 
 NTSTATUS
 NTAPI
+ACPIIoctlEvalPreProcessing(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PIO_STACK_LOCATION IoStack,
+    _In_ POOL_TYPE PoolType,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutNsObject,
+    _Out_ PAMLI_OBJECT_DATA* OutDataResult,
+    _Out_ PAMLI_OBJECT_DATA* OutDataArgs,
+    _Out_ ULONG* OutArgsCount)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIIoctlEvalPostProcessing(
+    _In_ PIRP Irp,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPIIoctlEvalControlMethod(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp,
     _In_ PIO_STACK_LOCATION IoStack)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PAMLI_OBJECT_DATA DataResult = NULL;
+    PAMLI_OBJECT_DATA DataArgs = NULL;
+    ULONG ArgsCount = 0;
+    NTSTATUS Status;
+
+    DPRINT("ACPIIoctlEvalControlMethod: %p, %p, %p\n", DeviceObject, Irp, IoStack->Parameters.DeviceIoControl.IoControlCode);
+
+    Status = ACPIIoctlEvalPreProcessing(DeviceObject, Irp, IoStack, PagedPool, &NsObject, &DataResult, &DataArgs, &ArgsCount);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIIoctlEvalControlMethod: Status %X\n", Status);
+        goto Exit;
+    }
+
+    Status = AMLIEvalNameSpaceObject(NsObject, DataResult, ArgsCount, DataArgs);
+
+    if (DataArgs)
+        ExFreePool(DataArgs);
+
+    if (NT_SUCCESS(Status))
+    {
+        Status = ACPIIoctlEvalPostProcessing(Irp, DataResult);
+        AMLIFreeDataBuffs(DataResult, 1);
+    }
+
+Exit:
+
+    if (DataResult)
+        ExFreePool(DataResult);
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS
