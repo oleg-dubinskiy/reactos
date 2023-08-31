@@ -10623,8 +10623,22 @@ NTAPI
 OSConvertDeviceHandleToPNSOBJ(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return NULL;
+    PDEVICE_EXTENSION DeviceExtension;
+
+    if (!DeviceObject)
+    {
+        ASSERT(DeviceObject != NULL);
+        return NULL;
+    }
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    if (!DeviceExtension)
+    {
+        ASSERT(DeviceExtension != NULL);
+        return NULL;
+    }
+
+    return DeviceExtension->AcpiObject;
 }
 
 NTSTATUS
@@ -10673,7 +10687,7 @@ ACPIIoctlEvalPreProcessing(
 
     InBuffer = Irp->AssociatedIrp.SystemBuffer;
 
-    RtlZeroMemory(ObjPath, sizeof(*ObjPath));
+    RtlZeroMemory(ObjPath, sizeof(ObjPath));
 
     ASSERT(sizeof(InBuffer->MethodName) <= sizeof(ObjPath));
     RtlCopyMemory(ObjPath, InBuffer->MethodName, sizeof(InBuffer->MethodName));
