@@ -4102,8 +4102,50 @@ NTSTATUS NTAPI ACPIDevicePowerProcessPhase0DeviceSubPhase2(_In_ PACPI_POWER_REQU
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT NsObject = NULL;
+    DEVICE_POWER_STATE State;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIDevicePowerProcessPhase1DeviceSubPhase1: %p\n", Request);
+
+    DeviceExtension = Request->DeviceExtension;
+    State = Request->u.DevicePowerRequest.DevicePowerState;
+
+    RtlZeroMemory(&Request->ResultData, sizeof(Request->ResultData));
+
+    Request->ResultData.DataType = 1;
+
+    if (State == PowerDeviceD0 || (Request->u.DevicePowerRequest.Flags & 0x10))
+    {
+        Request->NextWorkDone = 6;
+        goto Exit;
+    }
+
+    if (DeviceExtension->Flags & 0x0008000000000000)
+    {
+        Request->NextWorkDone = 5;
+        goto Exit;
+    }
+
+    Request->NextWorkDone = 4;
+
+    if (State != PowerDeviceD3)
+        goto Exit;
+
+    NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'SID_');
+    if (!NsObject)
+        goto Exit;
+
+    Status = AMLIAsyncEvalObject(NsObject, NULL, 0, NULL, (PVOID)ACPIDeviceCompleteGenericPhase, Request);
+    if (Status == STATUS_PENDING)
+        return Status;
+
+Exit:
+
+    ACPIDeviceCompleteGenericPhase(NsObject, Status, NULL, Request);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase2(_In_ PACPI_POWER_REQUEST Request)
