@@ -3978,6 +3978,15 @@ Exit:
 }
 
 VOID
+NTAPI
+ACPIDeviceCompleteCommon(
+    _In_ PLONG Destination,
+    _In_ LONG ExChange)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
 __cdecl
 ACPIDeviceCompleteGenericPhase(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
@@ -3985,7 +3994,23 @@ ACPIDeviceCompleteGenericPhase(
     _In_ PVOID Unknown3,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_POWER_REQUEST Request = Context;
+
+    //DPRINT("ACPIDeviceCompleteGenericPhase: %p, %X, %X, %p\n", NsObject, InStatus, Unknown3, Context);
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIDeviceCompleteGenericPhase: InStatus %X\n", InStatus);
+
+        Request->Status = InStatus;
+        ACPIDeviceCompleteCommon(&Request->WorkDone, 2);
+
+        return;
+    }
+
+    ACPIDeviceCompleteCommon(&Request->WorkDone, Request->NextWorkDone);
+
+    //DPRINT("ACPIDeviceCompleteGenericPhase: exit\n");
 }
 
 NTSTATUS
