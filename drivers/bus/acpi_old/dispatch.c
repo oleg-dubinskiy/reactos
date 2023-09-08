@@ -4149,7 +4149,34 @@ ACPIInternalMovePowerList(
     _In_ PLIST_ENTRY List1,
     _In_ PLIST_ENTRY List2)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_POWER_REQUEST Request;
+    PLIST_ENTRY Entry;
+
+    DPRINT("ACPIInternalMovePowerList: %X %X\n", List1, List2);
+
+    Entry = List1->Flink;
+
+    while (Entry != List1)
+    {
+        Request = CONTAINING_RECORD(Entry, ACPI_POWER_REQUEST, ListEntry);
+
+        if (Entry == &AcpiPowerPhase0List ||
+            Entry == &AcpiPowerPhase1List ||
+            Entry == &AcpiPowerPhase2List ||
+            Entry == &AcpiPowerPhase3List ||
+            Entry == &AcpiPowerPhase4List ||
+            Entry == &AcpiPowerPhase5List ||
+            Entry == &AcpiPowerWaitWakeList)
+        {
+            DPRINT1("ACPIInternalMoveList: %X is linked into %X\n", Entry, List1);
+            DbgBreakPoint();
+        }
+
+        Entry = Entry->Flink;
+        InterlockedExchange(&Request->WorkDone, 3);
+    }
+
+    ACPIInternalMoveList(List1, List2);
 }
 
 NTSTATUS
