@@ -27,6 +27,7 @@
 #endif
 
 /* GLOBALS *******************************************************************/
+DEFINE_GUID(GUID_PCI_PME_INTERFACE, 0xAAC7E6AC, 0xBB0B, 0x11D2, 0xB4, 0x84, 0x00, 0xC0, 0x4F, 0x72, 0xDE, 0x8B); // FIXME
 
 PAMLI_NAME_SPACE_OBJECT ProcessorList[0x20];
 ACPI_INTERFACE_STANDARD ACPIInterfaceTable;
@@ -34,6 +35,7 @@ ACPI_HAL_DISPATCH_TABLE AcpiHalDispatchTable;
 PDEVICE_OBJECT FixedButtonDeviceObject;
 PPM_DISPATCH_TABLE PmHalDispatchTable;
 PACPI_INFORMATION AcpiInformation;
+PPCI_PME_INTERFACE PciPmeInterface;
 KSPIN_LOCK NotifyHandlerLock;
 KSPIN_LOCK GpeTableLock;
 ULONG AcpiSupportedSystemStates;
@@ -11006,8 +11008,54 @@ NTAPI
 ACPIWakeInitializePmeRouting(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PINTERFACE Interface;
+    IO_STACK_LOCATION ioStack;
+    ULONG_PTR dummyInformation;
+    KIRQL Irql;
+    NTSTATUS Status;
+
+    DPRINT("ACPIWakeInitializePmeRouting: %p\n", DeviceObject);
+
+    Interface = ExAllocatePoolWithTag(NonPagedPool, sizeof(INT_ROUTE_INTERFACE_STANDARD), 'ApcA');
+    if (!Interface)
+    {
+        DPRINT1("ACPIWakeInitializePmeRouting: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(&ioStack, sizeof(ioStack));
+
+    ioStack.MajorFunction = IRP_MJ_PNP;
+    ioStack.MinorFunction = IRP_MN_QUERY_INTERFACE;
+
+    ioStack.Parameters.QueryInterface.InterfaceType = &GUID_PCI_PME_INTERFACE;
+    ioStack.Parameters.QueryInterface.Size = sizeof(INT_ROUTE_INTERFACE_STANDARD);
+    ioStack.Parameters.QueryInterface.Version = 1;
+    ioStack.Parameters.QueryInterface.Interface = Interface;
+
+    Status = ACPIInternalSendSynchronousIrp(DeviceObject, &ioStack, &dummyInformation);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("ACPIWakeInitializePmeRouting: Status %X\n", Status);
+        ExFreePoolWithTag(Interface, 'ApcA');
+        return Status;
+    }
+
+    KeAcquireSpinLock(&AcpiPowerLock, &Irql);
+
+    if (PciPmeInterfaceInstantiated)
+    {
+        ExFreePoolWithTag(Interface, 'ApcA');
+    }
+    else
+    {
+        PciPmeInterfaceInstantiated = TRUE;
+        PciPmeInterface = (PVOID)Interface;
+    }
+
+    KeReleaseSpinLock(&AcpiPowerLock, Irql);
+
+    return Status;
 }
 
 NTSTATUS
