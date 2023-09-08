@@ -10951,8 +10951,54 @@ NTAPI
 AcpiArbInitializePciRouting(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PARBITER_EXTENSION ArbExtension;
+    PDEVICE_OBJECT AttachedDevice;
+    PINTERFACE Interface;
+    ULONG_PTR dummyInformation;
+    IO_STACK_LOCATION ioStack;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbInitializePciRouting: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    Interface = ExAllocatePoolWithTag(NonPagedPool, sizeof(INT_ROUTE_INTERFACE_STANDARD), 'ApcA');
+    if (!Interface)
+    {
+        DPRINT1("AcpiArbInitializePciRouting: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    AttachedDevice = IoGetAttachedDeviceReference(DeviceObject);
+
+    RtlZeroMemory(&ioStack, sizeof(ioStack));
+
+    ioStack.MajorFunction = IRP_MJ_PNP;
+    ioStack.MinorFunction = IRP_MN_QUERY_INTERFACE;
+
+    ioStack.Parameters.QueryInterface.InterfaceType = &GUID_INT_ROUTE_INTERFACE_STANDARD;
+    ioStack.Parameters.QueryInterface.Size = sizeof(INT_ROUTE_INTERFACE_STANDARD);
+    ioStack.Parameters.QueryInterface.Version = 1;
+    ioStack.Parameters.QueryInterface.Interface = Interface;
+
+    Status = ACPIInternalSendSynchronousIrp(AttachedDevice, &ioStack, &dummyInformation);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("AcpiArbInitializePciRouting: Status %X\n", Status);
+        ExFreePoolWithTag(Interface, 'ApcA');
+        ObDereferenceObject(AttachedDevice);
+        return Status;
+    }
+
+    ArbExtension = AcpiArbiter.Extension;
+    ArbExtension->InterruptRouting = (PVOID)Interface;
+
+    Interface->InterfaceReference(Interface->Context);
+
+    PciInterfacesInstantiated = TRUE;
+
+    ObDereferenceObject(AttachedDevice);
+
+    return Status;
 }
 
 NTSTATUS
