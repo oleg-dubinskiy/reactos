@@ -4083,8 +4083,21 @@ NTSTATUS NTAPI ACPIDevicePowerProcessPhase0SystemSubPhase1(_In_ PACPI_POWER_REQU
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase0DeviceSubPhase2(_In_ PACPI_POWER_REQUEST Request)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("ACPIDevicePowerProcessPhase0DeviceSubPhase2: %p\n", Request);
+
+    if (!((ULONG)Request->ResultData.DataValue & 1))
+    {
+        Request->NextWorkDone = 2;
+        Request->Status = STATUS_SUCCESS;
+    }
+    else
+    {
+        Request->NextWorkDone = 0;
+    }
+
+    ACPIDeviceCompleteGenericPhase(NULL, STATUS_SUCCESS, NULL, Request);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request)
