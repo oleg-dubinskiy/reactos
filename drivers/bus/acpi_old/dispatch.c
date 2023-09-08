@@ -3983,7 +3983,23 @@ ACPIDeviceCompleteCommon(
     _In_ PLONG Destination,
     _In_ LONG ExChange)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    KIRQL Irql;
+
+    DPRINT("ACPIDeviceCompleteCommon: %X, %X\n", *Destination, ExChange);
+
+    InterlockedCompareExchange(Destination, ExChange, 1);
+
+    KeAcquireSpinLock(&AcpiPowerQueueLock, &Irql);
+
+    AcpiPowerWorkDone = TRUE;
+
+    if (!AcpiPowerDpcRunning)
+    {
+        DPRINT("ACPIDeviceCompleteCommon: insert DPC (AcpiPowerDpc)\n");
+        KeInsertQueueDpc(&AcpiPowerDpc, NULL, NULL);
+    }
+
+    KeReleaseSpinLock(&AcpiPowerQueueLock, Irql);
 }
 
 VOID
