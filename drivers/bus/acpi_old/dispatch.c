@@ -4271,7 +4271,72 @@ NTAPI
 ACPIDeviceCompleteRequest(
     _In_ PACPI_POWER_REQUEST Request)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PDEVICE_EXTENSION DeviceExtension;
+    PACPI_POWER_REQUEST CurrentRequest;
+    KIRQL Irql;
+
+    DPRINT("ACPIDeviceCompleteRequest: %p\n", Request);
+
+    DeviceExtension = Request->DeviceExtension;
+
+    if (Request->RequestType == AcpiPowerRequestDevice &&
+        DeviceExtension->PowerInfo.PowerState != PowerDeviceUnspecified)
+    {
+        if (!Request->FailedOnce && !NT_SUCCESS(Request->Status))
+        {
+            KeAcquireSpinLock(&AcpiPowerQueueLock, &Irql);
+
+            Request->u.DevicePowerRequest.DevicePowerState = DeviceExtension->PowerInfo.PowerState;
+            Request->FailedOnce = TRUE;
+
+            RemoveEntryList(&Request->ListEntry);
+            InsertTailList(&AcpiPowerQueueList, &Request->ListEntry);
+
+            AcpiPowerWorkDone = TRUE;
+
+            if (!AcpiPowerDpcRunning)
+            {
+                DPRINT("ACPIDeviceCompleteRequest: insert AcpiPowerDpc\n");
+                KeInsertQueueDpc(&AcpiPowerDpc, NULL, NULL);
+            }
+
+            KeReleaseSpinLock(&AcpiPowerQueueLock, Irql);
+            return;
+        }
+
+        if (DeviceExtension->PowerInfo.PowerState < Request->u.DevicePowerRequest.DevicePowerState)
+            Request->Status = STATUS_SUCCESS;
+    }
+
+    if (Request->CallBack)
+    {
+        VOID (NTAPI* CallBack)(PDEVICE_EXTENSION, PVOID, NTSTATUS) = (PVOID)Request->CallBack;
+        CallBack(DeviceExtension, Request->Context, Request->Status);
+    }
+
+    KeAcquireSpinLock(&AcpiPowerQueueLock, &Irql);
+
+    RemoveEntryList(&Request->ListEntry);
+    RemoveEntryList(&Request->SerialListEntry);
+
+    if (!IsListEmpty(&DeviceExtension->PowerInfo.PowerRequestListEntry))
+    {
+        CurrentRequest = CONTAINING_RECORD(DeviceExtension->PowerInfo.PowerRequestListEntry.Flink,
+                                           ACPI_POWER_REQUEST,
+                                           SerialListEntry);
+
+        InsertTailList(&AcpiPowerQueueList, &CurrentRequest->ListEntry);
+
+        DeviceExtension->PowerInfo.CurrentPowerRequest = CurrentRequest;
+    }
+    else
+    {
+        DeviceExtension->PowerInfo.CurrentPowerRequest = NULL;
+    }
+
+    KeReleaseSpinLock(&AcpiPowerQueueLock, Irql);
+
+    ExFreeToNPagedLookasideList(&RequestLookAsideList, Request);
 }
 
 NTSTATUS

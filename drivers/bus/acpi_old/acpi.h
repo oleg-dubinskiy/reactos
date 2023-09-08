@@ -197,6 +197,7 @@ typedef struct _ACPI_POWER_INFO
     DEVICE_POWER_STATE DeviceWakeLevel;
     ULONG WakeSupportCount;
     LIST_ENTRY WakeSupportList;
+    PACPI_POWER_REQUEST CurrentPowerRequest;
     LIST_ENTRY PowerRequestListEntry;
     ULONG SupportDeviceD1 : 1;
     ULONG SupportDeviceD2 : 1;
