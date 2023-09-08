@@ -10925,6 +10925,29 @@ ACPIDispatchIrpInvalid(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+NTAPI
+PnpCmResourcesToBiosResources(
+    _In_ PCM_RESOURCE_LIST CmResources,
+    _In_ PVOID Data)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDeviceInternalDeviceRequest(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ DEVICE_POWER_STATE DeviceState,
+    _In_ PVOID CallBack,
+    _In_ PVOID Context,
+    _In_ ULONG Flags)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 ACPIBusIrpStartDeviceCompletion(
@@ -10944,8 +10967,128 @@ ACPIInitStartDevice(
     _In_ PVOID Context,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PCM_RESOURCE_LIST CmResources;
+    PAMLI_OBJECT_DATA AmliData;
+    AMLI_OBJECT_DATA DataResult;
+    ULONG NewCmSize;
+    ULONG Size;
+    KIRQL Irql;
+    NTSTATUS Status;
+
+    DPRINT("ACPIInitStartDevice: %p\n", DeviceObject);
+
+    ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if (!AllocatedResources || AllocatedResources->Count != 1)
+        goto Finish;
+
+    NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'SRC_');
+    if (!NsObject)
+    {
+        DPRINT("ACPIInitStartDevice: No CRS\n");
+        goto Finish;
+    }
+
+    if (!ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'SRS_'))
+    {
+        DPRINT("ACPIInitStartDevice: No SRS\n");
+        goto Finish;
+    }
+
+    Status = AMLIEvalNameSpaceObject(NsObject, &DataResult, 0, NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIInitStartDevice: _CRS failed %X\n", Status);
+        DPRINT1("ACPIInitStartDevice: FIXME\n");
+        ASSERT(FALSE);
+        return Status;
+    }
+
+    if (DataResult.DataType != 3 || !DataResult.DataLen || !DataResult.DataBuff)
+    {
+        DPRINT1("ACPIInitStartDevice: _CRS return invalid data\n", DataResult.DataType);
+        AMLIFreeDataBuffs(&DataResult, 1);
+        DPRINT1("ACPIInitStartDevice: FIXME\n");
+        ASSERT(FALSE);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    //FIXME
+    //ACPIDebugCmResourceList(AllocatedResources, DeviceExtension);
+
+    NewCmSize = (sizeof(CM_RESOURCE_LIST) + (AllocatedResources->List[0].PartialResourceList.Count - 1) * sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR));
+
+    CmResources = ExAllocatePoolWithTag(PagedPool, NewCmSize, 'SpcA');
+    if (!CmResources)
+    {
+        DPRINT1("ACPIInitStartDevice: STATUS_INSUFFICIENT_RESOURCES\n");
+        AMLIFreeDataBuffs(&DataResult, 1);
+        DPRINT1("ACPIInitStartDevice: FIXME\n");
+        ASSERT(FALSE);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(CmResources, AllocatedResources, NewCmSize);
+
+    Size = (DataResult.DataLen + sizeof(AMLI_OBJECT_DATA));
+
+    AmliData = ExAllocatePoolWithTag(NonPagedPool, Size, 'OpcA');
+    if (!AmliData)
+    {
+        DPRINT1("ACPIInitStartDevice: STATUS_INSUFFICIENT_RESOURCES\n");
+        AMLIFreeDataBuffs(&DataResult, 1);
+        ExFreePoolWithTag(CmResources, 'SpcA');
+        DPRINT1("ACPIInitStartDevice: FIXME\n");
+        ASSERT(FALSE);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(AmliData, &DataResult, sizeof(AMLI_OBJECT_DATA));
+    AmliData->DataBuff = &AmliData[1];
+    RtlCopyMemory(AmliData->DataBuff, DataResult.DataBuff, DataResult.DataLen);
+    AMLIFreeDataBuffs(&DataResult, 1);
+
+    Status = PnpCmResourcesToBiosResources(CmResources, AmliData->DataBuff);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("ACPIInitStartDevice: PnpCmResourceToBiosResources = %X\n", Status);
+        ExFreePoolWithTag(CmResources, 'SpcA');
+        ExFreePoolWithTag(AmliData, 'OpcA');
+        DPRINT1("ACPIInitStartDevice: FIXME\n");
+        ASSERT(FALSE);
+        return Status;
+    }
+
+    RtlCopyMemory(CmResources, AllocatedResources, NewCmSize);
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
+
+    if (DeviceExtension->PnpResourceList)
+        ExFreePool(DeviceExtension->PnpResourceList);
+
+    DeviceExtension->PnpResourceList = AmliData;
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+    if (DeviceExtension->ResourceList)
+        ExFreePool(DeviceExtension->ResourceList);
+
+    DeviceExtension->ResourceList = CmResources;
+ 
+Finish:
+
+    IoMarkIrpPending(Irp);
+
+    Status = ACPIDeviceInternalDeviceRequest(DeviceExtension, PowerDeviceD0, Callback, Context, 4);
+    if (Status == STATUS_MORE_PROCESSING_REQUIRED)
+        Status = STATUS_PENDING;
+
+    DPRINT("ACPIInitStartDevice: ret %X\n", Status);
+    return Status;
 }
 
 NTSTATUS

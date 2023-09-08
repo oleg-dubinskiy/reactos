@@ -410,6 +410,7 @@ typedef struct _DEVICE_EXTENSION
     };
     PCHAR InstanceID;
     PCM_RESOURCE_LIST ResourceList;
+    PAMLI_OBJECT_DATA PnpResourceList;
     LONG OutstandingIrpCount;
     LONG ReferenceCount;
     LONG HibernatePathCount;
