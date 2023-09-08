@@ -39,6 +39,8 @@ KSPIN_LOCK GpeTableLock;
 ULONG AcpiSupportedSystemStates;
 ULONG InterruptModel;
 BOOLEAN AcpiSystemInitialized;
+BOOLEAN PciPmeInterfaceInstantiated;
+BOOLEAN PciInterfacesInstantiated = FALSE;
 
 ACPI_INTERNAL_DEVICE_FLAG AcpiInternalDeviceFlagTable[] =
 {
@@ -10921,14 +10923,91 @@ ACPIDispatchIrpInvalid(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+VOID
+NTAPI
+ACPIBusIrpStartDeviceCompletion(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PVOID Context,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+ACPIInitStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PCM_RESOURCE_LIST AllocatedResources,
+    _In_ PVOID Callback,
+    _In_ PVOID Context,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbInitializePciRouting(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIWakeInitializePmeRouting(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 NTAPI
 ACPIBusIrpStartDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIO_STACK_LOCATION IoStack;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIBusIrpStartDevice: DeviceObject %p\n");
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    if (DeviceExtension->Flags & 0x0000000002000000)
+    {
+        if (!PciInterfacesInstantiated)
+            AcpiArbInitializePciRouting(DeviceObject);
+
+        if (!PciPmeInterfaceInstantiated)
+            ACPIWakeInitializePmeRouting(DeviceObject);
+    }
+
+    if ((DeviceExtension->Flags & 0x0000002000000000) && DeviceExtension->Module.ArbitersNeeded)
+    {
+        DPRINT1("ACPIBusIrpStartDevice: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    Status = ACPIInitStartDevice(DeviceObject,
+                                 IoStack->Parameters.StartDevice.AllocatedResources,
+                                 ACPIBusIrpStartDeviceCompletion,
+                                 Irp,
+                                 Irp);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("ACPIBusIrpStartDevice: Status %X\n", Status);
+        return Status;
+    }
+
+    DPRINT("ACPIBusIrpStartDevice: return STATUS_PENDING\n");
+    return STATUS_PENDING;
 }
 
 NTSTATUS
