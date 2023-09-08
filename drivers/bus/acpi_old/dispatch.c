@@ -10944,8 +10944,26 @@ ACPIDeviceInternalDeviceRequest(
     _In_ PVOID Context,
     _In_ ULONG Flags)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    POWER_STATE State;
+    NTSTATUS Status;
+
+    DPRINT("ACPIDeviceInternalDeviceRequest: Transition to D%d\n", (DeviceState - 1));
+
+    State.DeviceState = DeviceState;
+
+    Status = ACPIDeviceInitializePowerRequest(DeviceExtension,
+                                              State,
+                                              CallBack,
+                                              Context,
+                                              PowerActionNone,
+                                              AcpiPowerRequestDevice,
+                                              Flags);
+
+    if (Status == STATUS_MORE_PROCESSING_REQUIRED)
+        Status = STATUS_PENDING;
+
+    DPRINT("ACPIDeviceInternalDeviceRequest: ret %X\n", Status);
+    return Status;
 }
 
 VOID
