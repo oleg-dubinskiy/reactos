@@ -4179,6 +4179,14 @@ ACPIInternalMovePowerList(
     ACPIInternalMoveList(List1, List2);
 }
 
+VOID
+NTAPI
+ACPIDeviceCompleteRequest(
+    _In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 ACPIDevicePowerProcessGenericPhase(
@@ -4186,8 +4194,51 @@ ACPIDevicePowerProcessGenericPhase(
     _In_ PPOWER_PROCESS_DISPATCH** PhaseDispatchTables,
     _In_ BOOLEAN Param3)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_POWER_REQUEST Request;
+    PPOWER_PROCESS_DISPATCH* DispatchTable;
+    PLIST_ENTRY Entry = PhaseList->Flink;
+    PLIST_ENTRY NextEntry;
+    ULONG Idx;
+    BOOLEAN Result = TRUE;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIDevicePowerProcessGenericPhase: %X, %X, %X\n", PhaseList, PhaseDispatchTables, Param3);
+
+    while (Entry != PhaseList)
+    {
+        Request = CONTAINING_RECORD(Entry, ACPI_POWER_REQUEST, ListEntry);
+
+        NextEntry = Entry->Flink;
+        Idx = InterlockedCompareExchange(&Request->WorkDone, 1, 1);
+
+        DispatchTable = PhaseDispatchTables[Idx];
+        if (DispatchTable != NULL)
+        {
+            Idx = InterlockedCompareExchange(&Request->WorkDone, 1, Idx);
+
+            Status = (DispatchTable[Request->RequestType])(Request);
+            if (NT_SUCCESS(Status))
+                continue;
+
+            Idx = 0;
+        }
+
+        Entry = NextEntry;
+
+        if (Idx != 0)
+            Result = FALSE;
+
+        if (Idx == 2)
+        {
+            ACPIDeviceCompleteRequest(Request);
+            continue;
+        }
+
+        if (Param3 && !Idx)
+            ACPIDeviceCompleteRequest(Request);
+    }
+
+    return (Result ? STATUS_SUCCESS : STATUS_PENDING);
 }
 
 VOID
