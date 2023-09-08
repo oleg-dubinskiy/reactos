@@ -3977,6 +3977,17 @@ Exit:
     return STATUS_SUCCESS;
 }
 
+VOID
+__cdecl
+ACPIDeviceCompleteGenericPhase(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ PVOID Unknown3,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 ACPIDevicePowerProcessInvalid(
@@ -3997,8 +4008,30 @@ ACPIDevicePowerProcessForward(
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase0DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    DPRINT("ACPIDevicePowerProcessPhase0DeviceSubPhase1: %p\n", Request);
+
+    Request->NextWorkDone = 4;
+
+    RtlZeroMemory(&Request->ResultData, sizeof(Request->ResultData));
+
+    Status = ACPIGet(Request->DeviceExtension,
+                     'ATS_',
+                     0x40041802,
+                     NULL,
+                     0,
+                     ACPIDeviceCompleteGenericPhase,
+                     Request,
+                     &Request->ResultData.DataValue,
+                     &Request->ResultData.DataLen);
+
+    if (Status == STATUS_PENDING)
+        return Status;
+
+    ACPIDeviceCompleteGenericPhase(NULL, Status, &Request->ResultData, Request);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase0SystemSubPhase1(_In_ PACPI_POWER_REQUEST Request)

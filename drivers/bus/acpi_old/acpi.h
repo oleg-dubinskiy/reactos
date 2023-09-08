@@ -181,7 +181,7 @@ typedef struct _ACPI_POWER_REQUEST
     PVOID Context;
     LONG WorkDone;
     ULONG NextWorkDone;
-    AMLI_NAME_SPACE_OBJECT ResultData;
+    AMLI_OBJECT_DATA ResultData;
     NTSTATUS Status;
 } ACPI_POWER_REQUEST, *PACPI_POWER_REQUEST;
 
