@@ -606,6 +606,11 @@ typedef struct _ACPI_PM_DISPATCH_TABLE
     PHAL_IS_VECTOR_VALID HalIsVectorValid;                          // HaliIsVectorValid
 } ACPI_PM_DISPATCH_TABLE, *PACPI_PM_DISPATCH_TABLE;
 
+typedef NTSTATUS
+(NTAPI* PPOWER_PROCESS_DISPATCH)(
+    _In_ PACPI_POWER_REQUEST
+);
+
 /* ACPI TABLES **************************************************************/
 
 /* Names within the namespace are 4 bytes long */
@@ -1168,6 +1173,35 @@ NTSTATUS NTAPI ACPIBuildProcessDevicePhasePsc(_In_ PACPI_BUILD_REQUEST BuildRequ
 NTSTATUS NTAPI ACPIBuildProcessPowerResourceFailure(_In_ PACPI_BUILD_REQUEST BuildRequest);
 NTSTATUS NTAPI ACPIBuildProcessPowerResourcePhase0(_In_ PACPI_BUILD_REQUEST BuildRequest);
 NTSTATUS NTAPI ACPIBuildProcessPowerResourcePhase1(_In_ PACPI_BUILD_REQUEST BuildRequest);
+
+NTSTATUS NTAPI ACPIDevicePowerProcessInvalid(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessForward(_In_ PACPI_POWER_REQUEST Request);
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase0DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase0SystemSubPhase1(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase0DeviceSubPhase2(_In_ PACPI_POWER_REQUEST Request);
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase2(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase3(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase4(_In_ PACPI_POWER_REQUEST Request);
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase2SystemSubPhase1(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase2SystemSubPhase2(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase2SystemSubPhase3(_In_ PACPI_POWER_REQUEST Request);
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase1(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5WarmEjectSubPhase1(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase2(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase2(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5WarmEjectSubPhase2(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase3(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase3(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase4(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase4(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase5(_In_ PACPI_POWER_REQUEST Request);
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase6(_In_ PACPI_POWER_REQUEST Request);
 
 ULONGLONG
 NTAPI

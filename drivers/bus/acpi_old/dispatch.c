@@ -607,6 +607,184 @@ IRP_DISPATCH_TABLE AcpiProcessorIrpDispatch =
     NULL
 };
 
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase0Table1[6] =
+{
+    ACPIDevicePowerProcessPhase0DeviceSubPhase1,
+    ACPIDevicePowerProcessPhase0SystemSubPhase1,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase0Table2[6] =
+{
+    ACPIDevicePowerProcessPhase0DeviceSubPhase2,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH* AcpiDevicePowerProcessPhase0Dispatch[5] =
+{
+    NULL,
+    NULL,
+    NULL,
+    AcpiDevicePowerProcessPhase0Table1,
+    AcpiDevicePowerProcessPhase0Table2
+};
+
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase1Table1[6] =
+{
+    ACPIDevicePowerProcessPhase1DeviceSubPhase1,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase1Table2[6] =
+{
+    ACPIDevicePowerProcessPhase1DeviceSubPhase2,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase1Table3[6] =
+{
+    ACPIDevicePowerProcessPhase1DeviceSubPhase3,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase1Table4[6] =
+{
+    ACPIDevicePowerProcessPhase1DeviceSubPhase4,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH* AcpiDevicePowerProcessPhase1Dispatch[7] =
+{
+    NULL,
+    NULL,
+    NULL,
+    AcpiDevicePowerProcessPhase1Table1,
+    AcpiDevicePowerProcessPhase1Table2,
+    AcpiDevicePowerProcessPhase1Table3,
+    AcpiDevicePowerProcessPhase1Table4
+};
+
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase2Table1[6] =
+{
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessPhase2SystemSubPhase1,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase2Table2[6] =
+{
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessPhase2SystemSubPhase2,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase2Table3[6] =
+{
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessPhase2SystemSubPhase3,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH* AcpiDevicePowerProcessPhase2Dispatch[6] =
+{
+    NULL,
+    NULL,
+    NULL,
+    AcpiDevicePowerProcessPhase2Table1,
+    AcpiDevicePowerProcessPhase2Table2,
+    AcpiDevicePowerProcessPhase2Table3
+};
+
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase5Table1[6] =
+{
+    ACPIDevicePowerProcessPhase5DeviceSubPhase1,
+    ACPIDevicePowerProcessPhase5SystemSubPhase1,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessPhase5WarmEjectSubPhase1,
+    ACPIDevicePowerProcessForward,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase5Table2[6] =
+{
+    ACPIDevicePowerProcessPhase5DeviceSubPhase2,
+    ACPIDevicePowerProcessPhase5SystemSubPhase2,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessPhase5WarmEjectSubPhase2,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase5Table3[6] =
+{
+    ACPIDevicePowerProcessPhase5DeviceSubPhase3,
+    ACPIDevicePowerProcessPhase5SystemSubPhase3,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase5Table4[6] =
+{
+    ACPIDevicePowerProcessPhase5DeviceSubPhase4,
+    ACPIDevicePowerProcessPhase5SystemSubPhase4,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase5Table5[6] =
+{
+    ACPIDevicePowerProcessPhase5DeviceSubPhase5,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH AcpiDevicePowerProcessPhase5Table6[6] =
+{
+    ACPIDevicePowerProcessPhase5DeviceSubPhase6,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid,
+    ACPIDevicePowerProcessInvalid
+};
+PPOWER_PROCESS_DISPATCH* AcpiDevicePowerProcessPhase5Dispatch[9] =
+{
+    NULL,
+    NULL,
+    NULL,
+    AcpiDevicePowerProcessPhase5Table1,
+    AcpiDevicePowerProcessPhase5Table2,
+    AcpiDevicePowerProcessPhase5Table3,
+    AcpiDevicePowerProcessPhase5Table4,
+    AcpiDevicePowerProcessPhase5Table5,
+    AcpiDevicePowerProcessPhase5Table6
+};
+
 ACPI_INTERNAL_DEVICE AcpiInternalDeviceTable[] =
 {
     {"ACPI0006", &AcpiGenericBusIrpDispatch},
@@ -680,6 +858,14 @@ extern LIST_ENTRY AcpiGetListEntry;
 extern LIST_ENTRY AcpiUnresolvedEjectList;
 extern LIST_ENTRY AcpiPowerSynchronizeList;
 extern LIST_ENTRY AcpiPowerQueueList;
+extern LIST_ENTRY AcpiPowerPhase0List;
+extern LIST_ENTRY AcpiPowerPhase1List;
+extern LIST_ENTRY AcpiPowerPhase2List;
+extern LIST_ENTRY AcpiPowerPhase3List;
+extern LIST_ENTRY AcpiPowerPhase4List;
+extern LIST_ENTRY AcpiPowerPhase5List;
+extern LIST_ENTRY AcpiPowerWaitWakeList;
+extern LIST_ENTRY AcpiPowerNodeList;
 extern KDPC AcpiBuildDpc;
 extern KDPC AcpiPowerDpc;
 extern BOOLEAN AcpiBuildDpcRunning;
@@ -3791,6 +3977,192 @@ Exit:
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+ACPIDevicePowerProcessInvalid(
+    _In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDevicePowerProcessForward(
+    _In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase0DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase0SystemSubPhase1(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase0DeviceSubPhase2(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase2(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase3(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase4(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase2SystemSubPhase1(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase2SystemSubPhase2(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase2SystemSubPhase3(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDevicePowerProcessPhase3(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIDevicePowerProcessPhase4(VOID)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase1(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5WarmEjectSubPhase1(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase2(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase2(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5WarmEjectSubPhase2(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase3(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase3(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase4(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase4(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase5(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase6(_In_ PACPI_POWER_REQUEST Request)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+VOID
+NTAPI
+ACPIInternalMovePowerList(
+    _In_ PLIST_ENTRY List1,
+    _In_ PLIST_ENTRY List2)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+ACPIDevicePowerProcessGenericPhase(
+    _In_ PLIST_ENTRY PhaseList,
+    _In_ PPOWER_PROCESS_DISPATCH** PhaseDispatchTables,
+    _In_ BOOLEAN Param3)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 ACPIDevicePowerDpc(
@@ -3799,104 +4171,110 @@ ACPIDevicePowerDpc(
     _In_ PVOID SystemArgument1,
     _In_ PVOID SystemArgument2)
 {
+    LIST_ENTRY list;
     NTSTATUS Status;
 
-    DPRINT("ACPIDevicePowerDpc: AcpiBuildDpcRunning %X\n", AcpiBuildDpcRunning);
+    DPRINT("ACPIDevicePowerDpc: AcpiBuildDpcRunning %X (%X,%X)\n", AcpiPowerDpcRunning, KeGetCurrentIrql(), KeGetCurrentThread());
 
-    KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
+    KeAcquireSpinLockAtDpcLevel(&AcpiPowerQueueLock);
 
-    if (AcpiBuildDpcRunning)
+    if (AcpiPowerDpcRunning)
     {
-        KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+        KeReleaseSpinLockFromDpcLevel(&AcpiPowerQueueLock);
         DPRINT("ACPIDevicePowerDpc: AcpiBuildDpcRunning %X\n", AcpiBuildDpcRunning);
         return;
     }
 
-    AcpiBuildDpcRunning = TRUE;
+    AcpiPowerDpcRunning = TRUE;
+
+    InitializeListHead(&list);
 
     do
     {
-        AcpiBuildWorkDone = FALSE;
+        AcpiPowerWorkDone = FALSE;
 
-        if (!IsListEmpty(&AcpiBuildQueueList))
-            ACPIBuildProcessQueueList();
+        if (!IsListEmpty(&AcpiPowerQueueList))
+            ACPIInternalMovePowerList(&AcpiPowerQueueList, &AcpiPowerPhase0List);
 
-        KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+        KeReleaseSpinLockFromDpcLevel(&AcpiPowerQueueLock);
 
-        if (!IsListEmpty(&AcpiBuildRunMethodList))
+        if (!IsListEmpty(&AcpiPowerPhase0List))
         {
-            Status = ACPIBuildProcessGenericList(&AcpiBuildRunMethodList,AcpiBuildRunMethodDispatch);
-
-            KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
-
-            if (Status == STATUS_PENDING)
-            {
-                DPRINT("ACPIDevicePowerDpc: continue Status == STATUS_PENDING\n");
-                continue;
-            }
-
-            if (!IsListEmpty(&AcpiBuildQueueList))
-            {
-                AcpiBuildWorkDone = TRUE;
-                continue;
-            }
-
-            KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+            Status = ACPIDevicePowerProcessGenericPhase(&AcpiPowerPhase0List, AcpiDevicePowerProcessPhase0Dispatch, FALSE);
+            if (NT_SUCCESS(Status) && Status != STATUS_PENDING)
+                ACPIInternalMovePowerList(&AcpiPowerPhase0List, &AcpiPowerPhase1List);
         }
 
-        if (!IsListEmpty(&AcpiBuildOperationRegionList))
+        if (!IsListEmpty(&AcpiPowerPhase1List) &&
+            IsListEmpty(&AcpiPowerPhase0List))
         {
-            DPRINT1("ACPIDevicePowerDpc: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIDevicePowerProcessGenericPhase(&AcpiPowerPhase1List, AcpiDevicePowerProcessPhase1Dispatch, FALSE);
+            if (NT_SUCCESS(Status) && Status != STATUS_PENDING)
+                ACPIInternalMovePowerList(&AcpiPowerPhase1List, &AcpiPowerPhase2List);
         }
 
-        if (!IsListEmpty(&AcpiBuildPowerResourceList))
+        if (IsListEmpty(&AcpiPowerPhase0List) &&
+            IsListEmpty(&AcpiPowerPhase1List) &&
+            !IsListEmpty(&AcpiPowerPhase2List))
         {
-            DPRINT1("ACPIDevicePowerDpc: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIDevicePowerProcessGenericPhase(&AcpiPowerPhase2List, AcpiDevicePowerProcessPhase2Dispatch, FALSE);
+            if (NT_SUCCESS(Status) && Status != STATUS_PENDING)
+                ACPIInternalMovePowerList(&AcpiPowerPhase2List, &AcpiPowerPhase3List);
         }
 
-        if (!IsListEmpty(&AcpiBuildDeviceList))
+        if (IsListEmpty(&AcpiPowerPhase0List) &&
+            IsListEmpty(&AcpiPowerPhase1List) &&
+            IsListEmpty(&AcpiPowerPhase2List) &&
+            !IsListEmpty(&AcpiPowerPhase3List))
         {
-            DPRINT1("ACPIDevicePowerDpc: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIDevicePowerProcessPhase3();
+            if (NT_SUCCESS(Status) && Status != STATUS_PENDING)
+                ACPIInternalMovePowerList(&AcpiPowerPhase3List, &AcpiPowerPhase4List);
         }
 
-        if (!IsListEmpty(&AcpiBuildThermalZoneList))
+        if (!IsListEmpty(&AcpiPowerPhase4List))
         {
-            DPRINT1("ACPIDevicePowerDpc: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIDevicePowerProcessPhase4();
+            if (NT_SUCCESS(Status) && Status != STATUS_PENDING)
+                ACPIInternalMovePowerList(&AcpiPowerPhase4List, &AcpiPowerPhase5List);
         }
 
-        if (IsListEmpty(&AcpiBuildDeviceList) &&
-            IsListEmpty(&AcpiBuildOperationRegionList) &&
-            IsListEmpty(&AcpiBuildPowerResourceList) &&
-            IsListEmpty(&AcpiBuildRunMethodList) &&
-            IsListEmpty(&AcpiBuildThermalZoneList))
+        if (!IsListEmpty(&AcpiPowerPhase5List))
         {
-            KeAcquireSpinLockAtDpcLevel(&AcpiPowerQueueLock);
-
-            if (!IsListEmpty(&AcpiPowerDelayedQueueList))
-            {
-                DPRINT1("ACPIDevicePowerDpc: FIXME\n");
-                ASSERT(FALSE);
-            }
-
-            KeReleaseSpinLockFromDpcLevel(&AcpiPowerQueueLock);
+            Status = ACPIDevicePowerProcessGenericPhase(&AcpiPowerPhase5List, AcpiDevicePowerProcessPhase5Dispatch, TRUE);
         }
 
-        if (!IsListEmpty(&AcpiBuildSynchronizationList))
-            Status = ACPIBuildProcessSynchronizationList(&AcpiBuildSynchronizationList);
-
-        KeAcquireSpinLockAtDpcLevel(&AcpiBuildQueueLock);
+        KeAcquireSpinLockAtDpcLevel(&AcpiPowerQueueLock);
     }
-    while (AcpiBuildWorkDone);
+    while (AcpiPowerWorkDone);
 
-    AcpiBuildDpcRunning = FALSE;
+    AcpiPowerDpcRunning = FALSE;
 
-    KeReleaseSpinLockFromDpcLevel(&AcpiBuildQueueLock);
+    if (IsListEmpty(&AcpiPowerPhase0List) &&
+        IsListEmpty(&AcpiPowerPhase1List) &&
+        IsListEmpty(&AcpiPowerPhase2List) &&
+        IsListEmpty(&AcpiPowerPhase3List) &&
+        IsListEmpty(&AcpiPowerPhase4List) &&
+        IsListEmpty(&AcpiPowerPhase5List))
+    {
+        DPRINT("ACPIDevicePowerDPC: Queues Empty. Terminating.\n");
 
-    DPRINT("ACPIDevicePowerDpc: exit (%p)\n", Dpc);
+        if (!IsListEmpty(&AcpiPowerSynchronizeList))
+        {
+            DPRINT1("ACPIDevicePowerDpc: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+    KeReleaseSpinLockFromDpcLevel(&AcpiPowerQueueLock);
+
+    if (!IsListEmpty(&list))
+    {
+        DPRINT1("ACPIDevicePowerDpc: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    DPRINT("ACPIDevicePowerDpc: exit (%X,%X)\n", KeGetCurrentIrql(), KeGetCurrentThread());
 }
 
 VOID
