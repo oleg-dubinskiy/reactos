@@ -4391,8 +4391,38 @@ NTSTATUS NTAPI ACPIDevicePowerProcessPhase5WarmEjectSubPhase1(_In_ PACPI_POWER_R
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase2(_In_ PACPI_POWER_REQUEST Request)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT NsObject = NULL;
+    KIRQL Irql;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIDevicePowerProcessPhase5DeviceSubPhase2: %p\n", Request);
+
+    DeviceExtension = Request->DeviceExtension;
+    Request->NextWorkDone = 5;
+
+    if (!(DeviceExtension->Flags & 0x0008000000000000))
+        NsObject = ACPIAmliGetNamedChild(DeviceExtension->AcpiObject, 'SRS_');
+
+    if (!NsObject)
+    {
+        ACPIDeviceCompleteGenericPhase(NsObject, STATUS_SUCCESS, NULL, Request);
+        return STATUS_SUCCESS;
+    }
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
+
+    if (DeviceExtension->PnpResourceList)
+        Status = AMLIAsyncEvalObject(NsObject, NULL, 1, DeviceExtension->PnpResourceList, (PVOID)ACPIDeviceCompleteGenericPhase, Request);
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+    if (Status == STATUS_PENDING)
+        return Status;
+
+    ACPIDeviceCompleteGenericPhase(NsObject, Status, NULL, Request);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase2(_In_ PACPI_POWER_REQUEST Request)
