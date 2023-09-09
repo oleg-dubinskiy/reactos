@@ -4043,8 +4043,15 @@ NTAPI
 ACPIDevicePowerProcessForward(
     _In_ PACPI_POWER_REQUEST Request)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("ACPIDevicePowerProcessForward: %p\n", Request);
+
+    InterlockedCompareExchange(&Request->WorkDone, 0, 1);
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiPowerQueueLock);
+    AcpiPowerWorkDone = TRUE;
+    KeReleaseSpinLockFromDpcLevel(&AcpiPowerQueueLock);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase0DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request)
