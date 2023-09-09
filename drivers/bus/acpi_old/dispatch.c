@@ -4268,8 +4268,32 @@ NTSTATUS
 NTAPI
 ACPIDevicePowerProcessPhase3(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PLIST_ENTRY Entry;
+    BOOLEAN Result = FALSE;
+
+    DPRINT("ACPIDevicePowerProcessPhase3()\n");
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiPowerLock);
+
+    Entry = AcpiPowerNodeList.Flink;
+
+    while (Entry != &AcpiPowerNodeList)
+    {
+        DPRINT1("ACPIDevicePowerProcessPhase3: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    Entry = AcpiPowerNodeList.Blink;
+
+    while (Entry != &AcpiPowerNodeList)
+    {
+        DPRINT1("ACPIDevicePowerProcessPhase3: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseSpinLockFromDpcLevel(&AcpiPowerLock);
+
+    return (Result ? STATUS_PENDING : STATUS_SUCCESS);
 }
 
 NTSTATUS
