@@ -11913,12 +11913,41 @@ ACPIDeviceInternalDeviceRequest(
     return Status;
 }
 
+NTSTATUS
+NTAPI
+EnableDisableRegions(
+    _In_ PAMLI_NAME_SPACE_OBJECT InNsObject,
+    _In_ BOOLEAN IsEnable)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 ACPIBusIrpStartDeviceWorker(
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PWORK_QUEUE_CONTEXT WorkContext = Context;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBusIrpStartDeviceWorker: %p\n", Context);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(WorkContext->DeviceObject);
+
+    Status = WorkContext->Irp->IoStatus.Status;
+
+    if (NT_SUCCESS(Status) && IsNsobjPciBus(DeviceExtension->AcpiObject))
+        EnableDisableRegions(DeviceExtension->AcpiObject, TRUE);
+
+    WorkContext->Irp->IoStatus.Status = Status;
+    WorkContext->Irp->IoStatus.Information = 0;
+
+    IoCompleteRequest(WorkContext->Irp, 0);
+
+    DPRINT("ACPIBusIrpStartDeviceWorker: %p, %X\n", WorkContext->Irp, Status);
 }
 
 VOID
