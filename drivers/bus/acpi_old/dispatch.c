@@ -4162,8 +4162,81 @@ NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase3(_In_ PACPI_POWER_REQU
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase1DeviceSubPhase4(_In_ PACPI_POWER_REQUEST Request)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PACPI_DEVICE_POWER_NODE Node;
+    DEVICE_POWER_STATE State;
+    KIRQL Irql;
+
+    DPRINT("ACPIDevicePowerProcessPhase1DeviceSubPhase4: %p\n", Request);
+
+    DeviceExtension = Request->DeviceExtension;
+
+    AMLIFreeDataBuffs(&Request->ResultData, 1);
+    RtlZeroMemory(&Request->ResultData, sizeof(Request->ResultData));
+
+    KeAcquireSpinLock(&AcpiPowerLock, &Irql);
+
+    if (DeviceExtension->PowerInfo.PowerState < PowerDeviceD0 ||
+        DeviceExtension->PowerInfo.PowerState > PowerDeviceD2)
+    {
+        for (State = PowerDeviceD0; State < PowerDeviceD3; State++)
+        {
+             Node = DeviceExtension->PowerInfo.PowerNode[State];
+             while (Node)
+             {
+                 InterlockedExchange(&Node->PowerNode->WorkDone, 3);
+                 Node = Node->Next;
+             }
+        }
+
+        State = Request->u.DevicePowerRequest.DevicePowerState;
+    }
+    else
+    {
+        Node = DeviceExtension->PowerInfo.PowerNode[DeviceExtension->PowerInfo.PowerState];
+        while (Node)
+        {
+            InterlockedExchange(&Node->PowerNode->WorkDone, 3);
+            Node = Node->Next;
+        }
+
+        State = Request->u.DevicePowerRequest.DevicePowerState;
+
+        if (State >= PowerDeviceD0 && State <= PowerDeviceD2)
+            Node = DeviceExtension->PowerInfo.PowerNode[State];
+
+        while (Node)
+        {
+            InterlockedExchange(&Node->PowerNode->WorkDone, 3);
+            Node = Node->Next;
+        }
+    }
+
+    if (Request->u.DevicePowerRequest.Flags & 0x10)
+    {
+        Node = DeviceExtension->PowerInfo.PowerNode[PowerDeviceD0];
+        while (Node)
+        {
+            ASSERT(FALSE);
+        }
+    }
+    else if (Request->u.DevicePowerRequest.Flags & 0x20)
+    {
+        Node = DeviceExtension->PowerInfo.PowerNode[PowerDeviceD0];
+        while (Node)
+        {
+            ASSERT(FALSE);
+        }
+    }
+
+    DeviceExtension->PowerInfo.PowerState = PowerDeviceUnspecified;
+    DeviceExtension->PowerInfo.DesiredPowerState = State;
+
+    KeReleaseSpinLock(&AcpiPowerLock, Irql);
+
+    ACPIDeviceCompleteCommon(&Request->WorkDone, 0);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase2SystemSubPhase1(_In_ PACPI_POWER_REQUEST Request)

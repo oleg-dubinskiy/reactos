@@ -121,9 +121,44 @@ typedef struct _ACPI_HAL_DISPATCH_TABLE
     PVOID Function3;
 } ACPI_HAL_DISPATCH_TABLE, *PACPI_HAL_DISPATCH_TABLE;
 
+typedef struct _ACPI_POWER_DEVICE_NODE
+{
+    LIST_ENTRY ListEntry;
+    union
+    {
+        ULONGLONG Flags;
+        struct
+        {
+            ULONGLONG Present : 1;
+            ULONGLONG Initialized : 1;
+            ULONGLONG StatusUnknown : 1;
+            ULONGLONG On : 1;
+            ULONGLONG OverrideOn : 1;
+            ULONGLONG OverrideOff : 1;
+            ULONGLONG AlwaysOn : 1;
+            ULONGLONG AlwaysOff : 1;
+            ULONGLONG Reserved1 : 5;
+            ULONGLONG Failed : 1;
+            ULONGLONG HibernatePath : 1;
+            ULONGLONG Reserved2 : 49;
+        } UFlags;
+    };
+    ULONG UseCounts;
+    PAMLI_NAME_SPACE_OBJECT PowerObject;
+    CHAR ResourceOrder;
+    UCHAR Pad[3];
+    SYSTEM_POWER_STATE SystemLevel;
+    LIST_ENTRY DevicePowerListHead;
+    LONG WorkDone;
+    PAMLI_NAME_SPACE_OBJECT PowerOnObject;
+    PAMLI_NAME_SPACE_OBJECT PowerOffObject;
+    PAMLI_NAME_SPACE_OBJECT PowerStaObject;
+} ACPI_POWER_DEVICE_NODE, *PACPI_POWER_DEVICE_NODE;
+
 typedef struct _ACPI_DEVICE_POWER_NODE
 {
     struct _ACPI_DEVICE_POWER_NODE* Next;
+    PACPI_POWER_DEVICE_NODE PowerNode;
     SYSTEM_POWER_STATE SystemState;
     struct _DEVICE_EXTENSION* DeviceExtension;
     LIST_ENTRY DevicePowerListEntry;
@@ -195,6 +230,7 @@ typedef struct _ACPI_POWER_INFO
     DEVICE_POWER_STATE DevicePowerMatrix[7];
     SYSTEM_POWER_STATE SystemWakeLevel;
     DEVICE_POWER_STATE DeviceWakeLevel;
+    DEVICE_POWER_STATE DesiredPowerState;
     ULONG WakeSupportCount;
     LIST_ENTRY WakeSupportList;
     PACPI_POWER_REQUEST CurrentPowerRequest;
