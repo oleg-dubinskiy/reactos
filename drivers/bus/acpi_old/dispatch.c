@@ -7224,6 +7224,21 @@ ACPIBusIrpQueryDeviceRelations(
 }
 
 NTSTATUS
+NTAPI
+PciConfigInternal(
+    _In_ ULONG Type,
+    _In_ PAMLI_NAME_SPACE_OBJECT ParentNsObject,
+    _In_ ULONG Offset,
+    _In_ ULONG Length,
+    _In_ PVOID Callback,
+    _In_ PVOID Context,
+    _In_ PVOID Buffer)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
 __cdecl
 IsPciBusAsyncWorker(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
@@ -7231,8 +7246,180 @@ IsPciBusAsyncWorker(
     _In_ PVOID Param3,
     _In_ PVOID InContext)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIS_PCI_BUS_CONTEXT Context = InContext;
+    PPCI_COMMON_CONFIG PciData;
+
+    DPRINT("IsPciBusAsyncWorker: %X, %X, %X, %X\n", NsObject, InStatus, Param3, InContext);
+
+    ASSERT(InContext);
+
+    InterlockedIncrement(&Context->RefCount);
+
+    if (!Context->NsObject)
+    {
+        *Context->OutIsBusAsync = FALSE;
+        goto Finish;
+    }
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        *Context->OutIsBusAsync = FALSE;
+        goto Finish;
+    }
+
+    if (!(Context->Flags & 1))
+    {
+        Context->Flags |= 1;
+        Context->HidId = NULL;
+
+        if (ACPIAmliGetNamedChild(Context->NsObject, 'DIH_'))
+        {
+            InStatus = ACPIGet(Context->NsObject, 'DIH_', 0x58080206, NULL, 0, IsPciBusAsyncWorker, Context, (PVOID *)&Context->HidId, NULL);
+            if (InStatus == STATUS_PENDING)
+            {
+                DPRINT("IsPciBusAsyncWorker: ret STATUS_PENDING\n");
+                return STATUS_PENDING;
+            }
+
+            if (!NT_SUCCESS(InStatus))
+            {
+                *Context->OutIsBusAsync = FALSE;
+                goto Finish;
+            }
+        }
+    }
+
+    if (Context->HidId)
+    {
+        if (strstr(Context->HidId, "PNP0A03"))
+        {
+            *Context->OutIsBusAsync = TRUE;
+            goto Finish;
+        }
+
+        ExFreePool(Context->HidId);
+        Context->HidId = NULL;
+    }
+
+    if (!(Context->Flags & 0x80))
+    {
+        Context->Flags |= 0x80;
+        Context->CidId = NULL;
+
+        if (ACPIAmliGetNamedChild(Context->NsObject, 'DIC_'))
+        {
+            InStatus = ACPIGet(Context->NsObject, 'DIC_', 0x58080107, NULL, 0, IsPciBusAsyncWorker, Context, (PVOID *)&Context->CidId, NULL);
+            if (InStatus == STATUS_PENDING)
+            {
+                DPRINT("IsPciBusAsyncWorker: ret STATUS_PENDING\n");
+                return STATUS_PENDING;
+            }
+
+            if (!NT_SUCCESS(InStatus))
+            {
+                *Context->OutIsBusAsync = FALSE;
+                goto Finish;
+            }
+        }
+    }
+
+    if (Context->CidId)
+    {
+        if (strstr(Context->CidId, "PNP0A03"))
+        {
+            *Context->OutIsBusAsync = TRUE;
+            goto Finish;
+        }
+
+        ExFreePool(Context->CidId);
+        Context->CidId = NULL;
+    }
+
+    if (!(Context->Flags & 2))
+    {
+        Context->Flags |= 2;
+
+        InStatus = IsPciDevice(Context->NsObject, IsPciBusAsyncWorker, (PVOID)Context, &Context->IsPciDevice);
+        if (InStatus == STATUS_PENDING)
+        {
+            DPRINT("IsPciBusAsyncWorker: ret STATUS_PENDING\n");
+            return STATUS_PENDING;
+        }
+
+        if (!NT_SUCCESS(InStatus))
+        {
+            *Context->OutIsBusAsync = FALSE;
+            goto Finish;
+        }
+    }
+
+    if (Context->IsPciDevice)
+    {
+        if (!(Context->Flags & 8))
+        {
+            Context->Flags |= 8;
+
+            InStatus = ACPIGet(Context->NsObject, 'RDA_', 0x48040402, NULL, 0, IsPciBusAsyncWorker, Context, &Context->Adr, NULL);
+            if (InStatus == STATUS_PENDING)
+            {
+                DPRINT("IsPciBusAsyncWorker: ret STATUS_PENDING\n");
+                return STATUS_PENDING;
+            }
+
+            if (!NT_SUCCESS(InStatus))
+            {
+                *Context->OutIsBusAsync = FALSE;
+                goto Finish;
+            }
+        }
+
+        if (!(Context->Flags & 0x40))
+        {
+            Context->Flags |= 0x40;
+
+            InStatus = PciConfigInternal(0, Context->NsObject, 0, 0x40, IsPciBusAsyncWorker, Context, Context->Buffer);
+            if (InStatus == STATUS_PENDING)
+            {
+                DPRINT("IsPciBusAsyncWorker: ret STATUS_PENDING\n");
+                return STATUS_PENDING;
+            }
+
+            if (!NT_SUCCESS(InStatus))
+            {
+                *Context->OutIsBusAsync = FALSE;
+                goto Finish;
+            }
+        }
+
+        PciData = (PPCI_COMMON_CONFIG)Context->Buffer;
+
+        if (((PciData->HeaderType & 0x7F) != 1) && ((PciData->HeaderType & 0x7F) != 2))
+            *Context->OutIsBusAsync = FALSE;
+        else
+            *Context->OutIsBusAsync = TRUE;
+    }
+
+Finish:
+
+    if (InStatus == STATUS_OBJECT_NAME_NOT_FOUND)
+        InStatus = STATUS_SUCCESS;
+
+    if (Context->RefCount)
+    {
+        DPRINT1("IsPciBusAsyncWorker: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (Context->HidId)
+        ExFreePool(Context->HidId);
+
+    if (Context->CidId)
+        ExFreePool(Context->CidId);
+
+    ExFreePool(Context);
+
+    DPRINT("IsPciBusAsyncWorker: ret %X\n", InStatus);
+    return InStatus;
 }
 
 NTSTATUS
