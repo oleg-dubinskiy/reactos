@@ -4543,8 +4543,30 @@ NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase5(_In_ PACPI_POWER_REQU
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase6(_In_ PACPI_POWER_REQUEST Request)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_OBJECT DeviceObject;
+    POWER_STATE State;
+
+    DPRINT("ACPIDevicePowerProcessPhase5DeviceSubPhase6: %p\n", Request);
+
+    DeviceExtension = Request->DeviceExtension;
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiPowerLock);
+
+    DeviceExtension->PowerInfo.PowerState = DeviceExtension->PowerInfo.DesiredPowerState;
+    State.DeviceState = DeviceExtension->PowerInfo.PowerState;
+    DeviceObject = DeviceExtension->DeviceObject;
+
+    KeReleaseSpinLockFromDpcLevel(&AcpiPowerLock);
+
+    if (DeviceObject)
+        PoSetPowerState(DeviceObject, DevicePowerState, State);
+
+    Request->Status = STATUS_SUCCESS;
+
+    ACPIDeviceCompleteCommon(&Request->WorkDone, 0);
+
+    return STATUS_SUCCESS;
 }
 
 VOID
