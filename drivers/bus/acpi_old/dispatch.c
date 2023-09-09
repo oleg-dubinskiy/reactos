@@ -4320,8 +4320,61 @@ ACPIDevicePowerProcessPhase4(VOID)
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension = Request->DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT NsObject = NULL;
+    PACPI_DEVICE_POWER_NODE Node;
+    KIRQL Irql;
+    BOOLEAN IsSuccess = TRUE;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIDevicePowerProcessPhase5DeviceSubPhase1: %p\n", Request);
+
+    if (Request->u.DevicePowerRequest.DevicePowerState != PowerDeviceD0)
+    {
+        Request->NextWorkDone = 5;
+        goto Exit;
+    }
+
+    Request->NextWorkDone = 4;
+
+    KeAcquireSpinLock(&AcpiPowerLock, &Irql);
+
+    Node = DeviceExtension->PowerInfo.PowerNode[PowerDeviceD0];
+    while (Node)
+    {
+        if (!(Node->PowerNode->Flags & 0x0010))
+        {
+            IsSuccess = FALSE;
+            break;
+        }
+
+        Node = Node->Next;
+    }
+
+    KeReleaseSpinLock(&AcpiPowerLock, Irql);
+
+    if (!IsSuccess)
+    {
+        Status = STATUS_UNSUCCESSFUL;
+        goto Exit;
+    }
+
+    NsObject = DeviceExtension->PowerInfo.PowerObject[Request->u.DevicePowerRequest.DevicePowerState];
+    if (NsObject)
+        Status = AMLIAsyncEvalObject(NsObject, NULL, 0, NULL, (PVOID)ACPIDeviceCompleteGenericPhase, Request);
+
+    DPRINT("ACPIDevicePowerProcessPhase5DeviceSubPhase1: Status %X\n", Status);
+
+    if (Status == STATUS_PENDING)
+        return Status;
+
+    Status = STATUS_SUCCESS;
+
+Exit:
+
+    ACPIDeviceCompleteGenericPhase(NsObject, Status, NULL, Request);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase1(_In_ PACPI_POWER_REQUEST Request)
