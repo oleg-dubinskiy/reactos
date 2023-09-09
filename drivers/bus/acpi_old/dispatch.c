@@ -11915,12 +11915,39 @@ ACPIDeviceInternalDeviceRequest(
 
 VOID
 NTAPI
+ACPIBusIrpStartDeviceWorker(
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
 ACPIBusIrpStartDeviceCompletion(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PVOID Context,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PWORK_QUEUE_CONTEXT WorkContext;
+    PIRP Irp = Context;
+
+    DPRINT("ACPIBusIrpStartDeviceCompletion: %p\n", DeviceExtension);
+
+    WorkContext = &DeviceExtension->Pdo.WorkContext;
+    Irp->IoStatus.Status = InStatus;
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        IoCompleteRequest(Irp, 0);
+        return;
+    }
+
+    DeviceExtension->DeviceState = Started;
+
+    ExInitializeWorkItem(&WorkContext->Item, ACPIBusIrpStartDeviceWorker, WorkContext);
+    WorkContext->DeviceObject = DeviceExtension->DeviceObject;
+    WorkContext->Irp = Irp;
+    ExQueueWorkItem(&WorkContext->Item, DelayedWorkQueue);
 }
 
 NTSTATUS
