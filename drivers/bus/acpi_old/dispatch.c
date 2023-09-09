@@ -4493,8 +4493,24 @@ NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase3(_In_ PACPI_POWER_REQU
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase4(_In_ PACPI_POWER_REQUEST Request)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    DPRINT("ACPIDevicePowerProcessPhase5DeviceSubPhase4: %p\n", Request);
+
+    Request->NextWorkDone = 7;
+
+    RtlZeroMemory(&Request->ResultData, sizeof(Request->ResultData));
+
+    Status = ACPIGet(Request->DeviceExtension, 'ATS_', 0x40041802, 0, 0, ACPIDeviceCompleteGenericPhase, Request, &Request->ResultData.DataValue, &Request->ResultData.DataLen);
+
+    DPRINT("ACPIDevicePowerProcessPhase5DeviceSubPhase4: Status %X\n", Request, Status);
+
+    if (Status == STATUS_PENDING)
+        return Status;
+
+    ACPIDeviceCompleteGenericPhase(NULL, Status, NULL, Request);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase5SystemSubPhase4(_In_ PACPI_POWER_REQUEST Request)
