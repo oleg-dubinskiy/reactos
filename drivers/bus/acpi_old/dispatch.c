@@ -11919,8 +11919,53 @@ EnableDisableRegions(
     _In_ PAMLI_NAME_SPACE_OBJECT InNsObject,
     _In_ BOOLEAN IsEnable)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PAMLI_NAME_SPACE_OBJECT Child;
+    AMLI_OBJECT_DATA data[2];
+    NTSTATUS status;
+    NTSTATUS Status;
+
+    DPRINT("EnableDisableRegions: %p\n", InNsObject);
+    PAGED_CODE();
+
+    ASSERT(InNsObject->NameSeg);
+
+    NsObject = ACPIAmliGetNamedChild(InNsObject, 'GER_');
+    if (NsObject)
+    {
+        RtlZeroMemory(data, sizeof(data));
+
+        data[0].DataType = 1;
+        data[0].DataValue = (PVOID)2;
+
+        data[1].DataType = 1;
+        data[1].DataValue = (PVOID)(IsEnable ? 1 : 0);
+
+        status = AMLIEvalNameSpaceObject(NsObject, NULL, 2, data);
+    }
+
+    Status = STATUS_SUCCESS;
+
+    for (Child = InNsObject->FirstChild; Child; Child = (PVOID)Child->List.Next)
+    {
+        if (Child->ObjData.DataType == 6 && !IsNsobjPciBus(Child))
+        {
+            status = EnableDisableRegions(Child, IsEnable);
+            if (!NT_SUCCESS(status))
+            {
+                DPRINT1("EnableDisableRegions: status %X\n", status);
+                Status = status;
+            }
+        }
+
+        if (!Child->Parent)
+            break;
+
+        if (Child->Parent->FirstChild == (PVOID)Child->List.Next)
+            break;
+    }
+
+    return Status;
 }
 
 VOID

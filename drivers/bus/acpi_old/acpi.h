@@ -1322,6 +1322,13 @@ PnpBiosResourcesToNtResources(
     _Out_ PIO_RESOURCE_REQUIREMENTS_LIST* OutIoResource
 );
 
+NTSTATUS
+NTAPI
+EnableDisableRegions(
+    _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ BOOLEAN IsEnable
+);
+
 /* registry.c */
 VOID
 NTAPI
