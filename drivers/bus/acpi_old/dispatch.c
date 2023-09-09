@@ -4300,8 +4300,22 @@ NTSTATUS
 NTAPI
 ACPIDevicePowerProcessPhase4(VOID)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PLIST_ENTRY Entry;
+
+    DPRINT("ACPIDevicePowerProcessPhase4()\n");
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiPowerLock);
+
+    Entry = AcpiPowerNodeList.Flink;
+    while (Entry != &AcpiPowerNodeList)
+    {
+        DPRINT1("ACPIDevicePowerProcessPhase4: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    KeReleaseSpinLockFromDpcLevel(&AcpiPowerLock);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NTAPI ACPIDevicePowerProcessPhase5DeviceSubPhase1(_In_ PACPI_POWER_REQUEST Request)
