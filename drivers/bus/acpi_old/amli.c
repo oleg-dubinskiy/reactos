@@ -5076,11 +5076,12 @@ GetOpRegionScope(
 NTSTATUS
 __cdecl
 PciConfigSpaceHandlerWorker(
-    _In_ PAMLI_NAME_SPACE_OBJECT NsParent,
+    _In_ PAMLI_NAME_SPACE_OBJECT InNsObject,
     _In_ NTSTATUS InStatus,
     _In_ ULONG Param3,
-    _In_ PACPI_PCI_CONFIG_CONTEXT PciCfgContext)
+    _In_ PVOID Context)
 {
+    PACPI_PCI_CONFIG_CONTEXT PciCfgContext = Context;
     PAMLI_NAME_SPACE_OBJECT NsObject;
     PDEVICE_EXTENSION DeviceExtension;
     PBUS_INTERFACE_STANDARD Interface;
@@ -5094,7 +5095,7 @@ PciConfigSpaceHandlerWorker(
     BOOLEAN IsNotSuccess = FALSE;
     NTSTATUS Status;
 
-    DPRINT("PciConfigSpaceHandlerWorker: %p, %X, %X, %p\n", NsParent, InStatus, Param3, PciCfgContext);
+    DPRINT("PciConfigSpaceHandlerWorker: %p, %X, %X, %p\n", InNsObject, InStatus, Param3, PciCfgContext);
 
     InterlockedIncrement(&PciCfgContext->RefCount);
 
@@ -5272,8 +5273,16 @@ Finish:
 
     if (PciCfgContext->RefCount)
     {
-        PAMLI_FN_CALLBACK CallBack = PciCfgContext->Callback;
-        CallBack(PciCfgContext->Context);
+        if (!PciCfgContext->Unknown1)
+        {
+            PAMLI_FN_CALLBACK1 CallBack = PciCfgContext->Callback;
+            CallBack(PciCfgContext->Context);
+        }
+        else
+        {
+            PAMLI_FN_CALLBACK2 CallBack = PciCfgContext->Callback;
+            CallBack(PciCfgContext->ParentNsObject, Status, 0, PciCfgContext->Context);
+        }
     }
 
     if (!NT_SUCCESS(Status) || IsNotSuccess)

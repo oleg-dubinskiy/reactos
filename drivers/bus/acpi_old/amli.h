@@ -215,7 +215,8 @@ typedef struct _AMLI_MUTEX
     UCHAR Pad[3];
 } AMLI_MUTEX, *PAMLI_MUTEX;
 
-typedef VOID (__cdecl* PAMLI_FN_CALLBACK)(PVOID Context);
+typedef VOID (__cdecl* PAMLI_FN_CALLBACK1)(PVOID Context);
+typedef VOID (__cdecl* PAMLI_FN_CALLBACK2)(PAMLI_NAME_SPACE_OBJECT NsObject, NTSTATUS InStatus, ULONG Param3, PVOID Context);
 
 typedef struct _AMLI_CONTEXT_QUEUE
 {
@@ -225,7 +226,7 @@ typedef struct _AMLI_CONTEXT_QUEUE
     PAMLI_LIST List;
     ULONG TimeSliceLength;
     ULONG TimeSliceInterval;
-    PAMLI_FN_CALLBACK PauseCallback;
+    PAMLI_FN_CALLBACK1 PauseCallback;
     PVOID CallbackContext;
     AMLI_MUTEX Mutex;
     KTIMER Timer;
@@ -879,6 +880,15 @@ VOID
 __cdecl
 AmlisuppCompletePassive(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
+    _In_ NTSTATUS InStatus,
+    _In_ ULONG Param3,
+    _In_ PVOID Context
+);
+
+NTSTATUS
+__cdecl
+PciConfigSpaceHandlerWorker(
+    _In_ PAMLI_NAME_SPACE_OBJECT InNsObject,
     _In_ NTSTATUS InStatus,
     _In_ ULONG Param3,
     _In_ PVOID Context
