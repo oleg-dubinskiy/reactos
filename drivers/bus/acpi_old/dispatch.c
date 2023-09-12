@@ -7438,8 +7438,8 @@ Finish:
 
     if (Context->RefCount)
     {
-        DPRINT1("IsPciBusAsyncWorker: FIXME\n");
-        ASSERT(FALSE);
+        PAMLI_FN_CALLBACK2 CallBack = Context->CallBack;
+        CallBack(Context->NsObject, InStatus, 0, Context->CallBackContext);
     }
 
     if (Context->HidId)
