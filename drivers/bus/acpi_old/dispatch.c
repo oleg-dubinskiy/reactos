@@ -7227,15 +7227,47 @@ NTSTATUS
 NTAPI
 PciConfigInternal(
     _In_ ULONG Type,
-    _In_ PAMLI_NAME_SPACE_OBJECT ParentNsObject,
+    _In_ PAMLI_NAME_SPACE_OBJECT InNsObject,
     _In_ ULONG Offset,
     _In_ ULONG Length,
     _In_ PVOID Callback,
     _In_ PVOID Context,
     _In_ PVOID Buffer)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_PCI_CONFIG_INT_CONTEXT PciCfgContext;
+    NTSTATUS Status;
+
+    DPRINT("PciConfigInternal: %p\n", InNsObject);
+
+    PciCfgContext = ExAllocatePoolWithTag(NonPagedPool, sizeof(*PciCfgContext), 'FpcA');
+    if (!PciCfgContext)
+    {
+        DPRINT1("PciConfigInternal: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(PciCfgContext, sizeof(*PciCfgContext));
+
+    PciCfgContext->NsObject.Context = InNsObject;
+
+    PciCfgContext->PciConfig.Type = Type;
+    PciCfgContext->PciConfig.NsObject = &PciCfgContext->NsObject;
+    PciCfgContext->PciConfig.ParentNsObject = InNsObject;
+
+    PciCfgContext->PciConfig.Buffer = Buffer;
+    PciCfgContext->PciConfig.Length = Length;
+    PciCfgContext->PciConfig.Offset = Offset;
+
+    PciCfgContext->PciConfig.Handler = NULL;
+    PciCfgContext->PciConfig.Callback = Callback;
+    PciCfgContext->PciConfig.Context = Context;
+    PciCfgContext->PciConfig.Unknown1 = 1;
+    PciCfgContext->PciConfig.RefCount = -1;
+
+    Status = PciConfigSpaceHandlerWorker(InNsObject, STATUS_SUCCESS, 0, &PciCfgContext->PciConfig);
+
+    DPRINT("PciConfigInternal: ret %X\n", Status);
+
+    return Status;
 }
 
 NTSTATUS
