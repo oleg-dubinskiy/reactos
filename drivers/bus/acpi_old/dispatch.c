@@ -1781,7 +1781,7 @@ ACPIGetConvertToCompatibleID(
     else
         PoolType = PagedPool;
 
-    if ((GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x8000000000000000))
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x8000000000000000))
     {
         IdSize = (strlen(DeviceExtension->Processor.CompatibleID) + 2);
 
