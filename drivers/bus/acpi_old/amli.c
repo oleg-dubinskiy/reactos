@@ -4852,8 +4852,16 @@ IsPciDeviceWorker(
 
         if (ACPIAmliGetNamedChild(Context->NsObject, 'DIC_'))
         {
-            DPRINT1("IsPciDeviceWorker: FIXME\n");
-            ASSERT(FALSE);
+            InStatus = ACPIGet(Context->NsObject, 'DIC_', 0x58080107, NULL, 0, IsPciDeviceWorker, Context, &Context->CompatibleId, NULL);
+            if (InStatus == STATUS_PENDING)
+                return STATUS_PENDING;
+
+            if (!NT_SUCCESS(InStatus))
+            {
+                DPRINT1("IsPciDeviceWorker: InStatus %X\n", InStatus);
+                *Context->OutIsPciDevice = FALSE;
+                goto Exit;
+            }
         }
     }
 
