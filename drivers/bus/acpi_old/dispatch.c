@@ -7215,12 +7215,74 @@ ACPIBusIrpStopDevice(
 
 NTSTATUS
 NTAPI
+ACPIBusIrpQueryBusRelations(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _Out_ PDEVICE_RELATIONS* DeviceRelations)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 ACPIBusIrpQueryDeviceRelations(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_RELATIONS DeviceRelations;
+    PIO_STACK_LOCATION IoStack;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBusIrpQueryDeviceRelations: %X, %X\n", DeviceObject, Irp);
+    PAGED_CODE();
+
+    DeviceRelations = (PDEVICE_RELATIONS)Irp->IoStatus.Information;
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+    switch(IoStack->Parameters.QueryDeviceRelations.Type)
+    {
+        case BusRelations:
+            Status = ACPIBusIrpQueryBusRelations(DeviceObject, Irp, &DeviceRelations);
+            break;
+
+        case EjectionRelations:
+            DPRINT1("ACPIBusIrpQueryDeviceRelations: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        case TargetDeviceRelation:
+            DPRINT1("ACPIBusIrpQueryDeviceRelations: FIXME\n");
+            ASSERT(FALSE);
+            break;
+
+        default:
+            Status = STATUS_NOT_SUPPORTED;
+            DPRINT1("ACPIBusIrpQueryDeviceRelations: Unhandled Type %X\n", IoStack->Parameters.QueryDeviceRelations.Type);
+            ASSERT(FALSE);
+            break;
+    }
+
+    if (NT_SUCCESS(Status))
+    {
+        Irp->IoStatus.Status = Status;
+        Irp->IoStatus.Information = (ULONG_PTR)DeviceRelations;
+    }
+    else if (Status != STATUS_NOT_SUPPORTED && !DeviceRelations)
+    {
+        Irp->IoStatus.Status = Status;
+        Irp->IoStatus.Information = 0;
+    }
+    else
+    {
+        Status = Irp->IoStatus.Status;
+    }
+
+    IoCompleteRequest(Irp, 0);
+
+    DPRINT("ACPIBusIrpQueryDeviceRelations: Status %X\n", Status);
+
+    return Status;
 }
 
 NTSTATUS
