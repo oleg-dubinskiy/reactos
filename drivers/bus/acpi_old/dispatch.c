@@ -6658,6 +6658,7 @@ ACPIDetectFilterMatch(
     _Out_ PDEVICE_OBJECT* OutPdo)
 {
     ULONG ix;
+    NTSTATUS Status;
 
     PAGED_CODE();
     DPRINT("ACPIDetectFilterMatch: %p, %p\n", DeviceExtension, DeviceRelation);
@@ -6676,8 +6677,10 @@ ACPIDetectFilterMatch(
         !(DeviceExtension->Flags & 0x0200000000000000) &&
         !DeviceExtension->DeviceObject)
     {
-        DPRINT1("ACPIDetectFilterMatch: FIXME\n");
-        ASSERT(FALSE);
+        Status = ACPIDetectCouldExtensionBeInRelation(DeviceExtension, DeviceRelation, TRUE, FALSE, OutPdo);
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+            Status = STATUS_SUCCESS;
+        return Status;
     }
 
     if (!DeviceRelation)
