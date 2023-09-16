@@ -299,6 +299,18 @@ PDRIVER_DISPATCH ACPIDispatchBusFilterPnpTable[] =
     ACPIBusIrpUnhandled
 };
 
+IRP_DISPATCH_TABLE AcpiBusFilterIrpDispatch =
+{
+    ACPIDispatchIrpInvalid,
+    ACPIIrpDispatchDeviceControl,
+    ACPIBusIrpStartDevice,
+    ACPIDispatchBusFilterPnpTable,
+    ACPIDispatchBusPowerTable,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchForwardIrp,
+    NULL
+};
+
 IRP_DISPATCH_TABLE AcpiGenericBusIrpDispatch =
 {
     ACPIDispatchIrpInvalid,
@@ -6168,8 +6180,17 @@ ACPIBuildPdo(
 
     if (IsFilterDO)
     {
-        DPRINT1("ACPIBuildPdo: FIXME\n");
-        ASSERT(FALSE);
+        DeviceExtension->TargetDeviceObject = FilterDO;
+
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0000000000000040, FALSE);
+
+        DeviceExtension->DispatchTable = &AcpiBusFilterIrpDispatch;
+
+        Pdo->StackSize = (FilterDO->StackSize + 1);
+        Pdo->AlignmentRequirement = FilterDO->AlignmentRequirement;
+
+        if (FilterDO->Flags & 0x2000)
+            Pdo->Flags |= 0x2000;
     }
 
     if (DeviceExtension->Flags & 0x0000001000000000)
@@ -6363,8 +6384,8 @@ ACPIDetectPdoDevices(
 
     if (InDeviceRelation)
     {
-        DPRINT1("ACPIDetectPdoDevices: FIXME\n");
-        ASSERT(FALSE);
+        RtlCopyMemory(DeviceRelation->Objects, InDeviceRelation->Objects, (InDeviceRelation->Count * sizeof(PDEVICE_OBJECT)));
+        ix = InDeviceRelation->Count;
     }
     else
     {
@@ -6428,7 +6449,7 @@ ACPIDetectPdoDevices(
     }
 
     if (InDeviceRelation)
-        ExFreePoolWithTag(*OutDeviceRelation, 'DpcA');
+        ExFreePool(*OutDeviceRelation);
 
     *OutDeviceRelation = DeviceRelation;
 
