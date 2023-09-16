@@ -7220,8 +7220,38 @@ ACPIBusIrpQueryBusRelations(
     _In_ PIRP Irp,
     _Out_ PDEVICE_RELATIONS* DeviceRelations)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    NTSTATUS status;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIBusIrpQueryBusRelations: %p\n", DeviceObject);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    NsObject = DeviceExtension->AcpiObject;
+    if (!NsObject)
+    {
+        DPRINT1("ACPIBusIrpQueryBusRelations: invalid NsObject %p\n", NsObject);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = ACPIDetectPdoDevices(DeviceObject, DeviceRelations);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBusIrpQueryBusRelations: enum Status %X\n", Status);
+        return Status;
+    }
+
+    status = ACPIDetectFilterDevices(DeviceObject, *DeviceRelations);
+    if (!NT_SUCCESS(status))
+    {
+        DPRINT1("ACPIBusIrpQueryBusRelations: status %X\n", status);
+    }
+
+    DPRINT("ACPIBusIrpQueryBusRelations: Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS
