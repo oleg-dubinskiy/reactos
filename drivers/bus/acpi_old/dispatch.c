@@ -1464,6 +1464,113 @@ Exit:
 
 NTSTATUS
 NTAPI
+ACPIGetConvertToPnpIDWide(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ ULONG GetFlags,
+    _Out_ PVOID* OutDataBuff,
+    _Out_ ULONG* OutDataLen)
+{
+    PCHAR PnpIdString;
+    PWCHAR PnpId;
+    POOL_TYPE PoolType;
+    ULONG PnpIdLen;
+
+    DPRINT("ACPIGetConvertToPnpIDWide: GetFlags %X\n", GetFlags);
+
+    if (GetFlags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000800000000000))
+    {
+        PnpIdLen = (strlen(DeviceExtension->DeviceID) - 3);
+
+        PnpId = ExAllocatePoolWithTag(PoolType, (PnpIdLen * 2), 'SpcA');
+        if (!PnpId)
+        {
+            DPRINT1("ACPIGetConvertToPnpIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(PnpId, (PnpIdLen * 2));
+
+        swprintf(PnpId, L"*%S", (DeviceExtension->DeviceID + 5));
+        goto Exit;
+    }
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000004000000000))
+    {
+        PnpIdLen = 0xE;
+
+        PnpId = ExAllocatePoolWithTag(PoolType, (PnpIdLen * 2), 'SpcA');
+        if (!PnpId)
+        {
+            DPRINT1("ACPIGetConvertToPnpIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(PnpId, (PnpIdLen * 2));
+
+        swprintf(PnpId, L"*%S", "PciBarTarget");
+        goto Exit;
+    }
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIGetConvertToPnpIDWide: InStatus %X\n", InStatus);
+        return InStatus;
+    }
+
+    if (AmliData->DataType == 1)
+    {
+        PnpIdLen = 9;
+
+        PnpId = ExAllocatePoolWithTag(PoolType, (PnpIdLen * 2), 'SpcA');
+        if (!PnpId)
+        {
+            DPRINT1("ACPIGetConvertToPnpIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(PnpId, (PnpIdLen * 2));
+
+        ACPIAmliDoubleToNameWide(PnpId, (ULONG)AmliData->DataValue, TRUE);
+    }
+    else if (AmliData->DataType == 2)
+    {
+        PnpIdString = AmliData->DataBuff;
+        if (*PnpIdString == '*')
+            PnpIdString++;
+
+        PnpIdLen = (2 + strlen(PnpIdString));
+
+        PnpId = ExAllocatePoolWithTag(PoolType, (PnpIdLen * 2), 'SpcA');
+        if (!PnpId)
+        {
+            DPRINT1("ACPIGetConvertToPnpIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(PnpId, (PnpIdLen * 2));
+
+        swprintf(PnpId, L"*%S", PnpIdString);
+    }
+    else
+    {
+        return STATUS_ACPI_INVALID_DATA;
+    }
+
+Exit:
+
+    *OutDataBuff = PnpId;
+
+    if (OutDataLen)
+        *OutDataLen = (PnpIdLen * 2);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 ACPIGetConvertToInstanceID(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ NTSTATUS InStatus,
@@ -2391,8 +2498,7 @@ ACPIGetWorkerForString(
         }
         else if (GetFlags & 0x0200)
         {
-            DPRINT1("ACPIGetWorkerForString: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIGetConvertToPnpIDWide(DeviceExtension, InStatus, AmliData, GetFlags, OutDataBuff, OutDataLen);
         }
         else if (GetFlags & 0x0100)
         {
