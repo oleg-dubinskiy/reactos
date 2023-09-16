@@ -5932,6 +5932,61 @@ ACPIBuildFlushQueue(
 
 NTSTATUS
 NTAPI
+ACPIMatchHardwareId(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PUNICODE_STRING HardwareId,
+    _Out_ BOOLEAN* OutSuccess)
+{
+    PWSTR QueryId;
+    PWSTR CurrentId;
+    UNICODE_STRING IdString;
+    IO_STACK_LOCATION ioStack;
+    NTSTATUS Status;
+
+    DPRINT("ACPIMatchHardwareId: %p, '%wZ'\n", DeviceObject, HardwareId);
+    DPRINT("\n");
+    PAGED_CODE();
+
+    ASSERT(DeviceObject != NULL);
+    ASSERT(OutSuccess != NULL);
+
+    RtlZeroMemory(&ioStack, sizeof(ioStack));
+    RtlZeroMemory(&IdString, sizeof(IdString));
+
+    *OutSuccess = FALSE;
+
+    ioStack.MajorFunction = IRP_MJ_PNP;
+    ioStack.MinorFunction = IRP_MN_QUERY_ID;
+
+    ioStack.Parameters.QueryId.IdType = 1;
+
+    Status = ACPIInternalSendSynchronousIrp(DeviceObject, &ioStack, (ULONG_PTR *)&QueryId);
+    if (!NT_SUCCESS(Status))
+        goto Exit;
+
+    for (CurrentId = QueryId; CurrentId && *CurrentId; )
+    {
+        RtlInitUnicodeString(&IdString, CurrentId);
+        CurrentId += (IdString.MaximumLength / 2);
+
+        if (RtlEqualUnicodeString(&IdString, HardwareId, 1))
+        {
+            *OutSuccess = TRUE;
+            break;
+        }
+    }
+
+    ExFreePool(QueryId);
+
+Exit:
+
+    DPRINT("ACPIMatchHardwareId: '%ws', %X, %X\n", HardwareId->Buffer, DeviceObject, Status, *OutSuccess);
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 ACPIDetectCouldExtensionBeInRelation(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PDEVICE_RELATIONS DeviceRelation,
@@ -6003,8 +6058,12 @@ ACPIDetectCouldExtensionBeInRelation(
 
         if (IsHid)
         {
-            DPRINT1("ACPIDetectCouldExtensionBeInRelation: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIMatchHardwareId(DeviceRelation->Objects[ix], &HardwareId, &IsSuccess);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("ACPIDetectCouldExtensionBeInRelation: Status %X\n", Status);
+                continue;
+            }
         }
 
         if (!IsSuccess && !IsAdr)

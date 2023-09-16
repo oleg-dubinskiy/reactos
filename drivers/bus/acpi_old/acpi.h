@@ -1329,6 +1329,14 @@ EnableDisableRegions(
     _In_ BOOLEAN IsEnable
 );
 
+NTSTATUS
+NTAPI
+ACPIInternalSendSynchronousIrp(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIO_STACK_LOCATION InIoStack,
+    _In_ ULONG_PTR* OutInformation
+);
+
 /* registry.c */
 VOID
 NTAPI
