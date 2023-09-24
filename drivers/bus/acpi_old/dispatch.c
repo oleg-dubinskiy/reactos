@@ -8185,9 +8185,9 @@ ACPIBusIrpQueryInterface(
 
             goto Exit;
         }
-
-        Status = Irp->IoStatus.Status;
     }
+
+    Status = Irp->IoStatus.Status;
 
 Exit:
 
