@@ -5999,6 +5999,34 @@ Exit:
 
 NTSTATUS
 NTAPI
+ACPIMatchHardwareAddress(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG Address,
+    _Out_ BOOLEAN* OutSuccess)
+{
+    DEVICE_CAPABILITIES capabilities;
+    NTSTATUS Status;
+
+    DPRINT("ACPIMatchHardwareAddress: %p, %X\n", DeviceObject, Address);
+    PAGED_CODE();
+
+    ASSERT(DeviceObject != NULL);
+    ASSERT(OutSuccess != NULL);
+
+    *OutSuccess = FALSE;
+
+    Status = ACPIInternalGetDeviceCapabilities(DeviceObject, &capabilities);
+
+    if (NT_SUCCESS(Status) && Address == capabilities.Address)
+        *OutSuccess = TRUE;
+
+    DPRINT("ACPIMatchHardwareAddress: ret %X, %X\n", Status, *OutSuccess);
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 ACPIDetectCouldExtensionBeInRelation(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PDEVICE_RELATIONS DeviceRelation,
@@ -6085,8 +6113,15 @@ ACPIDetectCouldExtensionBeInRelation(
         {
             IsSuccess = FALSE;
 
-            DPRINT1("ACPIDetectCouldExtensionBeInRelation: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIMatchHardwareAddress(DeviceRelation->Objects[ix], HardwareAddress, &IsSuccess);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("ACPIDetectCouldExtensionBeInRelation: Status %X\n", Status);
+                continue;
+            }
+
+            if (!IsSuccess)
+                continue;
         }
 
         *OutPdoObject = DeviceRelation->Objects[ix];

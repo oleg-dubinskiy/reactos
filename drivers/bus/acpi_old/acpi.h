@@ -1337,6 +1337,13 @@ ACPIInternalSendSynchronousIrp(
     _In_ ULONG_PTR* OutInformation
 );
 
+NTSTATUS
+NTAPI
+ACPIInternalGetDeviceCapabilities(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PDEVICE_CAPABILITIES Capabilities
+);
+
 /* registry.c */
 VOID
 NTAPI
