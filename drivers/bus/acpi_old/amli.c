@@ -6493,7 +6493,8 @@ HeapAlloc(
             break;
         }
 
-        HeapPrev = heap = heap->HeapNext;
+        HeapPrev = heap;
+        heap = heap->HeapNext;
     }
 
     if (!Header)
