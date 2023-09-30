@@ -1184,6 +1184,22 @@ NTSTATUS NTAPI ACPIDockIrpQueryPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP
 NTSTATUS NTAPI ACPIProcessorDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
 NTSTATUS NTAPI ACPIProcessorStartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
 
+NTSTATUS NTAPI ACPIFilterIrpStartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
+NTSTATUS NTAPI ACPIFilterIrpRemoveDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpStopDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryDeviceRelations(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryInterface(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryCapabilities(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpEject(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpSetLock(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryId(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryPnpDeviceState(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpSurpriseRemoval(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
+NTSTATUS NTAPI ACPIFilterIrpSetPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
 NTSTATUS NTAPI ACPIBuildProcessGenericComplete(_In_ PACPI_BUILD_REQUEST BuildRequest);
 NTSTATUS NTAPI ACPIBuildProcessRunMethodPhaseCheckSta(_In_ PACPI_BUILD_REQUEST BuildRequest);
 NTSTATUS NTAPI ACPIBuildProcessRunMethodPhaseCheckBridge(_In_ PACPI_BUILD_REQUEST BuildRequest);
