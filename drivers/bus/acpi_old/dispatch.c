@@ -11657,6 +11657,15 @@ ACPIFilterIrpQueryInterface(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+VOID
+NTAPI
+ACPIIrpCompletionRoutineWorker(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 ACPIIrpGenericFilterCompletionHandler(
@@ -11664,8 +11673,23 @@ ACPIIrpGenericFilterCompletionHandler(
     _In_ PIRP Irp,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PACPI_FILTER_COMPLETION_CONTEXT CompletionContext = Context;
+
+    DPRINT("ACPIIrpGenericFilterCompletionHandler: %p, %p\n", DeviceObject, Irp);
+
+    if (Irp->PendingReturned)
+        IoMarkIrpPending(Irp);
+
+    if (!KeGetCurrentIrql())
+    {
+        ACPIIrpCompletionRoutineWorker(DeviceObject, Context);
+    }
+    else
+    {
+        IoQueueWorkItem(CompletionContext->WorkItem, ACPIIrpCompletionRoutineWorker, DelayedWorkQueue, CompletionContext);
+    }
+
+    return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
 NTSTATUS
