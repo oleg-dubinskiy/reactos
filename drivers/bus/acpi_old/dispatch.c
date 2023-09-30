@@ -11663,7 +11663,47 @@ ACPIIrpCompletionRoutineWorker(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_FILTER_COMPLETION_CONTEXT CompletionContext = Context;
+    PACPI_IRP_COMPLETION_ROUTINE CallBack = CompletionContext->CallBack;
+    PIRP Irp = CompletionContext->Irp;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status = STATUS_NOT_SUPPORTED;
+
+    DPRINT("ACPIIrpCompletionRoutineWorker: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    if (NT_SUCCESS(Irp->IoStatus.Status))
+    {
+        if (CompletionContext->Param5)
+            Status = CallBack(DeviceObject, Irp, CompletionContext->CallBackContext, TRUE);
+    }
+    else if (Irp->IoStatus.Status == STATUS_NOT_SUPPORTED)
+    {
+        if (CompletionContext->Param6)
+            Status = CallBack(DeviceObject, Irp, CompletionContext->CallBackContext, TRUE);
+    }
+    else if (CompletionContext->Param7)
+    {
+        Status = CallBack(DeviceObject, Irp, CompletionContext->CallBackContext, TRUE);
+    }
+    else if (Irp->Cancel && CompletionContext->Param8)
+    {
+        Status = CallBack(DeviceObject, Irp, CompletionContext->CallBackContext, TRUE);
+    }
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    ACPIInternalDecrementIrpReferenceCount(DeviceExtension);
+
+    IoFreeWorkItem(CompletionContext->WorkItem);
+    ExFreePool(CompletionContext);
+
+    if (Status == STATUS_PENDING)
+        return;
+
+    if (Status != STATUS_NOT_SUPPORTED)
+        Irp->IoStatus.Status = Status;
+
+    IoCompleteRequest(Irp, 0);
 }
 
 NTSTATUS

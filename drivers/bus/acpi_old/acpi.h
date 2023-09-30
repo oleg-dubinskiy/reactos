@@ -964,6 +964,14 @@ typedef VOID
     _In_ BOOLEAN TimerValExt
 );
 
+typedef NTSTATUS
+(NTAPI* PACPI_IRP_COMPLETION_ROUTINE)(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PVOID Context,
+    _In_ BOOLEAN Param4
+);
+
 /* acpiinit.c */
 NTSTATUS
 NTAPI
