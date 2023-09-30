@@ -921,6 +921,19 @@ typedef struct _ACPI_IO_PORT_DESCRIPTOR
 
 #include <poppack.h>
 
+typedef struct _ACPI_FILTER_COMPLETION_CONTEXT
+{
+    PDEVICE_OBJECT DeviceObject;
+    PIRP Irp;
+    PVOID CallBack;
+    UCHAR Param5;
+    UCHAR Param6;
+    UCHAR Param7;
+    UCHAR Param8;
+    PIO_WORKITEM WorkItem;
+    PVOID CallBackContext;
+} ACPI_FILTER_COMPLETION_CONTEXT, *PACPI_FILTER_COMPLETION_CONTEXT;
+
 /* FUNCTIONS ****************************************************************/
 
 #ifndef Add2Ptr

@@ -11659,12 +11659,85 @@ ACPIFilterIrpQueryInterface(
 
 NTSTATUS
 NTAPI
+ACPIIrpGenericFilterCompletionHandler(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIIrpSetPagableCompletionRoutineAndForward(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext,
+    _In_ BOOLEAN Param5,
+    _In_ BOOLEAN Param6,
+    _In_ BOOLEAN Param7,
+    _In_ BOOLEAN Param8)
+{
+    PACPI_FILTER_COMPLETION_CONTEXT CompletionContext;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIO_WORKITEM WorkItem;
+
+    DPRINT("ACPIIrpSetPagableCompletionRoutineAndForward: %p, %p\n", DeviceObject, Irp);
+    PAGED_CODE();
+
+    CompletionContext = ExAllocatePoolWithTag(NonPagedPool, sizeof(ACPI_FILTER_COMPLETION_CONTEXT), 'ipcA');
+    if (!CompletionContext)
+    {
+        DPRINT1("ACPIIrpSetPagableCompletionRoutineAndForward: STATUS_INSUFFICIENT_RESOURCES\n");
+        Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+        IoCompleteRequest(Irp, 0);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    WorkItem = IoAllocateWorkItem(DeviceObject);
+    if (!WorkItem)
+    {
+        DPRINT1("ACPIIrpSetPagableCompletionRoutineAndForward: STATUS_INSUFFICIENT_RESOURCES\n");
+        ExFreePoolWithTag(CompletionContext, 'ipcA');
+        Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+        IoCompleteRequest(Irp, 0);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    CompletionContext->DeviceObject = DeviceObject;
+    CompletionContext->Irp = Irp;
+    CompletionContext->WorkItem = WorkItem;
+    CompletionContext->CallBack = CallBack;
+    CompletionContext->CallBackContext = CallBackContext;
+    CompletionContext->Param5 = Param5;
+    CompletionContext->Param6 = Param6;
+    CompletionContext->Param7 = Param7;
+    CompletionContext->Param8 = Param8;
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    InterlockedIncrement(&DeviceExtension->OutstandingIrpCount);
+
+    IoCopyCurrentIrpStackLocationToNext(Irp);
+    IoSetCompletionRoutine(Irp, ACPIIrpGenericFilterCompletionHandler, CompletionContext, TRUE, TRUE, TRUE);
+
+    IoMarkIrpPending(Irp);
+
+    IoCallDriver(DeviceExtension->TargetDeviceObject, Irp);
+
+    return STATUS_PENDING;
+}
+
+NTSTATUS
+NTAPI
 ACPIFilterIrpQueryCapabilities(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("ACPIFilterIrpQueryCapabilities: %p\n", DeviceObject);
+    PAGED_CODE();
+    return ACPIIrpSetPagableCompletionRoutineAndForward(DeviceObject, Irp, ACPIBusAndFilterIrpQueryCapabilities, NULL, TRUE, TRUE, FALSE, FALSE);
 }
 
 NTSTATUS
