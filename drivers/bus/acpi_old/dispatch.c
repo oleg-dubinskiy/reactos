@@ -8195,6 +8195,23 @@ Finish:
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+SmashInterfaceQuery(
+    _In_ PIRP Irp)
+{
+    GUID* InterfaceType;
+
+    DPRINT("SmashInterfaceQuery: %p\n", Irp);
+    PAGED_CODE();
+
+    InterfaceType = (GUID*)(IoGetCurrentIrpStackLocation(Irp))->Parameters.QueryInterface.InterfaceType;
+
+    RtlZeroMemory(InterfaceType, sizeof(*InterfaceType));
+
+    Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
+}
+
 NTSTATUS
 NTAPI
 ACPIBusIrpQueryInterface(
@@ -8257,11 +8274,7 @@ ACPIBusIrpQueryInterface(
         if (ResourceType == CmResourceTypeInterrupt)
         {
             if (IsPciBus(DeviceObject))
-            {
-                DPRINT1("ACPIBusIrpQueryInterface: FIXME\n");
-                ASSERT(FALSE);
-                //SmashInterfaceQuery(Irp);
-            }
+                SmashInterfaceQuery(Irp);
 
             Status = Irp->IoStatus.Status;
         }
