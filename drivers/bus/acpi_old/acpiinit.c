@@ -2564,8 +2564,21 @@ AcpiArbPreprocessEntry(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    UCHAR Attributes;
+
+    DPRINT("AcpiArbPreprocessEntry: %p\n", Arbiter);
+    PAGED_CODE();
+
+    Attributes = ArbState->RangeAttributes;
+
+    if (ArbState->Alternatives->Descriptor->Flags & 1)
+        Attributes = ((Attributes & 0xEF) | 0x20);
+    else
+        Attributes = ((Attributes & 0xDF) | 0x10);
+
+    ArbState->RangeAttributes = Attributes;
+
+    return STATUS_SUCCESS;
 }
 
 /*  Not correct yet, FIXME! */
