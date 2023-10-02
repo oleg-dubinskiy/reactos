@@ -8641,6 +8641,106 @@ ACPISystemPowerUpdateWakeCapabilitiesForPDOs(
 
 NTSTATUS
 NTAPI
+ACPISystemPowerUpdateWakeCapabilitiesForFilters(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_CAPABILITIES Capabilities,
+    _In_ PDEVICE_CAPABILITIES OutCapabilities,
+    _In_ DEVICE_POWER_STATE* States,
+    _In_ ULONG* OutDeviceWakeBit,
+    _In_ SYSTEM_POWER_STATE* OutSystemWakeLevel,
+    _In_ DEVICE_POWER_STATE* OutDeviceWakeLevel,
+    _In_ DEVICE_POWER_STATE* OutWakeLevel)
+{
+    DEVICE_POWER_STATE DeviceWake;
+    DEVICE_POWER_STATE InDeviceWake;
+    SYSTEM_POWER_STATE SystemWake;
+    NTSTATUS Status;
+
+    DPRINT("ACPISystemPowerUpdateWakeCapabilitiesForFilters: %p\n", DeviceExtension);
+
+    DeviceWake = OutCapabilities->DeviceWake;
+    SystemWake = OutCapabilities->SystemWake;
+
+    if (OutCapabilities->WakeFromD0)
+        *OutDeviceWakeBit |= 0x02;
+
+    if (OutCapabilities->WakeFromD1)
+        *OutDeviceWakeBit |= 0x04;
+
+    if (OutCapabilities->WakeFromD2)
+        *OutDeviceWakeBit |= 0x08;
+
+    if (OutCapabilities->WakeFromD3)
+        *OutDeviceWakeBit |= 0x10;
+
+    if (OutCapabilities->DeviceWake && OutCapabilities->SystemWake)
+    {
+        DeviceWake = OutCapabilities->DeviceWake;
+        SystemWake = OutCapabilities->SystemWake;
+    }
+    else
+    {
+        DeviceWake = 0;
+        SystemWake = 0;
+    }
+
+    if (DeviceExtension->Flags & 0x0000000000010000)
+    {
+        DPRINT1("ACPISystemPowerUpdateWakeCapabilitiesForFilters: FIXME\n");
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    Status = ACPISystemPowerGetSxD(DeviceExtension, SystemWake, &InDeviceWake);
+    if (NT_SUCCESS(Status))
+    {
+        for (; InDeviceWake > 0; InDeviceWake--)
+        {
+            if (*OutDeviceWakeBit & (1 << InDeviceWake))
+            {
+                DeviceWake = InDeviceWake;
+                break;
+            }
+        }
+    }
+
+    for (; SystemWake > 0; SystemWake--)
+    {
+        if (!(AcpiSupportedSystemStates & (1 << SystemWake)) || States[SystemWake] == 0)
+            continue;
+
+        if (States[SystemWake] <= DeviceWake)
+            break;
+
+        if (*OutDeviceWakeBit & (1 << States[SystemWake]))
+        {
+            DeviceWake = States[SystemWake];
+            break;
+        }
+    }
+
+    if (!SystemWake)
+    {
+        DeviceWake = 0;
+        *OutDeviceWakeBit = 0;
+    }
+
+Exit:
+
+    if (OutSystemWakeLevel)
+        *OutSystemWakeLevel = SystemWake;
+
+    if (OutDeviceWakeLevel)
+        *OutDeviceWakeLevel = DeviceWake;
+
+    if (OutWakeLevel)
+        *OutWakeLevel = DeviceWake;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 ACPISystemPowerUpdateWakeCapabilities(
      _In_ PDEVICE_EXTENSION DeviceExtension,
      _In_ PDEVICE_CAPABILITIES Capabilities,
@@ -8656,8 +8756,7 @@ ACPISystemPowerUpdateWakeCapabilities(
     if ((DeviceExtension->Flags & 0x0000000000000040) &&
         !(DeviceExtension->Flags & 0x0000000000000020))
     {
-        DPRINT1("ACPISystemPowerUpdateWakeCapabilities: FIXME\n");
-        ASSERT(FALSE);
+        return ACPISystemPowerUpdateWakeCapabilitiesForFilters(DeviceExtension, Capabilities, OutCapabilities, States, OutDeviceWakeBit, OutSystemWakeLevel, OutDeviceWakeLevel, OutWakeLevel);
     }
 
     if (OutWakeLevel)
