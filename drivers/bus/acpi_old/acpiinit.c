@@ -2223,6 +2223,45 @@ StartHash:
     }
 }
 
+VOID
+NTAPI
+ClearTempVectorCounts(
+    VOID)
+{
+    PACPI_VECTOR_BLOCK VectorBlock;
+    ULONG Idx = 0;
+    ULONG ix;
+  
+    PAGED_CODE();
+
+    do
+    {
+        VectorBlock = &IrqHashTable[Idx];
+
+Start:
+
+        for (ix = 0; ix < 2; ix++)
+        {
+            if (VectorBlock->Entry.Vector == 'WWWW')
+            {
+                VectorBlock = VectorBlock->Chain.Next;
+                goto Start;
+            }
+
+            if (VectorBlock->Entry.Vector == 'XXXX')
+                break;
+
+            VectorBlock->Entry.TempCount = 0;
+            VectorBlock->Entry.TempFlags = VectorBlock->Entry.Flags;
+
+            VectorBlock++;
+        }
+
+        Idx += 2;
+    }
+    while (Idx < 0x3E);
+}
+
 NTSTATUS
 __cdecl
 DisableLinkNodesAsyncWorker(
