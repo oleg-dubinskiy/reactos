@@ -2498,8 +2498,18 @@ AcpiArbBootAllocation(
     _In_ PARBITER_INSTANCE Arbiter,
     _In_ PLIST_ENTRY ArbitrationList)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbBootAllocation: %p\n", Arbiter);
+    PAGED_CODE();
+
+    ClearTempVectorCounts();
+
+    Status = ArbBootAllocation(Arbiter, ArbitrationList);
+
+    MakeTempVectorCountsPermanent();
+
+    return Status;
 }
 
 NTSTATUS
