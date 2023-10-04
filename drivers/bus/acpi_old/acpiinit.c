@@ -2540,13 +2540,60 @@ AcpiArbCommitAllocation(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+NTAPI
+AcpiArbCrackPRT(
+    IN PDEVICE_OBJECT Pdo,
+    IN OUT PAMLI_NAME_SPACE_OBJECT* OutLinkNode,
+    IN OUT ULONG* OutVector)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 AcpiArbAddAllocation(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_NAME_SPACE_OBJECT LinkNode;
+    ULONG Vector;
+    //UCHAR Flags;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbAddAllocation: %p, %X\n", ArbState->Entry->PhysicalDeviceObject, (ULONG)(ArbState->Start & 0xFFFFFFFF));
+
+    PAGED_CODE();
+    ASSERT(ArbState->CurrentAlternative->Descriptor->Type == CmResourceTypeInterrupt);
+
+    Status = AcpiArbCrackPRT(ArbState->Entry->PhysicalDeviceObject, &LinkNode, &Vector);
+
+    if (NT_SUCCESS(Status))
+    {
+        //Flags = 3;
+
+        ASSERT(ArbState->Start == ArbState->End);
+
+        if (!(ArbState->Flags & 2))
+        {
+            DPRINT1("AcpiArbAddAllocation: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else if (InterruptModel == 1)
+        {
+            DPRINT("AcpiArbAddAllocation: Skipping this allocation. It's for a PCI device in APIC mode\n");
+            return;
+        }
+    }
+    else
+    {
+        DPRINT1("AcpiArbAddAllocation: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    DPRINT1("AcpiArbAddAllocation: FIXME\n");
+    ASSERT(FALSE);
 }
 
 VOID
