@@ -5688,8 +5688,20 @@ AMLIEvalPackageElement(
 
     if (BaseObject->ObjData.DataType == 8)//Method
     {
-        DPRINT1("AMLIEvalPackageElement: FIXME\n");
-        ASSERT(FALSE);
+        Status = SyncEvalObject(BaseObject, &data, 0, NULL);
+        if (Status == STATUS_SUCCESS)
+        {
+            if (data.DataType == 4)
+            {
+                PackageData = &data;
+            }
+            else
+            {
+                DPRINT1("AMLIEvalPackageElement: result object of the method is not package '%s'\n", GetObjectTypeName(data.DataType));
+                ASSERT(FALSE);
+                Status = STATUS_ACPI_INVALID_OBJTYPE;
+            }
+        }
     }
     else if (BaseObject->ObjData.DataType == 4)
     {
