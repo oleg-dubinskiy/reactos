@@ -2540,6 +2540,60 @@ AcpiArbCommitAllocation(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+PDEVICE_OBJECT
+NTAPI
+AcpiGetFilter(
+    _In_ PDEVICE_OBJECT Root,
+    _In_ PDEVICE_OBJECT Pdo)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_EXTENSION StartExtension;
+    PDEVICE_EXTENSION CurrentExtension;
+    PDEVICE_OBJECT FilterDevice;
+    PLIST_ENTRY Entry;
+
+    DPRINT("AcpiGetFilter: %p, %p\n", Root, Pdo);
+
+    DeviceExtension = Root->DeviceExtension;
+
+    if (((DeviceExtension->Flags & 0x0000000000000020) || (DeviceExtension->Flags & 0x0000000000000040)) &&
+        DeviceExtension->PhysicalDeviceObject == Pdo)
+    {
+        DPRINT("AcpiGetFilter: ret %p\n", Root);
+        ASSERT(Root->Type == IO_TYPE_DEVICE);
+        return Root;
+    }
+
+    Entry = DeviceExtension->ChildDeviceList.Flink;
+    if (Entry == &DeviceExtension->ChildDeviceList)
+    {
+        DPRINT("AcpiGetFilter: ret NULL\n");
+        return NULL;
+    }
+
+    CurrentExtension = StartExtension = CONTAINING_RECORD(Entry, DEVICE_EXTENSION, SiblingDeviceList);
+
+    while (TRUE)
+    {
+        if (CurrentExtension->DeviceObject)
+        {
+            FilterDevice = AcpiGetFilter(CurrentExtension->DeviceObject, Pdo);
+            if (FilterDevice)
+            {
+                DPRINT("AcpiGetFilter: ret %p\n", FilterDevice);
+                return FilterDevice;
+            }
+        }
+
+        CurrentExtension = CONTAINING_RECORD(CurrentExtension->SiblingDeviceList.Flink, DEVICE_EXTENSION, SiblingDeviceList);
+        if (CurrentExtension == StartExtension)
+            break;
+    }
+
+    DPRINT("AcpiGetFilter: ret NULL\n");
+    return NULL;
+}
+
 NTSTATUS
 NTAPI
 AcpiArbCrackPRT(
