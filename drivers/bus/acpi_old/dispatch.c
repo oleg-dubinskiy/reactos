@@ -11845,8 +11845,47 @@ ACPIFilterIrpQueryInterface(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_STACK_LOCATION IoStack;
+    UNICODE_STRING GuidString;
+    ULONG_PTR InterfaceSpecificData;
+    ULONG InterfaceSize;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+    InterfaceSpecificData = (ULONG_PTR)IoStack->Parameters.QueryInterface.InterfaceSpecificData;
+
+    Status = RtlStringFromGUID(IoStack->Parameters.QueryInterface.InterfaceType, &GuidString);
+    if (NT_SUCCESS(Status))
+    {
+        DPRINT("ACPIRootIrpQueryInterface: %X, '%wZ'\n", InterfaceSpecificData, &GuidString);
+        RtlFreeUnicodeString(&GuidString);
+    }
+
+    if (IoStack->Parameters.QueryInterface.InterfaceType == &GUID_ACPI_INTERFACE_STANDARD ||
+        (RtlCompareMemory(IoStack->Parameters.QueryInterface.InterfaceType, &GUID_ACPI_INTERFACE_STANDARD, sizeof(GUID)) == sizeof(GUID)))
+    {
+        if (IoStack->Parameters.QueryInterface.Size <= sizeof(ACPI_INTERFACE_STANDARD))
+            InterfaceSize = IoStack->Parameters.QueryInterface.Size;
+        else
+            InterfaceSize = sizeof(ACPI_INTERFACE_STANDARD);
+
+        RtlCopyMemory(IoStack->Parameters.QueryInterface.Interface, &ACPIInterfaceTable, InterfaceSize);
+
+        if (InterfaceSize > 8) // FIXME
+            IoStack->Parameters.QueryInterface.Interface->Context = DeviceObject;
+
+        Irp->IoStatus.Status = 0;
+    }
+    else if (IoStack->Parameters.QueryInterface.InterfaceType == &GUID_TRANSLATOR_INTERFACE_STANDARD ||
+             (RtlCompareMemory(IoStack->Parameters.QueryInterface.InterfaceType, &GUID_TRANSLATOR_INTERFACE_STANDARD, sizeof(GUID)) == sizeof(GUID)))
+    {
+        if (InterfaceSpecificData == 2 && IsPciBus(DeviceObject))
+            SmashInterfaceQuery(Irp);
+    }
+
+    return ACPIDispatchForwardIrp(DeviceObject, Irp);
 }
 
 VOID
