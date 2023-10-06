@@ -99,6 +99,7 @@ BOOLEAN AcpiBuildWorkDone;
 BOOLEAN AcpiPowerWorkDone;
 BOOLEAN AcpiPowerDpcRunning;
 BOOLEAN AcpiArbCardbusPresent;
+BOOLEAN AcpiInterruptRoutingFailed = FALSE;
 
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 extern PACPI_INFORMATION AcpiInformation;
@@ -108,6 +109,7 @@ extern ULONG AcpiOverrideAttributes;
 extern KSPIN_LOCK GpeTableLock;
 extern PPM_DISPATCH_TABLE PmHalDispatchTable;
 extern ULONG InterruptModel;
+extern BOOLEAN PciInterfacesInstantiated;
 
 /* ACPI TABLES FUNCTIONS ****************************************************/
 
@@ -2601,8 +2603,240 @@ AcpiArbCrackPRT(
     IN OUT PAMLI_NAME_SPACE_OBJECT* OutLinkNode,
     IN OUT ULONG* OutVector)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PINT_ROUTE_INTERFACE_STANDARD PciInterface;
+    PAMLI_NAME_SPACE_OBJECT PrtNsObject;
+    PDEVICE_OBJECT ParentPdo;
+    PDEVICE_OBJECT FilterDo;
+    AMLI_OBJECT_DATA PrtData;
+    AMLI_OBJECT_DATA DataResult;
+    AMLI_OBJECT_DATA InterruptPinData;
+    AMLI_OBJECT_DATA LinkNodeData;
+    AMLI_OBJECT_DATA VectorData;
+    ROUTING_TOKEN RoutingToken;
+    PCI_SLOT_NUMBER PciSlot;
+    PCI_SLOT_NUMBER Slot;
+    ULONG Index = 0;
+    ULONG Bus;
+    UCHAR InterruptLine;
+    UCHAR Line;
+    UCHAR InterruptPin;
+    UCHAR pin;
+    UCHAR ClassCode;
+    UCHAR SubClassCode;
+    UCHAR Flags;
+    UCHAR flags;
+    KIRQL Irql;
+    BOOLEAN IsSuccess = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbCrackPRT: %p\n", Pdo);
+
+    if (Pdo->DriverObject == AcpiDriverObject)
+    {
+        ASSERT(((PDEVICE_EXTENSION)Pdo->DeviceExtension)->Flags & 0x0000000000000020);//DEV_TYPE_PDO
+        ASSERT(((PDEVICE_EXTENSION)Pdo->DeviceExtension)->Signature == '_SGP');//ACPI_SIGNATURE
+
+        if (((PDEVICE_EXTENSION)Pdo->DeviceExtension)->Flags & 0x0000000002000000)
+        {
+            DPRINT1("AcpiArbCrackPRT: STATUS_NOT_FOUND\n");
+            return STATUS_NOT_FOUND;
+        }
+    }
+
+    ASSERT(PciInterfacesInstantiated);
+
+    *OutLinkNode = NULL;
+
+    PciInterface = ((PARBITER_EXTENSION)AcpiArbiter.Extension)->InterruptRouting;
+    ASSERT(PciInterface);
+
+    Bus = 0xFFFFFFFF;
+    PciSlot.u.AsULONG = 0xFFFFFFFF;
+
+    Status = PciInterface->GetInterruptRouting(Pdo,
+                                               &Bus,
+                                               &PciSlot.u.AsULONG,
+                                               &InterruptLine,
+                                               &InterruptPin,
+                                               &ClassCode,
+                                               &SubClassCode,
+                                               &ParentPdo,
+                                               &RoutingToken,
+                                               &Flags);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("AcpiArbCrackPRT: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    if (ClassCode == 1 && SubClassCode == 1)
+    {
+        DPRINT1("AcpiArbCrackPRT: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (RoutingToken.LinkNode || (RoutingToken.Flags & 2))
+    {
+        if (RoutingToken.LinkNode)
+            *OutLinkNode = RoutingToken.LinkNode;
+        else
+            *OutVector = RoutingToken.StaticVector;
+
+        return STATUS_SUCCESS;
+    }
+
+    while (TRUE)
+    {
+        KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
+        FilterDo = AcpiGetFilter(AcpiArbiterDeviceObject, ParentPdo);
+        KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+        if (FilterDo)
+        {
+            ASSERT(IsPciBus(FilterDo));
+
+            PrtNsObject = ACPIAmliGetNamedChild((((PDEVICE_EXTENSION)FilterDo->DeviceExtension)->AcpiObject), 'TRP_');
+            if (PrtNsObject)
+            {
+                DPRINT("AcpiArbCrackPRT: PrtNsObject %p\n", PrtNsObject);
+                break;
+            }
+        }
+
+        Bus = 0xFFFFFFFF;
+        Slot.u.AsULONG = 0xFFFFFFFF;
+
+        Status = PciInterface->GetInterruptRouting(ParentPdo,
+                                                   &Bus,
+                                                   &Slot.u.AsULONG,
+                                                   &Line,
+                                                   &pin,
+                                                   &ClassCode,
+                                                   &SubClassCode,
+                                                   &ParentPdo,
+                                                   &RoutingToken,
+                                                   &flags);
+
+        DPRINT("AcpiArbCrackPRT: Status %X (%X:%X)\n", Status, ClassCode, SubClassCode);
+
+        if (!NT_SUCCESS(Status) || ClassCode != 6)
+        {
+            *OutVector = InterruptLine;
+            AcpiInterruptRoutingFailed = TRUE;
+            return STATUS_SUCCESS;
+        }
+
+        if (SubClassCode == 4)
+        {
+            DPRINT1("AcpiArbCrackPRT: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else if (SubClassCode == 7)
+        {
+            InterruptPin = pin;
+            PciSlot.u.AsULONG = Slot.u.AsULONG;
+            DPRINT("AcpiArbCrackPRT: InterruptPin %X, PciSlot.u.AsULONG %X\n", InterruptPin, PciSlot.u.AsULONG);
+        }
+        else
+        {
+            DPRINT("AcpiArbCrackPRT: InterruptLine %X\n", InterruptLine);
+            *OutVector = InterruptLine;
+            AcpiInterruptRoutingFailed = TRUE;
+            return STATUS_SUCCESS;
+        }
+    }
+
+    if (AcpiInterruptRoutingFailed)
+    {
+        DPRINT1("AcpiArbCrackPRT: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+        //KeBugCheckEx(..);
+    }
+
+    InterruptPin--;
+
+    DPRINT("AcpiArbCrackPRT: PCI Device %p had _ADR of %X\n", Pdo, PciSlot.u.AsULONG);
+    DPRINT("AcpiArbCrackPRT: This device connected to Pin %X (%p) \n", InterruptPin, PrtNsObject);
+
+    do
+    {
+        Status = AMLIEvalPackageElement(PrtNsObject, Index++, &PrtData);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT("AcpiArbCrackPRT: Status %X\n", Status);
+            break;
+        }
+
+        ASSERT(PrtData.DataType == 4);
+
+        if (NT_SUCCESS(AMLIEvalPkgDataElement(&PrtData, 0, &DataResult)))
+        {
+            if (PciSlot.u.bits.DeviceNumber == ((ULONG)DataResult.DataValue >> 0x10))
+            {
+                if (((ULONG)DataResult.DataValue & 0xFFFF) != 0xFFFF)
+                {
+                    DPRINT1("AcpiArbCrackPRT: FIXME\n");
+                    ASSERT(FALSE);
+                }
+
+                if (NT_SUCCESS(AMLIEvalPkgDataElement(&PrtData, 1, &InterruptPinData)))
+                {
+                    if ((ULONG)InterruptPinData.DataValue == InterruptPin)
+                    {
+                        if (NT_SUCCESS(AMLIEvalPkgDataElement(&PrtData, 2, &LinkNodeData)))
+                            IsSuccess = TRUE;
+
+                        if (NT_SUCCESS(AMLIEvalPkgDataElement(&PrtData, 3, &VectorData)))
+                            IsSuccess = TRUE;
+                    }
+
+                    AMLIFreeDataBuffs(&InterruptPinData, 1);
+                }
+            }
+
+            AMLIFreeDataBuffs(&DataResult, 1);
+        }
+
+        AMLIFreeDataBuffs(&PrtData, 1);
+    }
+    while (!IsSuccess);
+
+    if (IsSuccess)
+    {
+        if (LinkNodeData.DataType == 2 && LinkNodeData.DataBuff)
+        {
+            DPRINT1("AcpiArbCrackPRT: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (VectorData.DataType != 1)
+        {
+            DPRINT1("AcpiArbCrackPRT: STATUS_INVALID_IMAGE_FORMAT\n");
+            AMLIFreeDataBuffs(&LinkNodeData, 1);
+            AMLIFreeDataBuffs(&VectorData, 1);
+            return STATUS_INVALID_IMAGE_FORMAT;
+        }
+
+        *OutVector = (ULONG)VectorData.DataValue;
+
+        RoutingToken.LinkNode = 0;
+        RoutingToken.StaticVector = *OutVector;
+        RoutingToken.Flags = 2;
+
+        PciInterface->SetInterruptRoutingToken(Pdo, &RoutingToken);
+
+        AMLIFreeDataBuffs(&LinkNodeData, 1);
+        AMLIFreeDataBuffs(&VectorData, 1);
+
+        DPRINT("AcpiArbCrackPRT: STATUS_SUCCESS\n");
+        return STATUS_SUCCESS;
+    }
+
+    DPRINT1("AcpiArbCrackPRT: FIXME\n");
+    ASSERT(FALSE);
+
+    DPRINT("AcpiArbCrackPRT: ret STATUS_UNSUCCESSFUL\n");
+    return STATUS_UNSUCCESSFUL;
 }
 
 VOID

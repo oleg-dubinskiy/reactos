@@ -1381,6 +1381,12 @@ ACPIInternalGetDeviceCapabilities(
     _In_ PDEVICE_CAPABILITIES Capabilities
 );
 
+BOOLEAN
+NTAPI
+IsPciBus(
+    _In_ PDEVICE_OBJECT DeviceObject
+);
+
 /* registry.c */
 VOID
 NTAPI
