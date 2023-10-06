@@ -919,6 +919,27 @@ typedef struct _ACPI_IO_PORT_DESCRIPTOR
     UCHAR RangeLength;
 } ACPI_IO_PORT_DESCRIPTOR, *PACPI_IO_PORT_DESCRIPTOR;
 
+typedef struct _ACPI_FIXED_MEMORY32_DESCRIPTOR
+{
+    union
+    {
+        struct
+        {
+            UCHAR Name :7;
+            UCHAR Type :1;
+        };
+        UCHAR Tag;
+    };
+    USHORT Length;
+    struct
+    {
+        UCHAR Writeable :1;
+        UCHAR Reserved :7;
+    };
+    ULONG BaseAddress;
+    ULONG RangeLength;
+} ACPI_FIXED_MEMORY32_DESCRIPTOR, *PACPI_FIXED_MEMORY32_DESCRIPTOR;
+
 #include <poppack.h>
 
 typedef struct _ACPI_FILTER_COMPLETION_CONTEXT

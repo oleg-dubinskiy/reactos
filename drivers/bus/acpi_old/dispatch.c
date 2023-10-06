@@ -10152,6 +10152,86 @@ PnpiBiosPortToIoDescriptor(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+PnpiBiosMemoryToIoDescriptor(
+    _In_ PACPI_RESOURCE_DATA_TYPE Data,
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG Index,
+    _In_ ULONG Param4)
+{
+    PIO_RESOURCE_DESCRIPTOR IoDesc;
+    ULONG MinimumAddress;
+    ULONG MaximumAddress;
+    ULONG Length;
+    ULONG Align;
+    ULONG Flags = 0;
+    UCHAR Tag;
+    NTSTATUS Status;
+
+    DPRINT("PnpiBiosMemoryToIoDescriptor: %p, %X\n", Data, Param4);
+
+    PAGED_CODE();
+    ASSERT(ResourceListArray != NULL);
+
+    if ((Data->Large.Data[0] & 1) == 0) // Writeable
+        Flags = 1;
+
+    Tag = Data->Small.Tag;
+
+    if (Tag == 0x81)
+    {
+        DPRINT1("PnpiBiosMemoryToIoDescriptor: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (Tag == 0x85)
+    {
+        DPRINT1("PnpiBiosMemoryToIoDescriptor: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (Tag == 0x86)
+    {
+        PACPI_FIXED_MEMORY32_DESCRIPTOR AcpiDesc = (PACPI_FIXED_MEMORY32_DESCRIPTOR)Data;
+
+        Length = AcpiDesc->RangeLength;
+        Align = 1;
+
+        MinimumAddress = AcpiDesc->BaseAddress;
+        MaximumAddress = (AcpiDesc->BaseAddress + Length - 1);
+    }
+    else
+    {
+        DPRINT1("PnpiBiosMemoryToIoDescriptor: FIXME\n");
+        ASSERT(FALSE);
+        return STATUS_SUCCESS;
+    }
+
+    if (!Length)
+        return STATUS_SUCCESS;
+
+    Status = PnpiUpdateResourceList(&ResourceListArray[Index], &IoDesc);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PnpiBiosMemoryToIoDescriptor: Status %X\n", Status);
+        return Status;
+    }
+
+    IoDesc->Type = CmResourceTypeMemory;
+    IoDesc->Flags = Flags;
+    IoDesc->ShareDisposition = 1;
+
+    IoDesc->u.Memory.MinimumAddress.u.LowPart = MinimumAddress;
+    IoDesc->u.Memory.MinimumAddress.u.HighPart = 0;
+
+    IoDesc->u.Memory.MaximumAddress.u.LowPart = MaximumAddress;
+    IoDesc->u.Memory.MaximumAddress.u.HighPart = 0;
+
+    IoDesc->u.Memory.Alignment = Align;
+    IoDesc->u.Memory.Length = Length;
+
+    return STATUS_SUCCESS;
+}
+
 VOID
 NTAPI
 PnpiClearAllocatedMemory(
@@ -10326,8 +10406,8 @@ PnpBiosResourcesToNtResources(
                 }
                 case 0x06:
                 {
-                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
-                    ASSERT(FALSE);
+                    Status = PnpiBiosMemoryToIoDescriptor(Data, ResourceListArray, Index, Param2);
+                    DPRINT("PnpBiosResourcesToNtResources: TAG_MEMORY = %X\n", Status);
                     break;
                 }
                 case 0x07:
