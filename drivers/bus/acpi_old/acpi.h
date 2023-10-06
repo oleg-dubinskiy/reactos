@@ -940,6 +940,29 @@ typedef struct _ACPI_FIXED_MEMORY32_DESCRIPTOR
     ULONG RangeLength;
 } ACPI_FIXED_MEMORY32_DESCRIPTOR, *PACPI_FIXED_MEMORY32_DESCRIPTOR;
 
+typedef struct _ACPI_IRQ_DESCRIPTOR
+{
+    union
+    {
+        struct
+        {
+            UCHAR Length :3;
+            UCHAR Name :4;
+            UCHAR Type :1;
+        };
+        UCHAR Tag;
+    };
+    USHORT IrqMask;
+    struct
+    {
+        UCHAR IntMode :1;
+        UCHAR Reserved0 :2;
+        UCHAR IntPolarity :1;
+        UCHAR IntSharable :1;
+        UCHAR Reserved1 :3;
+    };
+} ACPI_IRQ_DESCRIPTOR, *PACPI_IRQ_DESCRIPTOR;
+
 #include <poppack.h>
 
 typedef struct _ACPI_FILTER_COMPLETION_CONTEXT

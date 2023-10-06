@@ -10263,6 +10263,20 @@ PnpiClearAllocatedMemory(
 
 NTSTATUS
 NTAPI
+PnpiBiosIrqToIoDescriptor(
+    _In_ PACPI_IRQ_DESCRIPTOR AcpiDesc,
+    _In_ USHORT Vector,
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG Index,
+    _In_ USHORT Count,
+    _In_ ULONG Param6)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
 PnpBiosResourcesToNtResources(
     _In_ PVOID Data,
     _In_ ULONG Param2,
@@ -10323,8 +10337,22 @@ PnpBiosResourcesToNtResources(
             {
                 case 0x04:
                 {
-                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
-                    ASSERT(FALSE);
+                    ULONG Count = 0;
+                    ULONG Vector = 0;
+                    USHORT IrqMask;
+
+                    for (IrqMask = ((PACPI_IRQ_DESCRIPTOR)Data)->IrqMask; IrqMask; IrqMask >>= 1)
+                    {
+                        if (Status < 0)
+                            break;
+
+                        if (IrqMask & 1)
+                            Status = PnpiBiosIrqToIoDescriptor(Data, Vector, ResourceListArray, Index, Count++, Param2);
+
+                        Vector++;
+                    }
+
+                    DPRINT("PnpBiosResourcesToNtResources: TAG_IRQ. Count %X, Status %X\n", Count, Status);
                     break;
                 }
                 case 0x05:
