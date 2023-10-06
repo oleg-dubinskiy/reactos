@@ -5744,6 +5744,59 @@ Exit:
     return Status;
 }
 
+NTSTATUS
+__cdecl
+AMLIEvalPkgDataElement(
+    _In_ PAMLI_OBJECT_DATA Data,
+    _In_ ULONG Index,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    NTSTATUS Status;
+
+    DPRINT("AMLIEvalPkgDataElement: %X, %X, %X\n", Data, Index, DataResult);
+
+    giIndent++;
+
+    ASSERT(DataResult != NULL);
+    RtlZeroMemory(DataResult, sizeof(*DataResult));
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIEvalPkgDataElement: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (Data->DataType == 4)
+    {
+        Status = EvalPackageElement(Data->DataBuff, Index, DataResult);
+
+        if (Status == 0x8004)
+        {
+            Status = 0x103;
+        }
+        else if (Status == STATUS_SUCCESS && DataResult->DataBuff && (DataResult->Flags & 1))
+        {
+            ASSERT((DataResult->DataBuff == NULL) || !(DataResult->Flags & 1));//DATAF_BUFF_ALIAS
+        }
+    }
+    else
+    {
+        DPRINT1("AMLIEvalPkgDataElement: object is not a package (ObjType=%s)", GetObjectTypeName(Data->DataType));
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_OBJTYPE;
+    }
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIEvalPkgDataElement: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    giIndent--;
+
+    return Status;
+}
+
 PAMLI_TERM
 __cdecl
 FindOpcodeTerm(

@@ -901,4 +901,12 @@ PciConfigSpaceHandlerWorker(
     _In_ PVOID Context
 );
 
+NTSTATUS
+__cdecl
+AMLIEvalPkgDataElement(
+    _In_ PAMLI_OBJECT_DATA Data,
+    _In_ ULONG Index,
+    _In_ PAMLI_OBJECT_DATA DataResult
+);
+
 /* EOF */
