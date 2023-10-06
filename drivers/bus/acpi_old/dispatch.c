@@ -11942,8 +11942,25 @@ ACPIFilterIrpQueryId(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIO_STACK_LOCATION IoStack;
+    BUS_QUERY_ID_TYPE IdType;
+
+    DPRINT("ACPIFilterIrpQueryId: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    if (!(DeviceExtension->Flags & 0x0000004000000000))
+        return ACPIDispatchForwardIrp(DeviceObject, Irp);
+
+    IdType = IoStack->Parameters.QueryId.IdType;
+
+    if ((IdType != 0 && IdType != 2 && IdType != 1))
+        return ACPIDispatchForwardIrp(DeviceObject, Irp);
+
+    return ACPIBusIrpQueryId(DeviceObject, Irp);
 }
 
 NTSTATUS
