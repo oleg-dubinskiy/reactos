@@ -7541,8 +7541,20 @@ ACPIBusIrpCancelRemoveOrStopDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+
+    DPRINT("ACPIBusIrpCancelRemoveOrStopDevice: %X\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if (!(DeviceExtension->Flags & 0x0000000000200000) && DeviceExtension->DeviceState == 1)
+        DeviceExtension->DeviceState = DeviceExtension->PreviousState;
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    IoCompleteRequest(Irp, 0);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
