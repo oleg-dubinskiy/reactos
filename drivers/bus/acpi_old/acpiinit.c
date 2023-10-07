@@ -2876,6 +2876,43 @@ GetIsaVectorFlags(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+GetVectorProperties(
+    _In_ ULONG InVector,
+    _Out_ UCHAR* OutFlags)
+{
+    PACPI_VECTOR_BLOCK VectorBlock;
+
+    DPRINT("GetVectorProperties: %X\n", InVector);
+    PAGED_CODE();
+
+    VectorBlock = HashVector(InVector);
+    if (!VectorBlock)
+    {
+        DPRINT1("GetVectorProperties: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    if (VectorBlock->Entry.Vector == 'XXXX')
+    {
+        DPRINT1("GetVectorProperties: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    ASSERT(VectorBlock->Entry.Vector == InVector);
+
+    if (!(VectorBlock->Entry.Count + VectorBlock->Entry.TempCount))
+    {
+        DPRINT1("GetVectorProperties: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    *OutFlags = VectorBlock->Entry.TempFlags;
+
+    return STATUS_SUCCESS;
+}
+
 VOID
 NTAPI
 AcpiArbAddAllocation(
