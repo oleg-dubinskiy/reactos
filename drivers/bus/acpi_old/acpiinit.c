@@ -2920,8 +2920,12 @@ AcpiArbAddAllocation(
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
     PAMLI_NAME_SPACE_OBJECT LinkNode;
+    PVOID UserData = NULL;
     ULONG Vector;
-    //UCHAR Flags;
+    ULONG RangeFlags = 0;
+    UCHAR PreviousFlags;
+    UCHAR Flags;
+    UCHAR RangeAttributes = 0;
     NTSTATUS Status;
 
     DPRINT("AcpiArbAddAllocation: %p, %X\n", ArbState->Entry->PhysicalDeviceObject, (ULONG)(ArbState->Start & 0xFFFFFFFF));
@@ -2950,12 +2954,43 @@ AcpiArbAddAllocation(
     }
     else
     {
-        DPRINT1("AcpiArbAddAllocation: FIXME\n");
-        ASSERT(FALSE);
+        Status = GetIsaVectorFlags((ULONG)ArbState->Start, &Flags);
+        if (!NT_SUCCESS(Status))
+        {
+            Flags = (ArbState->CurrentAlternative->Descriptor->Flags == 1) ? 0 : 3;
+        }
+
+        ASSERT((Flags & ~0x07) == 0); // (VECTOR_MODE | VECTOR_POLARITY | VECTOR_TYPE)
     }
 
-    DPRINT1("AcpiArbAddAllocation: FIXME\n");
-    ASSERT(FALSE);
+    if (ArbState->Flags & 2)
+    {
+        RangeAttributes = 1;
+
+        Status = GetVectorProperties((ULONG)ArbState->Start, &PreviousFlags);
+        if (NT_SUCCESS(Status))
+        {
+            if ((Flags ^ PreviousFlags) & ~4)
+            {
+                DPRINT("AcpiArbAddAllocation: Skipping this allocation. It's for a vector that's incompatible.\n");
+                return;
+            }
+        }
+    }
+
+    ReferenceVector((ULONG)ArbState->Start, Flags);
+
+    if (!(Flags & 4))
+    {
+        if (ArbState->CurrentAlternative->Flags & 1)
+            RangeFlags = 3;
+        else
+            RangeFlags = 1;
+    }
+
+    Status = RtlAddRange(Arbiter->PossibleAllocation, ArbState->Start, ArbState->End, RangeAttributes, RangeFlags, UserData, ArbState->Entry->PhysicalDeviceObject);
+
+    ASSERT(NT_SUCCESS(Status));
 }
 
 VOID
