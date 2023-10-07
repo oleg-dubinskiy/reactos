@@ -2839,6 +2839,43 @@ AcpiArbCrackPRT(
     return STATUS_UNSUCCESSFUL;
 }
 
+NTSTATUS
+NTAPI
+GetIsaVectorFlags(
+    _In_ ULONG InVector,
+    _Out_ UCHAR* OutFlags)
+{
+    ULONG Vector = 0;
+    ULONG GlobalVector;
+    UCHAR Flags;
+    NTSTATUS Status;
+
+    DPRINT("GetIsaVectorFlags: %X\n", InVector);
+    PAGED_CODE();
+
+    while (TRUE)
+    {
+        Status = LookupIsaVectorOverride(Vector, &GlobalVector, &Flags);
+        if (NT_SUCCESS(Status) && GlobalVector == InVector)
+        {
+            break;
+        }
+
+        Vector++;
+        if (Vector >= 0x10)
+        {
+            DPRINT1("GetIsaVectorFlags: STATUS_NOT_FOUND\n");
+            return STATUS_NOT_FOUND;
+        }
+    }
+
+    *OutFlags = Flags;
+
+    ASSERT((Flags & ~0x07) == 0); // (VECTOR_MODE | VECTOR_POLARITY | VECTOR_TYPE)
+
+    return STATUS_SUCCESS;
+}
+
 VOID
 NTAPI
 AcpiArbAddAllocation(
