@@ -5955,6 +5955,7 @@ ACPIRootIrpQueryRemoveOrStopDevice(
 
     return Status;
 }
+
 NTSTATUS
 NTAPI
 ACPIRootIrpRemoveDevice(
@@ -5971,8 +5972,23 @@ ACPIRootIrpCancelRemoveOrStopDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+  
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    DPRINT("ACPIRootIrpCancelRemoveOrStopDevice: %X\n", DeviceObject);
+    PAGED_CODE();
+
+    if (!(DeviceExtension->Flags & 0x0000000000200000) && DeviceExtension->DeviceState == 1)
+        DeviceExtension->DeviceState = DeviceExtension->PreviousState;
+
+    IoSkipCurrentIrpStackLocation(Irp);
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+
+    Status = IoCallDriver(DeviceExtension->TargetDeviceObject, Irp);
+
+    return Status;
 }
 
 NTSTATUS
