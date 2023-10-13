@@ -968,7 +968,8 @@ ArbBacktrackAllocation(
 NTSTATUS
 NTAPI
 ArbOverrideConflict(
-    _In_ PARBITER_INSTANCE Arbiter)
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PVOID Param2)
 {
     PAGED_CODE();
 
@@ -1063,7 +1064,11 @@ ArbBootAllocation(
 NTSTATUS
 NTAPI
 ArbQueryConflict(
-    _In_ PARBITER_INSTANCE Arbiter)
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIO_RESOURCE_DESCRIPTOR ConflictingResource,
+    _Out_ ULONG* OutConflictCount,
+    _Out_ PARBITER_CONFLICT_INFO* OutConflicts)
 {
     PAGED_CODE();
 
