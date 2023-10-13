@@ -11938,10 +11938,26 @@ ACPIProcessorStartDevice(
 
 VOID
 NTAPI
-ACPIInitBusInterfaces(
+AcpiRegisterPciRegionSupport(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
     UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
+ACPIInitBusInterfaces(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+
+    DPRINT("ACPIInitBusInterfaces: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = DeviceObject->DeviceExtension;
+
+    if (IsPciBus(DeviceExtension->ParentExtension->DeviceObject))
+        AcpiRegisterPciRegionSupport(DeviceObject);
 }
 
 NTSTATUS
