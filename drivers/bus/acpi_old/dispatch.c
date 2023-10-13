@@ -10340,8 +10340,49 @@ PnpiBiosIrqToIoDescriptor(
     _In_ USHORT Count,
     _In_ ULONG Param6)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_RESOURCE_DESCRIPTOR IoDesc;
+    NTSTATUS Status;
+
+    DPRINT("PnpiBiosIrqToIoDescriptor: %p, %X\n", ResourceListArray, Vector);
+
+    PAGED_CODE();
+    ASSERT(ResourceListArray != NULL);
+
+    Status = PnpiUpdateResourceList(&ResourceListArray[Index], &IoDesc);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PnpiBiosIrqToIoDescriptor: Status %X\n", Status);
+        return Status;
+    }
+
+    IoDesc->Option = (!Count ? 0 : 8);
+    IoDesc->Type = 2;
+    IoDesc->u.Interrupt.MinimumVector = Vector;
+    IoDesc->u.Interrupt.MaximumVector = Vector;
+
+    if (AcpiDesc->Length != 3)
+    {
+        IoDesc->Flags = 1;
+        IoDesc->ShareDisposition = 1;
+        return Status;
+    }
+
+    IoDesc->Flags = 0;
+
+    if (AcpiDesc->IntMode)
+    {
+        IoDesc->Flags |= 1;
+        IoDesc->u.ConfigData.Reserved2 = 0; // ? FIXME
+        IoDesc->ShareDisposition = (AcpiDesc->IntSharable + 1);
+    }
+
+    if (AcpiDesc->IntPolarity)
+    {
+        IoDesc->u.ConfigData.Reserved2 = 2; // ? FIXME
+        IoDesc->ShareDisposition = (AcpiDesc->IntSharable ? 3 : 1);
+    }
+
+    return Status;
 }
 
 NTSTATUS
