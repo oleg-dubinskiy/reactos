@@ -11935,14 +11935,35 @@ ACPIProcessorStartDevice(
 
 /* Filter Device FUNCTIOS ***************************************************/
 
+VOID
+NTAPI
+ACPIFilterIrpStartDeviceCompletion(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PVOID Context,
+    _In_ NTSTATUS InStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 ACPIFilterIrpStartDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PIO_STACK_LOCATION IoStack;
+    NTSTATUS Status;
+
+    DPRINT("ACPIFilterIrpStartDevice: %p, %p\n", DeviceObject, Irp);
+    PAGED_CODE();
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    Status = ACPIInitStartDevice(DeviceObject, IoStack->Parameters.StartDevice.AllocatedResources, ACPIFilterIrpStartDeviceCompletion, Irp, Irp);
+    if (Status >= 0)
+        Status = 0x103;
+
+    return Status;
 }
 
 /* Filter PNP FUNCTIOS ******************************************************/

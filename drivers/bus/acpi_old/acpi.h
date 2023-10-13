@@ -1431,6 +1431,16 @@ IsPciBus(
     _In_ PDEVICE_OBJECT DeviceObject
 );
 
+NTSTATUS
+NTAPI
+ACPIInitStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PCM_RESOURCE_LIST AllocatedResources,
+    _In_ PVOID Callback,
+    _In_ PVOID Context,
+    _In_ PIRP Irp
+);
+
 /* registry.c */
 VOID
 NTAPI
