@@ -11935,12 +11935,78 @@ ACPIProcessorStartDevice(
 
 /* Filter Device FUNCTIOS ***************************************************/
 
+
+VOID
+NTAPI
+ACPIInitBusInterfaces(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+ACPIInternalIsPci(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 VOID
 NTAPI
 ACPIFilterIrpStartDeviceWorker(
     _In_ PVOID Context)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PWORK_QUEUE_CONTEXT WorkContext = Context;
+    PDEVICE_EXTENSION DeviceExtension;
+    KEVENT Event;
+    NTSTATUS Status;
+
+    DPRINT("ACPIFilterIrpStartDeviceWorker: %p\n", WorkContext);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(WorkContext->DeviceObject);
+
+    KeInitializeEvent(&Event, SynchronizationEvent, FALSE);
+
+    IoCopyCurrentIrpStackLocationToNext(WorkContext->Irp);
+    IoSetCompletionRoutine(WorkContext->Irp, ACPIRootIrpCompleteRoutine, &Event, TRUE, TRUE, TRUE);
+
+    Status = IoCallDriver(DeviceExtension->TargetDeviceObject, WorkContext->Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = WorkContext->Irp->IoStatus.Status;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIFilterIrpStartDeviceWorker: Status %X\n", Status);
+        IoCompleteRequest(WorkContext->Irp, 0);
+        return;
+    }
+
+    ACPIInitBusInterfaces(WorkContext->DeviceObject);
+
+    Status = ACPIInternalIsPci(WorkContext->DeviceObject);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIFilterIrpStartDeviceWorker: Status %X\n", Status);
+        IoCompleteRequest(WorkContext->Irp, 0);
+        return;
+    }
+
+    if (DeviceExtension->Flags & 0x0000000002000000)
+        EnableDisableRegions(DeviceExtension->AcpiObject, TRUE);
+
+    if (DeviceExtension->Flags & 0x0000000102000000)
+    {
+        DPRINT1("ACPIFilterIrpStartDeviceWorker: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    IoCompleteRequest(WorkContext->Irp, 0);
 }
 
 VOID
