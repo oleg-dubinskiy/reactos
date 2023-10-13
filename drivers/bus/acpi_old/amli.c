@@ -2094,16 +2094,16 @@ AccessBaseField(
 
     Stage = (FieldDesc->FieldFlags & 0xF);
 
-    if (Stage >= 1 || Stage <= 3)
+    if (Stage >= 1 && Stage <= 3)
         AccSize = (1 << (Stage - 1));
     else
         AccSize = 1;
 
     NumBits = FieldDesc->NumBits;
 
-    DataSize = ((NumBits < 0x20) ?  (1 << NumBits) : 0);
+    DataSize = ((NumBits < 0x20) ? (1 << NumBits) : 0);
     DataMask = ((DataSize - 1) << FieldDesc->StartBitPos);
-    AccMask = ((8 * AccSize) < 0x20 ? ((1 << (8 * AccSize)) + 1) : 0xFFFFFFFF);
+    AccMask = ((8 * AccSize) < 0x20 ? ((1 << (8 * AccSize)) - 1) : 0xFFFFFFFF);
 
     if ((FieldDesc->FieldFlags & 0x60) || !(~DataMask & AccMask))
         IsReadBeforeWrite = FALSE;
@@ -2115,8 +2115,8 @@ AccessBaseField(
     if (!IsRead && (FieldDesc->FieldFlags & 0x60) == 0x20)
         *OutData |= ~DataMask;
 
-    Addr = Add2Ptr(BaseObj->ObjData.DataBuff, FieldDesc->ByteOffset);
     OpRegionObj = BaseObj->ObjData.DataBuff;
+    Addr = (PVOID)(OpRegionObj->Offset + FieldDesc->ByteOffset);
 
     if (OpRegionObj->RegionSpace == 0)
     {
