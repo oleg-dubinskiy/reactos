@@ -11937,12 +11937,42 @@ ACPIProcessorStartDevice(
 
 VOID
 NTAPI
+ACPIFilterIrpStartDeviceWorker(
+    _In_ PVOID Context)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
 ACPIFilterIrpStartDeviceCompletion(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PVOID Context,
     _In_ NTSTATUS InStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PIRP Irp = Context;
+    PWORK_QUEUE_CONTEXT WorkContext;
+
+    DPRINT("ACPIFilterIrpStartDeviceCompletion: %p, %p\n", DeviceExtension, Context);
+
+    Irp->IoStatus.Status = InStatus;
+    WorkContext = &DeviceExtension->Filter.WorkContext;
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIFilterIrpStartDeviceCompletion: InStatus %X\n", InStatus);
+        IoCompleteRequest(Irp, 0);
+        return;
+    }
+
+    DeviceExtension->DeviceState = 2;
+
+    ExInitializeWorkItem(&WorkContext->Item, ACPIFilterIrpStartDeviceWorker, WorkContext);
+
+    WorkContext->DeviceObject = DeviceExtension->DeviceObject;
+    WorkContext->Irp = Irp;
+
+    ExQueueWorkItem(&WorkContext->Item, DelayedWorkQueue);
 }
 
 NTSTATUS
