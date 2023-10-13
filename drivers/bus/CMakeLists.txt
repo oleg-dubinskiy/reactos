@@ -1,6 +1,7 @@
 
 if(NOT ARCH STREQUAL "arm")
-add_subdirectory(acpi)
+#add_subdirectory(acpi)
+add_subdirectory(acpi_old)
 endif()
 add_subdirectory(cmbatt)
 add_subdirectory(compbatt)
