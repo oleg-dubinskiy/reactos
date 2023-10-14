@@ -10432,6 +10432,73 @@ PnpiBiosIrqToIoDescriptor(
 }
 
 NTSTATUS
+NTAPI 
+PnpiBiosDmaToIoDescriptor(
+    _In_ PACPI_DMA_DESCRIPTOR Data,
+    _In_ UCHAR Channel,
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG Index,
+    _In_ USHORT Count,
+    _In_ ULONG Param6)
+{
+    PIO_RESOURCE_DESCRIPTOR IoDesc;
+    NTSTATUS Status;
+
+    DPRINT("PnpiBiosDmaToIoDescriptor: %p, %X\n", ResourceListArray, Channel);
+
+    PAGED_CODE();
+    ASSERT(ResourceListArray != NULL);
+
+    Status = PnpiUpdateResourceList(&ResourceListArray[Index], &IoDesc);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PnpiBiosDmaToIoDescriptor: Status %X\n", Status);
+        return Status;
+    }
+
+    IoDesc->Option = (Count == 0 ? 0 : 8);
+    IoDesc->Type = 4;
+    IoDesc->ShareDisposition = 1;
+    IoDesc->u.Dma.MinimumChannel = Channel;
+    IoDesc->u.Dma.MaximumChannel = Channel;
+
+    if (Data->TransferType)
+    {
+        if (Data->TransferType == 1)
+        {
+            IoDesc->Flags |= 4;
+        }
+        else if (Data->TransferType == 2)
+        {
+            IoDesc->Flags |= 1;
+        }
+        else
+        {
+            ASSERT(Data->TransferType == 3);
+            IoDesc->Flags |= 2;
+        }
+    }
+
+    if (Data->IsBusMaster)
+        IoDesc->Flags |= 8;
+
+    switch (Data->SpeedSupported)
+    {
+        case 1:
+            IoDesc->Flags |= 0x10;
+            break;
+        case 2:
+            IoDesc->Flags |= 0x20;
+            break;
+        case 3:
+            IoDesc->Flags |= 0x40;
+            break;
+    }
+
+    return Status;
+}
+
+NTSTATUS
 NTAPI
 PnpBiosResourcesToNtResources(
     _In_ PVOID Data,
@@ -10513,8 +10580,27 @@ PnpBiosResourcesToNtResources(
                 }
                 case 0x05:
                 {
-                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
-                    ASSERT(FALSE);
+                    USHORT Count = 0;
+                    UCHAR Channel;
+                    UCHAR ChannelMask;
+
+                    ChannelMask = ((PACPI_DMA_DESCRIPTOR)Data)->ChannelMask;
+
+                    for (Channel = 0; ChannelMask; Channel++)
+                    {
+                        if (!NT_SUCCESS(Status))
+                            break;
+
+                        if (ChannelMask & 1)
+                        {
+                            Status = PnpiBiosDmaToIoDescriptor(Data, Channel, ResourceListArray, Index, Count, Param2);
+                            Count++;
+                        }
+
+                        ChannelMask >>= 1;
+                    }
+
+                    DPRINT("PnpBiosResourcesToNtResources: TAG_DMA. Count %X, Status %X\n", Count, Status);
                     break;
                 }
                 case 0x06:

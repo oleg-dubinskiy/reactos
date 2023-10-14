@@ -963,6 +963,29 @@ typedef struct _ACPI_IRQ_DESCRIPTOR
     };
 } ACPI_IRQ_DESCRIPTOR, *PACPI_IRQ_DESCRIPTOR;
 
+typedef struct _ACPI_DMA_DESCRIPTOR
+{
+    union
+    {
+        struct
+        {
+            UCHAR Length :3;
+            UCHAR Name :4;
+            UCHAR Type :1;
+        };
+        UCHAR Tag;
+    };
+    UCHAR ChannelMask;
+    struct
+    {
+        UCHAR TransferType :2;
+        UCHAR IsBusMaster :1;
+        UCHAR NotUsed :2;
+        UCHAR SpeedSupported :2;
+        UCHAR Reserved :1;
+    };
+} ACPI_DMA_DESCRIPTOR, *PACPI_DMA_DESCRIPTOR;
+
 #include <poppack.h>
 
 typedef struct _ACPI_FILTER_COMPLETION_CONTEXT
