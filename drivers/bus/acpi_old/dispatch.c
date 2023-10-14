@@ -11935,13 +11935,74 @@ ACPIProcessorStartDevice(
 
 /* Filter Device FUNCTIOS ***************************************************/
 
-
-VOID
+NTSTATUS
 NTAPI
 AcpiRegisterPciRegionSupport(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PDEVICE_EXTENSION DeviceExtension;
+    PBUS_INTERFACE_STANDARD Interface;
+    ULONG_PTR dummyInformation;
+    PCI_COMMON_CONFIG Buffer;
+    IO_STACK_LOCATION IoStack;
+    ULONG GetBytes;
+    NTSTATUS Status;
+
+    DPRINT("AcpiRegisterPciRegionSupport: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    RtlZeroMemory(&IoStack, sizeof(IO_STACK_LOCATION));
+
+    DeviceExtension = DeviceObject->DeviceExtension;
+
+    if (DeviceExtension->Filter.Interface)
+        return STATUS_SUCCESS;
+
+    Interface = ExAllocatePoolWithTag(NonPagedPool, sizeof(*Interface), 'FpcA');
+    if (!Interface)
+    {
+        DPRINT1("AcpiRegisterPciRegionSupport: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    DeviceObject = IoGetAttachedDeviceReference(DeviceExtension->TargetDeviceObject);
+
+    IoStack.MajorFunction = IRP_MJ_PNP;
+    IoStack.MinorFunction = IRP_MN_QUERY_INTERFACE;
+
+    IoStack.Parameters.QueryInterface.InterfaceType = &GUID_BUS_INTERFACE_STANDARD;
+    IoStack.Parameters.QueryInterface.Size = sizeof(*Interface);
+    IoStack.Parameters.QueryInterface.Version = 1;
+    IoStack.Parameters.QueryInterface.Interface = (PINTERFACE)Interface;
+    IoStack.Parameters.QueryInterface.InterfaceSpecificData = NULL;
+
+    Status = ACPIInternalSendSynchronousIrp(DeviceObject, &IoStack, &dummyInformation);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("AcpiRegisterPciRegionSupport: Status %X\n", Status);
+        ExFreePoolWithTag(Interface, 'FpcA');
+        goto Exit;
+    }
+
+    DeviceExtension->Filter.Interface = Interface;
+    DeviceExtension->Filter.Interface->InterfaceReference(DeviceExtension->Filter.Interface->Context);
+
+    GetBytes = Interface->GetBusData(Interface->Context, 0, &Buffer, 0, 0x40);
+    ASSERT(GetBytes != 0);
+
+    if ((Buffer.HeaderType & 0x7F) == 1 || (Buffer.HeaderType & 0x7F) == 2)
+    {
+        if (Buffer.u.type1.SecondaryBus)
+        {
+            DPRINT1("AcpiRegisterPciRegionSupport: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+Exit:
+
+    ObDereferenceObject(DeviceObject);
+    return Status;
 }
 
 VOID
