@@ -9472,6 +9472,53 @@ PnpIoResourceListToCmResourceList(
 
 NTSTATUS
 NTAPI
+ACPIRangeFilterPICInterrupt(
+    _In_ PIO_RESOURCE_REQUIREMENTS_LIST IoResource)
+{
+    PIO_RESOURCE_LIST IoList;
+    ULONG ix;
+    ULONG jx;
+
+    DPRINT("ACPIRangeFilterPICInterrupt: %p\n", IoResource);
+
+    if (!IoResource)
+        return STATUS_SUCCESS;
+
+    IoList = IoResource->List;
+
+    for (ix = 0; ix < IoResource->AlternativeLists; ix++)
+    {
+        for (jx = 0; jx < IoList->Count; jx++)
+        {
+            if (IoList->Descriptors[jx].Type == CmResourceTypeInterrupt)
+            {
+                if (IoList->Descriptors[jx].u.Interrupt.MinimumVector == 2)
+                {
+                    if (IoList->Descriptors[jx].u.Interrupt.MaximumVector == 2)
+                        IoList->Descriptors[jx].Type = CmResourceTypeNull;
+                    else
+                        IoList->Descriptors[jx].u.Interrupt.MinimumVector++;
+                }
+                else if (IoList->Descriptors[jx].u.Interrupt.MaximumVector == 2)
+                {
+                    IoList->Descriptors[jx].u.Interrupt.MaximumVector--;
+                }
+                else if (IoList->Descriptors[jx].u.Interrupt.MinimumVector < 2 &&
+                         IoList->Descriptors[jx].u.Interrupt.MaximumVector > 2)
+                {
+                    IoList->Descriptors[jx].u.Interrupt.MinimumVector = 3;
+                }
+            }
+        }
+
+        IoList = Add2Ptr(IoList, (FIELD_OFFSET(IO_RESOURCE_LIST, Descriptors) + IoList->Count * sizeof(IO_RESOURCE_DESCRIPTOR)));
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 ACPIBusIrpQueryResources(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
@@ -9556,8 +9603,7 @@ ACPIBusIrpQueryResources(
     }
     else if (DeviceExtension->Flags & 0x0000000200000000)
     {
-        ASSERT(FALSE);
-        Status = 0;//ACPIRangeFilterPICInterrupt(IoResource);
+        Status = ACPIRangeFilterPICInterrupt(IoResource);
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("ACPIBusIrpQueryResources: Status %X\n", Status);
@@ -11204,8 +11250,13 @@ ACPIBusIrpQueryResourceRequirements(
     }
     else if (DeviceExtension->Flags & 0x0000000200000000)
     {
-        DPRINT1("ACPIBusIrpQueryResourceRequirements: FIXME\n");
-        ASSERT(FALSE);
+        Status = ACPIRangeFilterPICInterrupt(IoResource);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIBusIrpQueryResourceRequirements: Status %X\n", Status);
+            ExFreePool(IoResource);
+            IoResource = NULL;
+        }
     }
 
     if (!NT_SUCCESS(Status))
