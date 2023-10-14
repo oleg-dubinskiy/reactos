@@ -12021,6 +12021,32 @@ ACPIInitBusInterfaces(
         AcpiRegisterPciRegionSupport(DeviceObject);
 }
 
+VOID
+NTAPI
+ACPIWakeInitializePciDevice(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    KIRQL Irql;
+
+    DPRINT("ACPIWakeInitializePciDevice: %p\n", DeviceObject);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if (DeviceExtension->Flags & 0x0000000000010000)
+    {
+        KeAcquireSpinLock(&AcpiPowerLock, &Irql);
+
+        if (PciPmeInterfaceInstantiated)
+        {
+            DPRINT1("ACPIWakeInitializePciDevice: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        KeReleaseSpinLock(&AcpiPowerLock, Irql);
+    }
+}
+
 NTSTATUS
 NTAPI
 ACPIInternalIsPci(
@@ -12078,10 +12104,7 @@ ACPIFilterIrpStartDeviceWorker(
         EnableDisableRegions(DeviceExtension->AcpiObject, TRUE);
 
     if (DeviceExtension->Flags & 0x0000000102000000)
-    {
-        DPRINT1("ACPIFilterIrpStartDeviceWorker: FIXME\n");
-        ASSERT(FALSE);
-    }
+        ACPIWakeInitializePciDevice(WorkContext->DeviceObject);
 
     IoCompleteRequest(WorkContext->Irp, 0);
 }
