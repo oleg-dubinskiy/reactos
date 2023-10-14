@@ -12052,8 +12052,42 @@ NTAPI
 ACPIInternalIsPci(
     _In_ PDEVICE_OBJECT DeviceObject)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    ACPI_WAIT_CONTEXT WaitContext;
+    BOOLEAN isPciDevice;
+    NTSTATUS Status;
+
+    DPRINT("ACPIInternalIsPci: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if ((DeviceExtension->Flags & 0x0000000002000000) || (DeviceExtension->Flags & 0x0000000100000000))
+    {
+        return STATUS_SUCCESS;
+    }
+
+    if (IsPciBus(DeviceExtension->DeviceObject))
+    {
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0000000002000000, FALSE);
+        return STATUS_SUCCESS;
+    }
+
+    WaitContext.Status = STATUS_NOT_FOUND;
+
+    KeInitializeEvent(&WaitContext.Event, SynchronizationEvent, FALSE);
+
+    Status = IsPciDevice(DeviceExtension->AcpiObject, AmlisuppCompletePassive, (PVOID)&WaitContext, &isPciDevice);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&WaitContext.Event, Executive, KernelMode, FALSE, NULL);
+        Status = WaitContext.Status;
+    }
+
+    if (NT_SUCCESS(Status) && isPciDevice)
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0000000100000000, FALSE);
+
+    return Status;
 }
 
 VOID
