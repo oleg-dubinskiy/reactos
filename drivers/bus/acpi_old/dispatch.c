@@ -12477,10 +12477,18 @@ ACPIFilterIrpQueryPnpDeviceState(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
-}
+    DPRINT("ACPIFilterIrpQueryPnpDeviceState: %p\n", DeviceObject);
+    PAGED_CODE();
 
+    return ACPIIrpSetPagableCompletionRoutineAndForward(DeviceObject,
+                                                        Irp,
+                                                        ACPIBusAndFilterIrpQueryPnpDeviceState,
+                                                        NULL,
+                                                        TRUE,
+                                                        TRUE,
+                                                        FALSE,
+                                                        FALSE);
+}
 NTSTATUS
 NTAPI
 ACPIFilterIrpSurpriseRemoval(
