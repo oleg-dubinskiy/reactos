@@ -12361,8 +12361,75 @@ ACPIFilterIrpQueryDeviceRelations(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_RELATIONS OutDeviceRelation;
+    PIO_STACK_LOCATION IoStack;
+    KEVENT Event;
+    BOOLEAN IsBusRelation = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("ACPIFilterIrpQueryDeviceRelations: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    if (!NT_SUCCESS(Irp->IoStatus.Status))
+        OutDeviceRelation = NULL;
+    else
+        OutDeviceRelation = (PVOID)Irp->IoStatus.Information;
+
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    if (IoStack->Parameters.QueryDeviceRelations.Type == 0)
+    {
+        IsBusRelation = TRUE;
+        Status = ACPIRootIrpQueryBusRelations(DeviceObject, Irp, &OutDeviceRelation);
+    }
+    else if (IoStack->Parameters.QueryDeviceRelations.Type == 1)
+    {
+        DPRINT("ACPIFilterIrpQueryDeviceRelations: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        Status = STATUS_NOT_SUPPORTED;
+    }
+
+    if (Status != STATUS_NOT_SUPPORTED)
+        Irp->IoStatus.Status = Status;
+
+    DPRINT("ACPIFilterIrpQueryDeviceRelations: %X\n", Status);
+
+    if (NT_SUCCESS(Status))
+    {
+        Irp->IoStatus.Information = (ULONG_PTR)OutDeviceRelation;
+        goto Exit;
+    }
+
+    if (Status != STATUS_NOT_SUPPORTED)
+        goto Exit;
+
+    KeInitializeEvent(&Event, SynchronizationEvent, 0);
+
+    IoCopyCurrentIrpStackLocationToNext( Irp );
+    IoSetCompletionRoutine(Irp, ACPIRootIrpCompleteRoutine, &Event, TRUE, TRUE, TRUE);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    Status = IoCallDriver(DeviceExtension->TargetDeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = Irp->IoStatus.Status;
+    }
+
+    if (!NT_SUCCESS(Status) || !IsBusRelation)
+    {
+        DPRINT1("ACPIFilterIrpQueryDeviceRelations: %X\n", Status);
+    }
+
+Exit:
+
+    IoCompleteRequest(Irp, 0);
+    return Status;
 }
 
 NTSTATUS
