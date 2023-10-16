@@ -2489,8 +2489,26 @@ NTAPI
 ClearTempLinkNodeCounts(
     _In_ PARBITER_INSTANCE Arbiter)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PARBITER_EXTENSION ArbExtension;
+    PLIST_ENTRY Entry;
+    PACPI_LINK_NODE Node;
+
+    DPRINT("ClearTempLinkNodeCounts: %X\n", Arbiter);
+    PAGED_CODE();
+
+    ArbExtension = Arbiter->Extension;
+
+    for (Entry = ArbExtension->LinkNodeHead.Flink;
+         Entry != &ArbExtension->LinkNodeHead;
+         Entry = Entry->Flink)
+    {
+        Node = CONTAINING_RECORD(Entry, ACPI_LINK_NODE, List);
+
+        Node->TempRefCount = 0;
+        Node->TempIrq = Node->CurrentIrq;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS

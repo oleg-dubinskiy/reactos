@@ -1001,6 +1001,19 @@ typedef struct _ACPI_FILTER_COMPLETION_CONTEXT
     PVOID CallBackContext;
 } ACPI_FILTER_COMPLETION_CONTEXT, *PACPI_FILTER_COMPLETION_CONTEXT;
 
+typedef struct _ACPI_LINK_NODE
+{
+    LIST_ENTRY List;
+    ULONG ReferenceCount;
+    LONG TempRefCount;
+    PAMLI_NAME_SPACE_OBJECT NameSpaceObject;
+    ULONGLONG CurrentIrq;
+    ULONGLONG TempIrq;
+    UCHAR Flags;
+    UCHAR Pad[3];
+    SINGLE_LIST_ENTRY AttachedDevices;
+} ACPI_LINK_NODE, *PACPI_LINK_NODE;
+
 /* FUNCTIONS ****************************************************************/
 
 #ifndef Add2Ptr
