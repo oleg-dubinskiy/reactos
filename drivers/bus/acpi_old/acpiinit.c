@@ -2486,12 +2486,46 @@ AcpiArbFindSuitableRange(
 
 NTSTATUS
 NTAPI
-AcpiArbTestAllocation(
+ClearTempLinkNodeCounts(
+    _In_ PARBITER_INSTANCE Arbiter)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+UnreferenceArbitrationList(
     _In_ PARBITER_INSTANCE Arbiter,
     _In_ PLIST_ENTRY ArbitrationList)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbTestAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PLIST_ENTRY ArbitrationList)
+{
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbTestAllocation: %p, %p\n", Arbiter, ArbitrationList);
+    PAGED_CODE();
+
+    ClearTempVectorCounts();
+
+    Status = ClearTempLinkNodeCounts(Arbiter);
+    ASSERT(NT_SUCCESS(Status));
+
+    Status = UnreferenceArbitrationList(Arbiter, ArbitrationList);
+    ASSERT(NT_SUCCESS(Status));
+
+    Status = ArbTestAllocation(Arbiter, ArbitrationList);
+
+    DPRINT("AcpiArbTestAllocation: ret Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS
