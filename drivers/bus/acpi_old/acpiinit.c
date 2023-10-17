@@ -2181,7 +2181,15 @@ NTAPI
 DereferenceVector(
     _In_ ULONG Vector)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_VECTOR_BLOCK VectorBlock;
+
+    VectorBlock = HashVector(Vector);
+    ASSERT(VectorBlock);
+
+    DPRINT("DereferenceVector: %X, %X, %X\n", Vector, VectorBlock->Entry.Count, VectorBlock->Entry.TempCount);
+
+    VectorBlock->Entry.TempCount--;
+    ASSERT((VectorBlock->Entry.TempCount * -1) <= VectorBlock->Entry.Count);
 }
 
 VOID
