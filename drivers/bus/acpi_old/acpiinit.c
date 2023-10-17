@@ -2178,6 +2178,14 @@ ReferenceVector(
 
 VOID
 NTAPI
+DereferenceVector(
+    _In_ ULONG Vector)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
 MakeTempVectorCountsPermanent(
     VOID)
 {
@@ -2517,8 +2525,62 @@ UnreferenceArbitrationList(
     _In_ PARBITER_INSTANCE Arbiter,
     _In_ PLIST_ENTRY ArbitrationList)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT LinkNode;
+    PARBITER_LIST_ENTRY Entry;
+    PRTL_RANGE Range;
+    RTL_RANGE_LIST_ITERATOR Iterator;
+    ULONG Vector;
+    UCHAR Flags;
+    NTSTATUS Status;
+
+    DPRINT("UnreferenceArbitrationList: %p\n", Arbiter);
+    PAGED_CODE();
+
+    RtlGetFirstRange(Arbiter->Allocation, &Iterator, &Range);
+
+    while (Range)
+    {
+        DPRINT("UnreferenceArbitrationList: Looking at range: %X-%X (%p)\n", (ULONG)Range->Start, (ULONG)Range->End, Range->Owner);
+
+        Entry = CONTAINING_RECORD(ArbitrationList->Flink, ARBITER_LIST_ENTRY, ListEntry);
+
+        while (ArbitrationList != &Entry->ListEntry)
+        {
+            DPRINT("UnreferenceArbitrationList: Unreferencing allocations for device %p\n", Entry->PhysicalDeviceObject);
+
+            if (Range->Owner == Entry->PhysicalDeviceObject)
+            {
+                for (Vector = (ULONG)Range->Start; Vector <= (ULONG)Range->End; Vector++)
+                {
+                    Status = GetVectorProperties(Vector, &Flags);
+                    if (NT_SUCCESS(Status))
+                    {
+                        DPRINT("UnreferenceArbitrationList: Dereferencing %X\n", Vector);
+                        DereferenceVector(Vector);
+                    }
+                }
+
+                if (!(Range->Attributes & 1))
+                {
+                    Status = AcpiArbCrackPRT(Entry->PhysicalDeviceObject, &LinkNode, &Vector);
+                    if (NT_SUCCESS(Status))
+                    {
+                        if (LinkNode)
+                        {
+                            DPRINT1("UnreferenceArbitrationList: Dereferencing %X\n", Vector);
+                            ASSERT(FALSE);
+                        }
+                    }
+                }
+            }
+
+            Entry = CONTAINING_RECORD(Entry->ListEntry.Flink, ARBITER_LIST_ENTRY, ListEntry);
+        }
+
+        RtlGetNextRange(&Iterator, &Range, TRUE);
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -2651,9 +2713,9 @@ AcpiGetFilter(
 NTSTATUS
 NTAPI
 AcpiArbCrackPRT(
-    IN PDEVICE_OBJECT Pdo,
-    IN OUT PAMLI_NAME_SPACE_OBJECT* OutLinkNode,
-    IN OUT ULONG* OutVector)
+    _In_ PDEVICE_OBJECT Pdo,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutLinkNode,
+    _Out_ ULONG* OutVector)
 {
     PINT_ROUTE_INTERFACE_STANDARD PciInterface;
     PAMLI_NAME_SPACE_OBJECT PrtNsObject;

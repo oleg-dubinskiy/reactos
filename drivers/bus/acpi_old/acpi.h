@@ -1181,6 +1181,21 @@ DisableLinkNodesAsync(
     _In_ PVOID WaitContext
 );
 
+NTSTATUS
+NTAPI
+GetVectorProperties(
+    _In_ ULONG InVector,
+    _Out_ UCHAR* OutFlags
+);
+
+NTSTATUS
+NTAPI
+AcpiArbCrackPRT(
+    _In_ PDEVICE_OBJECT Pdo,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutLinkNode,
+    _Out_ ULONG* OutVector
+);
+
 /* dispatch.c */
 NTSTATUS
 NTAPI
