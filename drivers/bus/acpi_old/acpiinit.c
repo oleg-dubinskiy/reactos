@@ -2467,8 +2467,23 @@ AcpiArbPackResource(
     _In_ ULONGLONG Start,
     _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("AcpiArbPackResource: %p, %I64X\n", IoDescriptor, Start);
+    PAGED_CODE();
+
+    ASSERT(CmDescriptor);
+    ASSERT(Start < 0xFFFFFFFF);
+    ASSERT(IoDescriptor);
+    ASSERT(IoDescriptor->Type == CmResourceTypeInterrupt);
+
+    CmDescriptor->Type = CmResourceTypeInterrupt;
+    CmDescriptor->Flags = IoDescriptor->Flags;
+    CmDescriptor->ShareDisposition = IoDescriptor->ShareDisposition;
+
+    CmDescriptor->u.Interrupt.Vector = Start;
+    CmDescriptor->u.Interrupt.Level = Start;
+    CmDescriptor->u.Interrupt.Affinity = 0xFFFFFFFF;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
