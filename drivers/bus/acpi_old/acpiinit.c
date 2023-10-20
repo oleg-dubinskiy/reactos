@@ -92,6 +92,7 @@ LONG AcpiTableDelta = 0;
 ULONG AcpiSciVector;
 ULONG AcpiIrqDistributionDisposition;
 UCHAR AcpiIrqDefaultBootConfig;
+UCHAR AcpiArbPciAlternativeRotation;
 BOOLEAN AcpiLoadSimulatorTable = TRUE;
 BOOLEAN AcpiBuildDpcRunning;
 BOOLEAN AcpiBuildFixedButtonEnumerated;
@@ -3171,14 +3172,165 @@ AcpiArbQueryConflict(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+NTAPI
+FindBootConfig(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PARBITER_ALLOCATION_STATE ArbState,
+    _In_ ULONGLONG* OutVector)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 BOOLEAN
 NTAPI
 AcpiArbGetNextAllocationRange(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PINT_ROUTE_INTERFACE_STANDARD PciInterface;
+    PDEVICE_OBJECT Pdo;
+    ROUTING_TOKEN RoutingToken;
+    PCI_SLOT_NUMBER PciSlot;
+    ULONGLONG vector;
+    ULONG Bus;
+    UCHAR InterruptLine;
+    UCHAR InterruptPin;
+    UCHAR ClassCode;
+    UCHAR SubClassCode;
+    UCHAR Flags;
+    BOOLEAN IsNewRevision = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbGetNextAllocationRange: %p\n", Arbiter);
+    PAGED_CODE();
+
+    if (ArbState->Entry->PhysicalDeviceObject->DriverObject == AcpiDriverObject)
+    {
+        ASSERT(((PDEVICE_EXTENSION)ArbState->Entry->PhysicalDeviceObject->DeviceExtension)->Flags & 0x0000000000000020);
+        ASSERT(((PDEVICE_EXTENSION)ArbState->Entry->PhysicalDeviceObject->DeviceExtension)->Signature == '_SGP');
+
+        if (((PDEVICE_EXTENSION)ArbState->Entry->PhysicalDeviceObject->DeviceExtension)->Flags & 0x0000000002000000)
+        {
+            return ArbGetNextAllocationRange(Arbiter, ArbState);
+        }
+    }
+
+    if (!PciInterfacesInstantiated)
+        return ArbGetNextAllocationRange(Arbiter, ArbState);
+
+    PciInterface = ((PARBITER_EXTENSION)AcpiArbiter.Extension)->InterruptRouting;
+    ASSERT(PciInterface);
+
+    Status = PciInterface->GetInterruptRouting(ArbState->Entry->PhysicalDeviceObject,
+                                               &Bus,
+                                               &PciSlot.u.AsULONG,
+                                               &InterruptLine,
+                                               &InterruptPin,
+                                               &ClassCode,
+                                               &SubClassCode,
+                                               &Pdo,
+                                               &RoutingToken,
+                                               &Flags);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT("AcpiArbGetNextAllocationRange: Status %X\n", Status);
+        return ArbGetNextAllocationRange(Arbiter, ArbState);
+    }
+
+    if ((AcpiInformation->FixedACPIDescTable->Header.Revision > 1) && !(AcpiInformation->FixedACPIDescTable->boot_arch & 1))
+        IsNewRevision = TRUE;
+
+    if (!ArbState->CurrentAlternative)
+        ArbState->WorkSpace = 0x1000;
+
+    while (TRUE)
+    {
+        ASSERT((ArbState->WorkSpace > 0x0FFF) /*AcpiIrqNextRangeMinState*/ && (ArbState->WorkSpace < 0x1009 /*AcpiIrqNextRangeMaxState*/));
+
+        DPRINT("AcpiArbGetNextAllocationRange: ArbState->WorkSpace %X\n", ArbState->WorkSpace);
+
+        switch (ArbState->WorkSpace)
+        {
+            case 0x1000:
+                if (AcpiIrqDistributionDisposition == 1)
+                    ArbState->WorkSpace = 0x1007;
+                else if (AcpiIrqDistributionDisposition == 2)
+                    ArbState->WorkSpace = 0x1003;
+                else
+                    ArbState->WorkSpace = 0x1001;
+                break;
+
+            case 0x1001:
+                if (InterruptModel == 0)
+                    ArbState->WorkSpace = 0x1002;
+                else
+                    ArbState->WorkSpace = 0x1006;
+                break;
+
+            case 0x1002:
+                if (IsNewRevision || !AcpiArbCardbusPresent)
+                    ArbState->WorkSpace = 0x1006;
+                else
+                    ArbState->WorkSpace = 0x1003;
+                break;
+
+            case 0x1003:
+                if (AcpiIrqDefaultBootConfig)
+                    ArbState->WorkSpace = 0x1004;
+                else
+                    ArbState->WorkSpace = 0x1005;
+                break;
+
+            case 0x1004:
+                ArbState->WorkSpace = 0x1007;
+                DPRINT1("AcpiArbGetNextAllocationRange: FIXME\n");
+                ASSERT(FALSE);
+                break;
+
+            case 0x1005:
+                ArbState->WorkSpace = 0x1006;
+                DPRINT1("AcpiArbGetNextAllocationRange: FIXME\n");
+                ASSERT(FALSE);
+                break;
+
+            case 0x1006:
+                ArbState->WorkSpace = 0x1007;
+                Status = FindBootConfig(Arbiter, ArbState, &vector);
+                if (NT_SUCCESS(Status))
+                {
+                    DPRINT1("AcpiArbGetNextAllocationRange: FIXME\n");
+                    ASSERT(FALSE);
+                }
+                break;
+
+            case 0x1007:
+                ArbState->WorkSpace = 0x1008;
+                ArbState->CurrentAlternative = &ArbState->Alternatives[0];
+                ArbState->CurrentMinimum = ArbState->CurrentAlternative->Minimum;
+                ArbState->CurrentMaximum = ArbState->CurrentAlternative->Maximum;
+                goto Exit;
+
+            case 0x1008:
+                if (++ArbState->CurrentAlternative >= &ArbState->Alternatives[ArbState->AlternativeCount])
+                    return FALSE;
+
+                DPRINT("AcpiArbGetNextAllocationRange: No next allocation range, exhausted all %X alternatives", ArbState->AlternativeCount);
+
+                ArbState->CurrentMinimum = ArbState->CurrentAlternative->Minimum;
+                ArbState->CurrentMaximum = ArbState->CurrentAlternative->Maximum;
+                goto Exit;
+        }
+    }
+
+Exit:
+
+    DPRINT("AcpiArbGetNextAllocationRange: Next allocation range 0x%I64x-0x%I64x\n", ArbState->CurrentMinimum, ArbState->CurrentMaximum);
+
+    AcpiArbPciAlternativeRotation++;
+
+    return TRUE;
 }
 
 NTSTATUS
