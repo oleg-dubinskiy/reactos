@@ -1196,6 +1196,13 @@ AcpiArbCrackPRT(
     _Out_ ULONG* OutVector
 );
 
+NTSTATUS
+NTAPI
+GetIsaVectorFlags(
+    _In_ ULONG InVector,
+    _Out_ UCHAR* OutFlags
+);
+
 /* dispatch.c */
 NTSTATUS
 NTAPI

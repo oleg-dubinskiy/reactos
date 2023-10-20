@@ -2497,7 +2497,61 @@ AcpiArbFindSuitableRange(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_PM_DISPATCH_TABLE HalAcpiDispatchTable = (PVOID)PmHalDispatchTable;
+    PAMLI_NAME_SPACE_OBJECT LinkNode = NULL;
+    ULONG Vector = 0;
+    ULONG vector;
+    UCHAR OutFlags;
+    UCHAR Flags;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbFindSuitableRange: %p\n", Arbiter);
+    PAGED_CODE();
+
+    if (!ArbFindSuitableRange(Arbiter, ArbState))
+        return FALSE;
+
+    Status = AcpiArbCrackPRT(ArbState->Entry->PhysicalDeviceObject, &LinkNode, &Vector);
+    if (Status == STATUS_UNSUCCESSFUL)
+        return FALSE;
+
+    if (Status != STATUS_SUCCESS)
+    {
+        for (vector = ArbState->Start; vector <= ArbState->End; vector++)
+        {
+            Status = GetIsaVectorFlags(vector, &OutFlags);
+            if (!NT_SUCCESS(Status))
+            {
+                OutFlags = ((ArbState->CurrentAlternative->Descriptor->Flags == 1) ? 0 : 3);
+            }
+
+            Status = GetVectorProperties(vector, &Flags);
+            if (NT_SUCCESS(Status))
+            {
+                if (OutFlags != Flags)
+                    continue;
+            }
+
+            if (!HalAcpiDispatchTable->HalIsVectorValid(vector))
+            {
+                DPRINT1("AcpiArbFindSuitableRange: Status %X\n", Status);
+                ASSERT(FALSE);
+            }
+
+            ArbState->Start = vector;
+            ArbState->End = vector;
+            ArbState->CurrentAlternative->Length = 1;
+
+            return TRUE;
+        }
+
+        return FALSE;
+    }
+
+    DPRINT1("AcpiArbFindSuitableRange: Status %X\n", Status);
+    ASSERT(FALSE);
+
+
     return FALSE;
 }
 
