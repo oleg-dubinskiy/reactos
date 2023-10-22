@@ -3284,7 +3284,7 @@ AcpiArbAddAllocation(
     UCHAR RangeAttributes = 0;
     NTSTATUS Status;
 
-    DPRINT("AcpiArbAddAllocation: %p, %X\n", ArbState->Entry->PhysicalDeviceObject, (ULONG)(ArbState->Start & 0xFFFFFFFF));
+    DPRINT("AcpiArbAddAllocation: %p, %p, %p, %X\n", Arbiter, ArbState, ArbState->Entry->PhysicalDeviceObject, (ULONG)(ArbState->Start & 0xFFFFFFFF));
 
     PAGED_CODE();
     ASSERT(ArbState->CurrentAlternative->Descriptor->Type == CmResourceTypeInterrupt);
@@ -3293,14 +3293,21 @@ AcpiArbAddAllocation(
 
     if (NT_SUCCESS(Status))
     {
-        //Flags = 3;
+        Flags = 3;
 
         ASSERT(ArbState->Start == ArbState->End);
 
         if (!(ArbState->Flags & 2))
         {
-            DPRINT1("AcpiArbAddAllocation: FIXME\n");
-            ASSERT(FALSE);
+            if (LinkNode)
+            {
+                DPRINT1("AcpiArbAddAllocation: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+               ASSERT(Vector == ArbState->Start);
+            }
         }
         else if (InterruptModel == 1)
         {
@@ -3347,6 +3354,7 @@ AcpiArbAddAllocation(
     Status = RtlAddRange(Arbiter->PossibleAllocation, ArbState->Start, ArbState->End, RangeAttributes, RangeFlags, UserData, ArbState->Entry->PhysicalDeviceObject);
 
     ASSERT(NT_SUCCESS(Status));
+    DPRINT("AcpiArbAddAllocation: exit %p, %p\n", Arbiter, ArbState);
 }
 
 VOID
