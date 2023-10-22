@@ -8393,9 +8393,7 @@ ACPIBusIrpQueryInterface(
         {
             if (DeviceExtension->ParentExtension->DeviceObject)
             {
-                DPRINT1("ACPIBusIrpQueryInterface: FIXME\n");
-                ASSERT(FALSE);
-                Irp->IoStatus.Status = 0;//ACPIInternalSendSynchronousIrp(DeviceExtension->ParentExtension->DeviceObject, IoStack, 0);
+                Irp->IoStatus.Status = ACPIInternalSendSynchronousIrp(DeviceExtension->ParentExtension->DeviceObject, IoStack, 0);
             }
         }
 
