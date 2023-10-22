@@ -3383,8 +3383,29 @@ FindBootConfig(
     _In_ PARBITER_ALLOCATION_STATE ArbState,
     _In_ ULONGLONG* OutVector)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    RTL_RANGE_LIST_ITERATOR Iterator;
+    PRTL_RANGE Range;
+
+    DPRINT("FindBootConfig: %p\n", Arbiter);
+
+    RtlGetFirstRange(Arbiter->Allocation, &Iterator, &Range);
+
+    while (Range)
+    {
+        if (Range->Attributes & 1)
+        {
+            if (ArbState->Entry->PhysicalDeviceObject == Range->Owner)
+            {
+                ASSERT(Range->Start == Range->End);
+                *OutVector = Range->Start;
+                return STATUS_SUCCESS;
+            }
+        }
+
+        RtlGetNextRange(&Iterator, &Range, TRUE);
+    }
+
+    return STATUS_NOT_FOUND;
 }
 
 BOOLEAN
