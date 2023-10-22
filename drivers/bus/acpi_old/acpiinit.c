@@ -2727,11 +2727,95 @@ AcpiArbRollbackAllocation(
 
 NTSTATUS
 NTAPI
-AcpiArbCommitAllocation(
+MakeTempLinkNodeCountsPermanent(
     _In_ PARBITER_INSTANCE Arbiter)
 {
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbCommitAllocation(
+    _In_ PARBITER_INSTANCE Arbiter)
+{
+    PINT_ROUTE_INTERFACE_STANDARD PciInterface = NULL;
+    RTL_RANGE_LIST_ITERATOR Iterator;
+    PRTL_RANGE_LIST OldAllocation;
+    PRTL_RANGE Range;
+    PDEVICE_OBJECT Pdo;
+    PCI_SLOT_NUMBER PciSlot;
+    ROUTING_TOKEN RoutingToken;
+    ULONG Bus;
+    UCHAR InterruptLine;
+    UCHAR Line;
+    UCHAR InterruptPin;
+    UCHAR ClassCode;
+    UCHAR SubClassCode;
+    UCHAR Flags;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbCommitAllocation: %p\n", Arbiter);
+    PAGED_CODE();
+
+    if (PciInterfacesInstantiated)
+    {
+        PciInterface = ((PARBITER_EXTENSION)AcpiArbiter.Extension)->InterruptRouting;
+        ASSERT(PciInterface);
+
+        for (RtlGetFirstRange(Arbiter->PossibleAllocation, &Iterator, &Range);
+             Range != NULL;
+             RtlGetNextRange(&Iterator, &Range, TRUE))
+        {
+            if (Range->Owner)
+            {
+                Bus = 0xFFFFFFFF;
+                PciSlot.u.AsULONG = 0xFFFFFFFF;
+
+                Status = PciInterface->GetInterruptRouting(Range->Owner,
+                                                           &Bus,
+                                                           &PciSlot.u.AsULONG,
+                                                           &InterruptLine,
+                                                           &InterruptPin,
+                                                           &ClassCode,
+                                                           &SubClassCode,
+                                                           &Pdo,
+                                                           &RoutingToken,
+                                                           &Flags);
+                if (NT_SUCCESS(Status))
+                {
+                    if (Range->Start <= 0xFF)
+                        Line = (UCHAR)Range->Start;
+                    else
+                        Line = 0;
+
+                    if (InterruptLine != Line)
+                        PciInterface->UpdateInterruptLine(Range->Owner, Line);
+                }
+                else
+                {
+                    DPRINT1("AcpiArbCommitAllocation: Status %X\n", Status);
+                }
+            }
+        }
+    }
+
+    RtlFreeRangeList(Arbiter->Allocation);
+
+    OldAllocation = Arbiter->Allocation;
+
+    Arbiter->Allocation = Arbiter->PossibleAllocation;
+    Arbiter->PossibleAllocation = OldAllocation;
+
+    MakeTempVectorCountsPermanent();
+
+    Status = MakeTempLinkNodeCountsPermanent(Arbiter);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("AcpiArbCommitAllocation: Status %X\n", Status);
+    }
+
+    return Status;
 }
 
 PDEVICE_OBJECT
