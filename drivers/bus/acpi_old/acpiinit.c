@@ -2563,6 +2563,35 @@ AcpiArbFindSuitableRange(
         return FALSE;
     }
 
+    if (!LinkNode)
+    {
+        vector = Vector;
+
+        Status = GetVectorProperties(vector, &Flags);
+        if (NT_SUCCESS(Status))
+        {
+            DPRINT1("AcpiArbFindSuitableRange: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (ArbState->CurrentMinimum > vector || ArbState->CurrentMaximum < vector)
+            return FALSE;
+
+
+        DPRINT("AcpiArbFindSuitableRange: found %X from a static mapping.\n", (ULONG)ArbState->Start);
+
+        if (!HalAcpiDispatchTable->HalIsVectorValid(vector))
+        {
+            DPRINT1("AcpiArbFindSuitableRange: Status %X\n", Status);
+            ASSERT(FALSE);
+        }
+
+        ArbState->End = ArbState->Start = vector;
+        ArbState->CurrentAlternative->Length = 1;
+
+        return TRUE;
+    }
+
     DPRINT1("AcpiArbFindSuitableRange: Status %X\n", Status);
     ASSERT(FALSE);
 
