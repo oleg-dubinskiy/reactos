@@ -2730,8 +2730,59 @@ NTAPI
 MakeTempLinkNodeCountsPermanent(
     _In_ PARBITER_INSTANCE Arbiter)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PARBITER_EXTENSION ArbExtension;
+    PACPI_LINK_NODE Node;
+    PACPI_LINK_NODE NextNode;
+    PLIST_ENTRY LinkNodeHead;
+    PLIST_ENTRY Entry;
+
+    DPRINT("MakeTempLinkNodeCountsPermanent: %p\n", Arbiter);
+    PAGED_CODE();
+
+    ArbExtension = Arbiter->Extension;
+    LinkNodeHead = &ArbExtension->LinkNodeHead;
+    Entry = LinkNodeHead->Flink;
+
+    while (Entry != LinkNodeHead)
+    {
+        Node = CONTAINING_RECORD(Entry, ACPI_LINK_NODE, List);
+        NextNode = CONTAINING_RECORD(Node->List.Flink, ACPI_LINK_NODE, List);
+
+        DPRINT("MakeTempLinkNodeCountsPermanent: %p, %X, %X\n", Node, Node->ReferenceCount, Node->TempRefCount);
+
+        ASSERT(Node);
+        ASSERT(Node->List.Flink);
+        ASSERT(Node->ReferenceCount <= 70);
+        ASSERT(Node->TempRefCount <= 70);
+        ASSERT(Node->TempRefCount >= -70);
+        ASSERT(Node->CurrentIrq < 0x80000000);
+        ASSERT((Node->Flags & ~(1 | 2)) == 0); // ASSERT((Node->Flags & ~(VECTOR_MODE | VECTOR_POLARITY)) == 0);
+
+        if (!Node->ReferenceCount || Node->CurrentIrq != Node->TempIrq)
+        {
+            if (Node->ReferenceCount + Node->TempRefCount)
+            {
+                DPRINT("MakeTempLinkNodeCountsPermanent: %p\n", Arbiter);
+                ASSERT(FALSE);
+            }
+        }
+
+        if (!(Node->ReferenceCount + Node->TempRefCount))
+        {
+            NsObject = ACPIAmliGetNamedChild(Node->NameSpaceObject, ((ULONG)'SID_'));
+            if (NsObject)
+                AMLIEvalNameSpaceObject(NsObject, NULL, 0, NULL);
+        }
+
+        Node->ReferenceCount += Node->TempRefCount;
+        Node->TempRefCount = 0;
+        Node->CurrentIrq = Node->TempIrq;
+
+        Node = NextNode;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
