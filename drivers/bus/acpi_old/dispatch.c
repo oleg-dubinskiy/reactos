@@ -1133,14 +1133,111 @@ ACPIInternalUpdateDeviceStatus(
     KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
 }
 
-NNTSTATUS
+NTSTATUS
 NTAPI 
 ACPIGetProcessorStatus(
     _In_ PDEVICE_EXTENSION DeviceExtension,
-    _Out_ ULONG* OutDeviceStatus)
+    _Out_ ULONG* OutProcessorStatus)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PAMLI_PROCESSOR_OBJECT ProcObject;
+    PACPI_SUBTABLE_HEADER ApicHeader;
+    PVOID ApicTable;
+    PVOID MapicEnd;
+    PMAPIC Mapic;
+    ULONG ProcessorStatus = 0xF;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIGetProcessorStatus: %p\n", DeviceExtension);
+
+    ASSERT(DeviceExtension->AcpiObject != NULL);
+    ASSERT(DeviceExtension->AcpiObject->ObjData.DataType == 0xC);
+
+    if (!DeviceExtension->AcpiObject ||
+        DeviceExtension->AcpiObject->ObjData.DataType != 0xC ||
+        !DeviceExtension->AcpiObject->ObjData.DataBuff)
+    {
+        Status = STATUS_INVALID_DEVICE_REQUEST;
+        goto Exit;
+    }
+
+    ProcObject = DeviceExtension->AcpiObject->ObjData.DataBuff;
+
+    Mapic = AcpiInformation->MultipleApicTable;
+    if (!Mapic)
+    {
+        if (!ProcApics)
+        {
+            ProcApicId = ProcObject->ApicID;
+            ProcApics++;
+        }
+
+        if (ProcApicId != ProcObject->ApicID)
+            ProcessorStatus = 0;
+
+        goto Exit;
+    }
+
+    ApicTable = Mapic->APICTables;
+    MapicEnd = Add2Ptr(Mapic, Mapic->Header.Length);
+
+    while (TRUE)
+    {
+        if (ApicTable >= MapicEnd)
+        {
+            ProcessorStatus = 0;
+            break;
+        }
+
+        ApicHeader = ApicTable;
+
+        if (ApicHeader->Type == 0 && ApicHeader->Length == 8)
+        {
+            PACPI_MADT_LOCAL_APIC LocalApic = ApicTable;
+
+            if (LocalApic->ProcessorId == ProcObject->ApicID)
+            {
+                if (!(LocalApic->LapicFlags & 1))
+                    ProcessorStatus = 0;
+
+                break;
+            }
+
+            ApicTable = Add2Ptr(ApicTable, LocalApic->Header.Length);
+
+            continue;
+        }
+
+        if (ApicHeader->Type == 7 && ApicHeader->Length == 0xC)
+        {
+            PACPI_MADT_LOCAL_SAPIC LocalSapic = ApicTable;
+
+            if (LocalSapic->ProcessorId == ProcObject->ApicID)
+            {
+                if (!(LocalSapic->LapicFlags & 1))
+                    ProcessorStatus = 0;
+
+                break;
+            }
+
+            ApicTable = Add2Ptr(ApicTable, LocalSapic->Header.Length);
+
+            continue;
+        }
+
+        if (!ApicHeader->Length)
+        {
+            ProcessorStatus = 0;
+            break;
+        }
+
+        ApicTable = Add2Ptr(ApicTable, ApicHeader->Length);
+    }
+
+Exit:
+
+    *OutProcessorStatus = ProcessorStatus;
+
+    return Status;
 }
 
 TSTATUS
