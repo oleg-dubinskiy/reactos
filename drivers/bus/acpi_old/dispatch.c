@@ -1133,7 +1133,17 @@ ACPIInternalUpdateDeviceStatus(
     KeReleaseSpinLock(&AcpiDeviceTreeLock, OldIrql);
 }
 
-NTSTATUS
+NNTSTATUS
+NTAPI 
+ACPIGetProcessorStatus(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _Out_ ULONG* OutDeviceStatus)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+TSTATUS
 NTAPI 
 ACPIGetConvertToDevicePresence(
     _In_ PDEVICE_EXTENSION DeviceExtension,
@@ -1146,6 +1156,8 @@ ACPIGetConvertToDevicePresence(
     PAMLI_NAME_SPACE_OBJECT Child;
     ULONGLONG UFlags;
     ULONG DeviceStatus = 0xF;
+    ULONG ProcessorStatus;
+    NTSTATUS Status;
 
     DPRINT("ACPIGetConvertToDevicePresence: %p\n", DeviceExtension);
 
@@ -1184,8 +1196,12 @@ ACPIGetConvertToDevicePresence(
         {
             if (DeviceExtension->Flags & 0x0000001000000000)    // Cap_Processor
             {
-                DPRINT1("ACPIGetConvertToDevicePresence: KeBugCheckEx()\n");
-                ASSERT(FALSE);
+                Status = ACPIGetProcessorStatus(DeviceExtension, &ProcessorStatus);
+
+                if (NT_SUCCESS(Status))
+                    DeviceStatus = ProcessorStatus;
+                else
+                    DeviceStatus = 0;
             }
         }
         else
