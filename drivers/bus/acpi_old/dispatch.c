@@ -40,6 +40,8 @@ KSPIN_LOCK NotifyHandlerLock;
 KSPIN_LOCK GpeTableLock;
 ULONG AcpiSupportedSystemStates;
 ULONG InterruptModel;
+UCHAR ProcApics;
+UCHAR ProcApicId;
 BOOLEAN AcpiSystemInitialized;
 BOOLEAN PciPmeInterfaceInstantiated;
 BOOLEAN PciInterfacesInstantiated = FALSE;
@@ -96,19 +98,19 @@ ULONG AcpiBuildDevicePowerNameLookup[] =
     0,
     0,
     0,
-    '_EJD',
+    'DJE_',
     0,
-    '_PRW',
+    'WRP_',
     0,
-    '_PR0',
+    '0RP_',
     0,
-    '_PR1',
+    '1RP_',
     0,
-    '_PR2',
+    '2RP_',
     0,
-    '_CRS',
+    'SRC_',
     0,
-    '_PSC',
+    'CSP_',
     0
 };
 
@@ -1240,7 +1242,7 @@ Exit:
     return Status;
 }
 
-TSTATUS
+NTSTATUS
 NTAPI 
 ACPIGetConvertToDevicePresence(
     _In_ PDEVICE_EXTENSION DeviceExtension,
