@@ -6430,8 +6430,7 @@ ACPIBuildPdo(
 
     if (DeviceExtension->Flags & 0x0000001000000000)
     {
-        DPRINT1("ACPIBuildPdo: FIXME\n");
-        ASSERT(FALSE);
+        DeviceExtension->DispatchTable = &AcpiProcessorIrpDispatch;
     }
     else if (DeviceExtension->Flags & 0x0000200000000000)
     {
