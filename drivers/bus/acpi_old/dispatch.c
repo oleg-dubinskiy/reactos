@@ -4185,16 +4185,25 @@ ACPIBuildProcessDevicePhasePr2(
     return Status;
 }
 
+VOID
+NTAPI
+ACPIMatchKernelPorts(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PAMLI_OBJECT_DATA Data)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
 NTSTATUS
 NTAPI
 ACPIBuildProcessDevicePhaseCrs(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    //PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_EXTENSION DeviceExtension;
 
     DPRINT("ACPIBuildProcessDevicePhaseCrs: BuildRequest %X\n", BuildRequest);
 
-    //DeviceExtension = BuildRequest->DeviceExtension;
+    DeviceExtension = BuildRequest->DeviceExtension;
     BuildRequest->BuildReserved1 = 0xB;
 
     if (BuildRequest->ChildObject)
@@ -4206,14 +4215,11 @@ ACPIBuildProcessDevicePhaseCrs(
             //KeBugCheckEx(0xA5, 7, DeviceExtension, BuildRequest->ChildObject, BuildRequest->Device.Data.DataType);
         }
 
-        DPRINT1("ACPIBuildProcessDevicePhaseCrs: FIXME\n");
-        ASSERT(FALSE);
-
-        //ACPIMatchKernelPorts(DeviceExtension, &BuildRequest->Synchronize);
-        //AMLIFreeDataBuffs(&BuildRequest->Synchronize, 1);
+        ACPIMatchKernelPorts(DeviceExtension, &BuildRequest->Device.Data);
+        AMLIFreeDataBuffs(&BuildRequest->Device.Data, 1);
     }
 
-    //ACPIDebugDevicePrint(8u, DeviceExtension, "ACPIBuildProcessDevicePhaseCrs: Status = %08lx\n", 0);
+    DPRINT("ACPIBuildProcessDevicePhaseCrs: STATUS_SUCCESS\n");
 
     ACPIBuildCompleteMustSucceed(NULL, STATUS_SUCCESS, 0, BuildRequest);
 
