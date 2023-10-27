@@ -770,6 +770,21 @@ typedef struct _ACPI_MADT_LOCAL_APIC_NMI
     UCHAR Lint;                 // LINTn to which NMI is connected
 } ACPI_MADT_LOCAL_APIC_NMI;
 
+/* 7: Local SAPIC */
+
+typedef struct _ACPI_MADT_LOCAL_SAPIC
+{
+    ACPI_SUBTABLE_HEADER Header;
+    UCHAR ProcessorId;        // ACPI processor id
+    UCHAR Id;                 // SAPIC ID
+    UCHAR Eid;                // SAPIC EID
+    UCHAR Reserved[3];        // Reserved, must be zero
+    ULONG LapicFlags;
+    ULONG Uid;                // Numeric UID - ACPI 3.0
+    CHAR UidString[1];        // String UID  - ACPI 3.0
+
+} ACPI_MADT_LOCAL_SAPIC, *PACPI_MADT_LOCAL_SAPIC;
+
 /* Values for PCATCompat flag */
 #define ACPI_MADT_MULTIPLE_APIC  0
 #define ACPI_MADT_DUAL_PIC       1
