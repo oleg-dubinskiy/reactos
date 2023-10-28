@@ -12161,6 +12161,16 @@ ACPIButtonCancelRequest(
     UNIMPLEMENTED_DBGBREAK();
 }
 
+BOOLEAN
+NTAPI
+ACPIButtonCompletePendingIrps(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG Event)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
 NTSTATUS
 NTAPI
 ACPIButtonEvent(
@@ -12168,8 +12178,34 @@ ACPIButtonEvent(
     _In_ ULONG Event,
     _In_ ULONG Param3)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    KIRQL Irql;
+    BOOLEAN Result;
+
+    DPRINT("ACPIButtonEvent: %X, %X", DeviceObject, Event);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if ((Event & 0x80000003) && !(DeviceExtension->Button.Capabilities & 4))
+        PoSetSystemState(4);
+
+    if (!DeviceObject)
+        return STATUS_SUCCESS;
+
+    KeAcquireSpinLock(&DeviceExtension->Button.SpinLock, &Irql);
+
+    DeviceExtension->Button.Events |= Event;
+
+    if (DeviceExtension->Button.Events)
+    {
+        Result = ACPIButtonCompletePendingIrps(DeviceObject, DeviceExtension->Button.Events);
+        if (Result)
+            DeviceExtension->Button.Events = 0;
+    }
+
+    KeReleaseSpinLock(&DeviceExtension->Button.SpinLock, Irql);
+
+    return STATUS_PENDING;
 }
 
 NTSTATUS
@@ -12182,6 +12218,8 @@ ACPIButtonDeviceControl(
     PIO_STACK_LOCATION IoStack;
     KIRQL Irql;
     NTSTATUS Status;
+
+    DPRINT("ACPIButtonDeviceControl: %X, %X", DeviceObject, Irp);
 
     DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
     IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -12199,6 +12237,7 @@ ACPIButtonDeviceControl(
         }
         else
         {
+            DPRINT1("ACPIButtonDeviceControl: STATUS_INFO_LENGTH_MISMATCH");
             Irp->IoStatus.Information = 0;
             Status = STATUS_INFO_LENGTH_MISMATCH;
         }
@@ -12208,12 +12247,14 @@ ACPIButtonDeviceControl(
 
     if (IoStack->Parameters.DeviceIoControl.IoControlCode != 0x294144)
     {
+        DPRINT1("ACPIButtonDeviceControl: STATUS_NOT_SUPPORTED (%X)", IoStack->Parameters.DeviceIoControl.IoControlCode);
         Status = STATUS_NOT_SUPPORTED;
         goto Exit;
     }
 
     if (IoStack->Parameters.DeviceIoControl.OutputBufferLength != 4)
     {
+        DPRINT1("ACPIButtonDeviceControl: STATUS_INFO_LENGTH_MISMATCH");
         Irp->IoStatus.Information = 0;
         Status = STATUS_INFO_LENGTH_MISMATCH;
         goto Exit;
