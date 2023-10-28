@@ -930,6 +930,7 @@ extern LIST_ENTRY AcpiPowerPhase4List;
 extern LIST_ENTRY AcpiPowerPhase5List;
 extern LIST_ENTRY AcpiPowerWaitWakeList;
 extern LIST_ENTRY AcpiPowerNodeList;
+extern LIST_ENTRY AcpiButtonList;
 extern KDPC AcpiBuildDpc;
 extern KDPC AcpiPowerDpc;
 extern BOOLEAN AcpiBuildDpcRunning;
@@ -940,6 +941,7 @@ extern PRSDTINFORMATION RsdtInformation;
 extern PDEVICE_EXTENSION RootDeviceExtension;
 extern ULONG AcpiOverrideAttributes;
 extern KSPIN_LOCK AcpiPowerLock;
+extern KSPIN_LOCK AcpiButtonLock;
 extern PUCHAR GpeEnable;
 extern PUCHAR GpeWakeHandler;
 extern PUCHAR GpeSpecialHandler;
@@ -12150,14 +12152,97 @@ ACPIDispatchPowerIrpSuccess(
 
 /* Fixed Button FUNCTIOS ****************************************************/
 
+VOID
+NTAPI
+ACPIButtonCancelRequest(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+NTSTATUS
+NTAPI
+ACPIButtonEvent(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG Event,
+    _In_ ULONG Param3)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS
 NTAPI
 ACPIButtonDeviceControl(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIO_STACK_LOCATION IoStack;
+    KIRQL Irql;
+    NTSTATUS Status;
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    if (Irp->RequestorMode != KernelMode)
+        return ACPIDispatchIrpInvalid(DeviceObject, Irp);
+
+    if (IoStack->Parameters.DeviceIoControl.IoControlCode == 0x294140)
+    {
+        if (IoStack->Parameters.DeviceIoControl.OutputBufferLength == 4)
+        {
+            *(PULONG)Irp->AssociatedIrp.SystemBuffer = DeviceExtension->Button.Capabilities;
+            Irp->IoStatus.Information = 4;
+            Status = STATUS_SUCCESS;
+        }
+        else
+        {
+            Irp->IoStatus.Information = 0;
+            Status = STATUS_INFO_LENGTH_MISMATCH;
+        }
+
+        goto Exit;
+    }
+
+    if (IoStack->Parameters.DeviceIoControl.IoControlCode != 0x294144)
+    {
+        Status = STATUS_NOT_SUPPORTED;
+        goto Exit;
+    }
+
+    if (IoStack->Parameters.DeviceIoControl.OutputBufferLength != 4)
+    {
+        Irp->IoStatus.Information = 0;
+        Status = STATUS_INFO_LENGTH_MISMATCH;
+        goto Exit;
+    }
+
+    KeAcquireSpinLock(&AcpiButtonLock, &Irql);
+    IoSetCancelRoutine(Irp, ACPIButtonCancelRequest);
+
+    if (!Irp->Cancel || !IoSetCancelRoutine(Irp, NULL))
+    {
+        IoMarkIrpPending(Irp);
+        InsertTailList(&AcpiButtonList, &Irp->Tail.Overlay.ListEntry);
+
+        KeReleaseSpinLock(&AcpiButtonLock, Irql);
+
+        return ACPIButtonEvent(DeviceObject, 0, 0);
+    }
+
+    KeReleaseSpinLock(&AcpiButtonLock, Irql);
+
+    Irp->IoStatus.Information = 0;
+    Status = STATUS_CANCELLED;
+
+Exit:
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS

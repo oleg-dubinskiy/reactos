@@ -64,6 +64,7 @@ KSPIN_LOCK ACPIWorkerSpinLock;
 KSPIN_LOCK AcpiPowerQueueLock;
 KSPIN_LOCK AcpiGetLock;
 KSPIN_LOCK AcpiPowerLock;
+KSPIN_LOCK AcpiButtonLock;
 KEVENT ACPIWorkToDoEvent;
 KEVENT ACPITerminateEvent;
 LIST_ENTRY ACPIDeviceWorkQueue;
@@ -88,6 +89,7 @@ LIST_ENTRY AcpiPowerPhase4List;
 LIST_ENTRY AcpiPowerPhase5List;
 LIST_ENTRY AcpiPowerWaitWakeList;
 LIST_ENTRY AcpiPowerNodeList;
+LIST_ENTRY AcpiButtonList;
 LONG AcpiTableDelta = 0;
 ULONG AcpiSciVector;
 ULONG AcpiIrqDistributionDisposition;
@@ -4097,6 +4099,7 @@ DriverEntry(
     KeInitializeSpinLock(&AcpiPowerQueueLock);
     KeInitializeSpinLock(&AcpiGetLock);
     KeInitializeSpinLock(&AcpiPowerLock);
+    KeInitializeSpinLock(&AcpiButtonLock);
 
     InitializeListHead(&AcpiBuildDeviceList);
     InitializeListHead(&AcpiBuildSynchronizationList);
@@ -4117,6 +4120,7 @@ DriverEntry(
     InitializeListHead(&AcpiPowerPhase5List);
     InitializeListHead(&AcpiPowerWaitWakeList);
     InitializeListHead(&AcpiPowerNodeList);
+    InitializeListHead(&AcpiButtonList);
 
     AcpiBuildFixedButtonEnumerated = FALSE;
     AcpiBuildWorkDone = FALSE;
