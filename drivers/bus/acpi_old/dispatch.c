@@ -2545,13 +2545,19 @@ ACPIGetConvertToHardwareIDWide(
     ULONG DataBuffLen;
     ULONG DataLen;
     BOOLEAN IsAllocated = FALSE;
+    NTSTATUS Status;
 
     DPRINT("ACPIGetConvertToHardwareIDWide: %p\n", DeviceExtension);
 
     if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000001000000000))
     {
-        DPRINT1("ACPIGetConvertToHardwareIDWide: FIXME\n");
-        ASSERT(FALSE);
+        Status = ACPIGetProcessorIDWide(DeviceExtension, InStatus, AmliData, GetFlags, (PVOID *)&HardwareID, &GetFlags);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIGetConvertToHardwareIDWide: Status %X\n", Status);
+            return Status;
+        }
+
         goto Exit;
     }
 
