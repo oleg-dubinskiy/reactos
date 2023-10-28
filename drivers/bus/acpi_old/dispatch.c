@@ -6763,8 +6763,22 @@ ACPIDetectPdoDevices(
 
     if (IsListEmpty(&DeviceExtension->ChildDeviceList))
     {
-        DPRINT1("ACPIDetectPdoDevices: FIXME\n");
-        ASSERT(FALSE);
+        KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+        if (InDeviceRelation)
+            return STATUS_SUCCESS;
+
+        DeviceRelation = ExAllocatePoolWithTag(NonPagedPool, sizeof(*DeviceRelation), 'DpcA');
+        if (!DeviceRelation)
+        {
+            DPRINT1("ACPIDetectPdoDevices: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(DeviceRelation, sizeof(*DeviceRelation));
+
+        *OutDeviceRelation = DeviceRelation;
+
+        return STATUS_SUCCESS;
     }
 
     Head = &DeviceExtension->ChildDeviceList;
