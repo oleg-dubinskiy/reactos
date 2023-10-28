@@ -1029,6 +1029,77 @@ typedef struct _ACPI_LINK_NODE
     SINGLE_LIST_ENTRY AttachedDevices;
 } ACPI_LINK_NODE, *PACPI_LINK_NODE;
 
+/* Headless Terminal ********************************************************/
+// From ntoskrnl/include/internal/hdl.h // FIXME
+
+typedef enum _HEADLESS_CMD
+{
+    HeadlessCmdEnableTerminal = 1,
+    HeadlessCmdCheckForReboot,
+    HeadlessCmdPutString,
+    HeadlessCmdClearDisplay,
+    HeadlessCmdClearToEndOfDisplay,
+    HeadlessCmdClearToEndOfLine,
+    HeadlessCmdDisplayAttributesOff,
+    HeadlessCmdDisplayInverseVideo,
+    HeadlessCmdSetColor,
+    HeadlessCmdPositionCursor,
+    HeadlessCmdTerminalPoll,
+    HeadlessCmdGetByte,
+    HeadlessCmdGetLine,
+    HeadlessCmdStartBugCheck,
+    HeadlessCmdDoBugCheckProcessing,
+    HeadlessCmdQueryInformation,
+    HeadlessCmdAddLogEntry,
+    HeadlessCmdDisplayLog,
+    HeadlessCmdSetBlueScreenData,
+    HeadlessCmdSendBlueScreenData,
+    HeadlessCmdQueryGUID,
+    HeadlessCmdPutData
+} HEADLESS_CMD, *PHEADLESS_CMD;
+
+typedef enum _HEADLESS_TERM_PORT_TYPE
+{
+    HeadlessUndefinedPortType = 0,
+    HeadlessSerialPort
+} HEADLESS_TERM_PORT_TYPE, *PHEADLESS_TERM_PORT_TYPE;
+
+typedef enum _HEADLESS_TERM_SERIAL_PORT
+{
+    SerialPortUndefined = 0,
+    ComPort1,
+    ComPort2,
+    ComPort3,
+    ComPort4
+} HEADLESS_TERM_SERIAL_PORT, *PHEADLESS_TERM_SERIAL_PORT;
+
+typedef struct _HEADLESS_RSP_QUERY_INFO
+{
+    HEADLESS_TERM_PORT_TYPE PortType;
+    union
+    {
+        struct
+        {
+            BOOLEAN TerminalAttached;
+            BOOLEAN UsedBiosSettings;
+            HEADLESS_TERM_SERIAL_PORT TerminalPort;
+            PUCHAR TerminalPortBaseAddress;
+            ULONG TerminalBaudRate;
+            UCHAR TerminalType;
+        } Serial;
+    };
+} HEADLESS_RSP_QUERY_INFO, *PHEADLESS_RSP_QUERY_INFO;
+
+NTSTATUS
+NTAPI
+HeadlessDispatch(
+    IN HEADLESS_CMD Command,
+    IN PVOID InputBuffer,
+    IN SIZE_T InputBufferSize,
+    OUT PVOID OutputBuffer,
+    OUT PSIZE_T OutputBufferSize
+);
+
 /* FUNCTIONS ****************************************************************/
 
 #ifndef Add2Ptr

@@ -4191,7 +4191,144 @@ ACPIMatchKernelPorts(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PAMLI_OBJECT_DATA Data)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PUCHAR* kdComPortInUse = (PVOID)KdComPortInUse; // FIXME! KdComPortInUse PUCHAR or PUCHAR* ?
+    HEADLESS_RSP_QUERY_INFO HeadlessInformation;
+    PACPI_RESOURCE_DATA_TYPE ResDataType = Data->DataBuff;
+    PUCHAR TerminalPortBaseAddress;
+    PUCHAR KdAddress;
+    SIZE_T InfoSize;
+    ULONG Increment;
+    ULONG Port;
+    ULONG ix;
+    UCHAR TagName;
+    BOOLEAN IsFoundPort = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("ACPIMatchKernelPorts: DeviceExtension %X, kdComPortInUse %X\n", DeviceExtension, kdComPortInUse);
+
+    InfoSize = sizeof(HEADLESS_RSP_QUERY_INFO);
+    Status = HeadlessDispatch(HeadlessCmdQueryInformation, NULL, 0, &HeadlessInformation, &InfoSize);
+
+    if (NT_SUCCESS(Status) &&
+        HeadlessInformation.PortType == HeadlessSerialPort &&
+        HeadlessInformation.Serial.TerminalAttached)
+    {
+        TerminalPortBaseAddress = HeadlessInformation.Serial.TerminalPortBaseAddress;
+    }
+    else
+    {
+        TerminalPortBaseAddress = NULL;
+    }
+
+    if ((!kdComPortInUse /*|| !(*KdComPortInUse)*/) && !TerminalPortBaseAddress) // FIXME!
+        return;
+
+    if (kdComPortInUse)
+        KdAddress = (PVOID)kdComPortInUse; // *KdComPortInUse
+    else
+        KdAddress = NULL;
+
+    DPRINT("ACPIMatchKernelPorts: TerminalPortBaseAddress %X, KdAddress %X\n", TerminalPortBaseAddress, KdAddress);
+
+    for (ix = 0; ix < Data->DataLen; )
+    {
+        if (!ResDataType->Small.Type)
+        {
+            Increment = (ResDataType->Small.Length + 1);
+            TagName = ResDataType->Small.Name;
+            DPRINT("ACPIMatchKernelPorts: Small TagName %X, Increment %X\n", TagName, Increment);
+        }
+        else
+        {
+            Increment = (ResDataType->Large.Length + 3);
+            TagName = ResDataType->Large.Name;
+            DPRINT("ACPIMatchKernelPorts: Large TagName %X, Increment %X\n", TagName, Increment);
+        }
+
+        if ((ResDataType->Small.Tag & 0xF8) == 0x78)
+        {
+            DPRINT("ACPIMatchKernelPorts: TAG_END\n");
+            break;
+        }
+
+        if (!ResDataType->Small.Type)
+        {
+            switch (TagName)
+            {
+                case 0x08:
+                {
+                    PACPI_IO_PORT_DESCRIPTOR AcpiDesc = (PVOID)ResDataType;
+
+                    DPRINT1("ACPIMatchKernelPorts: IO Port Descriptor - %X\n", AcpiDesc->Minimum);
+
+                    Port = AcpiDesc->Minimum;
+                    IsFoundPort = TRUE;
+
+                    break;
+                }
+                case 0x09: // Fixed Location I/O Port Descriptor 
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                default:
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    goto Next;
+                }
+            }
+        }
+        else
+        {
+            switch (TagName)
+            {
+                case 0x07: // DWORD Address Space Descriptor 
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x08: // WORD Address Space Descriptor 
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x0A: // QWORD Address Space Descriptor
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                default:
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    goto Next;
+                }
+            }
+        }
+
+        if (!IsFoundPort)
+            goto Next;
+
+        if ((kdComPortInUse && Port == (ULONG_PTR)KdAddress) ||
+            (TerminalPortBaseAddress && Port == (ULONG_PTR)TerminalPortBaseAddress))
+        {
+            ACPIInternalUpdateFlags(DeviceExtension, 0x0000000000680003, FALSE);
+
+            if (kdComPortInUse && Port == (ULONG_PTR)KdAddress)
+                DPRINT("ACPIMatchKernelPorts - Found KD Port at %X\n", Port);
+            else
+                DPRINT("ACPIMatchKernelPorts - Found Headless Port at %X\n", Port);
+            break;
+        }
+Next:
+        ResDataType = Add2Ptr(ResDataType, Increment);
+        ix += Increment;
+    }
 }
 
 NTSTATUS
