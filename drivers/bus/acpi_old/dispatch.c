@@ -14107,7 +14107,8 @@ ACPIDispatchIrpInvalid(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    Irp->IoStatus.Status = STATUS_NOT_IMPLEMENTED;
+    IoCompleteRequest(Irp, 0);
     return STATUS_NOT_IMPLEMENTED;
 }
 
