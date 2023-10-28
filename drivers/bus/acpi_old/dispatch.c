@@ -944,6 +944,7 @@ extern PUCHAR GpeEnable;
 extern PUCHAR GpeWakeHandler;
 extern PUCHAR GpeSpecialHandler;
 extern ARBITER_INSTANCE AcpiArbiter;
+extern ANSI_STRING AcpiProcessorString;
 
 /* FUNCTIOS *****************************************************************/
 
@@ -2203,6 +2204,109 @@ Exit:
 
 NTSTATUS
 NTAPI
+ACPIGetProcessorIDWide(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ ULONG GetFlags,
+    _Out_ PVOID* OutProcessorId,
+    _Out_ ULONG* OutIdLen)
+{
+    PWCHAR ProcessorId;
+    PCHAR FamilyStr = NULL;
+    PCHAR ModelStr = NULL;
+    PCHAR ProcStr = NULL;
+    POOL_TYPE PoolType;
+    ULONG Size;
+    ULONG Index1;
+    ULONG Index2;
+    ULONG Index3;
+    ULONG Index4;
+
+    DPRINT("ACPIGetProcessorIDWide: %p\n", DeviceExtension);
+
+    Size = (strlen("ACPI\\") + strlen(AcpiProcessorString.Buffer) + 1);
+
+    if (GetFlags & 0x40)
+    {
+        ProcStr = ExAllocatePoolWithTag(NonPagedPool, Size, 'SpcA');
+        if (!ProcStr)
+        {
+            DPRINT1("ACPIGetProcessorIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(ProcStr, Size);
+
+        strcpy(ProcStr, AcpiProcessorString.Buffer);
+
+        ModelStr = strstr(ProcStr, "Model");
+        FamilyStr = strstr(ProcStr, "Family");
+
+        if (!ModelStr || !FamilyStr)
+        {
+            DPRINT1("ACPIGetProcessorIDWide: STATUS_UNSUCCESSFUL\n");
+            ExFreePoolWithTag(ProcStr, 'SpcA');
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        Size = (3 * (strlen("ACPI\\") + strlen("*") + (2 * Size)) - 2 * (strlen(ModelStr) + strlen(FamilyStr)));
+    }
+
+    if (GetFlags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    ProcessorId = ExAllocatePoolWithTag(PoolType, (2 * Size), 'SpcA');
+    if (!ProcessorId)
+    {
+        DPRINT1("ACPIGetProcessorIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+
+        *OutProcessorId = NULL;
+
+        if (OutIdLen)
+            *OutIdLen = 0;
+
+        if (ProcStr)
+            ExFreePoolWithTag(ProcStr, 'SpcA');
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(ProcessorId, (2 * Size));
+
+    if (GetFlags & 0x20)
+    {
+        swprintf(ProcessorId, L"%S%S", "ACPI\\", AcpiProcessorString.Buffer);
+    }
+    else if (GetFlags & 0x40)
+    {
+        Index1 = swprintf(ProcessorId, L"%S%S", "ACPI\\", ProcStr);
+        Index2 = swprintf(&ProcessorId[Index1 + 1], L"%S%S", "*", ProcStr);
+
+        *(ModelStr - 1) = 0;
+
+        Index3 = (Index2 + Index1 + 2 + swprintf(&ProcessorId[Index2 + Index1 + 2], L"%S%S", "ACPI\\", ProcStr) + 1);
+        Index4 = swprintf(&ProcessorId[Index3], L"%S%S", "*", ProcStr);
+
+        *(FamilyStr - 1) = 0;
+
+        swprintf(&ProcessorId[Index4 + Index3 + 1 + swprintf(&ProcessorId[Index4 + Index3 + 1], L"%S%S", "ACPI\\", ProcStr) + 1], L"%S%S", "*", ProcStr);
+    }
+
+    if (ProcStr)
+        ExFreePoolWithTag(ProcStr, 'SpcA');
+
+    *OutProcessorId = ProcessorId;
+
+    if (OutIdLen)
+        *OutIdLen = (2 * Size);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 ACPIGetConvertToDeviceIDWide(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ NTSTATUS InStatus,
@@ -2220,9 +2324,7 @@ ACPIGetConvertToDeviceIDWide(
 
     if (!(GetFlags & 0x8000000) && (DeviceExtension->Flags & 0x0000001000000000))
     {
-        DPRINT1("ACPIGetConvertToDeviceIDWide: FIXME\n");
-        ASSERT(FALSE);
-        return STATUS_NOT_IMPLEMENTED;
+        return ACPIGetProcessorIDWide(DeviceExtension, InStatus, AmliData, GetFlags, OutDataBuff, OutDataLen);
     }
 
     if (GetFlags & 0x10000000)
