@@ -8048,6 +8048,42 @@ ACPIBusIrpQueryBusRelations(
 
 NTSTATUS
 NTAPI
+ACPIBusIrpQueryTargetRelation(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _Out_ PDEVICE_RELATIONS* OutDeviceRelations)
+{
+    PDEVICE_RELATIONS DeviceRelations;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBusIrpQueryBusRelations: %p\n", DeviceObject);
+
+    PAGED_CODE();
+    ASSERT(*OutDeviceRelations == NULL);
+
+    *OutDeviceRelations = DeviceRelations = ExAllocatePoolWithTag(NonPagedPool, sizeof(*DeviceRelations), 'IpcA');
+    if (!DeviceRelations)
+    {
+        DPRINT1("ACPIBusIrpQueryBusRelations: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = ObReferenceObjectByPointer(DeviceObject, 0, 0, 0);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBusIrpQueryBusRelations: Status %X\n", Status);
+        ExFreePoolWithTag(*OutDeviceRelations, 'IpcA');
+        return Status;
+    }
+
+    (*OutDeviceRelations)->Count = 1;
+    (*OutDeviceRelations)->Objects[0] = DeviceObject;
+ 
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 ACPIBusIrpQueryDeviceRelations(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
@@ -8074,8 +8110,7 @@ ACPIBusIrpQueryDeviceRelations(
             break;
 
         case TargetDeviceRelation:
-            DPRINT1("ACPIBusIrpQueryDeviceRelations: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIBusIrpQueryTargetRelation(DeviceObject, Irp, &DeviceRelations);
             break;
 
         default:
