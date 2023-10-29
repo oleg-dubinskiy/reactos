@@ -45,6 +45,7 @@ UCHAR ProcApicId;
 BOOLEAN AcpiSystemInitialized;
 BOOLEAN PciPmeInterfaceInstantiated;
 BOOLEAN PciInterfacesInstantiated = FALSE;
+BOOLEAN AcpiPowerLeavingS0;
 
 ACPI_INTERNAL_DEVICE_FLAG AcpiInternalDeviceFlagTable[] =
 {
@@ -947,6 +948,11 @@ extern PUCHAR GpeWakeHandler;
 extern PUCHAR GpeSpecialHandler;
 extern ARBITER_INSTANCE AcpiArbiter;
 extern ANSI_STRING AcpiProcessorString;
+extern KSPIN_LOCK gdwGContextSpinLock;
+extern ULONG gdwcCTObjsMax;
+extern PUCHAR GpeWakeEnable;
+extern PUCHAR GpeCurEnable;
+extern PUCHAR GpePending;
 
 /* FUNCTIOS *****************************************************************/
 
@@ -13759,12 +13765,49 @@ ACPIInternalRegisterPowerCallBack(
 
 VOID
 NTAPI
+ACPIWakeRemoveDevicesAndUpdate(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PLIST_ENTRY InList)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+VOID
+NTAPI
 ACPIRootPowerCallBack(
     _In_ PVOID CallbackContext,
     _In_ PVOID Argument1,
     _In_ PVOID Argument2)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    KIRQL Irql;
+
+    DPRINT("ACPIRootPowerCallBack: %X, %X", Argument1, Argument2);
+
+    if ((ULONG_PTR)Argument1 != 3)
+        return;
+
+    KeAcquireSpinLock(&GpeTableLock, &Irql);
+    AcpiPowerLeavingS0 = ((ULONG_PTR)Argument2 != 1);
+    KeReleaseSpinLock(&GpeTableLock, Irql);
+
+    IoAcquireCancelSpinLock(&Irql);
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiPowerLock);
+    ACPIWakeRemoveDevicesAndUpdate(NULL, NULL);
+    KeReleaseSpinLockFromDpcLevel(&AcpiPowerLock);
+
+    IoReleaseCancelSpinLock(Irql);
+
+    if (!Argument2)
+    {
+        KeAcquireSpinLock(&gdwGContextSpinLock, &Irql);
+        gdwcCTObjsMax = 0;
+        KeReleaseSpinLock(&gdwGContextSpinLock, Irql);
+        return;
+    }
+
+    DPRINT1("ACPIRootPowerCallBack: FIXME");
+    ASSERT(FALSE);
 }
 
 NTSTATUS
