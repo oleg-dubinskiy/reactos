@@ -13769,7 +13769,38 @@ ACPIWakeRemoveDevicesAndUpdate(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ PLIST_ENTRY InList)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    ULONG ix;
+
+    DPRINT("ACPIWakeRemoveDevicesAndUpdate: %X, %X", DeviceExtension, InList);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+
+    KeAcquireSpinLockAtDpcLevel(&GpeTableLock);
+
+    for (ix = 0; ix < AcpiInformation->GpeSize; ix++)
+    {
+        GpeCurEnable[ix] &= (GpeSpecialHandler[ix] | ~(GpeWakeEnable[ix] | GpeWakeHandler[ix]));
+    }
+
+    RtlZeroMemory(GpeWakeEnable, AcpiInformation->GpeSize * sizeof(UCHAR));
+
+    if (!IsListEmpty(&AcpiPowerWaitWakeList))
+    {
+        DPRINT1("ACPIWakeRemoveDevicesAndUpdate: FIXME");
+        ASSERT(FALSE);
+    }
+
+    for (ix = 0; ix < AcpiInformation->GpeSize; ix++)
+    {
+        if (AcpiPowerLeavingS0)
+            GpeCurEnable[ix] &= ~GpeWakeEnable[ix];
+        else
+            GpeCurEnable[ix] |= (GpeWakeEnable[ix] & ~GpePending[ix]);
+
+        ACPIWriteGpeEnableRegister(ix, GpeCurEnable[ix]);
+    }
+
+    KeReleaseSpinLockFromDpcLevel(&GpeTableLock);
 }
 
 VOID

@@ -1585,6 +1585,13 @@ ACPIInitStartDevice(
     _In_ PIRP Irp
 );
 
+VOID
+NTAPI
+ACPIWriteGpeEnableRegister(
+    _In_ ULONG Size,
+    _In_ UCHAR Value
+);
+
 /* registry.c */
 VOID
 NTAPI
