@@ -205,7 +205,7 @@ OSReadRegValue(
 
     RtlFreeUnicodeString(&ValueName);
 
-    if (Handle)
+    if (!Handle)
         OSCloseHandle(KeyHandle);
 
     if (KeyValueInfo->Type != REG_SZ && KeyValueInfo->Type != REG_MULTI_SZ)

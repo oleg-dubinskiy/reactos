@@ -770,6 +770,21 @@ typedef struct _ACPI_MADT_LOCAL_APIC_NMI
     UCHAR Lint;                 // LINTn to which NMI is connected
 } ACPI_MADT_LOCAL_APIC_NMI;
 
+/* 7: Local SAPIC */
+
+typedef struct _ACPI_MADT_LOCAL_SAPIC
+{
+    ACPI_SUBTABLE_HEADER Header;
+    UCHAR ProcessorId;        // ACPI processor id
+    UCHAR Id;                 // SAPIC ID
+    UCHAR Eid;                // SAPIC EID
+    UCHAR Reserved[3];        // Reserved, must be zero
+    ULONG LapicFlags;
+    ULONG Uid;                // Numeric UID - ACPI 3.0
+    CHAR UidString[1];        // String UID  - ACPI 3.0
+
+} ACPI_MADT_LOCAL_SAPIC, *PACPI_MADT_LOCAL_SAPIC;
+
 /* Values for PCATCompat flag */
 #define ACPI_MADT_MULTIPLE_APIC  0
 #define ACPI_MADT_DUAL_PIC       1
@@ -919,7 +934,171 @@ typedef struct _ACPI_IO_PORT_DESCRIPTOR
     UCHAR RangeLength;
 } ACPI_IO_PORT_DESCRIPTOR, *PACPI_IO_PORT_DESCRIPTOR;
 
+typedef struct _ACPI_FIXED_MEMORY32_DESCRIPTOR
+{
+    union
+    {
+        struct
+        {
+            UCHAR Name :7;
+            UCHAR Type :1;
+        };
+        UCHAR Tag;
+    };
+    USHORT Length;
+    struct
+    {
+        UCHAR Writeable :1;
+        UCHAR Reserved :7;
+    };
+    ULONG BaseAddress;
+    ULONG RangeLength;
+} ACPI_FIXED_MEMORY32_DESCRIPTOR, *PACPI_FIXED_MEMORY32_DESCRIPTOR;
+
+typedef struct _ACPI_IRQ_DESCRIPTOR
+{
+    union
+    {
+        struct
+        {
+            UCHAR Length :3;
+            UCHAR Name :4;
+            UCHAR Type :1;
+        };
+        UCHAR Tag;
+    };
+    USHORT IrqMask;
+    struct
+    {
+        UCHAR IntMode :1;
+        UCHAR Reserved0 :2;
+        UCHAR IntPolarity :1;
+        UCHAR IntSharable :1;
+        UCHAR Reserved1 :3;
+    };
+} ACPI_IRQ_DESCRIPTOR, *PACPI_IRQ_DESCRIPTOR;
+
+typedef struct _ACPI_DMA_DESCRIPTOR
+{
+    union
+    {
+        struct
+        {
+            UCHAR Length :3;
+            UCHAR Name :4;
+            UCHAR Type :1;
+        };
+        UCHAR Tag;
+    };
+    UCHAR ChannelMask;
+    struct
+    {
+        UCHAR TransferType :2;
+        UCHAR IsBusMaster :1;
+        UCHAR NotUsed :2;
+        UCHAR SpeedSupported :2;
+        UCHAR Reserved :1;
+    };
+} ACPI_DMA_DESCRIPTOR, *PACPI_DMA_DESCRIPTOR;
+
 #include <poppack.h>
+
+typedef struct _ACPI_FILTER_COMPLETION_CONTEXT
+{
+    PDEVICE_OBJECT DeviceObject;
+    PIRP Irp;
+    PVOID CallBack;
+    UCHAR Param5;
+    UCHAR Param6;
+    UCHAR Param7;
+    UCHAR Param8;
+    PIO_WORKITEM WorkItem;
+    PVOID CallBackContext;
+} ACPI_FILTER_COMPLETION_CONTEXT, *PACPI_FILTER_COMPLETION_CONTEXT;
+
+typedef struct _ACPI_LINK_NODE
+{
+    LIST_ENTRY List;
+    ULONG ReferenceCount;
+    LONG TempRefCount;
+    PAMLI_NAME_SPACE_OBJECT NameSpaceObject;
+    ULONGLONG CurrentIrq;
+    ULONGLONG TempIrq;
+    UCHAR Flags;
+    UCHAR Pad[3];
+    SINGLE_LIST_ENTRY AttachedDevices;
+} ACPI_LINK_NODE, *PACPI_LINK_NODE;
+
+/* Headless Terminal ********************************************************/
+// From ntoskrnl/include/internal/hdl.h // FIXME
+
+typedef enum _HEADLESS_CMD
+{
+    HeadlessCmdEnableTerminal = 1,
+    HeadlessCmdCheckForReboot,
+    HeadlessCmdPutString,
+    HeadlessCmdClearDisplay,
+    HeadlessCmdClearToEndOfDisplay,
+    HeadlessCmdClearToEndOfLine,
+    HeadlessCmdDisplayAttributesOff,
+    HeadlessCmdDisplayInverseVideo,
+    HeadlessCmdSetColor,
+    HeadlessCmdPositionCursor,
+    HeadlessCmdTerminalPoll,
+    HeadlessCmdGetByte,
+    HeadlessCmdGetLine,
+    HeadlessCmdStartBugCheck,
+    HeadlessCmdDoBugCheckProcessing,
+    HeadlessCmdQueryInformation,
+    HeadlessCmdAddLogEntry,
+    HeadlessCmdDisplayLog,
+    HeadlessCmdSetBlueScreenData,
+    HeadlessCmdSendBlueScreenData,
+    HeadlessCmdQueryGUID,
+    HeadlessCmdPutData
+} HEADLESS_CMD, *PHEADLESS_CMD;
+
+typedef enum _HEADLESS_TERM_PORT_TYPE
+{
+    HeadlessUndefinedPortType = 0,
+    HeadlessSerialPort
+} HEADLESS_TERM_PORT_TYPE, *PHEADLESS_TERM_PORT_TYPE;
+
+typedef enum _HEADLESS_TERM_SERIAL_PORT
+{
+    SerialPortUndefined = 0,
+    ComPort1,
+    ComPort2,
+    ComPort3,
+    ComPort4
+} HEADLESS_TERM_SERIAL_PORT, *PHEADLESS_TERM_SERIAL_PORT;
+
+typedef struct _HEADLESS_RSP_QUERY_INFO
+{
+    HEADLESS_TERM_PORT_TYPE PortType;
+    union
+    {
+        struct
+        {
+            BOOLEAN TerminalAttached;
+            BOOLEAN UsedBiosSettings;
+            HEADLESS_TERM_SERIAL_PORT TerminalPort;
+            PUCHAR TerminalPortBaseAddress;
+            ULONG TerminalBaudRate;
+            UCHAR TerminalType;
+        } Serial;
+    };
+} HEADLESS_RSP_QUERY_INFO, *PHEADLESS_RSP_QUERY_INFO;
+
+NTSTATUS
+NTAPI
+HeadlessDispatch(
+    IN HEADLESS_CMD Command,
+    IN PVOID InputBuffer,
+    IN SIZE_T InputBufferSize,
+    OUT PVOID OutputBuffer,
+    OUT PSIZE_T OutputBufferSize
+);
 
 /* FUNCTIONS ****************************************************************/
 
@@ -949,6 +1128,14 @@ typedef VOID
 (NTAPI * PHAL_ACPI_TIMER_INIT)(
     _In_ PULONG TimerPort,
     _In_ BOOLEAN TimerValExt
+);
+
+typedef NTSTATUS
+(NTAPI* PACPI_IRP_COMPLETION_ROUTINE)(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PVOID Context,
+    _In_ BOOLEAN Param4
 );
 
 /* acpiinit.c */
@@ -1080,6 +1267,28 @@ DisableLinkNodesAsync(
     _In_ PVOID WaitContext
 );
 
+NTSTATUS
+NTAPI
+GetVectorProperties(
+    _In_ ULONG InVector,
+    _Out_ UCHAR* OutFlags
+);
+
+NTSTATUS
+NTAPI
+AcpiArbCrackPRT(
+    _In_ PDEVICE_OBJECT Pdo,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutLinkNode,
+    _Out_ ULONG* OutVector
+);
+
+NTSTATUS
+NTAPI
+GetIsaVectorFlags(
+    _In_ ULONG InVector,
+    _Out_ UCHAR* OutFlags
+);
+
 /* dispatch.c */
 NTSTATUS
 NTAPI
@@ -1183,6 +1392,22 @@ NTSTATUS NTAPI ACPIDockIrpQueryPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP
 
 NTSTATUS NTAPI ACPIProcessorDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
 NTSTATUS NTAPI ACPIProcessorStartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
+NTSTATUS NTAPI ACPIFilterIrpStartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
+NTSTATUS NTAPI ACPIFilterIrpRemoveDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpStopDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryDeviceRelations(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryInterface(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryCapabilities(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpEject(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpSetLock(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryId(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryPnpDeviceState(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpSurpriseRemoval(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+
+NTSTATUS NTAPI ACPIFilterIrpSetPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+NTSTATUS NTAPI ACPIFilterIrpQueryPower(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
 
 NTSTATUS NTAPI ACPIBuildProcessGenericComplete(_In_ PACPI_BUILD_REQUEST BuildRequest);
 NTSTATUS NTAPI ACPIBuildProcessRunMethodPhaseCheckSta(_In_ PACPI_BUILD_REQUEST BuildRequest);
@@ -1327,6 +1552,44 @@ NTAPI
 EnableDisableRegions(
     _In_ PAMLI_NAME_SPACE_OBJECT NsObject,
     _In_ BOOLEAN IsEnable
+);
+
+NTSTATUS
+NTAPI
+ACPIInternalSendSynchronousIrp(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIO_STACK_LOCATION InIoStack,
+    _In_ ULONG_PTR* OutInformation
+);
+
+NTSTATUS
+NTAPI
+ACPIInternalGetDeviceCapabilities(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PDEVICE_CAPABILITIES Capabilities
+);
+
+BOOLEAN
+NTAPI
+IsPciBus(
+    _In_ PDEVICE_OBJECT DeviceObject
+);
+
+NTSTATUS
+NTAPI
+ACPIInitStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PCM_RESOURCE_LIST AllocatedResources,
+    _In_ PVOID Callback,
+    _In_ PVOID Context,
+    _In_ PIRP Irp
+);
+
+VOID
+NTAPI
+ACPIWriteGpeEnableRegister(
+    _In_ ULONG Size,
+    _In_ UCHAR Value
 );
 
 /* registry.c */

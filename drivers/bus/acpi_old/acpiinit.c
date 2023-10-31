@@ -64,6 +64,7 @@ KSPIN_LOCK ACPIWorkerSpinLock;
 KSPIN_LOCK AcpiPowerQueueLock;
 KSPIN_LOCK AcpiGetLock;
 KSPIN_LOCK AcpiPowerLock;
+KSPIN_LOCK AcpiButtonLock;
 KEVENT ACPIWorkToDoEvent;
 KEVENT ACPITerminateEvent;
 LIST_ENTRY ACPIDeviceWorkQueue;
@@ -88,10 +89,12 @@ LIST_ENTRY AcpiPowerPhase4List;
 LIST_ENTRY AcpiPowerPhase5List;
 LIST_ENTRY AcpiPowerWaitWakeList;
 LIST_ENTRY AcpiPowerNodeList;
+LIST_ENTRY AcpiButtonList;
 LONG AcpiTableDelta = 0;
 ULONG AcpiSciVector;
 ULONG AcpiIrqDistributionDisposition;
 UCHAR AcpiIrqDefaultBootConfig;
+UCHAR AcpiArbPciAlternativeRotation;
 BOOLEAN AcpiLoadSimulatorTable = TRUE;
 BOOLEAN AcpiBuildDpcRunning;
 BOOLEAN AcpiBuildFixedButtonEnumerated;
@@ -99,6 +102,7 @@ BOOLEAN AcpiBuildWorkDone;
 BOOLEAN AcpiPowerWorkDone;
 BOOLEAN AcpiPowerDpcRunning;
 BOOLEAN AcpiArbCardbusPresent;
+BOOLEAN AcpiInterruptRoutingFailed = FALSE;
 
 extern IRP_DISPATCH_TABLE AcpiFdoIrpDispatch;
 extern PACPI_INFORMATION AcpiInformation;
@@ -108,6 +112,7 @@ extern ULONG AcpiOverrideAttributes;
 extern KSPIN_LOCK GpeTableLock;
 extern PPM_DISPATCH_TABLE PmHalDispatchTable;
 extern ULONG InterruptModel;
+extern BOOLEAN PciInterfacesInstantiated;
 
 /* ACPI TABLES FUNCTIONS ****************************************************/
 
@@ -2176,6 +2181,22 @@ ReferenceVector(
 
 VOID
 NTAPI
+DereferenceVector(
+    _In_ ULONG Vector)
+{
+    PACPI_VECTOR_BLOCK VectorBlock;
+
+    VectorBlock = HashVector(Vector);
+    ASSERT(VectorBlock);
+
+    DPRINT("DereferenceVector: %X, %X, %X\n", Vector, VectorBlock->Entry.Count, VectorBlock->Entry.TempCount);
+
+    VectorBlock->Entry.TempCount--;
+    ASSERT((VectorBlock->Entry.TempCount * -1) <= VectorBlock->Entry.Count);
+}
+
+VOID
+NTAPI
 MakeTempVectorCountsPermanent(
     VOID)
 {
@@ -2221,6 +2242,45 @@ StartHash:
             HashEntry++;
         }
     }
+}
+
+VOID
+NTAPI
+ClearTempVectorCounts(
+    VOID)
+{
+    PACPI_VECTOR_BLOCK VectorBlock;
+    ULONG Idx = 0;
+    ULONG ix;
+  
+    PAGED_CODE();
+
+    do
+    {
+        VectorBlock = &IrqHashTable[Idx];
+
+Start:
+
+        for (ix = 0; ix < 2; ix++)
+        {
+            if (VectorBlock->Entry.Vector == 'WWWW')
+            {
+                VectorBlock = VectorBlock->Chain.Next;
+                goto Start;
+            }
+
+            if (VectorBlock->Entry.Vector == 'XXXX')
+                break;
+
+            VectorBlock->Entry.TempCount = 0;
+            VectorBlock->Entry.TempFlags = VectorBlock->Entry.Flags;
+
+            VectorBlock++;
+        }
+
+        Idx += 2;
+    }
+    while (Idx < 0x3E);
 }
 
 NTSTATUS
@@ -2409,8 +2469,23 @@ AcpiArbPackResource(
     _In_ ULONGLONG Start,
     _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT("AcpiArbPackResource: %p, %I64X\n", IoDescriptor, Start);
+    PAGED_CODE();
+
+    ASSERT(CmDescriptor);
+    ASSERT(Start < 0xFFFFFFFF);
+    ASSERT(IoDescriptor);
+    ASSERT(IoDescriptor->Type == CmResourceTypeInterrupt);
+
+    CmDescriptor->Type = CmResourceTypeInterrupt;
+    CmDescriptor->Flags = IoDescriptor->Flags;
+    CmDescriptor->ShareDisposition = IoDescriptor->ShareDisposition;
+
+    CmDescriptor->u.Interrupt.Vector = Start;
+    CmDescriptor->u.Interrupt.Level = Start;
+    CmDescriptor->u.Interrupt.Affinity = 0xFFFFFFFF;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -2439,8 +2514,182 @@ AcpiArbFindSuitableRange(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PACPI_PM_DISPATCH_TABLE HalAcpiDispatchTable = (PVOID)PmHalDispatchTable;
+    PAMLI_NAME_SPACE_OBJECT LinkNode = NULL;
+    ULONG Vector = 0;
+    ULONG vector;
+    UCHAR OutFlags;
+    UCHAR Flags;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbFindSuitableRange: %p\n", Arbiter);
+    PAGED_CODE();
+
+    if (!ArbFindSuitableRange(Arbiter, ArbState))
+        return FALSE;
+
+    Status = AcpiArbCrackPRT(ArbState->Entry->PhysicalDeviceObject, &LinkNode, &Vector);
+    if (Status == STATUS_UNSUCCESSFUL)
+        return FALSE;
+
+    if (Status != STATUS_SUCCESS)
+    {
+        for (vector = ArbState->Start; vector <= ArbState->End; vector++)
+        {
+            Status = GetIsaVectorFlags(vector, &OutFlags);
+            if (!NT_SUCCESS(Status))
+            {
+                OutFlags = ((ArbState->CurrentAlternative->Descriptor->Flags == 1) ? 0 : 3);
+            }
+
+            Status = GetVectorProperties(vector, &Flags);
+            if (NT_SUCCESS(Status))
+            {
+                if (OutFlags != Flags)
+                    continue;
+            }
+
+            if (!HalAcpiDispatchTable->HalIsVectorValid(vector))
+            {
+                DPRINT1("AcpiArbFindSuitableRange: Status %X\n", Status);
+                ASSERT(FALSE);
+            }
+
+            ArbState->Start = vector;
+            ArbState->End = vector;
+            ArbState->CurrentAlternative->Length = 1;
+
+            return TRUE;
+        }
+
+        return FALSE;
+    }
+
+    if (!LinkNode)
+    {
+        vector = Vector;
+
+        Status = GetVectorProperties(vector, &Flags);
+        if (NT_SUCCESS(Status))
+        {
+            DPRINT1("AcpiArbFindSuitableRange: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (ArbState->CurrentMinimum > vector || ArbState->CurrentMaximum < vector)
+            return FALSE;
+
+
+        DPRINT("AcpiArbFindSuitableRange: found %X from a static mapping.\n", (ULONG)ArbState->Start);
+
+        if (!HalAcpiDispatchTable->HalIsVectorValid(vector))
+        {
+            DPRINT1("AcpiArbFindSuitableRange: Status %X\n", Status);
+            ASSERT(FALSE);
+        }
+
+        ArbState->End = ArbState->Start = vector;
+        ArbState->CurrentAlternative->Length = 1;
+
+        return TRUE;
+    }
+
+    DPRINT1("AcpiArbFindSuitableRange: Status %X\n", Status);
+    ASSERT(FALSE);
+
+
     return FALSE;
+}
+
+NTSTATUS
+NTAPI
+ClearTempLinkNodeCounts(
+    _In_ PARBITER_INSTANCE Arbiter)
+{
+    PARBITER_EXTENSION ArbExtension;
+    PLIST_ENTRY Entry;
+    PACPI_LINK_NODE Node;
+
+    DPRINT("ClearTempLinkNodeCounts: %X\n", Arbiter);
+    PAGED_CODE();
+
+    ArbExtension = Arbiter->Extension;
+
+    for (Entry = ArbExtension->LinkNodeHead.Flink;
+         Entry != &ArbExtension->LinkNodeHead;
+         Entry = Entry->Flink)
+    {
+        Node = CONTAINING_RECORD(Entry, ACPI_LINK_NODE, List);
+
+        Node->TempRefCount = 0;
+        Node->TempIrq = Node->CurrentIrq;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+UnreferenceArbitrationList(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PLIST_ENTRY ArbitrationList)
+{
+    PAMLI_NAME_SPACE_OBJECT LinkNode;
+    PARBITER_LIST_ENTRY Entry;
+    PRTL_RANGE Range;
+    RTL_RANGE_LIST_ITERATOR Iterator;
+    ULONG Vector;
+    UCHAR Flags;
+    NTSTATUS Status;
+
+    DPRINT("UnreferenceArbitrationList: %p\n", Arbiter);
+    PAGED_CODE();
+
+    RtlGetFirstRange(Arbiter->Allocation, &Iterator, &Range);
+
+    while (Range)
+    {
+        DPRINT("UnreferenceArbitrationList: Looking at range: %X-%X (%p)\n", (ULONG)Range->Start, (ULONG)Range->End, Range->Owner);
+
+        Entry = CONTAINING_RECORD(ArbitrationList->Flink, ARBITER_LIST_ENTRY, ListEntry);
+
+        while (ArbitrationList != &Entry->ListEntry)
+        {
+            DPRINT("UnreferenceArbitrationList: Unreferencing allocations for device %p\n", Entry->PhysicalDeviceObject);
+
+            if (Range->Owner == Entry->PhysicalDeviceObject)
+            {
+                for (Vector = (ULONG)Range->Start; Vector <= (ULONG)Range->End; Vector++)
+                {
+                    Status = GetVectorProperties(Vector, &Flags);
+                    if (NT_SUCCESS(Status))
+                    {
+                        DPRINT("UnreferenceArbitrationList: Dereferencing %X\n", Vector);
+                        DereferenceVector(Vector);
+                    }
+                }
+
+                if (!(Range->Attributes & 1))
+                {
+                    Status = AcpiArbCrackPRT(Entry->PhysicalDeviceObject, &LinkNode, &Vector);
+                    if (NT_SUCCESS(Status))
+                    {
+                        if (LinkNode)
+                        {
+                            DPRINT1("UnreferenceArbitrationList: Dereferencing %X\n", Vector);
+                            ASSERT(FALSE);
+                        }
+                    }
+                }
+            }
+
+            Entry = CONTAINING_RECORD(Entry->ListEntry.Flink, ARBITER_LIST_ENTRY, ListEntry);
+        }
+
+        RtlGetNextRange(&Iterator, &Range, TRUE);
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -2449,8 +2698,23 @@ AcpiArbTestAllocation(
     _In_ PARBITER_INSTANCE Arbiter,
     _In_ PLIST_ENTRY ArbitrationList)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbTestAllocation: %p, %p\n", Arbiter, ArbitrationList);
+    PAGED_CODE();
+
+    ClearTempVectorCounts();
+
+    Status = ClearTempLinkNodeCounts(Arbiter);
+    ASSERT(NT_SUCCESS(Status));
+
+    Status = UnreferenceArbitrationList(Arbiter, ArbitrationList);
+    ASSERT(NT_SUCCESS(Status));
+
+    Status = ArbTestAllocation(Arbiter, ArbitrationList);
+
+    DPRINT("AcpiArbTestAllocation: ret Status %X\n", Status);
+    return Status;
 }
 
 NTSTATUS
@@ -2459,8 +2723,18 @@ AcpiArbBootAllocation(
     _In_ PARBITER_INSTANCE Arbiter,
     _In_ PLIST_ENTRY ArbitrationList)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbBootAllocation: %p\n", Arbiter);
+    PAGED_CODE();
+
+    ClearTempVectorCounts();
+
+    Status = ArbBootAllocation(Arbiter, ArbitrationList);
+
+    MakeTempVectorCountsPermanent();
+
+    return Status;
 }
 
 NTSTATUS
@@ -2484,11 +2758,517 @@ AcpiArbRollbackAllocation(
 
 NTSTATUS
 NTAPI
+MakeTempLinkNodeCountsPermanent(
+    _In_ PARBITER_INSTANCE Arbiter)
+{
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    PARBITER_EXTENSION ArbExtension;
+    PACPI_LINK_NODE Node;
+    PACPI_LINK_NODE NextNode;
+    PLIST_ENTRY LinkNodeHead;
+    PLIST_ENTRY Entry;
+
+    DPRINT("MakeTempLinkNodeCountsPermanent: %p\n", Arbiter);
+    PAGED_CODE();
+
+    ArbExtension = Arbiter->Extension;
+    LinkNodeHead = &ArbExtension->LinkNodeHead;
+    Entry = LinkNodeHead->Flink;
+
+    while (Entry != LinkNodeHead)
+    {
+        Node = CONTAINING_RECORD(Entry, ACPI_LINK_NODE, List);
+        NextNode = CONTAINING_RECORD(Node->List.Flink, ACPI_LINK_NODE, List);
+
+        DPRINT("MakeTempLinkNodeCountsPermanent: %p, %X, %X\n", Node, Node->ReferenceCount, Node->TempRefCount);
+
+        ASSERT(Node);
+        ASSERT(Node->List.Flink);
+        ASSERT(Node->ReferenceCount <= 70);
+        ASSERT(Node->TempRefCount <= 70);
+        ASSERT(Node->TempRefCount >= -70);
+        ASSERT(Node->CurrentIrq < 0x80000000);
+        ASSERT((Node->Flags & ~(1 | 2)) == 0); // ASSERT((Node->Flags & ~(VECTOR_MODE | VECTOR_POLARITY)) == 0);
+
+        if (!Node->ReferenceCount || Node->CurrentIrq != Node->TempIrq)
+        {
+            if (Node->ReferenceCount + Node->TempRefCount)
+            {
+                DPRINT("MakeTempLinkNodeCountsPermanent: %p\n", Arbiter);
+                ASSERT(FALSE);
+            }
+        }
+
+        if (!(Node->ReferenceCount + Node->TempRefCount))
+        {
+            NsObject = ACPIAmliGetNamedChild(Node->NameSpaceObject, ((ULONG)'SID_'));
+            if (NsObject)
+                AMLIEvalNameSpaceObject(NsObject, NULL, 0, NULL);
+        }
+
+        Node->ReferenceCount += Node->TempRefCount;
+        Node->TempRefCount = 0;
+        Node->CurrentIrq = Node->TempIrq;
+
+        Node = NextNode;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 AcpiArbCommitAllocation(
     _In_ PARBITER_INSTANCE Arbiter)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PINT_ROUTE_INTERFACE_STANDARD PciInterface = NULL;
+    RTL_RANGE_LIST_ITERATOR Iterator;
+    PRTL_RANGE_LIST OldAllocation;
+    PRTL_RANGE Range;
+    PDEVICE_OBJECT Pdo;
+    PCI_SLOT_NUMBER PciSlot;
+    ROUTING_TOKEN RoutingToken;
+    ULONG Bus;
+    UCHAR InterruptLine;
+    UCHAR Line;
+    UCHAR InterruptPin;
+    UCHAR ClassCode;
+    UCHAR SubClassCode;
+    UCHAR Flags;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbCommitAllocation: %p\n", Arbiter);
+    PAGED_CODE();
+
+    if (PciInterfacesInstantiated)
+    {
+        PciInterface = ((PARBITER_EXTENSION)AcpiArbiter.Extension)->InterruptRouting;
+        ASSERT(PciInterface);
+
+        for (RtlGetFirstRange(Arbiter->PossibleAllocation, &Iterator, &Range);
+             Range != NULL;
+             RtlGetNextRange(&Iterator, &Range, TRUE))
+        {
+            if (Range->Owner)
+            {
+                Bus = 0xFFFFFFFF;
+                PciSlot.u.AsULONG = 0xFFFFFFFF;
+
+                Status = PciInterface->GetInterruptRouting(Range->Owner,
+                                                           &Bus,
+                                                           &PciSlot.u.AsULONG,
+                                                           &InterruptLine,
+                                                           &InterruptPin,
+                                                           &ClassCode,
+                                                           &SubClassCode,
+                                                           &Pdo,
+                                                           &RoutingToken,
+                                                           &Flags);
+                if (NT_SUCCESS(Status))
+                {
+                    if (Range->Start <= 0xFF)
+                        Line = (UCHAR)Range->Start;
+                    else
+                        Line = 0;
+
+                    if (InterruptLine != Line)
+                        PciInterface->UpdateInterruptLine(Range->Owner, Line);
+                }
+                else
+                {
+                    DPRINT1("AcpiArbCommitAllocation: Status %X\n", Status);
+                }
+            }
+        }
+    }
+
+    RtlFreeRangeList(Arbiter->Allocation);
+
+    OldAllocation = Arbiter->Allocation;
+
+    Arbiter->Allocation = Arbiter->PossibleAllocation;
+    Arbiter->PossibleAllocation = OldAllocation;
+
+    MakeTempVectorCountsPermanent();
+
+    Status = MakeTempLinkNodeCountsPermanent(Arbiter);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("AcpiArbCommitAllocation: Status %X\n", Status);
+    }
+
+    return Status;
+}
+
+PDEVICE_OBJECT
+NTAPI
+AcpiGetFilter(
+    _In_ PDEVICE_OBJECT Root,
+    _In_ PDEVICE_OBJECT Pdo)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_EXTENSION StartExtension;
+    PDEVICE_EXTENSION CurrentExtension;
+    PDEVICE_OBJECT FilterDevice;
+    PLIST_ENTRY Entry;
+
+    DPRINT("AcpiGetFilter: %p, %p\n", Root, Pdo);
+
+    DeviceExtension = Root->DeviceExtension;
+
+    if (((DeviceExtension->Flags & 0x0000000000000020) || (DeviceExtension->Flags & 0x0000000000000040)) &&
+        DeviceExtension->PhysicalDeviceObject == Pdo)
+    {
+        DPRINT("AcpiGetFilter: ret %p\n", Root);
+        ASSERT(Root->Type == IO_TYPE_DEVICE);
+        return Root;
+    }
+
+    Entry = DeviceExtension->ChildDeviceList.Flink;
+    if (Entry == &DeviceExtension->ChildDeviceList)
+    {
+        DPRINT("AcpiGetFilter: ret NULL\n");
+        return NULL;
+    }
+
+    CurrentExtension = StartExtension = CONTAINING_RECORD(Entry, DEVICE_EXTENSION, SiblingDeviceList);
+
+    while (TRUE)
+    {
+        if (CurrentExtension->DeviceObject)
+        {
+            FilterDevice = AcpiGetFilter(CurrentExtension->DeviceObject, Pdo);
+            if (FilterDevice)
+            {
+                DPRINT("AcpiGetFilter: ret %p\n", FilterDevice);
+                return FilterDevice;
+            }
+        }
+
+        CurrentExtension = CONTAINING_RECORD(CurrentExtension->SiblingDeviceList.Flink, DEVICE_EXTENSION, SiblingDeviceList);
+        if (CurrentExtension == StartExtension)
+            break;
+    }
+
+    DPRINT("AcpiGetFilter: ret NULL\n");
+    return NULL;
+}
+
+NTSTATUS
+NTAPI
+AcpiArbCrackPRT(
+    _In_ PDEVICE_OBJECT Pdo,
+    _Out_ PAMLI_NAME_SPACE_OBJECT* OutLinkNode,
+    _Out_ ULONG* OutVector)
+{
+    PINT_ROUTE_INTERFACE_STANDARD PciInterface;
+    PAMLI_NAME_SPACE_OBJECT PrtNsObject;
+    PDEVICE_OBJECT ParentPdo;
+    PDEVICE_OBJECT FilterDo;
+    AMLI_OBJECT_DATA PrtData;
+    AMLI_OBJECT_DATA DataResult;
+    AMLI_OBJECT_DATA InterruptPinData;
+    AMLI_OBJECT_DATA LinkNodeData;
+    AMLI_OBJECT_DATA VectorData;
+    ROUTING_TOKEN RoutingToken;
+    PCI_SLOT_NUMBER PciSlot;
+    PCI_SLOT_NUMBER Slot;
+    ULONG Index = 0;
+    ULONG Bus;
+    UCHAR InterruptLine;
+    UCHAR Line;
+    UCHAR InterruptPin;
+    UCHAR pin;
+    UCHAR ClassCode;
+    UCHAR SubClassCode;
+    UCHAR Flags;
+    UCHAR flags;
+    KIRQL Irql;
+    BOOLEAN IsSuccess = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbCrackPRT: %p\n", Pdo);
+
+    if (Pdo->DriverObject == AcpiDriverObject)
+    {
+        ASSERT(((PDEVICE_EXTENSION)Pdo->DeviceExtension)->Flags & 0x0000000000000020);//DEV_TYPE_PDO
+        ASSERT(((PDEVICE_EXTENSION)Pdo->DeviceExtension)->Signature == '_SGP');//ACPI_SIGNATURE
+
+        if (((PDEVICE_EXTENSION)Pdo->DeviceExtension)->Flags & 0x0000000002000000)
+        {
+            DPRINT1("AcpiArbCrackPRT: STATUS_NOT_FOUND\n");
+            return STATUS_NOT_FOUND;
+        }
+    }
+
+    ASSERT(PciInterfacesInstantiated);
+
+    *OutLinkNode = NULL;
+
+    PciInterface = ((PARBITER_EXTENSION)AcpiArbiter.Extension)->InterruptRouting;
+    ASSERT(PciInterface);
+
+    Bus = 0xFFFFFFFF;
+    PciSlot.u.AsULONG = 0xFFFFFFFF;
+
+    Status = PciInterface->GetInterruptRouting(Pdo,
+                                               &Bus,
+                                               &PciSlot.u.AsULONG,
+                                               &InterruptLine,
+                                               &InterruptPin,
+                                               &ClassCode,
+                                               &SubClassCode,
+                                               &ParentPdo,
+                                               &RoutingToken,
+                                               &Flags);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("AcpiArbCrackPRT: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    if (ClassCode == 1 && SubClassCode == 1)
+    {
+        DPRINT1("AcpiArbCrackPRT: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (RoutingToken.LinkNode || (RoutingToken.Flags & 2))
+    {
+        if (RoutingToken.LinkNode)
+            *OutLinkNode = RoutingToken.LinkNode;
+        else
+            *OutVector = RoutingToken.StaticVector;
+
+        return STATUS_SUCCESS;
+    }
+
+    while (TRUE)
+    {
+        KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
+        FilterDo = AcpiGetFilter(AcpiArbiterDeviceObject, ParentPdo);
+        KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+        if (FilterDo)
+        {
+            ASSERT(IsPciBus(FilterDo));
+
+            PrtNsObject = ACPIAmliGetNamedChild((((PDEVICE_EXTENSION)FilterDo->DeviceExtension)->AcpiObject), 'TRP_');
+            if (PrtNsObject)
+            {
+                DPRINT("AcpiArbCrackPRT: PrtNsObject %p\n", PrtNsObject);
+                break;
+            }
+        }
+
+        Bus = 0xFFFFFFFF;
+        Slot.u.AsULONG = 0xFFFFFFFF;
+
+        Status = PciInterface->GetInterruptRouting(ParentPdo,
+                                                   &Bus,
+                                                   &Slot.u.AsULONG,
+                                                   &Line,
+                                                   &pin,
+                                                   &ClassCode,
+                                                   &SubClassCode,
+                                                   &ParentPdo,
+                                                   &RoutingToken,
+                                                   &flags);
+
+        DPRINT("AcpiArbCrackPRT: Status %X (%X:%X)\n", Status, ClassCode, SubClassCode);
+
+        if (!NT_SUCCESS(Status) || ClassCode != 6)
+        {
+            *OutVector = InterruptLine;
+            AcpiInterruptRoutingFailed = TRUE;
+            return STATUS_SUCCESS;
+        }
+
+        if (SubClassCode == 4)
+        {
+            DPRINT1("AcpiArbCrackPRT: FIXME\n");
+            ASSERT(FALSE);
+        }
+        else if (SubClassCode == 7)
+        {
+            InterruptPin = pin;
+            PciSlot.u.AsULONG = Slot.u.AsULONG;
+            DPRINT("AcpiArbCrackPRT: InterruptPin %X, PciSlot.u.AsULONG %X\n", InterruptPin, PciSlot.u.AsULONG);
+        }
+        else
+        {
+            DPRINT("AcpiArbCrackPRT: InterruptLine %X\n", InterruptLine);
+            *OutVector = InterruptLine;
+            AcpiInterruptRoutingFailed = TRUE;
+            return STATUS_SUCCESS;
+        }
+    }
+
+    if (AcpiInterruptRoutingFailed)
+    {
+        DPRINT1("AcpiArbCrackPRT: KeBugCheckEx()\n");
+        ASSERT(FALSE);
+        //KeBugCheckEx(..);
+    }
+
+    InterruptPin--;
+
+    DPRINT("AcpiArbCrackPRT: PCI Device %p had _ADR of %X\n", Pdo, PciSlot.u.AsULONG);
+    DPRINT("AcpiArbCrackPRT: This device connected to Pin %X (%p) \n", InterruptPin, PrtNsObject);
+
+    do
+    {
+        Status = AMLIEvalPackageElement(PrtNsObject, Index++, &PrtData);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT("AcpiArbCrackPRT: Status %X\n", Status);
+            break;
+        }
+
+        ASSERT(PrtData.DataType == 4);
+
+        if (NT_SUCCESS(AMLIEvalPkgDataElement(&PrtData, 0, &DataResult)))
+        {
+            if (PciSlot.u.bits.DeviceNumber == ((ULONG)DataResult.DataValue >> 0x10))
+            {
+                if (((ULONG)DataResult.DataValue & 0xFFFF) != 0xFFFF)
+                {
+                    DPRINT1("AcpiArbCrackPRT: FIXME\n");
+                    ASSERT(FALSE);
+                }
+
+                if (NT_SUCCESS(AMLIEvalPkgDataElement(&PrtData, 1, &InterruptPinData)))
+                {
+                    if ((ULONG)InterruptPinData.DataValue == InterruptPin)
+                    {
+                        if (NT_SUCCESS(AMLIEvalPkgDataElement(&PrtData, 2, &LinkNodeData)))
+                            IsSuccess = TRUE;
+
+                        if (NT_SUCCESS(AMLIEvalPkgDataElement(&PrtData, 3, &VectorData)))
+                            IsSuccess = TRUE;
+                    }
+
+                    AMLIFreeDataBuffs(&InterruptPinData, 1);
+                }
+            }
+
+            AMLIFreeDataBuffs(&DataResult, 1);
+        }
+
+        AMLIFreeDataBuffs(&PrtData, 1);
+    }
+    while (!IsSuccess);
+
+    if (IsSuccess)
+    {
+        if (LinkNodeData.DataType == 2 && LinkNodeData.DataBuff)
+        {
+            DPRINT1("AcpiArbCrackPRT: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        if (VectorData.DataType != 1)
+        {
+            DPRINT1("AcpiArbCrackPRT: STATUS_INVALID_IMAGE_FORMAT\n");
+            AMLIFreeDataBuffs(&LinkNodeData, 1);
+            AMLIFreeDataBuffs(&VectorData, 1);
+            return STATUS_INVALID_IMAGE_FORMAT;
+        }
+
+        *OutVector = (ULONG)VectorData.DataValue;
+
+        RoutingToken.LinkNode = 0;
+        RoutingToken.StaticVector = *OutVector;
+        RoutingToken.Flags = 2;
+
+        PciInterface->SetInterruptRoutingToken(Pdo, &RoutingToken);
+
+        AMLIFreeDataBuffs(&LinkNodeData, 1);
+        AMLIFreeDataBuffs(&VectorData, 1);
+
+        DPRINT("AcpiArbCrackPRT: STATUS_SUCCESS\n");
+        return STATUS_SUCCESS;
+    }
+
+    DPRINT1("AcpiArbCrackPRT: FIXME\n");
+    ASSERT(FALSE);
+
+    DPRINT("AcpiArbCrackPRT: ret STATUS_UNSUCCESSFUL\n");
+    return STATUS_UNSUCCESSFUL;
+}
+
+NTSTATUS
+NTAPI
+GetIsaVectorFlags(
+    _In_ ULONG InVector,
+    _Out_ UCHAR* OutFlags)
+{
+    ULONG Vector = 0;
+    ULONG GlobalVector;
+    UCHAR Flags;
+    NTSTATUS Status;
+
+    DPRINT("GetIsaVectorFlags: %X\n", InVector);
+    PAGED_CODE();
+
+    while (TRUE)
+    {
+        Status = LookupIsaVectorOverride(Vector, &GlobalVector, &Flags);
+        if (NT_SUCCESS(Status) && GlobalVector == InVector)
+        {
+            break;
+        }
+
+        Vector++;
+        if (Vector >= 0x10)
+        {
+            DPRINT1("GetIsaVectorFlags: STATUS_NOT_FOUND\n");
+            return STATUS_NOT_FOUND;
+        }
+    }
+
+    *OutFlags = Flags;
+
+    ASSERT((Flags & ~0x07) == 0); // (VECTOR_MODE | VECTOR_POLARITY | VECTOR_TYPE)
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+GetVectorProperties(
+    _In_ ULONG InVector,
+    _Out_ UCHAR* OutFlags)
+{
+    PACPI_VECTOR_BLOCK VectorBlock;
+
+    DPRINT("GetVectorProperties: %X\n", InVector);
+    PAGED_CODE();
+
+    VectorBlock = HashVector(InVector);
+    if (!VectorBlock)
+    {
+        DPRINT1("GetVectorProperties: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    if (VectorBlock->Entry.Vector == 'XXXX')
+    {
+        DPRINT1("GetVectorProperties: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    ASSERT(VectorBlock->Entry.Vector == InVector);
+
+    if (!(VectorBlock->Entry.Count + VectorBlock->Entry.TempCount))
+    {
+        DPRINT1("GetVectorProperties: STATUS_NOT_FOUND\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    *OutFlags = VectorBlock->Entry.TempFlags;
+
+    return STATUS_SUCCESS;
 }
 
 VOID
@@ -2497,7 +3277,86 @@ AcpiArbAddAllocation(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PAMLI_NAME_SPACE_OBJECT LinkNode;
+    PVOID UserData = NULL;
+    ULONG Vector;
+    ULONG RangeFlags = 0;
+    UCHAR PreviousFlags;
+    UCHAR Flags;
+    UCHAR RangeAttributes = 0;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbAddAllocation: %p, %p, %p, %X\n", Arbiter, ArbState, ArbState->Entry->PhysicalDeviceObject, (ULONG)(ArbState->Start & 0xFFFFFFFF));
+
+    PAGED_CODE();
+    ASSERT(ArbState->CurrentAlternative->Descriptor->Type == CmResourceTypeInterrupt);
+
+    Status = AcpiArbCrackPRT(ArbState->Entry->PhysicalDeviceObject, &LinkNode, &Vector);
+
+    if (NT_SUCCESS(Status))
+    {
+        Flags = 3;
+
+        ASSERT(ArbState->Start == ArbState->End);
+
+        if (!(ArbState->Flags & 2))
+        {
+            if (LinkNode)
+            {
+                DPRINT1("AcpiArbAddAllocation: FIXME\n");
+                ASSERT(FALSE);
+            }
+            else
+            {
+               ASSERT(Vector == ArbState->Start);
+            }
+        }
+        else if (InterruptModel == 1)
+        {
+            DPRINT("AcpiArbAddAllocation: Skipping this allocation. It's for a PCI device in APIC mode\n");
+            return;
+        }
+    }
+    else
+    {
+        Status = GetIsaVectorFlags((ULONG)ArbState->Start, &Flags);
+        if (!NT_SUCCESS(Status))
+        {
+            Flags = (ArbState->CurrentAlternative->Descriptor->Flags == 1) ? 0 : 3;
+        }
+
+        ASSERT((Flags & ~0x07) == 0); // (VECTOR_MODE | VECTOR_POLARITY | VECTOR_TYPE)
+    }
+
+    if (ArbState->Flags & 2)
+    {
+        RangeAttributes = 1;
+
+        Status = GetVectorProperties((ULONG)ArbState->Start, &PreviousFlags);
+        if (NT_SUCCESS(Status))
+        {
+            if ((Flags ^ PreviousFlags) & ~4)
+            {
+                DPRINT("AcpiArbAddAllocation: Skipping this allocation. It's for a vector that's incompatible.\n");
+                return;
+            }
+        }
+    }
+
+    ReferenceVector((ULONG)ArbState->Start, Flags);
+
+    if (!(Flags & 4))
+    {
+        if (ArbState->CurrentAlternative->Flags & 1)
+            RangeFlags = 3;
+        else
+            RangeFlags = 1;
+    }
+
+    Status = RtlAddRange(Arbiter->PossibleAllocation, ArbState->Start, ArbState->End, RangeAttributes, RangeFlags, UserData, ArbState->Entry->PhysicalDeviceObject);
+
+    ASSERT(NT_SUCCESS(Status));
+    DPRINT("AcpiArbAddAllocation: exit %p, %p\n", Arbiter, ArbState);
 }
 
 VOID
@@ -2515,8 +3374,21 @@ AcpiArbPreprocessEntry(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    UCHAR Attributes;
+
+    DPRINT("AcpiArbPreprocessEntry: %p\n", Arbiter);
+    PAGED_CODE();
+
+    Attributes = ArbState->RangeAttributes;
+
+    if (ArbState->Alternatives->Descriptor->Flags & 1)
+        Attributes = ((Attributes & 0xEF) | 0x20);
+    else
+        Attributes = ((Attributes & 0xDF) | 0x10);
+
+    ArbState->RangeAttributes = Attributes;
+
+    return STATUS_SUCCESS;
 }
 
 /*  Not correct yet, FIXME! */
@@ -2543,14 +3415,186 @@ AcpiArbQueryConflict(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS
+NTAPI
+FindBootConfig(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PARBITER_ALLOCATION_STATE ArbState,
+    _In_ ULONGLONG* OutVector)
+{
+    RTL_RANGE_LIST_ITERATOR Iterator;
+    PRTL_RANGE Range;
+
+    DPRINT("FindBootConfig: %p\n", Arbiter);
+
+    RtlGetFirstRange(Arbiter->Allocation, &Iterator, &Range);
+
+    while (Range)
+    {
+        if (Range->Attributes & 1)
+        {
+            if (ArbState->Entry->PhysicalDeviceObject == Range->Owner)
+            {
+                ASSERT(Range->Start == Range->End);
+                *OutVector = Range->Start;
+                return STATUS_SUCCESS;
+            }
+        }
+
+        RtlGetNextRange(&Iterator, &Range, TRUE);
+    }
+
+    return STATUS_NOT_FOUND;
+}
+
 BOOLEAN
 NTAPI
 AcpiArbGetNextAllocationRange(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return FALSE;
+    PINT_ROUTE_INTERFACE_STANDARD PciInterface;
+    PDEVICE_OBJECT Pdo;
+    ROUTING_TOKEN RoutingToken;
+    PCI_SLOT_NUMBER PciSlot;
+    ULONGLONG vector;
+    ULONG Bus;
+    UCHAR InterruptLine;
+    UCHAR InterruptPin;
+    UCHAR ClassCode;
+    UCHAR SubClassCode;
+    UCHAR Flags;
+    BOOLEAN IsNewRevision = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("AcpiArbGetNextAllocationRange: %p\n", Arbiter);
+    PAGED_CODE();
+
+    if (ArbState->Entry->PhysicalDeviceObject->DriverObject == AcpiDriverObject)
+    {
+        ASSERT(((PDEVICE_EXTENSION)ArbState->Entry->PhysicalDeviceObject->DeviceExtension)->Flags & 0x0000000000000020);
+        ASSERT(((PDEVICE_EXTENSION)ArbState->Entry->PhysicalDeviceObject->DeviceExtension)->Signature == '_SGP');
+
+        if (((PDEVICE_EXTENSION)ArbState->Entry->PhysicalDeviceObject->DeviceExtension)->Flags & 0x0000000002000000)
+        {
+            return ArbGetNextAllocationRange(Arbiter, ArbState);
+        }
+    }
+
+    if (!PciInterfacesInstantiated)
+        return ArbGetNextAllocationRange(Arbiter, ArbState);
+
+    PciInterface = ((PARBITER_EXTENSION)AcpiArbiter.Extension)->InterruptRouting;
+    ASSERT(PciInterface);
+
+    Status = PciInterface->GetInterruptRouting(ArbState->Entry->PhysicalDeviceObject,
+                                               &Bus,
+                                               &PciSlot.u.AsULONG,
+                                               &InterruptLine,
+                                               &InterruptPin,
+                                               &ClassCode,
+                                               &SubClassCode,
+                                               &Pdo,
+                                               &RoutingToken,
+                                               &Flags);
+    if (Status != STATUS_SUCCESS)
+    {
+        DPRINT("AcpiArbGetNextAllocationRange: Status %X\n", Status);
+        return ArbGetNextAllocationRange(Arbiter, ArbState);
+    }
+
+    if ((AcpiInformation->FixedACPIDescTable->Header.Revision > 1) && !(AcpiInformation->FixedACPIDescTable->boot_arch & 1))
+        IsNewRevision = TRUE;
+
+    if (!ArbState->CurrentAlternative)
+        ArbState->WorkSpace = 0x1000;
+
+    while (TRUE)
+    {
+        ASSERT((ArbState->WorkSpace > 0x0FFF) /*AcpiIrqNextRangeMinState*/ && (ArbState->WorkSpace < 0x1009 /*AcpiIrqNextRangeMaxState*/));
+
+        DPRINT("AcpiArbGetNextAllocationRange: ArbState->WorkSpace %X\n", ArbState->WorkSpace);
+
+        switch (ArbState->WorkSpace)
+        {
+            case 0x1000:
+                if (AcpiIrqDistributionDisposition == 1)
+                    ArbState->WorkSpace = 0x1007;
+                else if (AcpiIrqDistributionDisposition == 2)
+                    ArbState->WorkSpace = 0x1003;
+                else
+                    ArbState->WorkSpace = 0x1001;
+                break;
+
+            case 0x1001:
+                if (InterruptModel == 0)
+                    ArbState->WorkSpace = 0x1002;
+                else
+                    ArbState->WorkSpace = 0x1006;
+                break;
+
+            case 0x1002:
+                if (IsNewRevision || !AcpiArbCardbusPresent)
+                    ArbState->WorkSpace = 0x1006;
+                else
+                    ArbState->WorkSpace = 0x1003;
+                break;
+
+            case 0x1003:
+                if (AcpiIrqDefaultBootConfig)
+                    ArbState->WorkSpace = 0x1004;
+                else
+                    ArbState->WorkSpace = 0x1005;
+                break;
+
+            case 0x1004:
+                ArbState->WorkSpace = 0x1007;
+                DPRINT1("AcpiArbGetNextAllocationRange: FIXME\n");
+                ASSERT(FALSE);
+                break;
+
+            case 0x1005:
+                ArbState->WorkSpace = 0x1006;
+                DPRINT1("AcpiArbGetNextAllocationRange: FIXME\n");
+                ASSERT(FALSE);
+                break;
+
+            case 0x1006:
+                ArbState->WorkSpace = 0x1007;
+                Status = FindBootConfig(Arbiter, ArbState, &vector);
+                if (NT_SUCCESS(Status))
+                {
+                    DPRINT1("AcpiArbGetNextAllocationRange: FIXME\n");
+                    ASSERT(FALSE);
+                }
+                break;
+
+            case 0x1007:
+                ArbState->WorkSpace = 0x1008;
+                ArbState->CurrentAlternative = &ArbState->Alternatives[0];
+                ArbState->CurrentMinimum = ArbState->CurrentAlternative->Minimum;
+                ArbState->CurrentMaximum = ArbState->CurrentAlternative->Maximum;
+                goto Exit;
+
+            case 0x1008:
+                if (++ArbState->CurrentAlternative >= &ArbState->Alternatives[ArbState->AlternativeCount])
+                    return FALSE;
+
+                DPRINT("AcpiArbGetNextAllocationRange: No next allocation range, exhausted all %X alternatives", ArbState->AlternativeCount);
+
+                ArbState->CurrentMinimum = ArbState->CurrentAlternative->Minimum;
+                ArbState->CurrentMaximum = ArbState->CurrentAlternative->Maximum;
+                goto Exit;
+        }
+    }
+
+Exit:
+
+    DPRINT("AcpiArbGetNextAllocationRange: Next allocation range 0x%I64x-0x%I64x\n", ArbState->CurrentMinimum, ArbState->CurrentMaximum);
+
+    AcpiArbPciAlternativeRotation++;
+
+    return TRUE;
 }
 
 NTSTATUS
@@ -3055,6 +4099,7 @@ DriverEntry(
     KeInitializeSpinLock(&AcpiPowerQueueLock);
     KeInitializeSpinLock(&AcpiGetLock);
     KeInitializeSpinLock(&AcpiPowerLock);
+    KeInitializeSpinLock(&AcpiButtonLock);
 
     InitializeListHead(&AcpiBuildDeviceList);
     InitializeListHead(&AcpiBuildSynchronizationList);
@@ -3075,6 +4120,7 @@ DriverEntry(
     InitializeListHead(&AcpiPowerPhase5List);
     InitializeListHead(&AcpiPowerWaitWakeList);
     InitializeListHead(&AcpiPowerNodeList);
+    InitializeListHead(&AcpiButtonList);
 
     AcpiBuildFixedButtonEnumerated = FALSE;
     AcpiBuildWorkDone = FALSE;

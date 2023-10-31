@@ -40,9 +40,12 @@ KSPIN_LOCK NotifyHandlerLock;
 KSPIN_LOCK GpeTableLock;
 ULONG AcpiSupportedSystemStates;
 ULONG InterruptModel;
+UCHAR ProcApics;
+UCHAR ProcApicId;
 BOOLEAN AcpiSystemInitialized;
 BOOLEAN PciPmeInterfaceInstantiated;
 BOOLEAN PciInterfacesInstantiated = FALSE;
+BOOLEAN AcpiPowerLeavingS0;
 
 ACPI_INTERNAL_DEVICE_FLAG AcpiInternalDeviceFlagTable[] =
 {
@@ -96,19 +99,19 @@ ULONG AcpiBuildDevicePowerNameLookup[] =
     0,
     0,
     0,
-    '_EJD',
+    'DJE_',
     0,
-    '_PRW',
+    'WRP_',
     0,
-    '_PR0',
+    '0RP_',
     0,
-    '_PR1',
+    '1RP_',
     0,
-    '_PR2',
+    '2RP_',
     0,
-    '_CRS',
+    'SRC_',
     0,
-    '_PSC',
+    'CSP_',
     0
 };
 
@@ -297,6 +300,18 @@ PDRIVER_DISPATCH ACPIDispatchBusFilterPnpTable[] =
     ACPIBusIrpDeviceUsageNotification,
     ACPIBusIrpSurpriseRemoval,
     ACPIBusIrpUnhandled
+};
+
+IRP_DISPATCH_TABLE AcpiBusFilterIrpDispatch =
+{
+    ACPIDispatchIrpInvalid,
+    ACPIIrpDispatchDeviceControl,
+    ACPIBusIrpStartDevice,
+    ACPIDispatchBusFilterPnpTable,
+    ACPIDispatchBusPowerTable,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchForwardIrp,
+    NULL
 };
 
 IRP_DISPATCH_TABLE AcpiGenericBusIrpDispatch =
@@ -528,6 +543,56 @@ IRP_DISPATCH_TABLE AcpiBusFilterIrpDispatchSucceedCreate =
     ACPIBusIrpStartDevice,
     ACPIDispatchBusFilterPnpTable,
     ACPIDispatchBusPowerTable,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchForwardIrp,
+    NULL
+};
+
+PDRIVER_DISPATCH ACPIDispatchFilterPnpTable[] =
+{
+    NULL,
+    ACPIRootIrpQueryRemoveOrStopDevice,
+    ACPIFilterIrpRemoveDevice,
+    ACPIRootIrpCancelRemoveOrStopDevice,
+    ACPIFilterIrpStopDevice,
+    ACPIRootIrpQueryRemoveOrStopDevice,
+    ACPIRootIrpCancelRemoveOrStopDevice,
+    ACPIFilterIrpQueryDeviceRelations,
+    ACPIFilterIrpQueryInterface,
+    ACPIFilterIrpQueryCapabilities,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchForwardIrp,
+    ACPIDispatchForwardIrp,
+    ACPIFilterIrpEject,
+    ACPIFilterIrpSetLock,
+    ACPIFilterIrpQueryId,
+    ACPIFilterIrpQueryPnpDeviceState,
+    ACPIDispatchForwardIrp,
+    ACPIFilterIrpDeviceUsageNotification,
+    ACPIFilterIrpSurpriseRemoval,
+    ACPIDispatchForwardIrp
+};
+
+PDRIVER_DISPATCH ACPIDispatchFilterPowerTable[] =
+{
+    ACPIWakeWaitIrp,
+    ACPIDispatchForwardPowerIrp,
+    ACPIFilterIrpSetPower,
+    ACPIFilterIrpQueryPower,
+    ACPIDispatchForwardPowerIrp
+};
+
+IRP_DISPATCH_TABLE AcpiFilterIrpDispatch =
+{
+    ACPIDispatchForwardIrp,
+    ACPIIrpDispatchDeviceControl,
+    ACPIFilterIrpStartDevice,
+    ACPIDispatchFilterPnpTable,
+    ACPIDispatchFilterPowerTable,
     ACPIDispatchForwardIrp,
     ACPIDispatchForwardIrp,
     NULL
@@ -866,6 +931,7 @@ extern LIST_ENTRY AcpiPowerPhase4List;
 extern LIST_ENTRY AcpiPowerPhase5List;
 extern LIST_ENTRY AcpiPowerWaitWakeList;
 extern LIST_ENTRY AcpiPowerNodeList;
+extern LIST_ENTRY AcpiButtonList;
 extern KDPC AcpiBuildDpc;
 extern KDPC AcpiPowerDpc;
 extern BOOLEAN AcpiBuildDpcRunning;
@@ -876,10 +942,17 @@ extern PRSDTINFORMATION RsdtInformation;
 extern PDEVICE_EXTENSION RootDeviceExtension;
 extern ULONG AcpiOverrideAttributes;
 extern KSPIN_LOCK AcpiPowerLock;
+extern KSPIN_LOCK AcpiButtonLock;
 extern PUCHAR GpeEnable;
 extern PUCHAR GpeWakeHandler;
 extern PUCHAR GpeSpecialHandler;
 extern ARBITER_INSTANCE AcpiArbiter;
+extern ANSI_STRING AcpiProcessorString;
+extern KSPIN_LOCK gdwGContextSpinLock;
+extern ULONG gdwcCTObjsMax;
+extern PUCHAR GpeWakeEnable;
+extern PUCHAR GpeCurEnable;
+extern PUCHAR GpePending;
 
 /* FUNCTIOS *****************************************************************/
 
@@ -1073,6 +1146,113 @@ ACPIInternalUpdateDeviceStatus(
 
 NTSTATUS
 NTAPI 
+ACPIGetProcessorStatus(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _Out_ ULONG* OutProcessorStatus)
+{
+    PAMLI_PROCESSOR_OBJECT ProcObject;
+    PACPI_SUBTABLE_HEADER ApicHeader;
+    PVOID ApicTable;
+    PVOID MapicEnd;
+    PMAPIC Mapic;
+    ULONG ProcessorStatus = 0xF;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIGetProcessorStatus: %p\n", DeviceExtension);
+
+    ASSERT(DeviceExtension->AcpiObject != NULL);
+    ASSERT(DeviceExtension->AcpiObject->ObjData.DataType == 0xC);
+
+    if (!DeviceExtension->AcpiObject ||
+        DeviceExtension->AcpiObject->ObjData.DataType != 0xC ||
+        !DeviceExtension->AcpiObject->ObjData.DataBuff)
+    {
+        Status = STATUS_INVALID_DEVICE_REQUEST;
+        goto Exit;
+    }
+
+    ProcObject = DeviceExtension->AcpiObject->ObjData.DataBuff;
+
+    Mapic = AcpiInformation->MultipleApicTable;
+    if (!Mapic)
+    {
+        if (!ProcApics)
+        {
+            ProcApicId = ProcObject->ApicID;
+            ProcApics++;
+        }
+
+        if (ProcApicId != ProcObject->ApicID)
+            ProcessorStatus = 0;
+
+        goto Exit;
+    }
+
+    ApicTable = Mapic->APICTables;
+    MapicEnd = Add2Ptr(Mapic, Mapic->Header.Length);
+
+    while (TRUE)
+    {
+        if (ApicTable >= MapicEnd)
+        {
+            ProcessorStatus = 0;
+            break;
+        }
+
+        ApicHeader = ApicTable;
+
+        if (ApicHeader->Type == 0 && ApicHeader->Length == 8)
+        {
+            PACPI_MADT_LOCAL_APIC LocalApic = ApicTable;
+
+            if (LocalApic->ProcessorId == ProcObject->ApicID)
+            {
+                if (!(LocalApic->LapicFlags & 1))
+                    ProcessorStatus = 0;
+
+                break;
+            }
+
+            ApicTable = Add2Ptr(ApicTable, LocalApic->Header.Length);
+
+            continue;
+        }
+
+        if (ApicHeader->Type == 7 && ApicHeader->Length == 0xC)
+        {
+            PACPI_MADT_LOCAL_SAPIC LocalSapic = ApicTable;
+
+            if (LocalSapic->ProcessorId == ProcObject->ApicID)
+            {
+                if (!(LocalSapic->LapicFlags & 1))
+                    ProcessorStatus = 0;
+
+                break;
+            }
+
+            ApicTable = Add2Ptr(ApicTable, LocalSapic->Header.Length);
+
+            continue;
+        }
+
+        if (!ApicHeader->Length)
+        {
+            ProcessorStatus = 0;
+            break;
+        }
+
+        ApicTable = Add2Ptr(ApicTable, ApicHeader->Length);
+    }
+
+Exit:
+
+    *OutProcessorStatus = ProcessorStatus;
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI 
 ACPIGetConvertToDevicePresence(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ NTSTATUS InStatus,
@@ -1084,6 +1264,8 @@ ACPIGetConvertToDevicePresence(
     PAMLI_NAME_SPACE_OBJECT Child;
     ULONGLONG UFlags;
     ULONG DeviceStatus = 0xF;
+    ULONG ProcessorStatus;
+    NTSTATUS Status;
 
     DPRINT("ACPIGetConvertToDevicePresence: %p\n", DeviceExtension);
 
@@ -1122,8 +1304,12 @@ ACPIGetConvertToDevicePresence(
         {
             if (DeviceExtension->Flags & 0x0000001000000000)    // Cap_Processor
             {
-                DPRINT1("ACPIGetConvertToDevicePresence: KeBugCheckEx()\n");
-                ASSERT(FALSE);
+                Status = ACPIGetProcessorStatus(DeviceExtension, &ProcessorStatus);
+
+                if (NT_SUCCESS(Status))
+                    DeviceStatus = ProcessorStatus;
+                else
+                    DeviceStatus = 0;
             }
         }
         else
@@ -1458,6 +1644,113 @@ Exit:
 
     if (OutDataLen)
         *OutDataLen = DataLen;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+ACPIGetConvertToPnpIDWide(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ ULONG GetFlags,
+    _Out_ PVOID* OutDataBuff,
+    _Out_ ULONG* OutDataLen)
+{
+    PCHAR PnpIdString;
+    PWCHAR PnpId;
+    POOL_TYPE PoolType;
+    ULONG PnpIdLen;
+
+    DPRINT("ACPIGetConvertToPnpIDWide: GetFlags %X\n", GetFlags);
+
+    if (GetFlags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000800000000000))
+    {
+        PnpIdLen = (strlen(DeviceExtension->DeviceID) - 3);
+
+        PnpId = ExAllocatePoolWithTag(PoolType, (PnpIdLen * 2), 'SpcA');
+        if (!PnpId)
+        {
+            DPRINT1("ACPIGetConvertToPnpIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(PnpId, (PnpIdLen * 2));
+
+        swprintf(PnpId, L"*%S", (DeviceExtension->DeviceID + 5));
+        goto Exit;
+    }
+
+    if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000004000000000))
+    {
+        PnpIdLen = 0xE;
+
+        PnpId = ExAllocatePoolWithTag(PoolType, (PnpIdLen * 2), 'SpcA');
+        if (!PnpId)
+        {
+            DPRINT1("ACPIGetConvertToPnpIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(PnpId, (PnpIdLen * 2));
+
+        swprintf(PnpId, L"*%S", "PciBarTarget");
+        goto Exit;
+    }
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIGetConvertToPnpIDWide: InStatus %X\n", InStatus);
+        return InStatus;
+    }
+
+    if (AmliData->DataType == 1)
+    {
+        PnpIdLen = 9;
+
+        PnpId = ExAllocatePoolWithTag(PoolType, (PnpIdLen * 2), 'SpcA');
+        if (!PnpId)
+        {
+            DPRINT1("ACPIGetConvertToPnpIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(PnpId, (PnpIdLen * 2));
+
+        ACPIAmliDoubleToNameWide(PnpId, (ULONG)AmliData->DataValue, TRUE);
+    }
+    else if (AmliData->DataType == 2)
+    {
+        PnpIdString = AmliData->DataBuff;
+        if (*PnpIdString == '*')
+            PnpIdString++;
+
+        PnpIdLen = (2 + strlen(PnpIdString));
+
+        PnpId = ExAllocatePoolWithTag(PoolType, (PnpIdLen * 2), 'SpcA');
+        if (!PnpId)
+        {
+            DPRINT1("ACPIGetConvertToPnpIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(PnpId, (PnpIdLen * 2));
+
+        swprintf(PnpId, L"*%S", PnpIdString);
+    }
+    else
+    {
+        return STATUS_ACPI_INVALID_DATA;
+    }
+
+Exit:
+
+    *OutDataBuff = PnpId;
+
+    if (OutDataLen)
+        *OutDataLen = (PnpIdLen * 2);
 
     return STATUS_SUCCESS;
 }
@@ -1919,6 +2212,109 @@ Exit:
 
 NTSTATUS
 NTAPI
+ACPIGetProcessorIDWide(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ NTSTATUS InStatus,
+    _In_ PAMLI_OBJECT_DATA AmliData,
+    _In_ ULONG GetFlags,
+    _Out_ PVOID* OutProcessorId,
+    _Out_ ULONG* OutIdLen)
+{
+    PWCHAR ProcessorId;
+    PCHAR FamilyStr = NULL;
+    PCHAR ModelStr = NULL;
+    PCHAR ProcStr = NULL;
+    POOL_TYPE PoolType;
+    ULONG Size;
+    ULONG Index1;
+    ULONG Index2;
+    ULONG Index3;
+    ULONG Index4;
+
+    DPRINT("ACPIGetProcessorIDWide: %p\n", DeviceExtension);
+
+    Size = (strlen("ACPI\\") + strlen(AcpiProcessorString.Buffer) + 1);
+
+    if (GetFlags & 0x40)
+    {
+        ProcStr = ExAllocatePoolWithTag(NonPagedPool, Size, 'SpcA');
+        if (!ProcStr)
+        {
+            DPRINT1("ACPIGetProcessorIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(ProcStr, Size);
+
+        strcpy(ProcStr, AcpiProcessorString.Buffer);
+
+        ModelStr = strstr(ProcStr, "Model");
+        FamilyStr = strstr(ProcStr, "Family");
+
+        if (!ModelStr || !FamilyStr)
+        {
+            DPRINT1("ACPIGetProcessorIDWide: STATUS_UNSUCCESSFUL\n");
+            ExFreePoolWithTag(ProcStr, 'SpcA');
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        Size = (3 * (strlen("ACPI\\") + strlen("*") + (2 * Size)) - 2 * (strlen(ModelStr) + strlen(FamilyStr)));
+    }
+
+    if (GetFlags & 0x10000000)
+        PoolType = NonPagedPool;
+    else
+        PoolType = PagedPool;
+
+    ProcessorId = ExAllocatePoolWithTag(PoolType, (2 * Size), 'SpcA');
+    if (!ProcessorId)
+    {
+        DPRINT1("ACPIGetProcessorIDWide: STATUS_INSUFFICIENT_RESOURCES\n");
+
+        *OutProcessorId = NULL;
+
+        if (OutIdLen)
+            *OutIdLen = 0;
+
+        if (ProcStr)
+            ExFreePoolWithTag(ProcStr, 'SpcA');
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(ProcessorId, (2 * Size));
+
+    if (GetFlags & 0x20)
+    {
+        swprintf(ProcessorId, L"%S%S", "ACPI\\", AcpiProcessorString.Buffer);
+    }
+    else if (GetFlags & 0x40)
+    {
+        Index1 = swprintf(ProcessorId, L"%S%S", "ACPI\\", ProcStr);
+        Index2 = swprintf(&ProcessorId[Index1 + 1], L"%S%S", "*", ProcStr);
+
+        *(ModelStr - 1) = 0;
+
+        Index3 = (Index2 + Index1 + 2 + swprintf(&ProcessorId[Index2 + Index1 + 2], L"%S%S", "ACPI\\", ProcStr) + 1);
+        Index4 = swprintf(&ProcessorId[Index3], L"%S%S", "*", ProcStr);
+
+        *(FamilyStr - 1) = 0;
+
+        swprintf(&ProcessorId[Index4 + Index3 + 1 + swprintf(&ProcessorId[Index4 + Index3 + 1], L"%S%S", "ACPI\\", ProcStr) + 1], L"%S%S", "*", ProcStr);
+    }
+
+    if (ProcStr)
+        ExFreePoolWithTag(ProcStr, 'SpcA');
+
+    *OutProcessorId = ProcessorId;
+
+    if (OutIdLen)
+        *OutIdLen = (2 * Size);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 ACPIGetConvertToDeviceIDWide(
     _In_ PDEVICE_EXTENSION DeviceExtension,
     _In_ NTSTATUS InStatus,
@@ -1936,9 +2332,7 @@ ACPIGetConvertToDeviceIDWide(
 
     if (!(GetFlags & 0x8000000) && (DeviceExtension->Flags & 0x0000001000000000))
     {
-        DPRINT1("ACPIGetConvertToDeviceIDWide: FIXME\n");
-        ASSERT(FALSE);
-        return STATUS_NOT_IMPLEMENTED;
+        return ACPIGetProcessorIDWide(DeviceExtension, InStatus, AmliData, GetFlags, OutDataBuff, OutDataLen);
     }
 
     if (GetFlags & 0x10000000)
@@ -2159,13 +2553,19 @@ ACPIGetConvertToHardwareIDWide(
     ULONG DataBuffLen;
     ULONG DataLen;
     BOOLEAN IsAllocated = FALSE;
+    NTSTATUS Status;
 
     DPRINT("ACPIGetConvertToHardwareIDWide: %p\n", DeviceExtension);
 
     if (!(GetFlags & 0x08000000) && (DeviceExtension->Flags & 0x0000001000000000))
     {
-        DPRINT1("ACPIGetConvertToHardwareIDWide: FIXME\n");
-        ASSERT(FALSE);
+        Status = ACPIGetProcessorIDWide(DeviceExtension, InStatus, AmliData, GetFlags, (PVOID *)&HardwareID, &GetFlags);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIGetConvertToHardwareIDWide: Status %X\n", Status);
+            return Status;
+        }
+
         goto Exit;
     }
 
@@ -2391,8 +2791,7 @@ ACPIGetWorkerForString(
         }
         else if (GetFlags & 0x0200)
         {
-            DPRINT1("ACPIGetWorkerForString: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIGetConvertToPnpIDWide(DeviceExtension, InStatus, AmliData, GetFlags, OutDataBuff, OutDataLen);
         }
         else if (GetFlags & 0x0100)
         {
@@ -3902,16 +4301,162 @@ ACPIBuildProcessDevicePhasePr2(
     return Status;
 }
 
+VOID
+NTAPI
+ACPIMatchKernelPorts(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PAMLI_OBJECT_DATA Data)
+{
+    PUCHAR* kdComPortInUse = (PVOID)KdComPortInUse; // FIXME! KdComPortInUse PUCHAR or PUCHAR* ?
+    HEADLESS_RSP_QUERY_INFO HeadlessInformation;
+    PACPI_RESOURCE_DATA_TYPE ResDataType = Data->DataBuff;
+    PUCHAR TerminalPortBaseAddress;
+    PUCHAR KdAddress;
+    SIZE_T InfoSize;
+    ULONG Increment;
+    ULONG Port;
+    ULONG ix;
+    UCHAR TagName;
+    BOOLEAN IsFoundPort = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("ACPIMatchKernelPorts: DeviceExtension %X, kdComPortInUse %X\n", DeviceExtension, kdComPortInUse);
+
+    InfoSize = sizeof(HEADLESS_RSP_QUERY_INFO);
+    Status = HeadlessDispatch(HeadlessCmdQueryInformation, NULL, 0, &HeadlessInformation, &InfoSize);
+
+    if (NT_SUCCESS(Status) &&
+        HeadlessInformation.PortType == HeadlessSerialPort &&
+        HeadlessInformation.Serial.TerminalAttached)
+    {
+        TerminalPortBaseAddress = HeadlessInformation.Serial.TerminalPortBaseAddress;
+    }
+    else
+    {
+        TerminalPortBaseAddress = NULL;
+    }
+
+    if ((!kdComPortInUse /*|| !(*KdComPortInUse)*/) && !TerminalPortBaseAddress) // FIXME!
+        return;
+
+    if (kdComPortInUse)
+        KdAddress = (PVOID)kdComPortInUse; // *KdComPortInUse
+    else
+        KdAddress = NULL;
+
+    DPRINT("ACPIMatchKernelPorts: TerminalPortBaseAddress %X, KdAddress %X\n", TerminalPortBaseAddress, KdAddress);
+
+    for (ix = 0; ix < Data->DataLen; )
+    {
+        if (!ResDataType->Small.Type)
+        {
+            Increment = (ResDataType->Small.Length + 1);
+            TagName = ResDataType->Small.Name;
+            DPRINT("ACPIMatchKernelPorts: Small TagName %X, Increment %X\n", TagName, Increment);
+        }
+        else
+        {
+            Increment = (ResDataType->Large.Length + 3);
+            TagName = ResDataType->Large.Name;
+            DPRINT("ACPIMatchKernelPorts: Large TagName %X, Increment %X\n", TagName, Increment);
+        }
+
+        if ((ResDataType->Small.Tag & 0xF8) == 0x78)
+        {
+            DPRINT("ACPIMatchKernelPorts: TAG_END\n");
+            break;
+        }
+
+        if (!ResDataType->Small.Type)
+        {
+            switch (TagName)
+            {
+                case 0x08:
+                {
+                    PACPI_IO_PORT_DESCRIPTOR AcpiDesc = (PVOID)ResDataType;
+
+                    DPRINT1("ACPIMatchKernelPorts: IO Port Descriptor - %X\n", AcpiDesc->Minimum);
+
+                    Port = AcpiDesc->Minimum;
+                    IsFoundPort = TRUE;
+
+                    break;
+                }
+                case 0x09: // Fixed Location I/O Port Descriptor 
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                default:
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    goto Next;
+                }
+            }
+        }
+        else
+        {
+            switch (TagName)
+            {
+                case 0x07: // DWORD Address Space Descriptor 
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x08: // WORD Address Space Descriptor 
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                case 0x0A: // QWORD Address Space Descriptor
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    break;
+                }
+                default:
+                {
+                    DPRINT1("ACPIMatchKernelPorts: FIXME! (TagName %X)\n", TagName);
+                    ASSERT(FALSE);
+                    goto Next;
+                }
+            }
+        }
+
+        if (!IsFoundPort)
+            goto Next;
+
+        if ((kdComPortInUse && Port == (ULONG_PTR)KdAddress) ||
+            (TerminalPortBaseAddress && Port == (ULONG_PTR)TerminalPortBaseAddress))
+        {
+            ACPIInternalUpdateFlags(DeviceExtension, 0x0000000000680003, FALSE);
+
+            if (kdComPortInUse && Port == (ULONG_PTR)KdAddress)
+                DPRINT("ACPIMatchKernelPorts - Found KD Port at %X\n", Port);
+            else
+                DPRINT("ACPIMatchKernelPorts - Found Headless Port at %X\n", Port);
+            break;
+        }
+Next:
+        ResDataType = Add2Ptr(ResDataType, Increment);
+        ix += Increment;
+    }
+}
+
 NTSTATUS
 NTAPI
 ACPIBuildProcessDevicePhaseCrs(
     _In_ PACPI_BUILD_REQUEST BuildRequest)
 {
-    //PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_EXTENSION DeviceExtension;
 
     DPRINT("ACPIBuildProcessDevicePhaseCrs: BuildRequest %X\n", BuildRequest);
 
-    //DeviceExtension = BuildRequest->DeviceExtension;
+    DeviceExtension = BuildRequest->DeviceExtension;
     BuildRequest->BuildReserved1 = 0xB;
 
     if (BuildRequest->ChildObject)
@@ -3923,14 +4468,11 @@ ACPIBuildProcessDevicePhaseCrs(
             //KeBugCheckEx(0xA5, 7, DeviceExtension, BuildRequest->ChildObject, BuildRequest->Device.Data.DataType);
         }
 
-        DPRINT1("ACPIBuildProcessDevicePhaseCrs: FIXME\n");
-        ASSERT(FALSE);
-
-        //ACPIMatchKernelPorts(DeviceExtension, &BuildRequest->Synchronize);
-        //AMLIFreeDataBuffs(&BuildRequest->Synchronize, 1);
+        ACPIMatchKernelPorts(DeviceExtension, &BuildRequest->Device.Data);
+        AMLIFreeDataBuffs(&BuildRequest->Device.Data, 1);
     }
 
-    //ACPIDebugDevicePrint(8u, DeviceExtension, "ACPIBuildProcessDevicePhaseCrs: Status = %08lx\n", 0);
+    DPRINT("ACPIBuildProcessDevicePhaseCrs: STATUS_SUCCESS\n");
 
     ACPIBuildCompleteMustSucceed(NULL, STATUS_SUCCESS, 0, BuildRequest);
 
@@ -5762,8 +6304,30 @@ ACPIRootIrpQueryRemoveOrStopDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBusIrpQueryRemoveOrStopDevice: %X\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if (DeviceExtension->Flags & 0x0000000000200000)
+    {
+        Irp->IoStatus.Status = Status = STATUS_INVALID_DEVICE_REQUEST;
+        IoCompleteRequest(Irp, 0);
+    }
+    else
+    {
+        DeviceExtension->PreviousState = DeviceExtension->DeviceState;
+        DeviceExtension->DeviceState = 1;
+
+        IoSkipCurrentIrpStackLocation(Irp);
+
+        Status = IoCallDriver(DeviceExtension->TargetDeviceObject, Irp);
+    }
+
+    return Status;
 }
 
 NTSTATUS
@@ -5782,8 +6346,23 @@ ACPIRootIrpCancelRemoveOrStopDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status;
+  
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    DPRINT("ACPIRootIrpCancelRemoveOrStopDevice: %X\n", DeviceObject);
+    PAGED_CODE();
+
+    if (!(DeviceExtension->Flags & 0x0000000000200000) && DeviceExtension->DeviceState == 1)
+        DeviceExtension->DeviceState = DeviceExtension->PreviousState;
+
+    IoSkipCurrentIrpStackLocation(Irp);
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+
+    Status = IoCallDriver(DeviceExtension->TargetDeviceObject, Irp);
+
+    return Status;
 }
 
 NTSTATUS
@@ -5820,6 +6399,89 @@ ACPIBuildFlushQueue(
         KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
         Status = STATUS_SUCCESS;
     }
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+ACPIMatchHardwareId(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PUNICODE_STRING HardwareId,
+    _Out_ BOOLEAN* OutSuccess)
+{
+    PWSTR QueryId;
+    PWSTR CurrentId;
+    UNICODE_STRING IdString;
+    IO_STACK_LOCATION ioStack;
+    NTSTATUS Status;
+
+    DPRINT("ACPIMatchHardwareId: %p, '%wZ'\n", DeviceObject, HardwareId);
+    DPRINT("\n");
+    PAGED_CODE();
+
+    ASSERT(DeviceObject != NULL);
+    ASSERT(OutSuccess != NULL);
+
+    RtlZeroMemory(&ioStack, sizeof(ioStack));
+    RtlZeroMemory(&IdString, sizeof(IdString));
+
+    *OutSuccess = FALSE;
+
+    ioStack.MajorFunction = IRP_MJ_PNP;
+    ioStack.MinorFunction = IRP_MN_QUERY_ID;
+
+    ioStack.Parameters.QueryId.IdType = 1;
+
+    Status = ACPIInternalSendSynchronousIrp(DeviceObject, &ioStack, (ULONG_PTR *)&QueryId);
+    if (!NT_SUCCESS(Status))
+        goto Exit;
+
+    for (CurrentId = QueryId; CurrentId && *CurrentId; )
+    {
+        RtlInitUnicodeString(&IdString, CurrentId);
+        CurrentId += (IdString.MaximumLength / 2);
+
+        if (RtlEqualUnicodeString(&IdString, HardwareId, 1))
+        {
+            *OutSuccess = TRUE;
+            break;
+        }
+    }
+
+    ExFreePool(QueryId);
+
+Exit:
+
+    DPRINT("ACPIMatchHardwareId: '%ws', %X, %X\n", HardwareId->Buffer, DeviceObject, Status, *OutSuccess);
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+ACPIMatchHardwareAddress(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG Address,
+    _Out_ BOOLEAN* OutSuccess)
+{
+    DEVICE_CAPABILITIES capabilities;
+    NTSTATUS Status;
+
+    DPRINT("ACPIMatchHardwareAddress: %p, %X\n", DeviceObject, Address);
+    PAGED_CODE();
+
+    ASSERT(DeviceObject != NULL);
+    ASSERT(OutSuccess != NULL);
+
+    *OutSuccess = FALSE;
+
+    Status = ACPIInternalGetDeviceCapabilities(DeviceObject, &capabilities);
+
+    if (NT_SUCCESS(Status) && Address == capabilities.Address)
+        *OutSuccess = TRUE;
+
+    DPRINT("ACPIMatchHardwareAddress: ret %X, %X\n", Status, *OutSuccess);
 
     return Status;
 }
@@ -5897,8 +6559,12 @@ ACPIDetectCouldExtensionBeInRelation(
 
         if (IsHid)
         {
-            DPRINT1("ACPIDetectCouldExtensionBeInRelation: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIMatchHardwareId(DeviceRelation->Objects[ix], &HardwareId, &IsSuccess);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("ACPIDetectCouldExtensionBeInRelation: Status %X\n", Status);
+                continue;
+            }
         }
 
         if (!IsSuccess && !IsAdr)
@@ -5908,8 +6574,15 @@ ACPIDetectCouldExtensionBeInRelation(
         {
             IsSuccess = FALSE;
 
-            DPRINT1("ACPIDetectCouldExtensionBeInRelation: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIMatchHardwareAddress(DeviceRelation->Objects[ix], HardwareAddress, &IsSuccess);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("ACPIDetectCouldExtensionBeInRelation: Status %X\n", Status);
+                continue;
+            }
+
+            if (!IsSuccess)
+                continue;
         }
 
         *OutPdoObject = DeviceRelation->Objects[ix];
@@ -6003,14 +6676,22 @@ ACPIBuildPdo(
 
     if (IsFilterDO)
     {
-        DPRINT1("ACPIBuildPdo: FIXME\n");
-        ASSERT(FALSE);
+        DeviceExtension->TargetDeviceObject = FilterDO;
+
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0000000000000040, FALSE);
+
+        DeviceExtension->DispatchTable = &AcpiBusFilterIrpDispatch;
+
+        Pdo->StackSize = (FilterDO->StackSize + 1);
+        Pdo->AlignmentRequirement = FilterDO->AlignmentRequirement;
+
+        if (FilterDO->Flags & 0x2000)
+            Pdo->Flags |= 0x2000;
     }
 
     if (DeviceExtension->Flags & 0x0000001000000000)
     {
-        DPRINT1("ACPIBuildPdo: FIXME\n");
-        ASSERT(FALSE);
+        DeviceExtension->DispatchTable = &AcpiProcessorIrpDispatch;
     }
     else if (DeviceExtension->Flags & 0x0000200000000000)
     {
@@ -6090,8 +6771,22 @@ ACPIDetectPdoDevices(
 
     if (IsListEmpty(&DeviceExtension->ChildDeviceList))
     {
-        DPRINT1("ACPIDetectPdoDevices: FIXME\n");
-        ASSERT(FALSE);
+        KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+        if (InDeviceRelation)
+            return STATUS_SUCCESS;
+
+        DeviceRelation = ExAllocatePoolWithTag(NonPagedPool, sizeof(*DeviceRelation), 'DpcA');
+        if (!DeviceRelation)
+        {
+            DPRINT1("ACPIDetectPdoDevices: STATUS_INSUFFICIENT_RESOURCES\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlZeroMemory(DeviceRelation, sizeof(*DeviceRelation));
+
+        *OutDeviceRelation = DeviceRelation;
+
+        return STATUS_SUCCESS;
     }
 
     Head = &DeviceExtension->ChildDeviceList;
@@ -6198,8 +6893,8 @@ ACPIDetectPdoDevices(
 
     if (InDeviceRelation)
     {
-        DPRINT1("ACPIDetectPdoDevices: FIXME\n");
-        ASSERT(FALSE);
+        RtlCopyMemory(DeviceRelation->Objects, InDeviceRelation->Objects, (InDeviceRelation->Count * sizeof(PDEVICE_OBJECT)));
+        ix = InDeviceRelation->Count;
     }
     else
     {
@@ -6263,7 +6958,7 @@ ACPIDetectPdoDevices(
     }
 
     if (InDeviceRelation)
-        ExFreePoolWithTag(*OutDeviceRelation, 'DpcA');
+        ExFreePool(*OutDeviceRelation);
 
     *OutDeviceRelation = DeviceRelation;
 
@@ -6472,6 +7167,7 @@ ACPIDetectFilterMatch(
     _Out_ PDEVICE_OBJECT* OutPdo)
 {
     ULONG ix;
+    NTSTATUS Status;
 
     PAGED_CODE();
     DPRINT("ACPIDetectFilterMatch: %p, %p\n", DeviceExtension, DeviceRelation);
@@ -6490,8 +7186,10 @@ ACPIDetectFilterMatch(
         !(DeviceExtension->Flags & 0x0200000000000000) &&
         !DeviceExtension->DeviceObject)
     {
-        DPRINT1("ACPIDetectFilterMatch: FIXME\n");
-        ASSERT(FALSE);
+        Status = ACPIDetectCouldExtensionBeInRelation(DeviceExtension, DeviceRelation, TRUE, FALSE, OutPdo);
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+            Status = STATUS_SUCCESS;
+        return Status;
     }
 
     if (!DeviceRelation)
@@ -6505,6 +7203,71 @@ ACPIDetectFilterMatch(
         if (DeviceExtension->PhysicalDeviceObject == DeviceRelation->Objects[ix])
             ACPIInternalUpdateFlags(DeviceExtension, 0x0000000000000100, TRUE);
     }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+ACPIBuildFilter(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_OBJECT Pdo)
+{
+    PDEVICE_OBJECT AttachedToDevice;
+    PDEVICE_OBJECT DeviceObject = NULL;
+    KIRQL Irql;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBuildFilter: %p, %p\n", DeviceObject, Pdo);
+
+    Status = IoCreateDevice(DriverObject, 0, NULL, FILE_DEVICE_ACPI, FILE_AUTOGENERATED_DEVICE_NAME, FALSE, &DeviceObject);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBuildFilter: Status %X\n", Status);
+        return Status;
+    }
+
+    AttachedToDevice = IoAttachDeviceToDeviceStack(DeviceObject, Pdo);
+    if (!AttachedToDevice)
+    {
+        DPRINT1("ACPIBuildFilter: STATUS_INVALID_PARAMETER_3\n");
+        IoDeleteDevice(DeviceObject);
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    KeAcquireSpinLock(&AcpiDeviceTreeLock, &Irql);
+
+    DeviceObject->DeviceExtension = DeviceExtension;
+
+    DeviceExtension->DeviceObject = DeviceObject;
+    DeviceExtension->PhysicalDeviceObject = Pdo;
+    DeviceExtension->TargetDeviceObject = AttachedToDevice;
+
+    InterlockedIncrement(&DeviceExtension->ReferenceCount);
+
+    ACPIInternalUpdateFlags(DeviceExtension, 0x00000000000001FF, 1);
+    ACPIInternalUpdateFlags(DeviceExtension, 0x0000000000000040, 0);
+
+    DeviceExtension->PreviousState = DeviceExtension->DeviceState;
+    DeviceExtension->DeviceState = 0;
+    DeviceExtension->DispatchTable = &AcpiFilterIrpDispatch;
+
+    DeviceObject->StackSize = (AttachedToDevice->StackSize + 1);
+    DeviceObject->AlignmentRequirement = AttachedToDevice->AlignmentRequirement;
+
+    if (AttachedToDevice->Flags & 0x2000)
+        DeviceObject->Flags |= 0x2000;
+
+    if (AttachedToDevice->Flags & 0x10)
+        DeviceObject->Flags |= 0x10;
+
+    if (AttachedToDevice->Flags & 4)
+        DeviceObject->Flags |= 4;
+
+    KeReleaseSpinLock(&AcpiDeviceTreeLock, Irql);
+
+    DeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
 
     return STATUS_SUCCESS;
 }
@@ -6570,8 +7333,11 @@ ACPIDetectFilterDevices(
             {
                 if (PhysicalDeviceObject)
                 {
-                    DPRINT1("ACPIDetectFilterDevices: FIXME\n");
-                    ASSERT(FALSE);
+                    Status = ACPIBuildFilter(DeviceObject->DriverObject, ChildDeviceExtension, PhysicalDeviceObject);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        DPRINT1("ACPIDetectFilterDevices: Status %X\n", Status);
+                    }
                 }
             }
             else
@@ -7179,8 +7945,28 @@ ACPIBusIrpQueryRemoveOrStopDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT("ACPIBusIrpQueryRemoveOrStopDevice: %X\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if (DeviceExtension->Flags & 0x0000000000200000)
+    {
+        Status = STATUS_INVALID_DEVICE_REQUEST;
+    }
+    else
+    {
+        DeviceExtension->PreviousState = DeviceExtension->DeviceState;
+        DeviceExtension->DeviceState = 1;
+    }
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS
@@ -7199,8 +7985,20 @@ ACPIBusIrpCancelRemoveOrStopDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+
+    DPRINT("ACPIBusIrpCancelRemoveOrStopDevice: %X\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if (!(DeviceExtension->Flags & 0x0000000000200000) && DeviceExtension->DeviceState == 1)
+        DeviceExtension->DeviceState = DeviceExtension->PreviousState;
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    IoCompleteRequest(Irp, 0);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -7220,8 +8018,74 @@ ACPIBusIrpQueryBusRelations(
     _In_ PIRP Irp,
     _Out_ PDEVICE_RELATIONS* DeviceRelations)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PAMLI_NAME_SPACE_OBJECT NsObject;
+    NTSTATUS status;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+    DPRINT("ACPIBusIrpQueryBusRelations: %p\n", DeviceObject);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    NsObject = DeviceExtension->AcpiObject;
+    if (!NsObject)
+    {
+        DPRINT1("ACPIBusIrpQueryBusRelations: invalid NsObject %p\n", NsObject);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = ACPIDetectPdoDevices(DeviceObject, DeviceRelations);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBusIrpQueryBusRelations: enum Status %X\n", Status);
+        return Status;
+    }
+
+    status = ACPIDetectFilterDevices(DeviceObject, *DeviceRelations);
+    if (!NT_SUCCESS(status))
+    {
+        DPRINT1("ACPIBusIrpQueryBusRelations: status %X\n", status);
+    }
+
+    DPRINT("ACPIBusIrpQueryBusRelations: Status %X\n", Status);
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+ACPIBusIrpQueryTargetRelation(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _Out_ PDEVICE_RELATIONS* OutDeviceRelations)
+{
+    PDEVICE_RELATIONS DeviceRelations;
+    NTSTATUS Status;
+
+    DPRINT("ACPIBusIrpQueryBusRelations: %p\n", DeviceObject);
+
+    PAGED_CODE();
+    ASSERT(*OutDeviceRelations == NULL);
+
+    *OutDeviceRelations = DeviceRelations = ExAllocatePoolWithTag(NonPagedPool, sizeof(*DeviceRelations), 'IpcA');
+    if (!DeviceRelations)
+    {
+        DPRINT1("ACPIBusIrpQueryBusRelations: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = ObReferenceObjectByPointer(DeviceObject, 0, 0, 0);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIBusIrpQueryBusRelations: Status %X\n", Status);
+        ExFreePoolWithTag(*OutDeviceRelations, 'IpcA');
+        return Status;
+    }
+
+    (*OutDeviceRelations)->Count = 1;
+    (*OutDeviceRelations)->Objects[0] = DeviceObject;
+ 
+    return Status;
 }
 
 NTSTATUS
@@ -7252,8 +8116,7 @@ ACPIBusIrpQueryDeviceRelations(
             break;
 
         case TargetDeviceRelation:
-            DPRINT1("ACPIBusIrpQueryDeviceRelations: FIXME\n");
-            ASSERT(FALSE);
+            Status = ACPIBusIrpQueryTargetRelation(DeviceObject, Irp, &DeviceRelations);
             break;
 
         default:
@@ -7823,6 +8686,23 @@ Finish:
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+SmashInterfaceQuery(
+    _In_ PIRP Irp)
+{
+    GUID* InterfaceType;
+
+    DPRINT("SmashInterfaceQuery: %p\n", Irp);
+    PAGED_CODE();
+
+    InterfaceType = (GUID*)(IoGetCurrentIrpStackLocation(Irp))->Parameters.QueryInterface.InterfaceType;
+
+    RtlZeroMemory(InterfaceType, sizeof(*InterfaceType));
+
+    Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
+}
+
 NTSTATUS
 NTAPI
 ACPIBusIrpQueryInterface(
@@ -7885,11 +8765,7 @@ ACPIBusIrpQueryInterface(
         if (ResourceType == CmResourceTypeInterrupt)
         {
             if (IsPciBus(DeviceObject))
-            {
-                DPRINT1("ACPIBusIrpQueryInterface: FIXME\n");
-                ASSERT(FALSE);
-                //SmashInterfaceQuery(Irp);
-            }
+                SmashInterfaceQuery(Irp);
 
             Status = Irp->IoStatus.Status;
         }
@@ -7939,9 +8815,7 @@ ACPIBusIrpQueryInterface(
         {
             if (DeviceExtension->ParentExtension->DeviceObject)
             {
-                DPRINT1("ACPIBusIrpQueryInterface: FIXME\n");
-                ASSERT(FALSE);
-                Irp->IoStatus.Status = 0;//ACPIInternalSendSynchronousIrp(DeviceExtension->ParentExtension->DeviceObject, IoStack, 0);
+                Irp->IoStatus.Status = ACPIInternalSendSynchronousIrp(DeviceExtension->ParentExtension->DeviceObject, IoStack, 0);
             }
         }
 
@@ -7966,9 +8840,9 @@ ACPIBusIrpQueryInterface(
 
             goto Exit;
         }
-
-        Status = Irp->IoStatus.Status;
     }
+
+    Status = Irp->IoStatus.Status;
 
 Exit:
 
@@ -8269,6 +9143,106 @@ ACPISystemPowerUpdateWakeCapabilitiesForPDOs(
 
 NTSTATUS
 NTAPI
+ACPISystemPowerUpdateWakeCapabilitiesForFilters(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PDEVICE_CAPABILITIES Capabilities,
+    _In_ PDEVICE_CAPABILITIES OutCapabilities,
+    _In_ DEVICE_POWER_STATE* States,
+    _In_ ULONG* OutDeviceWakeBit,
+    _In_ SYSTEM_POWER_STATE* OutSystemWakeLevel,
+    _In_ DEVICE_POWER_STATE* OutDeviceWakeLevel,
+    _In_ DEVICE_POWER_STATE* OutWakeLevel)
+{
+    DEVICE_POWER_STATE DeviceWake;
+    DEVICE_POWER_STATE InDeviceWake;
+    SYSTEM_POWER_STATE SystemWake;
+    NTSTATUS Status;
+
+    DPRINT("ACPISystemPowerUpdateWakeCapabilitiesForFilters: %p\n", DeviceExtension);
+
+    DeviceWake = OutCapabilities->DeviceWake;
+    SystemWake = OutCapabilities->SystemWake;
+
+    if (OutCapabilities->WakeFromD0)
+        *OutDeviceWakeBit |= 0x02;
+
+    if (OutCapabilities->WakeFromD1)
+        *OutDeviceWakeBit |= 0x04;
+
+    if (OutCapabilities->WakeFromD2)
+        *OutDeviceWakeBit |= 0x08;
+
+    if (OutCapabilities->WakeFromD3)
+        *OutDeviceWakeBit |= 0x10;
+
+    if (OutCapabilities->DeviceWake && OutCapabilities->SystemWake)
+    {
+        DeviceWake = OutCapabilities->DeviceWake;
+        SystemWake = OutCapabilities->SystemWake;
+    }
+    else
+    {
+        DeviceWake = 0;
+        SystemWake = 0;
+    }
+
+    if (DeviceExtension->Flags & 0x0000000000010000)
+    {
+        DPRINT1("ACPISystemPowerUpdateWakeCapabilitiesForFilters: FIXME\n");
+        ASSERT(FALSE);
+        goto Exit;
+    }
+
+    Status = ACPISystemPowerGetSxD(DeviceExtension, SystemWake, &InDeviceWake);
+    if (NT_SUCCESS(Status))
+    {
+        for (; InDeviceWake > 0; InDeviceWake--)
+        {
+            if (*OutDeviceWakeBit & (1 << InDeviceWake))
+            {
+                DeviceWake = InDeviceWake;
+                break;
+            }
+        }
+    }
+
+    for (; SystemWake > 0; SystemWake--)
+    {
+        if (!(AcpiSupportedSystemStates & (1 << SystemWake)) || States[SystemWake] == 0)
+            continue;
+
+        if (States[SystemWake] <= DeviceWake)
+            break;
+
+        if (*OutDeviceWakeBit & (1 << States[SystemWake]))
+        {
+            DeviceWake = States[SystemWake];
+            break;
+        }
+    }
+
+    if (!SystemWake)
+    {
+        DeviceWake = 0;
+        *OutDeviceWakeBit = 0;
+    }
+
+Exit:
+
+    if (OutSystemWakeLevel)
+        *OutSystemWakeLevel = SystemWake;
+
+    if (OutDeviceWakeLevel)
+        *OutDeviceWakeLevel = DeviceWake;
+
+    if (OutWakeLevel)
+        *OutWakeLevel = DeviceWake;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 ACPISystemPowerUpdateWakeCapabilities(
      _In_ PDEVICE_EXTENSION DeviceExtension,
      _In_ PDEVICE_CAPABILITIES Capabilities,
@@ -8284,8 +9258,7 @@ ACPISystemPowerUpdateWakeCapabilities(
     if ((DeviceExtension->Flags & 0x0000000000000040) &&
         !(DeviceExtension->Flags & 0x0000000000000020))
     {
-        DPRINT1("ACPISystemPowerUpdateWakeCapabilities: FIXME\n");
-        ASSERT(FALSE);
+        return ACPISystemPowerUpdateWakeCapabilitiesForFilters(DeviceExtension, Capabilities, OutCapabilities, States, OutDeviceWakeBit, OutSystemWakeLevel, OutDeviceWakeLevel, OutWakeLevel);
     }
 
     if (OutWakeLevel)
@@ -8919,6 +9892,53 @@ PnpIoResourceListToCmResourceList(
 
 NTSTATUS
 NTAPI
+ACPIRangeFilterPICInterrupt(
+    _In_ PIO_RESOURCE_REQUIREMENTS_LIST IoResource)
+{
+    PIO_RESOURCE_LIST IoList;
+    ULONG ix;
+    ULONG jx;
+
+    DPRINT("ACPIRangeFilterPICInterrupt: %p\n", IoResource);
+
+    if (!IoResource)
+        return STATUS_SUCCESS;
+
+    IoList = IoResource->List;
+
+    for (ix = 0; ix < IoResource->AlternativeLists; ix++)
+    {
+        for (jx = 0; jx < IoList->Count; jx++)
+        {
+            if (IoList->Descriptors[jx].Type == CmResourceTypeInterrupt)
+            {
+                if (IoList->Descriptors[jx].u.Interrupt.MinimumVector == 2)
+                {
+                    if (IoList->Descriptors[jx].u.Interrupt.MaximumVector == 2)
+                        IoList->Descriptors[jx].Type = CmResourceTypeNull;
+                    else
+                        IoList->Descriptors[jx].u.Interrupt.MinimumVector++;
+                }
+                else if (IoList->Descriptors[jx].u.Interrupt.MaximumVector == 2)
+                {
+                    IoList->Descriptors[jx].u.Interrupt.MaximumVector--;
+                }
+                else if (IoList->Descriptors[jx].u.Interrupt.MinimumVector < 2 &&
+                         IoList->Descriptors[jx].u.Interrupt.MaximumVector > 2)
+                {
+                    IoList->Descriptors[jx].u.Interrupt.MinimumVector = 3;
+                }
+            }
+        }
+
+        IoList = Add2Ptr(IoList, (FIELD_OFFSET(IO_RESOURCE_LIST, Descriptors) + IoList->Count * sizeof(IO_RESOURCE_DESCRIPTOR)));
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 ACPIBusIrpQueryResources(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
@@ -9003,8 +10023,7 @@ ACPIBusIrpQueryResources(
     }
     else if (DeviceExtension->Flags & 0x0000000200000000)
     {
-        ASSERT(FALSE);
-        Status = 0;//ACPIRangeFilterPICInterrupt(IoResource);
+        Status = ACPIRangeFilterPICInterrupt(IoResource);
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("ACPIBusIrpQueryResources: Status %X\n", Status);
@@ -9668,6 +10687,86 @@ PnpiBiosPortToIoDescriptor(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS
+NTAPI
+PnpiBiosMemoryToIoDescriptor(
+    _In_ PACPI_RESOURCE_DATA_TYPE Data,
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG Index,
+    _In_ ULONG Param4)
+{
+    PIO_RESOURCE_DESCRIPTOR IoDesc;
+    ULONG MinimumAddress;
+    ULONG MaximumAddress;
+    ULONG Length;
+    ULONG Align;
+    ULONG Flags = 0;
+    UCHAR Tag;
+    NTSTATUS Status;
+
+    DPRINT("PnpiBiosMemoryToIoDescriptor: %p, %X\n", Data, Param4);
+
+    PAGED_CODE();
+    ASSERT(ResourceListArray != NULL);
+
+    if ((Data->Large.Data[0] & 1) == 0) // Writeable
+        Flags = 1;
+
+    Tag = Data->Small.Tag;
+
+    if (Tag == 0x81)
+    {
+        DPRINT1("PnpiBiosMemoryToIoDescriptor: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (Tag == 0x85)
+    {
+        DPRINT1("PnpiBiosMemoryToIoDescriptor: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else if (Tag == 0x86)
+    {
+        PACPI_FIXED_MEMORY32_DESCRIPTOR AcpiDesc = (PACPI_FIXED_MEMORY32_DESCRIPTOR)Data;
+
+        Length = AcpiDesc->RangeLength;
+        Align = 1;
+
+        MinimumAddress = AcpiDesc->BaseAddress;
+        MaximumAddress = (AcpiDesc->BaseAddress + Length - 1);
+    }
+    else
+    {
+        DPRINT1("PnpiBiosMemoryToIoDescriptor: FIXME\n");
+        ASSERT(FALSE);
+        return STATUS_SUCCESS;
+    }
+
+    if (!Length)
+        return STATUS_SUCCESS;
+
+    Status = PnpiUpdateResourceList(&ResourceListArray[Index], &IoDesc);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PnpiBiosMemoryToIoDescriptor: Status %X\n", Status);
+        return Status;
+    }
+
+    IoDesc->Type = CmResourceTypeMemory;
+    IoDesc->Flags = Flags;
+    IoDesc->ShareDisposition = 1;
+
+    IoDesc->u.Memory.MinimumAddress.u.LowPart = MinimumAddress;
+    IoDesc->u.Memory.MinimumAddress.u.HighPart = 0;
+
+    IoDesc->u.Memory.MaximumAddress.u.LowPart = MaximumAddress;
+    IoDesc->u.Memory.MaximumAddress.u.HighPart = 0;
+
+    IoDesc->u.Memory.Alignment = Align;
+    IoDesc->u.Memory.Length = Length;
+
+    return STATUS_SUCCESS;
+}
+
 VOID
 NTAPI
 PnpiClearAllocatedMemory(
@@ -9695,6 +10794,128 @@ PnpiClearAllocatedMemory(
     }
 
     ExFreePool(ResourceListArray);
+}
+
+NTSTATUS
+NTAPI
+PnpiBiosIrqToIoDescriptor(
+    _In_ PACPI_IRQ_DESCRIPTOR AcpiDesc,
+    _In_ USHORT Vector,
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG Index,
+    _In_ USHORT Count,
+    _In_ ULONG Param6)
+{
+    PIO_RESOURCE_DESCRIPTOR IoDesc;
+    NTSTATUS Status;
+
+    DPRINT("PnpiBiosIrqToIoDescriptor: %p, %X\n", ResourceListArray, Vector);
+
+    PAGED_CODE();
+    ASSERT(ResourceListArray != NULL);
+
+    Status = PnpiUpdateResourceList(&ResourceListArray[Index], &IoDesc);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PnpiBiosIrqToIoDescriptor: Status %X\n", Status);
+        return Status;
+    }
+
+    IoDesc->Option = (!Count ? 0 : 8);
+    IoDesc->Type = 2;
+    IoDesc->u.Interrupt.MinimumVector = Vector;
+    IoDesc->u.Interrupt.MaximumVector = Vector;
+
+    if (AcpiDesc->Length != 3)
+    {
+        IoDesc->Flags = 1;
+        IoDesc->ShareDisposition = 1;
+        return Status;
+    }
+
+    IoDesc->Flags = 0;
+
+    if (AcpiDesc->IntMode)
+    {
+        IoDesc->Flags |= 1;
+        IoDesc->u.ConfigData.Reserved2 = 0; // ? FIXME
+        IoDesc->ShareDisposition = (AcpiDesc->IntSharable + 1);
+    }
+
+    if (AcpiDesc->IntPolarity)
+    {
+        IoDesc->u.ConfigData.Reserved2 = 2; // ? FIXME
+        IoDesc->ShareDisposition = (AcpiDesc->IntSharable ? 3 : 1);
+    }
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI 
+PnpiBiosDmaToIoDescriptor(
+    _In_ PACPI_DMA_DESCRIPTOR Data,
+    _In_ UCHAR Channel,
+    _In_ PIO_RESOURCE_LIST* ResourceListArray,
+    _In_ ULONG Index,
+    _In_ USHORT Count,
+    _In_ ULONG Param6)
+{
+    PIO_RESOURCE_DESCRIPTOR IoDesc;
+    NTSTATUS Status;
+
+    DPRINT("PnpiBiosDmaToIoDescriptor: %p, %X\n", ResourceListArray, Channel);
+
+    PAGED_CODE();
+    ASSERT(ResourceListArray != NULL);
+
+    Status = PnpiUpdateResourceList(&ResourceListArray[Index], &IoDesc);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PnpiBiosDmaToIoDescriptor: Status %X\n", Status);
+        return Status;
+    }
+
+    IoDesc->Option = (Count == 0 ? 0 : 8);
+    IoDesc->Type = 4;
+    IoDesc->ShareDisposition = 1;
+    IoDesc->u.Dma.MinimumChannel = Channel;
+    IoDesc->u.Dma.MaximumChannel = Channel;
+
+    if (Data->TransferType)
+    {
+        if (Data->TransferType == 1)
+        {
+            IoDesc->Flags |= 4;
+        }
+        else if (Data->TransferType == 2)
+        {
+            IoDesc->Flags |= 1;
+        }
+        else
+        {
+            ASSERT(Data->TransferType == 3);
+            IoDesc->Flags |= 2;
+        }
+    }
+
+    if (Data->IsBusMaster)
+        IoDesc->Flags |= 8;
+
+    switch (Data->SpeedSupported)
+    {
+        case 1:
+            IoDesc->Flags |= 0x10;
+            break;
+        case 2:
+            IoDesc->Flags |= 0x20;
+            break;
+        case 3:
+            IoDesc->Flags |= 0x40;
+            break;
+    }
+
+    return Status;
 }
 
 NTSTATUS
@@ -9759,14 +10980,47 @@ PnpBiosResourcesToNtResources(
             {
                 case 0x04:
                 {
-                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
-                    ASSERT(FALSE);
+                    ULONG Count = 0;
+                    ULONG Vector = 0;
+                    USHORT IrqMask;
+
+                    for (IrqMask = ((PACPI_IRQ_DESCRIPTOR)Data)->IrqMask; IrqMask; IrqMask >>= 1)
+                    {
+                        if (Status < 0)
+                            break;
+
+                        if (IrqMask & 1)
+                            Status = PnpiBiosIrqToIoDescriptor(Data, Vector, ResourceListArray, Index, Count++, Param2);
+
+                        Vector++;
+                    }
+
+                    DPRINT("PnpBiosResourcesToNtResources: TAG_IRQ. Count %X, Status %X\n", Count, Status);
                     break;
                 }
                 case 0x05:
                 {
-                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
-                    ASSERT(FALSE);
+                    USHORT Count = 0;
+                    UCHAR Channel;
+                    UCHAR ChannelMask;
+
+                    ChannelMask = ((PACPI_DMA_DESCRIPTOR)Data)->ChannelMask;
+
+                    for (Channel = 0; ChannelMask; Channel++)
+                    {
+                        if (!NT_SUCCESS(Status))
+                            break;
+
+                        if (ChannelMask & 1)
+                        {
+                            Status = PnpiBiosDmaToIoDescriptor(Data, Channel, ResourceListArray, Index, Count, Param2);
+                            Count++;
+                        }
+
+                        ChannelMask >>= 1;
+                    }
+
+                    DPRINT("PnpBiosResourcesToNtResources: TAG_DMA. Count %X, Status %X\n", Count, Status);
                     break;
                 }
                 case 0x06:
@@ -9842,8 +11096,8 @@ PnpBiosResourcesToNtResources(
                 }
                 case 0x06:
                 {
-                    DPRINT1("PnpBiosResourcesToNtResources: FIXME! (TagName %X)\n", TagName);
-                    ASSERT(FALSE);
+                    Status = PnpiBiosMemoryToIoDescriptor(Data, ResourceListArray, Index, Param2);
+                    DPRINT("PnpBiosResourcesToNtResources: TAG_MEMORY = %X\n", Status);
                     break;
                 }
                 case 0x07:
@@ -10502,8 +11756,13 @@ ACPIBusIrpQueryResourceRequirements(
     }
     else if (DeviceExtension->Flags & 0x0000000200000000)
     {
-        DPRINT1("ACPIBusIrpQueryResourceRequirements: FIXME\n");
-        ASSERT(FALSE);
+        Status = ACPIRangeFilterPICInterrupt(IoResource);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("ACPIBusIrpQueryResourceRequirements: Status %X\n", Status);
+            ExFreePool(IoResource);
+            IoResource = NULL;
+        }
     }
 
     if (!NT_SUCCESS(Status))
@@ -10934,14 +12193,138 @@ ACPIDispatchPowerIrpSuccess(
 
 /* Fixed Button FUNCTIOS ****************************************************/
 
+VOID
+NTAPI
+ACPIButtonCancelRequest(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+}
+
+BOOLEAN
+NTAPI
+ACPIButtonCompletePendingIrps(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG Event)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return FALSE;
+}
+
+NTSTATUS
+NTAPI
+ACPIButtonEvent(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG Event,
+    _In_ ULONG Param3)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    KIRQL Irql;
+    BOOLEAN Result;
+
+    DPRINT("ACPIButtonEvent: %X, %X", DeviceObject, Event);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if ((Event & 0x80000003) && !(DeviceExtension->Button.Capabilities & 4))
+        PoSetSystemState(4);
+
+    if (!DeviceObject)
+        return STATUS_SUCCESS;
+
+    KeAcquireSpinLock(&DeviceExtension->Button.SpinLock, &Irql);
+
+    DeviceExtension->Button.Events |= Event;
+
+    if (DeviceExtension->Button.Events)
+    {
+        Result = ACPIButtonCompletePendingIrps(DeviceObject, DeviceExtension->Button.Events);
+        if (Result)
+            DeviceExtension->Button.Events = 0;
+    }
+
+    KeReleaseSpinLock(&DeviceExtension->Button.SpinLock, Irql);
+
+    return STATUS_PENDING;
+}
+
 NTSTATUS
 NTAPI
 ACPIButtonDeviceControl(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIO_STACK_LOCATION IoStack;
+    KIRQL Irql;
+    NTSTATUS Status;
+
+    DPRINT("ACPIButtonDeviceControl: %X, %X", DeviceObject, Irp);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    if (Irp->RequestorMode != KernelMode)
+        return ACPIDispatchIrpInvalid(DeviceObject, Irp);
+
+    if (IoStack->Parameters.DeviceIoControl.IoControlCode == 0x294140)
+    {
+        if (IoStack->Parameters.DeviceIoControl.OutputBufferLength == 4)
+        {
+            *(PULONG)Irp->AssociatedIrp.SystemBuffer = DeviceExtension->Button.Capabilities;
+            Irp->IoStatus.Information = 4;
+            Status = STATUS_SUCCESS;
+        }
+        else
+        {
+            DPRINT1("ACPIButtonDeviceControl: STATUS_INFO_LENGTH_MISMATCH");
+            Irp->IoStatus.Information = 0;
+            Status = STATUS_INFO_LENGTH_MISMATCH;
+        }
+
+        goto Exit;
+    }
+
+    if (IoStack->Parameters.DeviceIoControl.IoControlCode != 0x294144)
+    {
+        DPRINT1("ACPIButtonDeviceControl: STATUS_NOT_SUPPORTED (%X)", IoStack->Parameters.DeviceIoControl.IoControlCode);
+        Status = STATUS_NOT_SUPPORTED;
+        goto Exit;
+    }
+
+    if (IoStack->Parameters.DeviceIoControl.OutputBufferLength != 4)
+    {
+        DPRINT1("ACPIButtonDeviceControl: STATUS_INFO_LENGTH_MISMATCH");
+        Irp->IoStatus.Information = 0;
+        Status = STATUS_INFO_LENGTH_MISMATCH;
+        goto Exit;
+    }
+
+    KeAcquireSpinLock(&AcpiButtonLock, &Irql);
+    IoSetCancelRoutine(Irp, ACPIButtonCancelRequest);
+
+    if (!Irp->Cancel || !IoSetCancelRoutine(Irp, NULL))
+    {
+        IoMarkIrpPending(Irp);
+        InsertTailList(&AcpiButtonList, &Irp->Tail.Overlay.ListEntry);
+
+        KeReleaseSpinLock(&AcpiButtonLock, Irql);
+
+        return ACPIButtonEvent(DeviceObject, 0, 0);
+    }
+
+    KeReleaseSpinLock(&AcpiButtonLock, Irql);
+
+    Irp->IoStatus.Information = 0;
+    Status = STATUS_CANCELLED;
+
+Exit:
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, 0);
+
+    return Status;
 }
 
 NTSTATUS
@@ -11224,6 +12607,661 @@ ACPIProcessorDeviceControl(
 NTSTATUS
 NTAPI
 ACPIProcessorStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* Filter Device FUNCTIOS ***************************************************/
+
+NTSTATUS
+NTAPI
+AcpiRegisterPciRegionSupport(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    PBUS_INTERFACE_STANDARD Interface;
+    ULONG_PTR dummyInformation;
+    PCI_COMMON_CONFIG Buffer;
+    IO_STACK_LOCATION IoStack;
+    ULONG GetBytes;
+    NTSTATUS Status;
+
+    DPRINT("AcpiRegisterPciRegionSupport: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    RtlZeroMemory(&IoStack, sizeof(IO_STACK_LOCATION));
+
+    DeviceExtension = DeviceObject->DeviceExtension;
+
+    if (DeviceExtension->Filter.Interface)
+        return STATUS_SUCCESS;
+
+    Interface = ExAllocatePoolWithTag(NonPagedPool, sizeof(*Interface), 'FpcA');
+    if (!Interface)
+    {
+        DPRINT1("AcpiRegisterPciRegionSupport: STATUS_INSUFFICIENT_RESOURCES\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    DeviceObject = IoGetAttachedDeviceReference(DeviceExtension->TargetDeviceObject);
+
+    IoStack.MajorFunction = IRP_MJ_PNP;
+    IoStack.MinorFunction = IRP_MN_QUERY_INTERFACE;
+
+    IoStack.Parameters.QueryInterface.InterfaceType = &GUID_BUS_INTERFACE_STANDARD;
+    IoStack.Parameters.QueryInterface.Size = sizeof(*Interface);
+    IoStack.Parameters.QueryInterface.Version = 1;
+    IoStack.Parameters.QueryInterface.Interface = (PINTERFACE)Interface;
+    IoStack.Parameters.QueryInterface.InterfaceSpecificData = NULL;
+
+    Status = ACPIInternalSendSynchronousIrp(DeviceObject, &IoStack, &dummyInformation);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("AcpiRegisterPciRegionSupport: Status %X\n", Status);
+        ExFreePoolWithTag(Interface, 'FpcA');
+        goto Exit;
+    }
+
+    DeviceExtension->Filter.Interface = Interface;
+    DeviceExtension->Filter.Interface->InterfaceReference(DeviceExtension->Filter.Interface->Context);
+
+    GetBytes = Interface->GetBusData(Interface->Context, 0, &Buffer, 0, 0x40);
+    ASSERT(GetBytes != 0);
+
+    if ((Buffer.HeaderType & 0x7F) == 1 || (Buffer.HeaderType & 0x7F) == 2)
+    {
+        if (Buffer.u.type1.SecondaryBus)
+        {
+            DPRINT1("AcpiRegisterPciRegionSupport: FIXME\n");
+            ASSERT(FALSE);
+        }
+    }
+
+Exit:
+
+    ObDereferenceObject(DeviceObject);
+    return Status;
+}
+
+VOID
+NTAPI
+ACPIInitBusInterfaces(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+
+    DPRINT("ACPIInitBusInterfaces: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = DeviceObject->DeviceExtension;
+
+    if (IsPciBus(DeviceExtension->ParentExtension->DeviceObject))
+        AcpiRegisterPciRegionSupport(DeviceObject);
+}
+
+VOID
+NTAPI
+ACPIWakeInitializePciDevice(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    KIRQL Irql;
+
+    DPRINT("ACPIWakeInitializePciDevice: %p\n", DeviceObject);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if (DeviceExtension->Flags & 0x0000000000010000)
+    {
+        KeAcquireSpinLock(&AcpiPowerLock, &Irql);
+
+        if (PciPmeInterfaceInstantiated)
+        {
+            DPRINT1("ACPIWakeInitializePciDevice: FIXME\n");
+            ASSERT(FALSE);
+        }
+
+        KeReleaseSpinLock(&AcpiPowerLock, Irql);
+    }
+}
+
+NTSTATUS
+NTAPI
+ACPIInternalIsPci(
+    _In_ PDEVICE_OBJECT DeviceObject)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    ACPI_WAIT_CONTEXT WaitContext;
+    BOOLEAN isPciDevice;
+    NTSTATUS Status;
+
+    DPRINT("ACPIInternalIsPci: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    if ((DeviceExtension->Flags & 0x0000000002000000) || (DeviceExtension->Flags & 0x0000000100000000))
+    {
+        return STATUS_SUCCESS;
+    }
+
+    if (IsPciBus(DeviceExtension->DeviceObject))
+    {
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0000000002000000, FALSE);
+        return STATUS_SUCCESS;
+    }
+
+    WaitContext.Status = STATUS_NOT_FOUND;
+
+    KeInitializeEvent(&WaitContext.Event, SynchronizationEvent, FALSE);
+
+    Status = IsPciDevice(DeviceExtension->AcpiObject, AmlisuppCompletePassive, (PVOID)&WaitContext, &isPciDevice);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&WaitContext.Event, Executive, KernelMode, FALSE, NULL);
+        Status = WaitContext.Status;
+    }
+
+    if (NT_SUCCESS(Status) && isPciDevice)
+        ACPIInternalUpdateFlags(DeviceExtension, 0x0000000100000000, FALSE);
+
+    return Status;
+}
+
+VOID
+NTAPI
+ACPIFilterIrpStartDeviceWorker(
+    _In_ PVOID Context)
+{
+    PWORK_QUEUE_CONTEXT WorkContext = Context;
+    PDEVICE_EXTENSION DeviceExtension;
+    KEVENT Event;
+    NTSTATUS Status;
+
+    DPRINT("ACPIFilterIrpStartDeviceWorker: %p\n", WorkContext);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(WorkContext->DeviceObject);
+
+    KeInitializeEvent(&Event, SynchronizationEvent, FALSE);
+
+    IoCopyCurrentIrpStackLocationToNext(WorkContext->Irp);
+    IoSetCompletionRoutine(WorkContext->Irp, ACPIRootIrpCompleteRoutine, &Event, TRUE, TRUE, TRUE);
+
+    Status = IoCallDriver(DeviceExtension->TargetDeviceObject, WorkContext->Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = WorkContext->Irp->IoStatus.Status;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIFilterIrpStartDeviceWorker: Status %X\n", Status);
+        IoCompleteRequest(WorkContext->Irp, 0);
+        return;
+    }
+
+    ACPIInitBusInterfaces(WorkContext->DeviceObject);
+
+    Status = ACPIInternalIsPci(WorkContext->DeviceObject);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ACPIFilterIrpStartDeviceWorker: Status %X\n", Status);
+        IoCompleteRequest(WorkContext->Irp, 0);
+        return;
+    }
+
+    if (DeviceExtension->Flags & 0x0000000002000000)
+        EnableDisableRegions(DeviceExtension->AcpiObject, TRUE);
+
+    if (DeviceExtension->Flags & 0x0000000102000000)
+        ACPIWakeInitializePciDevice(WorkContext->DeviceObject);
+
+    IoCompleteRequest(WorkContext->Irp, 0);
+}
+
+VOID
+NTAPI
+ACPIFilterIrpStartDeviceCompletion(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PVOID Context,
+    _In_ NTSTATUS InStatus)
+{
+    PIRP Irp = Context;
+    PWORK_QUEUE_CONTEXT WorkContext;
+
+    DPRINT("ACPIFilterIrpStartDeviceCompletion: %p, %p\n", DeviceExtension, Context);
+
+    Irp->IoStatus.Status = InStatus;
+    WorkContext = &DeviceExtension->Filter.WorkContext;
+
+    if (!NT_SUCCESS(InStatus))
+    {
+        DPRINT1("ACPIFilterIrpStartDeviceCompletion: InStatus %X\n", InStatus);
+        IoCompleteRequest(Irp, 0);
+        return;
+    }
+
+    DeviceExtension->DeviceState = 2;
+
+    ExInitializeWorkItem(&WorkContext->Item, ACPIFilterIrpStartDeviceWorker, WorkContext);
+
+    WorkContext->DeviceObject = DeviceExtension->DeviceObject;
+    WorkContext->Irp = Irp;
+
+    ExQueueWorkItem(&WorkContext->Item, DelayedWorkQueue);
+}
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpStartDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    PIO_STACK_LOCATION IoStack;
+    NTSTATUS Status;
+
+    DPRINT("ACPIFilterIrpStartDevice: %p, %p\n", DeviceObject, Irp);
+    PAGED_CODE();
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    Status = ACPIInitStartDevice(DeviceObject, IoStack->Parameters.StartDevice.AllocatedResources, ACPIFilterIrpStartDeviceCompletion, Irp, Irp);
+    if (Status >= 0)
+        Status = 0x103;
+
+    return Status;
+}
+
+/* Filter PNP FUNCTIOS ******************************************************/
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpRemoveDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpStopDevice(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpQueryDeviceRelations(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    PDEVICE_RELATIONS OutDeviceRelation;
+    PIO_STACK_LOCATION IoStack;
+    KEVENT Event;
+    BOOLEAN IsBusRelation = FALSE;
+    NTSTATUS Status;
+
+    DPRINT("ACPIFilterIrpQueryDeviceRelations: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    if (!NT_SUCCESS(Irp->IoStatus.Status))
+        OutDeviceRelation = NULL;
+    else
+        OutDeviceRelation = (PVOID)Irp->IoStatus.Information;
+
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    if (IoStack->Parameters.QueryDeviceRelations.Type == 0)
+    {
+        IsBusRelation = TRUE;
+        Status = ACPIRootIrpQueryBusRelations(DeviceObject, Irp, &OutDeviceRelation);
+    }
+    else if (IoStack->Parameters.QueryDeviceRelations.Type == 1)
+    {
+        DPRINT("ACPIFilterIrpQueryDeviceRelations: FIXME\n");
+        ASSERT(FALSE);
+    }
+    else
+    {
+        Status = STATUS_NOT_SUPPORTED;
+    }
+
+    if (Status != STATUS_NOT_SUPPORTED)
+        Irp->IoStatus.Status = Status;
+
+    DPRINT("ACPIFilterIrpQueryDeviceRelations: %X\n", Status);
+
+    if (NT_SUCCESS(Status))
+    {
+        Irp->IoStatus.Information = (ULONG_PTR)OutDeviceRelation;
+        goto Exit;
+    }
+
+    if (Status != STATUS_NOT_SUPPORTED)
+        goto Exit;
+
+    KeInitializeEvent(&Event, SynchronizationEvent, 0);
+
+    IoCopyCurrentIrpStackLocationToNext( Irp );
+    IoSetCompletionRoutine(Irp, ACPIRootIrpCompleteRoutine, &Event, TRUE, TRUE, TRUE);
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+
+    Status = IoCallDriver(DeviceExtension->TargetDeviceObject, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = Irp->IoStatus.Status;
+    }
+
+    if (!NT_SUCCESS(Status) || !IsBusRelation)
+    {
+        DPRINT1("ACPIFilterIrpQueryDeviceRelations: %X\n", Status);
+    }
+
+Exit:
+
+    IoCompleteRequest(Irp, 0);
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpQueryInterface(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    PIO_STACK_LOCATION IoStack;
+    UNICODE_STRING GuidString;
+    ULONG_PTR InterfaceSpecificData;
+    ULONG InterfaceSize;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+    InterfaceSpecificData = (ULONG_PTR)IoStack->Parameters.QueryInterface.InterfaceSpecificData;
+
+    Status = RtlStringFromGUID(IoStack->Parameters.QueryInterface.InterfaceType, &GuidString);
+    if (NT_SUCCESS(Status))
+    {
+        DPRINT("ACPIRootIrpQueryInterface: %X, '%wZ'\n", InterfaceSpecificData, &GuidString);
+        RtlFreeUnicodeString(&GuidString);
+    }
+
+    if (IoStack->Parameters.QueryInterface.InterfaceType == &GUID_ACPI_INTERFACE_STANDARD ||
+        (RtlCompareMemory(IoStack->Parameters.QueryInterface.InterfaceType, &GUID_ACPI_INTERFACE_STANDARD, sizeof(GUID)) == sizeof(GUID)))
+    {
+        if (IoStack->Parameters.QueryInterface.Size <= sizeof(ACPI_INTERFACE_STANDARD))
+            InterfaceSize = IoStack->Parameters.QueryInterface.Size;
+        else
+            InterfaceSize = sizeof(ACPI_INTERFACE_STANDARD);
+
+        RtlCopyMemory(IoStack->Parameters.QueryInterface.Interface, &ACPIInterfaceTable, InterfaceSize);
+
+        if (InterfaceSize > 8) // FIXME
+            IoStack->Parameters.QueryInterface.Interface->Context = DeviceObject;
+
+        Irp->IoStatus.Status = 0;
+    }
+    else if (IoStack->Parameters.QueryInterface.InterfaceType == &GUID_TRANSLATOR_INTERFACE_STANDARD ||
+             (RtlCompareMemory(IoStack->Parameters.QueryInterface.InterfaceType, &GUID_TRANSLATOR_INTERFACE_STANDARD, sizeof(GUID)) == sizeof(GUID)))
+    {
+        if (InterfaceSpecificData == 2 && IsPciBus(DeviceObject))
+            SmashInterfaceQuery(Irp);
+    }
+
+    return ACPIDispatchForwardIrp(DeviceObject, Irp);
+}
+
+VOID
+NTAPI
+ACPIIrpCompletionRoutineWorker(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PVOID Context)
+{
+    PACPI_FILTER_COMPLETION_CONTEXT CompletionContext = Context;
+    PACPI_IRP_COMPLETION_ROUTINE CallBack = CompletionContext->CallBack;
+    PIRP Irp = CompletionContext->Irp;
+    PDEVICE_EXTENSION DeviceExtension;
+    NTSTATUS Status = STATUS_NOT_SUPPORTED;
+
+    DPRINT("ACPIIrpCompletionRoutineWorker: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    if (NT_SUCCESS(Irp->IoStatus.Status))
+    {
+        if (CompletionContext->Param5)
+            Status = CallBack(DeviceObject, Irp, CompletionContext->CallBackContext, TRUE);
+    }
+    else if (Irp->IoStatus.Status == STATUS_NOT_SUPPORTED)
+    {
+        if (CompletionContext->Param6)
+            Status = CallBack(DeviceObject, Irp, CompletionContext->CallBackContext, TRUE);
+    }
+    else if (CompletionContext->Param7)
+    {
+        Status = CallBack(DeviceObject, Irp, CompletionContext->CallBackContext, TRUE);
+    }
+    else if (Irp->Cancel && CompletionContext->Param8)
+    {
+        Status = CallBack(DeviceObject, Irp, CompletionContext->CallBackContext, TRUE);
+    }
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    ACPIInternalDecrementIrpReferenceCount(DeviceExtension);
+
+    IoFreeWorkItem(CompletionContext->WorkItem);
+    ExFreePool(CompletionContext);
+
+    if (Status == STATUS_PENDING)
+        return;
+
+    if (Status != STATUS_NOT_SUPPORTED)
+        Irp->IoStatus.Status = Status;
+
+    IoCompleteRequest(Irp, 0);
+}
+
+NTSTATUS
+NTAPI
+ACPIIrpGenericFilterCompletionHandler(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PVOID Context)
+{
+    PACPI_FILTER_COMPLETION_CONTEXT CompletionContext = Context;
+
+    DPRINT("ACPIIrpGenericFilterCompletionHandler: %p, %p\n", DeviceObject, Irp);
+
+    if (Irp->PendingReturned)
+        IoMarkIrpPending(Irp);
+
+    if (!KeGetCurrentIrql())
+    {
+        ACPIIrpCompletionRoutineWorker(DeviceObject, Context);
+    }
+    else
+    {
+        IoQueueWorkItem(CompletionContext->WorkItem, ACPIIrpCompletionRoutineWorker, DelayedWorkQueue, CompletionContext);
+    }
+
+    return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+NTSTATUS
+NTAPI
+ACPIIrpSetPagableCompletionRoutineAndForward(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp,
+    _In_ PVOID CallBack,
+    _In_ PVOID CallBackContext,
+    _In_ BOOLEAN Param5,
+    _In_ BOOLEAN Param6,
+    _In_ BOOLEAN Param7,
+    _In_ BOOLEAN Param8)
+{
+    PACPI_FILTER_COMPLETION_CONTEXT CompletionContext;
+    PDEVICE_EXTENSION DeviceExtension;
+    PIO_WORKITEM WorkItem;
+
+    DPRINT("ACPIIrpSetPagableCompletionRoutineAndForward: %p, %p\n", DeviceObject, Irp);
+    PAGED_CODE();
+
+    CompletionContext = ExAllocatePoolWithTag(NonPagedPool, sizeof(ACPI_FILTER_COMPLETION_CONTEXT), 'ipcA');
+    if (!CompletionContext)
+    {
+        DPRINT1("ACPIIrpSetPagableCompletionRoutineAndForward: STATUS_INSUFFICIENT_RESOURCES\n");
+        Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+        IoCompleteRequest(Irp, 0);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    WorkItem = IoAllocateWorkItem(DeviceObject);
+    if (!WorkItem)
+    {
+        DPRINT1("ACPIIrpSetPagableCompletionRoutineAndForward: STATUS_INSUFFICIENT_RESOURCES\n");
+        ExFreePoolWithTag(CompletionContext, 'ipcA');
+        Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+        IoCompleteRequest(Irp, 0);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    CompletionContext->DeviceObject = DeviceObject;
+    CompletionContext->Irp = Irp;
+    CompletionContext->WorkItem = WorkItem;
+    CompletionContext->CallBack = CallBack;
+    CompletionContext->CallBackContext = CallBackContext;
+    CompletionContext->Param5 = Param5;
+    CompletionContext->Param6 = Param6;
+    CompletionContext->Param7 = Param7;
+    CompletionContext->Param8 = Param8;
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    InterlockedIncrement(&DeviceExtension->OutstandingIrpCount);
+
+    IoCopyCurrentIrpStackLocationToNext(Irp);
+    IoSetCompletionRoutine(Irp, ACPIIrpGenericFilterCompletionHandler, CompletionContext, TRUE, TRUE, TRUE);
+
+    IoMarkIrpPending(Irp);
+
+    IoCallDriver(DeviceExtension->TargetDeviceObject, Irp);
+
+    return STATUS_PENDING;
+}
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpQueryCapabilities(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    DPRINT("ACPIFilterIrpQueryCapabilities: %p\n", DeviceObject);
+    PAGED_CODE();
+    return ACPIIrpSetPagableCompletionRoutineAndForward(DeviceObject, Irp, ACPIBusAndFilterIrpQueryCapabilities, NULL, TRUE, TRUE, FALSE, FALSE);
+}
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpEject(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpSetLock(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpQueryId(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    PDEVICE_EXTENSION DeviceExtension;
+    PIO_STACK_LOCATION IoStack;
+    BUS_QUERY_ID_TYPE IdType;
+
+    DPRINT("ACPIFilterIrpQueryId: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    DeviceExtension = ACPIInternalGetDeviceExtension(DeviceObject);
+    IoStack = Irp->Tail.Overlay.CurrentStackLocation;
+
+    if (!(DeviceExtension->Flags & 0x0000004000000000))
+        return ACPIDispatchForwardIrp(DeviceObject, Irp);
+
+    IdType = IoStack->Parameters.QueryId.IdType;
+
+    if ((IdType != 0 && IdType != 2 && IdType != 1))
+        return ACPIDispatchForwardIrp(DeviceObject, Irp);
+
+    return ACPIBusIrpQueryId(DeviceObject, Irp);
+}
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpQueryPnpDeviceState(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    DPRINT("ACPIFilterIrpQueryPnpDeviceState: %p\n", DeviceObject);
+    PAGED_CODE();
+
+    return ACPIIrpSetPagableCompletionRoutineAndForward(DeviceObject,
+                                                        Irp,
+                                                        ACPIBusAndFilterIrpQueryPnpDeviceState,
+                                                        NULL,
+                                                        TRUE,
+                                                        TRUE,
+                                                        FALSE,
+                                                        FALSE);
+}
+NTSTATUS
+NTAPI
+ACPIFilterIrpSurpriseRemoval(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/* Filter Power FUNCTIOS ****************************************************/
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpSetPower(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp)
+{
+    UNIMPLEMENTED_DBGBREAK();
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+NTAPI
+ACPIFilterIrpQueryPower(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
@@ -11727,12 +13765,80 @@ ACPIInternalRegisterPowerCallBack(
 
 VOID
 NTAPI
+ACPIWakeRemoveDevicesAndUpdate(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ PLIST_ENTRY InList)
+{
+    ULONG ix;
+
+    DPRINT("ACPIWakeRemoveDevicesAndUpdate: %X, %X", DeviceExtension, InList);
+
+    ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
+
+    KeAcquireSpinLockAtDpcLevel(&GpeTableLock);
+
+    for (ix = 0; ix < AcpiInformation->GpeSize; ix++)
+    {
+        GpeCurEnable[ix] &= (GpeSpecialHandler[ix] | ~(GpeWakeEnable[ix] | GpeWakeHandler[ix]));
+    }
+
+    RtlZeroMemory(GpeWakeEnable, AcpiInformation->GpeSize * sizeof(UCHAR));
+
+    if (!IsListEmpty(&AcpiPowerWaitWakeList))
+    {
+        DPRINT1("ACPIWakeRemoveDevicesAndUpdate: FIXME");
+        ASSERT(FALSE);
+    }
+
+    for (ix = 0; ix < AcpiInformation->GpeSize; ix++)
+    {
+        if (AcpiPowerLeavingS0)
+            GpeCurEnable[ix] &= ~GpeWakeEnable[ix];
+        else
+            GpeCurEnable[ix] |= (GpeWakeEnable[ix] & ~GpePending[ix]);
+
+        ACPIWriteGpeEnableRegister(ix, GpeCurEnable[ix]);
+    }
+
+    KeReleaseSpinLockFromDpcLevel(&GpeTableLock);
+}
+
+VOID
+NTAPI
 ACPIRootPowerCallBack(
     _In_ PVOID CallbackContext,
     _In_ PVOID Argument1,
     _In_ PVOID Argument2)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    KIRQL Irql;
+
+    DPRINT("ACPIRootPowerCallBack: %X, %X", Argument1, Argument2);
+
+    if ((ULONG_PTR)Argument1 != 3)
+        return;
+
+    KeAcquireSpinLock(&GpeTableLock, &Irql);
+    AcpiPowerLeavingS0 = ((ULONG_PTR)Argument2 != 1);
+    KeReleaseSpinLock(&GpeTableLock, Irql);
+
+    IoAcquireCancelSpinLock(&Irql);
+
+    KeAcquireSpinLockAtDpcLevel(&AcpiPowerLock);
+    ACPIWakeRemoveDevicesAndUpdate(NULL, NULL);
+    KeReleaseSpinLockFromDpcLevel(&AcpiPowerLock);
+
+    IoReleaseCancelSpinLock(Irql);
+
+    if (!Argument2)
+    {
+        KeAcquireSpinLock(&gdwGContextSpinLock, &Irql);
+        gdwcCTObjsMax = 0;
+        KeReleaseSpinLock(&gdwGContextSpinLock, Irql);
+        return;
+    }
+
+    DPRINT1("ACPIRootPowerCallBack: FIXME");
+    ASSERT(FALSE);
 }
 
 NTSTATUS
@@ -12129,8 +14235,10 @@ ACPIDispatchIrpSuccess(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    IoCompleteRequest(Irp, 0);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -12149,7 +14257,8 @@ ACPIDispatchIrpInvalid(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    Irp->IoStatus.Status = STATUS_NOT_IMPLEMENTED;
+    IoCompleteRequest(Irp, 0);
     return STATUS_NOT_IMPLEMENTED;
 }
 

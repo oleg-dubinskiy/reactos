@@ -364,7 +364,8 @@ IopDmaScoreRequirement(
 NTSTATUS
 NTAPI
 IopDmaOverrideConflict(
-    _In_ PARBITER_INSTANCE Arbiter)
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PVOID Param2)
 {
     PAGED_CODE();
 

@@ -2094,16 +2094,16 @@ AccessBaseField(
 
     Stage = (FieldDesc->FieldFlags & 0xF);
 
-    if (Stage >= 1 || Stage <= 3)
+    if (Stage >= 1 && Stage <= 3)
         AccSize = (1 << (Stage - 1));
     else
         AccSize = 1;
 
     NumBits = FieldDesc->NumBits;
 
-    DataSize = ((NumBits < 0x20) ?  (1 << NumBits) : 0);
+    DataSize = ((NumBits < 0x20) ? (1 << NumBits) : 0);
     DataMask = ((DataSize - 1) << FieldDesc->StartBitPos);
-    AccMask = ((8 * AccSize) < 0x20 ? ((1 << (8 * AccSize)) + 1) : 0xFFFFFFFF);
+    AccMask = ((8 * AccSize) < 0x20 ? ((1 << (8 * AccSize)) - 1) : 0xFFFFFFFF);
 
     if ((FieldDesc->FieldFlags & 0x60) || !(~DataMask & AccMask))
         IsReadBeforeWrite = FALSE;
@@ -2115,8 +2115,8 @@ AccessBaseField(
     if (!IsRead && (FieldDesc->FieldFlags & 0x60) == 0x20)
         *OutData |= ~DataMask;
 
-    Addr = Add2Ptr(BaseObj->ObjData.DataBuff, FieldDesc->ByteOffset);
     OpRegionObj = BaseObj->ObjData.DataBuff;
+    Addr = (PVOID)(OpRegionObj->Offset + FieldDesc->ByteOffset);
 
     if (OpRegionObj->RegionSpace == 0)
     {
@@ -5688,8 +5688,20 @@ AMLIEvalPackageElement(
 
     if (BaseObject->ObjData.DataType == 8)//Method
     {
-        DPRINT1("AMLIEvalPackageElement: FIXME\n");
-        ASSERT(FALSE);
+        Status = SyncEvalObject(BaseObject, &data, 0, NULL);
+        if (Status == STATUS_SUCCESS)
+        {
+            if (data.DataType == 4)
+            {
+                PackageData = &data;
+            }
+            else
+            {
+                DPRINT1("AMLIEvalPackageElement: result object of the method is not package '%s'\n", GetObjectTypeName(data.DataType));
+                ASSERT(FALSE);
+                Status = STATUS_ACPI_INVALID_OBJTYPE;
+            }
+        }
     }
     else if (BaseObject->ObjData.DataType == 4)
     {
@@ -5728,6 +5740,59 @@ Exit:
     giIndent--;
 
     DPRINT("AMLIEvalPackageElement: ret %X\n", Status);
+
+    return Status;
+}
+
+NTSTATUS
+__cdecl
+AMLIEvalPkgDataElement(
+    _In_ PAMLI_OBJECT_DATA Data,
+    _In_ ULONG Index,
+    _In_ PAMLI_OBJECT_DATA DataResult)
+{
+    NTSTATUS Status;
+
+    DPRINT("AMLIEvalPkgDataElement: %X, %X, %X\n", Data, Index, DataResult);
+
+    giIndent++;
+
+    ASSERT(DataResult != NULL);
+    RtlZeroMemory(DataResult, sizeof(*DataResult));
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIEvalPkgDataElement: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    if (Data->DataType == 4)
+    {
+        Status = EvalPackageElement(Data->DataBuff, Index, DataResult);
+
+        if (Status == 0x8004)
+        {
+            Status = 0x103;
+        }
+        else if (Status == STATUS_SUCCESS && DataResult->DataBuff && (DataResult->Flags & 1))
+        {
+            ASSERT((DataResult->DataBuff == NULL) || !(DataResult->Flags & 1));//DATAF_BUFF_ALIAS
+        }
+    }
+    else
+    {
+        DPRINT1("AMLIEvalPkgDataElement: object is not a package (ObjType=%s)", GetObjectTypeName(Data->DataType));
+        ASSERT(FALSE);
+        Status = STATUS_ACPI_INVALID_OBJTYPE;
+    }
+
+    if (g_AmliHookEnabled)
+    {
+        DPRINT1("AMLIEvalPkgDataElement: FIXME\n");
+        ASSERT(FALSE);
+    }
+
+    giIndent--;
 
     return Status;
 }
@@ -6493,7 +6558,8 @@ HeapAlloc(
             break;
         }
 
-        HeapPrev = heap = heap->HeapNext;
+        HeapPrev = heap;
+        heap = heap->HeapNext;
     }
 
     if (!Header)

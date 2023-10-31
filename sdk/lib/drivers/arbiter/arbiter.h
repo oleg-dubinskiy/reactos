@@ -126,7 +126,11 @@ typedef NTSTATUS
 /*  Not correct yet, FIXME! */
 typedef NTSTATUS
 (NTAPI * PARB_QUERY_CONFLICT)(
-    _In_ PARBITER_INSTANCE Arbiter
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIO_RESOURCE_DESCRIPTOR ConflictingResource,
+    _Out_ ULONG* OutConflictCount,
+    _Out_ PARBITER_CONFLICT_INFO* OutConflicts
 );
 
 /*  Not correct yet, FIXME! */
@@ -180,7 +184,8 @@ typedef VOID
 /*  Not correct yet, FIXME! */
 typedef NTSTATUS
 (NTAPI * PARB_OVERRIDE_CONFLICT)(
-    _In_ PARBITER_INSTANCE Arbiter
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PVOID Param2
 );
 
 typedef struct _ARBITER_INSTANCE
@@ -254,6 +259,13 @@ NTAPI
 ArbFindSuitableRange(
     _In_ PARBITER_INSTANCE Arbiter,
     _Inout_ PARBITER_ALLOCATION_STATE ArbState
+);
+
+NTSTATUS
+NTAPI
+ArbBootAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PLIST_ENTRY ArbitrationList
 );
 
 /* EOF */
