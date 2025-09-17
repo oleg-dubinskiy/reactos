@@ -103,7 +103,6 @@ GetSOFTplg(
 		"Evaluted %s successfully\n", inputBuffer.MethodName);
 
 	if (outputBuffer->Count % 2) {
-		status = STATUS_ACPI_INVALID_DATA;
 		goto Exit;
 	}
 

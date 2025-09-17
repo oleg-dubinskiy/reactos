@@ -191,7 +191,7 @@ NTSTATUS NHLTQueryTableAddress(_In_ WDFDEVICE FxDevice, UINT64 *nhltAddr, UINT64
 
 	PACPI_EVAL_OUTPUT_BUFFER outputBuffer = (PACPI_EVAL_OUTPUT_BUFFER)WdfMemoryGetBuffer(outputBufferMemory, NULL);
 	if (outputBuffer->Count < 1) {
-		return STATUS_INVALID_DEVICE_OBJECT_PARAMETER;
+		status = STATUS_INVALID_DEVICE_OBJECT_PARAMETER;
 		goto end;
 	}
 
