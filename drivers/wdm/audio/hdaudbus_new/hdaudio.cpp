@@ -564,7 +564,7 @@ NTSTATUS HDA_AllocateDmaBufferWithNotification(
 		UINT32 offset = allocOffset;
 		while (halfSize > 0) {
 			if (numBlocks > HDA_MAX_BDL_ENTRIES) {
-				DbgPrint("Too many BDL entries!\n");
+				SklHdAudBusPrint(DEBUG_LEVEL_ERROR, DBG_IOCTL, "%s Too many BDL entries!\n", __func__);
 				numBlocks = HDA_MAX_BDL_ENTRIES;
 				break;
 			}
@@ -596,7 +596,7 @@ NTSTATUS HDA_AllocateDmaBufferWithNotification(
 
 		while (size > 0) {
 			if (numBlocks > HDA_MAX_BDL_ENTRIES) {
-				DbgPrint("Too many BDL entries!\n");
+				SklHdAudBusPrint(DEBUG_LEVEL_ERROR, DBG_IOCTL, "%s Too many BDL entries!\n", __func__);
 				numBlocks = HDA_MAX_BDL_ENTRIES;
 				break;
 			}
@@ -889,10 +889,10 @@ HDA_SetupDmaEngineWithBdl(
 	hdac_stream_reset(stream);
 	hdac_stream_setup(stream);
 
+	WdfInterruptReleaseLock(devData->FdoContext->Interrupt);
+
 	*StreamId = stream->streamTag;
 	*FifoSize = stream->fifoSize;
-
-	WdfInterruptReleaseLock(devData->FdoContext->Interrupt);
 
 	return STATUS_SUCCESS;
 }

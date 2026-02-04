@@ -298,7 +298,7 @@ Fdo_EvtDevicePrepareHardware(
                 "HDA capability ID: 0x%x\n",
                 (cur_cap & HDA_CAP_HDR_ID_MASK) >> HDA_CAP_HDR_ID_OFF);
 
-            if (cur_cap == -1) {
+            if (cur_cap == (unsigned int)-1) {
                 SklHdAudBusPrint(DEBUG_LEVEL_INFO, DBG_INIT,
                     "Invalid capability reg read\n");
                 break;
@@ -368,19 +368,20 @@ Fdo_EvtDevicePrepareHardware(
     PHYSICAL_ADDRESS maxAddr;
     maxAddr.QuadPart = fdoCtx->is64BitOK ? MAXULONG64 : MAXULONG32;
 
-    fdoCtx->posbuf = MmAllocateContiguousMemory(PAGE_SIZE, maxAddr);
+    ULONG size = fdoCtx->is64BitOK ? PAGE_SIZE * 2 : PAGE_SIZE;
+    fdoCtx->posbuf = MmAllocateContiguousMemory(size, maxAddr);
     if (!fdoCtx->posbuf) {
         return STATUS_NO_MEMORY;
     }
 
-    RtlZeroMemory(fdoCtx->posbuf, PAGE_SIZE);
+    RtlZeroMemory(fdoCtx->posbuf, size);
 
-    fdoCtx->rb = (UINT8 *)MmAllocateContiguousMemory(PAGE_SIZE, maxAddr);
+    fdoCtx->rb = (UINT8 *)MmAllocateContiguousMemory(size, maxAddr);
     if (!fdoCtx->rb) {
         return STATUS_NO_MEMORY;
     }
 
-    RtlZeroMemory(fdoCtx->rb, PAGE_SIZE);
+    RtlZeroMemory(fdoCtx->rb, size);
 
     //Init Streams
     {
