@@ -554,6 +554,9 @@ MMixerSetControlDetails(
         case MIXERCONTROL_CONTROLTYPE_MUX:
             Status = MMixerSetGetMuxControlDetails(MixerContext, MixerInfo, NodeId, TRUE, Flags, MixerControl, MixerControlDetails, MixerLine);
             break;
+        case MIXERCONTROL_CONTROLTYPE_ONOFF:
+            Status = MMixerSetGetControlTypeOnOff(MixerContext, MixerInfo, NodeId, MixerControl, MixerLine->Line.dwLineID, MixerControlDetails, MixerLine, TRUE);
+            break;
         default:
             Status = MM_STATUS_NOT_IMPLEMENTED;
     }
@@ -618,7 +621,7 @@ MMixerGetControlDetails(
             Status = MMixerSetGetVolumeControlDetails(MixerContext, MixerInfo, NodeId, FALSE, MixerControl, MixerControlDetails, MixerLine);
             break;
         case MIXERCONTROL_CONTROLTYPE_ONOFF:
-            DPRINT1("Not Implemented MIXERCONTROL_CONTROLTYPE_ONOFF\n");
+            Status = MMixerSetGetControlTypeOnOff(MixerContext, MixerInfo, NodeId, MixerControl, MixerLine->Line.dwLineID, MixerControlDetails, MixerLine, FALSE);
             break;
         case MIXERCONTROL_CONTROLTYPE_MUX:
             Status = MMixerSetGetMuxControlDetails(MixerContext, MixerInfo, NodeId, FALSE, Flags, MixerControl, MixerControlDetails, MixerLine);
