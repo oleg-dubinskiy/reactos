@@ -426,9 +426,10 @@ HDRVR WINAPI OpenDriver(LPCWSTR lpDriverName, LPCWSTR lpSectionName, LPARAM lPar
     }
 
     /* Attempt to locate the driver filename in the registry */
-    if ( DRIVER_GetLibName(lpDriverName, lsn, libName, sizeof(libName)) )
+    //if ( DRIVER_GetLibName(lpDriverName, lsn, libName, sizeof(libName)) )
     {
         /* Now we have the filename, we can try and load it */
+        lstrcpynW(libName, lpDriverName, sizeof(libName) / sizeof(WCHAR));
         if ( (lpDrv = DRIVER_TryOpenDriver32(libName, lParam)) )
             goto the_end;
     }
