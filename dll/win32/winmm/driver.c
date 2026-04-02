@@ -248,8 +248,8 @@ BOOL	DRIVER_GetLibName(LPCWSTR keyName, LPCWSTR sectName, LPWSTR buf, int sz)
 	    if (lRet == ERROR_SUCCESS)
         {
             /* Retrieve the desired value - this is the filename of the lib */
-            if (keyName == L"vfwwdm32.dll")
-                keyName = L"MSVideo8";
+            if (wcscmp(keyName, L"vfwwdm32.dll"))
+                wcscpy(keyName, L"MSVideo8");
             bufLen = sz;
 	        lRet = RegQueryValueExW(hSecKey, keyName, 0, KEY_READ, (void*)buf, &bufLen);
 	        RegCloseKey( hSecKey );
