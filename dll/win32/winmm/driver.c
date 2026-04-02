@@ -248,8 +248,6 @@ BOOL	DRIVER_GetLibName(LPCWSTR keyName, LPCWSTR sectName, LPWSTR buf, int sz)
 	    if (lRet == ERROR_SUCCESS)
         {
             /* Retrieve the desired value - this is the filename of the lib */
-            if (wcscmp(keyName, L"vfwwdm32.dll"))
-                wcscpy(keyName, L"MSVideo8");
             bufLen = sz;
 	        lRet = RegQueryValueExW(hSecKey, keyName, 0, KEY_READ, (void*)buf, &bufLen);
 	        RegCloseKey( hSecKey );
@@ -407,6 +405,9 @@ HDRVR WINAPI OpenDriver(LPCWSTR lpDriverName, LPCWSTR lpSectionName, LPARAM lPar
 
     TRACE("(%s, %s, 0x%08lx);\n", 
           debugstr_w(lpDriverName), debugstr_w(lpSectionName), lParam);
+
+    if (lsn == L"DRIVERS32")
+        lsn = NULL;
 
     /* If no section name is specified, either the caller is intending on
        opening a driver by filename, or wants to open a user-installable
