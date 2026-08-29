@@ -80,6 +80,8 @@ typedef struct
     ULONG NodeID;
     HANDLE hDevice;
     PVOID ExtraData;
+    ULONG ChannelCount;
+    ULONG MemberFlags;
 }MIXERCONTROL_EXT, *LPMIXERCONTROL_EXT;
 
 typedef struct
@@ -100,8 +102,8 @@ typedef struct
 typedef struct
 {
     MIXERCONTROL_DATA Header;
-    LONG SignedMinimum;
-    LONG SignedMaximum;
+    ULONG RangeCount;
+    KSPROPERTY_STEPPING_LONG Ranges[ANYSIZE_ARRAY];
 }MIXERVOLUME_DATA, *LPMIXERVOLUME_DATA;
 
 typedef struct
@@ -120,6 +122,7 @@ typedef struct
     LIST_ENTRY Entry;
     ULONG DeviceId;
     ULONG PinId;
+    WAVEFORMATEXTENSIBLE PreferredFormat;
     union
     {
         WAVEOUTCAPSW OutCaps;
