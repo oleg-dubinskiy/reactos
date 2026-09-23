@@ -754,7 +754,7 @@ MMixerAddMixerControlsToMixerLineByNodeIndexArray(
     ULONG Index, Count, bReserved;
     MIXER_STATUS Status;
     LPGUID NodeType;
-    ULONG ControlType, MaxChannels, MemberFlags, PropertyId;
+    ULONG MaxChannels, MemberFlags, PropertyId;
 
     /* initialize control count */
     Count = 0;
